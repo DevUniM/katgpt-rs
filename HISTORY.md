@@ -5,11 +5,31 @@ commit `1801c0ab`) so agent context stays small. Nothing was deleted: every
 section below is preserved verbatim from the pre-compaction `AGENTS.md`.
 Operational rules live in `AGENTS.md`; removed issue files: git history.
 
-Contents: modelless-first canonical-failure story · full-gate narratives ·
+contents: modelless-first canonical-failure story · full-gate narratives ·
 docs-gate descriptions · cfg-gated / required-features / percentile audit
 histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
+
+## WeightEpoch — the KV-cache weight-identity epoch (riir-ai Issue 938; Plan 025 contract) (`a446154a`, 2026-09-13)
+
+`LoraAdapter::weight_epoch() -> WeightEpoch` (katgpt-types `lora` module):
+BLAKE3 over a domain-separated canonical serialization (tag
+`katgpt-lora-weight-epoch-v1`, rank/in_dim/out_dim/alpha + length-prefixed
+a/b bytes). Identical adapters share an epoch — an A→B→A round trip may
+keep using its cache (identity, not installation counter); any byte
+difference defines a new epoch. `WeightEpoch::none()` for the no-adapter
+state. O(adapter) at swap time, O(1) memcmp, zero hot-path cost.
+
+Motivation: the RLT §5.4/App-C cache-staleness law (riir-train
+`.research/453`; riir-ai Issue 938) — a KV-cache entry is exact only when
+computed under the SAME weight epoch it is read with. `LoraPair` now
+documents its BY-DESIGN mixed-epoch acceptance (reader-prefill /
+writer-decode sharing one cache) at the type that creates it, and
+`examples/core_04_prefill.rs` Proof 3 prints the reader/writer epochs + the
+documented-acceptance line at the switch site. riir-ai consumes the type at
+its `CpuInferenceBackend` seam (refusing mixed-epoch reads loudly) — record:
+riir-ai HISTORY §Issue-938.
 
 ## Modelless-first mandate — original section (incl. the canonical-failure story)
 
