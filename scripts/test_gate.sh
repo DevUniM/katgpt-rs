@@ -63,7 +63,10 @@
 # `--features pca_global` measured 2026-09-11 (Plan 591 Phase 2; 249 =
 # 225 base + 24 pca, DEFAULT-ON since Bench 708 — the row also equals the
 # default-feature count now, kept explicit so the pin survives a future
-# default-list change). Raising a floor is a
+# default-list change). katgpt-core raised 1974→2041 2026-09-13 (4090 box,
+# Windows, HEAD 662783dc — the +67 are committed test additions since
+# 09-04; platform-invariant per the landing analysis, zero target_os cfg
+# at default features). Raising a floor is a
 # measured act; lowering one needs a note in the commit that does it.
 #
 # --test-threads=2 is deliberate (the riir-train 507 precedent): a weekly
@@ -80,7 +83,7 @@ set -u
 
 ROWS="
 katgpt-rs:203
-katgpt-core:1974
+katgpt-core:2041
 katgpt-dec:249:pca_global
 "
 
