@@ -83,20 +83,25 @@
 //! The verdict is drawn from the interleaved numbers. If the two disagree, the
 //! disagreement is the result.
 
+#[cfg(target_os = "macos")]
 use std::time::Instant;
 
+#[cfg(target_os = "macos")]
 use metal::{
     CompileOptions, ComputePipelineState, Device, MTLResourceOptions, MTLSize, NSUInteger,
 };
 
 /// Batch widths to sweep. `N=1` is the baseline decode step; `N=3` corresponds
 /// to llama.cpp's `--spec-draft-n-max 2`, `N=7` to `--spec-draft-n-max 6`.
+#[cfg(target_os = "macos")]
 const BATCH_WIDTHS: &[u32] = &[1, 2, 3, 4, 7, 8, 16];
 
 /// Timed iterations per configuration (after warmup).
+#[cfg(target_os = "macos")]
 const ITERS: u32 = 40;
 
 /// Untimed iterations to absorb shader compile + first-dispatch cost.
+#[cfg(target_os = "macos")]
 const WARMUP: u32 = 3;
 
 /// Decode-realistic weight shapes: `(label, out_dim, in_dim)`.
@@ -104,6 +109,7 @@ const WARMUP: u32 = 3;
 /// Sized to a ~7-9B model's projections, which is the class llama.cpp measured.
 /// The ratio under test is shape-independent in theory; three shapes spanning
 /// 67 MB → 524 MB confirm it holds as the weight matrix outgrows every cache.
+#[cfg(target_os = "macos")]
 const SHAPES: &[(&str, u32, u32)] = &[
     ("attn_qkv", 4096, 4096),
     ("ffn_up", 11008, 4096),
@@ -112,24 +118,29 @@ const SHAPES: &[(&str, u32, u32)] = &[
 
 /// Mean accepted tokens/step at `n-max 2`, from llama.cpp #23752's 73–76%
 /// acceptance. Speculation pays iff `cost(N)/cost(1)` lands below this.
+#[cfg(target_os = "macos")]
 const BREAKEVEN_E: f64 = 1.7;
 
 /// Interleaved-protocol pairs discarded before measurement begins.
+#[cfg(target_os = "macos")]
 const PAIR_WARMUP: u32 = 2;
 
 /// Interleaved-protocol pairs that count. Each yields one ratio; the median of
 /// those is the reported statistic.
+#[cfg(target_os = "macos")]
 const PAIR_MEASURE: u32 = 7;
 
 /// Timed dispatches per side within one pair. Lower than [`ITERS`] because the
 /// protocol's robustness comes from repeating the *pair*, not from grinding a
 /// single side — and 9 pairs × 2 sides already dominates the sequential run.
+#[cfg(target_os = "macos")]
 const PAIR_ITERS: u32 = 10;
 
 /// Build the MSL source for a batched matvec specialized to `batch`.
 ///
 /// `X` is stored transposed (`[in_dim][batch]`) so the unrolled inner loop
 /// reads `batch` contiguous floats — coalesced, the layout a real verify uses.
+#[cfg(target_os = "macos")]
 fn shader_source(batch: u32) -> String {
     format!(
         r#"
@@ -172,6 +183,7 @@ kernel void matmul_batched(
 }
 
 /// Compile the `batch`-specialized pipeline.
+#[cfg(target_os = "macos")]
 fn build_pipeline(device: &Device, batch: u32) -> ComputePipelineState {
     let library = device
         .new_library_with_source(&shader_source(batch), &CompileOptions::new())
@@ -185,6 +197,7 @@ fn build_pipeline(device: &Device, batch: u32) -> ComputePipelineState {
 }
 
 /// Allocate a shared-storage buffer of `len` f32s filled by `fill`.
+#[cfg(target_os = "macos")]
 fn filled_buffer(device: &Device, len: usize, fill: impl Fn(usize) -> f32) -> metal::Buffer {
     let bytes = (len * size_of::<f32>()) as NSUInteger;
     let buffer = device.new_buffer(bytes, MTLResourceOptions::StorageModeShared);
@@ -203,6 +216,7 @@ fn filled_buffer(device: &Device, len: usize, fill: impl Fn(usize) -> f32) -> me
 /// minimum is the least-contaminated estimate of true kernel cost. Using the
 /// median let baseline drift reach 75% between the pre- and post-sweep `N=1`
 /// measurements, which is wider than the effect under test.
+#[cfg(target_os = "macos")]
 fn min_ms(samples: &[f64]) -> f64 {
     samples.iter().copied().fold(f64::INFINITY, f64::min)
 }
@@ -214,6 +228,7 @@ fn min_ms(samples: &[f64]) -> f64 {
 /// every `cost(N)/cost(1)` ratio and biases the verdict toward "free" — the
 /// exact error this benchmark exists to avoid. Symptom in an unwarmed run: a
 /// 64 MB matvec measuring slower than a 172 MB one, and sub-1.0 ratios.
+#[cfg(target_os = "macos")]
 fn warm_gpu(device: &Device, queue: &metal::CommandQueue, samples: &mut Vec<f64>) {
     let (_, out_dim, in_dim) = SHAPES[SHAPES.len() - 1];
     let w = filled_buffer(device, (out_dim as usize) * (in_dim as usize), |i| {
@@ -231,6 +246,7 @@ fn warm_gpu(device: &Device, queue: &metal::CommandQueue, samples: &mut Vec<f64>
 /// would recompile MSL on every switch and charge shader-compile latency to
 /// whichever side happened to run first — an ordering artifact inside the very
 /// mechanism meant to remove ordering artifacts.
+#[cfg(target_os = "macos")]
 struct Prepared {
     pipeline: ComputePipelineState,
     xt: metal::Buffer,
@@ -241,6 +257,7 @@ struct Prepared {
     out_dim: u32,
 }
 
+#[cfg(target_os = "macos")]
 impl Prepared {
     fn new(device: &Device, out_dim: u32, in_dim: u32, batch: u32) -> Self {
         let pipeline = build_pipeline(device, batch);
@@ -267,8 +284,16 @@ impl Prepared {
         encoder.set_buffer(0, Some(w), 0);
         encoder.set_buffer(1, Some(&self.xt), 0);
         encoder.set_buffer(2, Some(&self.out), 0);
-        encoder.set_bytes(3, size_of::<u32>() as NSUInteger, (&raw const self.in_dim).cast());
-        encoder.set_bytes(4, size_of::<u32>() as NSUInteger, (&raw const self.out_dim).cast());
+        encoder.set_bytes(
+            3,
+            size_of::<u32>() as NSUInteger,
+            (&raw const self.in_dim).cast(),
+        );
+        encoder.set_bytes(
+            4,
+            size_of::<u32>() as NSUInteger,
+            (&raw const self.out_dim).cast(),
+        );
         encoder.dispatch_thread_groups(self.groups, self.threads);
         encoder.end_encoding();
         cmd.commit();
@@ -303,6 +328,7 @@ impl Prepared {
 /// Re-allocating it per configuration would page-fault and CPU-write hundreds of
 /// MB between measurements, polluting the very ratio under test — and a real
 /// decoder keeps weights resident anyway.
+#[cfg(target_os = "macos")]
 fn time_config(
     device: &Device,
     queue: &metal::CommandQueue,
@@ -316,6 +342,7 @@ fn time_config(
 }
 
 /// Result of one interleaved A/B comparison.
+#[cfg(target_os = "macos")]
 struct PairStats {
     /// Median of the per-pair ratios — the reported statistic.
     ratio: f64,
@@ -336,6 +363,7 @@ struct PairStats {
 /// The primary statistic is the median of per-pair ratios, not
 /// `median(A) / median(B)` — the latter lets drift accumulated between the two
 /// halves of the run leak straight into the answer.
+#[cfg(target_os = "macos")]
 fn paired_ratio(
     queue: &metal::CommandQueue,
     w: &metal::Buffer,
@@ -349,14 +377,14 @@ fn paired_ratio(
 
     for pair in 0..PAIR_WARMUP + PAIR_MEASURE {
         let (b_ms, w_ms) = if (pair % 2) == 0 {
-                let b = base.time(queue, w, 1, PAIR_ITERS, samples);
-                let x = wide.time(queue, w, 1, PAIR_ITERS, samples);
-                (b, x)
-            } else {
-                let x = wide.time(queue, w, 1, PAIR_ITERS, samples);
-                let b = base.time(queue, w, 1, PAIR_ITERS, samples);
-                (b, x)
-            };
+            let b = base.time(queue, w, 1, PAIR_ITERS, samples);
+            let x = wide.time(queue, w, 1, PAIR_ITERS, samples);
+            (b, x)
+        } else {
+            let x = wide.time(queue, w, 1, PAIR_ITERS, samples);
+            let b = base.time(queue, w, 1, PAIR_ITERS, samples);
+            (b, x)
+        };
         if pair >= PAIR_WARMUP {
             ratios.push(w_ms / b_ms);
             base_all.push(b_ms);
@@ -373,11 +401,13 @@ fn paired_ratio(
     }
 }
 
+#[cfg(target_os = "macos")]
 fn median(samples: &mut [f64]) -> f64 {
     samples.sort_by(f64::total_cmp);
     samples[samples.len() / 2]
 }
 
+#[cfg(target_os = "macos")]
 fn main() {
     let Some(device) = Device::system_default() else {
         eprintln!("no Metal device — this benchmark requires Apple Silicon");
@@ -438,7 +468,10 @@ fn main() {
         let mut int_rows: Vec<(u32, PairStats)> = Vec::with_capacity(BATCH_WIDTHS.len());
         for &batch in BATCH_WIDTHS.iter().skip(1) {
             let wide = Prepared::new(&device, out_dim, in_dim, batch);
-            int_rows.push((batch, paired_ratio(&queue, &w, &base_prep, &wide, &mut samples)));
+            int_rows.push((
+                batch,
+                paired_ratio(&queue, &w, &base_prep, &wide, &mut samples),
+            ));
         }
 
         // A width-N pass is worth it when it costs less than the N serial steps
@@ -450,7 +483,10 @@ fn main() {
             _ => "LOSS",
         };
 
-        println!("    {:>3}  {:>18}  {:>30}", "N", "sequential", "interleaved (median of pairs)");
+        println!(
+            "    {:>3}  {:>18}  {:>30}",
+            "N", "sequential", "interleaved (median of pairs)"
+        );
         println!(
             "    {:>3}  {:>9} {:>8}  {:>9} {:>7} {:>12}",
             "", "ms", "ratio", "ms", "ratio", "spread"
@@ -511,19 +547,27 @@ fn main() {
         println!("  {label:<10} N <= {band}");
     }
     let overall_band = bands.iter().map(|(_, b)| *b).min().unwrap_or(1);
-    println!("  {:<10} N <= {overall_band}   <- binding constraint", "OVERALL");
+    println!(
+        "  {:<10} N <= {overall_band}   <- binding constraint",
+        "OVERALL"
+    );
 
     if worst_n3_int < BREAKEVEN_E {
-            println!(
-                "\nARTIFACT — batched verify is affordable on this device, so the llama.cpp\n\
+        println!(
+            "\nARTIFACT — batched verify is affordable on this device, so the llama.cpp\n\
                  Metal penalty is an implementation issue, not a hardware limit.\n\
                  => mtp+ddtree is viable on M3; MTP can be gated on Metal, not CUDA-only."
-            );
-        } else {
-            println!(
-                "\nFUNDAMENTAL — batched verify costs more than the tokens it can win back.\n\
+        );
+    } else {
+        println!(
+            "\nFUNDAMENTAL — batched verify costs more than the tokens it can win back.\n\
                  Speculative decoding cannot pay on this device at any acceptance rate.\n\
                  => MTP is a CUDA/4090-only opt-in; do not gate it on Metal."
-            );
-        }
+        );
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("Bench 656 MTP Metal batch-width floor requires macOS with Metal.");
 }

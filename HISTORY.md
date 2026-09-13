@@ -11,6 +11,24 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## The Windows default-features workspace lane — bench_mtp_metal_batch_floor platform gate (2026-09-13, 4090 session)
+
+Found by the idle clippy sweep (`cargo clippy --workspace --all-targets` at
+DEFAULT features): 13×E0433 — the only Metal example without
+`target_os = "macos"` guards. The lane chain: root `default` →
+`async_qdq_overlap` → `inference_router` → `gpu_inference` forwards into
+katgpt-backend, satisfying the example's `required-features` on EVERY
+platform — so the example compiled on Windows where `use metal::*` cannot
+resolve (the dep is macOS-target-gated). The M3 lane never sees it; the
+heal commit `2cb97410` had already recorded it as "workspace E0433 metal
+example pre-existing (proven at HEAD 00cfe345)" and left it. Fixed with
+the sibling pattern (`bench_439_*`): item-level cfg on all 22 top-level
+items + a loud `not(macos)` main stub ("requires macOS with Metal"), file
+rustfmt'd (it had never been formatted). Verified on Windows:
+`-p katgpt-backend --all-targets --features gpu_inference` clippy-clean,
+the stub prints, and the workspace default-features lane is 0-warnings
+for the first time on this box.
+
 ## Issue 766 resolved — len_derived audit: caller tracer (HALF C) + two instrument defects found and fixed (2026-09-13, 4090 session)
 
 Follow-up to riir-train Issue 515's standing work list (220 UNRESOLVED
