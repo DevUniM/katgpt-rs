@@ -16,7 +16,7 @@ paragraph's drift history · the resolved issue log.
 **The question that opened it:** "do we have RadixAttention yet?" — No. The
 stack had the PagedAttention half (`PagedKVCache` ref-counted pages,
 `fork`/`rollback` CoW for spec-decode), the single-stream whole-prefix
-cache (`riir-gpu` `Qwen38PrefixCache`, whose Bench 750 note documents the
+cache (`riir-gpu` `Qwen38PrefixCache`, whose riir-ai Bench 750 note documents the
 radix-tree divergence as "equivalent for single-stream reuse"), and the
 unwired segment matcher (`KvSegmentPool`) — but not the composition.
 
@@ -55,7 +55,7 @@ unwired segment matcher (`KvSegmentPool`) — but not the composition.
 
 **Promotion verdict: STAYS OPT-IN** — G1–G4 pass and the gain is modelless,
 but there is no production consumer: every inference lane is single-stream
-(`.research/034` recorded the radix tree N/A for single-stream; the 4090
+(`riir-ai .research/034` recorded the radix tree N/A for single-stream; the 4090
 lane's flat cache is the correct shape there). The `drift_segment`
 precedent: GOAT PASS + consumers landed → promotion candidate. The
 consumer note (T5) lives in `riir-gpu`'s `qwen38_prefix_cache.rs` module
