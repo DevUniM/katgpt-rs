@@ -11,7 +11,7 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
-## Issue 770 resolved — the counter walker rebuilt per-commit; the 769 adjudication was partly an instrument artifact (2026-09-13, M3 session, verdict-review round 2)
+## Issue 770 (2026-09-13, M3 session) resolved — the counter walker rebuilt per-commit; the 769 adjudication was partly an instrument artifact (verdict-review round 2)
 
 The verdict reviewer re-derived every landed reset row against its commit's
 OWN diff and found the 769 walker lineage-blind — two structural defects,
@@ -54,7 +54,7 @@ claimed); its figures re-measured under the corrected walk: 438 gaps + 27
 resets over 73 counters (creation gaps `0→N` now counted honestly where the
 old first-hunk special case suppressed them).
 
-## Issue 769 resolved — the counter-reset class lands in the numbering sweep; all 31 measured resets adjudicated (2026-09-13, M3 session)
+## Issue 769 (2026-09-13, M3 session) resolved — the counter-reset class lands in the numbering sweep; all 31 measured resets adjudicated
 
 *(Correction 2026-09-13, same session, verdict-review round 2 — read with
 Issue 770: the counts and the adjudication below are the DATE-ORDERED
@@ -95,7 +95,7 @@ from the gap bucket to their true hazard classes (332→315 gaps). The
 instrument proving itself before it shipped is the whole point of the
 fixture.
 
-## Issue 768 resolved — the .highwater ownership witness REFUTED by measurement; highwater_contiguity_audit.py landed (2026-09-13, M3 session)
+## Issue 768 (2026-09-13, M3 session) resolved — the .highwater ownership witness REFUTED by measurement; highwater_contiguity_audit.py landed
 
 Filed the same day from the Issue-766 mis-repair arc; closed MEASURED-NEGATIVE
 in one session. T3 asked whether `.highwater` is contiguous enough to serve
