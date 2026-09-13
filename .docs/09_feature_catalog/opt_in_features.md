@@ -3864,8 +3864,8 @@ GOAT-gates it onto a production path (the named consumer: the riir-ai
 per-archetype frozen circuit + per-NPC dopamine-readout personality overlay,
 Research 380 §8).
 
-📖 Issue: [767](../../.issues/767_mb_value_dopamine_plasticity_primitive.md) ·
-Research: [380](../../riir-ai/.research/380_tmnf_c_mb_dopamine_value_circuit.md)
+📖 Issue: [767](../../HISTORY.md) ·
+Research: [380](../../../riir-ai/.research/380_tmnf_c_mb_dopamine_value_circuit.md)
 (riir-ai, private) ·
 Bench: [761](../../.benchmarks/761_mb_value_goat.md) — G1/G2/G4 ALL PASS ·
 Substrate: `crates/katgpt-core/src/mb_value.rs`, tests
