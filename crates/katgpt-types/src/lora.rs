@@ -548,6 +548,12 @@ impl WeightEpoch {
         }
         Self(*h.finalize().as_bytes())
     }
+
+    /// The raw 32-byte identity — for wire formats that carry the epoch
+    /// (e.g. riir-ai's KVCA v2 header) and operator-facing hex rendering.
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 impl LoraAdapter {
