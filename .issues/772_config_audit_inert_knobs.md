@@ -1,6 +1,6 @@
 # Issue 772 — config-audit first pass over katgpt-rs (the 09-13 sweep's sibling-hot exclusion): 7 verified inert/assert-only knobs, 3 FPs (trait-operational class)
 
-**Status:** OPEN — findings verified 2026-09-14 (syn detector + workspace-grep adjudication); fixes pending. Detector provenance: `cargo heal --config-audit` (riir-clippy Plan 124), first katgpt-rs run — the 2026-09-13 14-repo consumer sweep excluded this repo as sibling-hot.
+**Status:** OPEN — A/B findings verified 2026-09-14 (syn detector + workspace-grep adjudication); orphan-report layer added same session (0 orphaned / 33 stillborn → S1-S6, 5 hand-verified). Fixes pending. Detector provenance: `cargo heal --config-audit` + `--orphan-report` (riir-clippy Plans 124/126), first katgpt-rs runs — the 2026-09-13 14-repo consumer sweep excluded this repo as sibling-hot.
 
 ## Evidence basis (why these are TPs, not detector noise)
 
@@ -28,6 +28,25 @@
 - `RuleBasedVerifier` (spechop/verifier.rs:83): `verify()` reads both knobs operationally (`:124-127` short-answer rule, `:151-155` jaccard rule), driven by `SpecHopPipeline`.
 - `EntropyConflictDetector` (speculative/types.rs:1091): bench arms construct non-defaults (`tests/bench_ldt_lattice_deduction.rs:506-515`) and exercise all three fields through `is_conflicted_at_depth`.
 - Detector refinement candidate: a read inside an `impl Trait for X` method is OPERATIONAL (externally dispatchable), unlike an inherent validate-shaped method — the cheap syn-only approximation is to exempt trait-impl bodies from the "own-validate-impl" bucket.
+
+## Orphan-report layer (same session, `cargo heal --orphan-report`): 0 orphaned / 33 stillborn — the born-dead population
+
+**0 orphaned** — none of the A/B findings above has a vanished-reader story: they were born inert, not orphaned by optimization (no repair-by-archaeology needed; the fix is wire-or-delete, not restore).
+
+Hand-verified stillborn TPs (read-site greps done):
+- [ ] **S1** `crates/katgpt-core/src/branching/router.rs:115` — `BranchRouter.tau_spawn` — the sharpest finding: a knob on a HEAVILY-USED router whose logic reads `tau_snap` (`:216/:217/:231`) and `tau_jaccard` (`:249`) but NEVER `tau_spawn`; the documented spawn threshold ("Max dot-product score < this → consider spawn", `DEFAULT_TAU_SPAWN=0.0`) is unimplemented — the spawn decision is hardcoded elsewhere. Wire the threshold into the spawn branch or delete field+const+param.
+- [ ] **S2** `crates/katgpt-core/src/mux_latent/spectral_lod.rs:27` — `SpectralLOD.fft_size` — def/Default/`new()` param only; the analyze path never reads it.
+- [ ] **S3** `crates/katgpt-core/src/mux_latent/config.rs:63` — `MuxLatentConfig.injection_layer` — never read; the injection layer cannot be overridden despite the doc.
+- [ ] **S4** `crates/katgpt-kv/src/shard_kv/types.rs:69` — `ShardConfig.avg_bits_v` — written `2.0` in production (`kv_cache.rs:1082`) but never read — the write-only sibling of the live `avg_bits_k`.
+- [ ] **S5** `crates/katgpt-core/src/cgsp/loop_.rs:71-72` — `CgspConfig.solve_rate_floor`/`solve_rate_ceiling` — bench constructions only; the breakeven drop-below/drop-above behavior they document is not implemented in the loop.
+
+Detector-verified stillborn config knobs (syn 0-reads at HEAD + 0 read-shaped occurrences at every history probe; workspace grep shows no riir-* reads):
+- [ ] **S6** the remaining knob-class rows: `BranchRouter.tau_spawn` covered above; `DepthInvarianceConfig.magnitude_slope_collapse` (katgpt-types), `HydraBudgetConfig.cumulative_threshold`+`.modelless` (katgpt-types), `CollapseDetectorFrozen.budget_ema_mean` (option_stripper), `InfluenceConfig.min_repetition_length` (mech_attribution), `InfoNceConfig.default_critic` (katgpt-band), `QbConfig.causality_strict` (katgpt-spectral), `QueryFeatures.expected_output_len` (pipeline_pruner), `SpKvConfig.predictor_lr_mult` (katgpt-kv sp_kv), `TrdConfig.max_refinement_steps`/`.refine_correct_branches`/`.elf_noise_scale` (speculative distill).
+
+Excluded from action (benign/documented classes):
+- `CompactionAuditRecord._pad` — repr(C) padding (the documented benign class).
+- 4× `InferenceResult.*` in `katgpt-deprecated` — frozen crate.
+- 12× trace/record fields (`AnchorTrace.future_accuracy`, `DecisionRecord.num_choices`, `FailureTrace.death_tick`, `GoldenTrace.expected_survival`, `TrialRecord.base_correct`/`reviewed_correct`, `GoGameAnalytics.unstable_round_count`, `ArenaEvaluation.candidate_id`, `P5Derived.derived_from`, `CompactionAuditRecord._pad` counted above) — audit-data class: written for records, plausibly serialization-consumed (the fn-scoped wire-clearance is deliberately conservative); adjudicate against wire formats before any deletion.
 
 ## Non-goals
 
