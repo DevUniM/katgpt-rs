@@ -723,6 +723,68 @@ impl PagedKVCache {
         // Zero all ref counts since all page tables are cleared
         self.page_ref_counts.fill(0);
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Issue 771 T2 — the prefix-sharing seam for external prefix indexes
+    // (katgpt-kv's radix_prefix tree). Pure pool mechanics: the tree owns
+    // page INDICES, these calls move ref-count ownership. Address stability:
+    // none of these move or reorder `pages` — captured CUDA graphs that
+    // baked buffer addresses stay valid (alloc reuses free-list slots and
+    // only ever appends to the pool).
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// Read `seq_idx`'s page tables for the first `chunks` chunks:
+    /// `tables[layer][chunk] = page index`. Caller-owned allocation (a
+    /// read for the index side; no ref-count change).
+    pub fn chunk_page_tables(&self, seq_idx: usize, chunks: usize) -> Vec<Vec<usize>> {
+        self.layer_page_tables
+            .iter()
+            .map(|lt| lt[seq_idx][..chunks].to_vec())
+            .collect()
+    }
+
+    /// Take the tree's hold on `tables[layer][chunk]` pages: ref-count++
+    /// per entry. Called for the NEW chunks an insert indexes (chunks the
+    /// tree did not already hold).
+    pub fn retain_chunk_pages(&mut self, tables: &[Vec<usize>]) {
+        for lt in tables {
+            for &pidx in lt {
+                self.page_ref_counts[pidx] += 1;
+            }
+        }
+    }
+
+    /// Drop a hold taken by [`Self::retain_chunk_pages`]: ref-count-- per
+    /// entry; a page reaching 0 returns to the free list. Tree eviction
+    /// path — never frees a page a live sequence still references (its own
+    /// hold keeps the count > 0).
+    pub fn release_chunk_pages(&mut self, tables: &[Vec<usize>]) {
+        for lt in tables {
+            for &pidx in lt {
+                self.page_ref_counts[pidx] -= 1;
+                if self.page_ref_counts[pidx] == 0 {
+                    self.free_pages.push(pidx);
+                }
+            }
+        }
+    }
+
+    /// Install `tables` as `seq_idx`'s page tables (ref-count++ per entry —
+    /// the adopting request's hold) and grow sequence slots as needed. The
+    /// request then prefills ONLY positions `tables' chunk count × PAGE_SIZE
+    /// and beyond; writing below that would corrupt every sharer (chunk-floor
+    /// matching guarantees the suffix never lands in a shared page).
+    pub fn adopt_chunk_pages(&mut self, seq_idx: usize, tables: &[Vec<usize>]) {
+        for (layer_tables, lt) in self.layer_page_tables.iter_mut().zip(tables) {
+            while seq_idx >= layer_tables.len() {
+                layer_tables.push(Vec::new());
+            }
+            layer_tables[seq_idx] = lt.clone();
+            for &pidx in lt {
+                self.page_ref_counts[pidx] += 1;
+            }
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

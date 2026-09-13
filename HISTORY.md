@@ -11,6 +11,57 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 771 (2026-09-14, M3 session) resolved — the radix-tree prefix KV cache primitive (RadixAttention index) shipped opt-in; G1–G4 ALL PASS, promotion deferred to the serving lane
+
+**The question that opened it:** "do we have RadixAttention yet?" — No. The
+stack had the PagedAttention half (`PagedKVCache` ref-counted pages,
+`fork`/`rollback` CoW for spec-decode), the single-stream whole-prefix
+cache (`riir-gpu` `Qwen38PrefixCache`, whose Bench 750 note documents the
+radix-tree divergence as "equivalent for single-stream reuse"), and the
+unwired segment matcher (`KvSegmentPool`) — but not the composition.
+
+**What shipped** (Bench 762, all gates green at
+`--release --features radix_prefix_cache`):
+
+- `katgpt_kv::radix_prefix::RadixPrefixTree` — the index half: chunk-
+  granular spans (16 tokens), chunk-floor longest-prefix match (the
+  trailing partial chunk is re-prefilled — this is what makes CoW
+  unnecessary: a request never writes into a page another branch reads),
+  leaf-preferential LRU with lock-aware eviction, in-place splits that keep
+  node ids valid for lockers. The tree owns page INDICES, never buffers —
+  CUDA-graph address stability by construction (the vLLM capture×prefix-
+  cache corruption class is structurally impossible).
+- The pool half: 4 ungated seam methods on `PagedKVCache`
+  (`chunk_page_tables` / `retain_chunk_pages` / `release_chunk_pages` /
+  `adopt_chunk_pages`) — pure ref-count mechanics. Discipline: pool
+  refcount = live-seq holds + 1-while-tree-indexed; locks are hit-rate
+  optimization, never safety.
+- G1 bit-identity (via `to_bits` — the filler produces NaN payloads where
+  float `!=` lies; micro passed by luck, small_target caught it), branch
+  isolation (shared trunk pages identical, refcount exactly 3, no
+  cross-branch leak), pool stability. G2: hit-rate **2.45×** the flat
+  whole-prefix control at equal 50% budget (16 convs × 8 turns round-robin
+  — the FIRST workload, sequential conversations, measured EQUAL because
+  nothing revisits; the flat cache's duplication only hurts under
+  interleaving + pressure, which is the honest RadixAttention workload
+  class); match-only latency **9.8×** (0.21 vs 2.06 ms / 2,560 lookups,
+  release). G4: 0 allocs on the match path (counting global allocator; the
+  first draft counted its own query-construction allocs — warm the scratch,
+  measure after).
+- Divergences from SGLang documented in-module: chunk-floor matching, no
+  per-chunk hash filter (memcmp is the authority and the filter costs more
+  at 64 B/chunk), node-per-request over edge-extension, locks-on-head
+  splits.
+
+**Promotion verdict: STAYS OPT-IN** — G1–G4 pass and the gain is modelless,
+but there is no production consumer: every inference lane is single-stream
+(`.research/034` recorded the radix tree N/A for single-stream; the 4090
+lane's flat cache is the correct shape there). The `drift_segment`
+precedent: GOAT PASS + consumers landed → promotion candidate. The
+consumer note (T5) lives in `riir-gpu`'s `qwen38_prefix_cache.rs` module
+doc — when a multi-request serving lane lands, consume this primitive, do
+NOT re-derive a private tree.
+
 ## Issue 770 (2026-09-13, M3 session) resolved — the counter walker rebuilt per-commit; the 769 adjudication was partly an instrument artifact (verdict-review round 2)
 
 The verdict reviewer re-derived every landed reset row against its commit's

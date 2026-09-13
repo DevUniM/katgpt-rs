@@ -104,6 +104,15 @@ ssc_spec_draft = ["segment_checkpoint"]
 # because it gates the GPU backend test harness, not the module itself.
 async_qdq_overlap = []
 
+# RadixAttention radix-tree prefix index (Issue 771) — chunk-granular
+# longest-prefix matching over a paged KV pool, leaf-preferential LRU with
+# lock-aware eviction. Pure index: owns page INDICES, never buffers (CUDA-
+# graph address stability by construction). The pool seam lives on
+# `katgpt_transformer::PagedKVCache` (chunk_page_tables / retain / release /
+# adopt). Opt-in — GOAT bench_762; promotion candidate when a multi-request
+# serving lane consumes it.
+radix_prefix_cache = []
+
 # Plan 583 T3.5 — offline MI quant-fidelity probe (audit-only): forwards
 # katgpt-core's `mi_est` so the I(W; Ŵ) probe measures retained information
 # through the shipped KVarN round-trip alongside the reconstruction metrics.
@@ -114,3 +123,7 @@ mi_probe = ["kvarn", "katgpt-core/mi_est"]
 [[test]]
 name = "bench_694_mi_quant_fidelity_probe"
 required-features = ["mi_probe"]
+
+[[test]]
+name = "radix_prefix_cache_tests"
+required-features = ["radix_prefix_cache"]
