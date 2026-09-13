@@ -1318,6 +1318,23 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 
 ## Issue log (resolved)
 
+- **Issue 764 — `LoraPair` KV-cache weight-epoch contract unspecified (public twin of riir-ai Issue 938)** RESOLVED + removed
+  (2026-09-13; landed `49f5d245` + `aa163896` + `a7d6d8f0`; resolution verified on the 4090 session's issue sweep —
+  issue file removed at close, this row + git history are the durable record).
+  All substance landed the same day it was filed, minutes apart: `49f5d245` —
+  `WeightEpoch` (BLAKE3 weight-identity epoch) + `LoraAdapter::weight_epoch()` +
+  the `LoraPair` by-design mixed-epoch acceptance docs + the `core_04_prefill.rs`
+  swap-site documentation (issue items 1+2); `aa163896` — `WeightEpoch::from_parts`,
+  the general tagged weight-walk constructor (item 1's remaining half, the
+  frozen-model axis riir-ai's Gemma2/KVCA v2 lane consumes); `a7d6d8f0` —
+  `WeightEpoch::as_bytes`, the raw-identity accessor the KVCA v2 wire header
+  carries. Verification on close: all five surfaces present at HEAD
+  (`katgpt-types/src/lora.rs` :518/:540/:554/:563 + `core_04_prefill.rs`
+  :294-300). Item 3 (the optional epoch-tagged-cache refusal-arm property gate)
+  NOT taken — optional per the filing, and the exactness-refusal consumer lives
+  in riir-ai (its `CpuInferenceBackend` seam, riir-ai HISTORY §Issue-938);
+  nothing actionable remained here. riir-ai-side consumption: riir-ai Issue 938.
+
 - **Issue 743 — `gw_alignment`, the Gromov–Wasserstein quotient-alignment primitive** RESOLVED + removed
   (2026-09-11, `ae04a98b`; Plan 594 + Bench 709 — the plan/issue/bench carry the full narrative).
   `katgpt_core::gw_alignment` behind opt-in `gw_alignment` (zero deps, pure std):
