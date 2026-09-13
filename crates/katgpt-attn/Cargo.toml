@@ -253,3 +253,11 @@ required-features = ["asentmax_schedule"]
 [[test]]
 name = "asentmax_p07_realmodel_regate"
 required-features = ["asentmax_schedule"]
+
+# Issue 762 T0 — long-context re-measure: same replay harness over the
+# ≈10.9k-token fixture (log-spaced k-ends to ~170 blocks); pins the σ̂(n)
+# trend + support/mass/needle/latency gates the P0.7 addendum's n≤32 caveat
+# left open.
+[[test]]
+name = "asentmax_long_context_regate"
+required-features = ["asentmax_schedule"]

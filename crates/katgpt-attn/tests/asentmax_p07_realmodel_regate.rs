@@ -32,6 +32,8 @@
 //! bounded by a generous ratio while the measured number is printed.
 //!
 //! The measured tables + verdict live in `.benchmarks/713` (P0.7 addendum).
+//! The fixture parser + replay harness are shared with the long-context
+//! re-gate (`tests/asentmax_long_context_regate.rs`) via `tests/common/`.
 
 #![cfg(feature = "asentmax_schedule")]
 
@@ -43,192 +45,10 @@ use katgpt_attn::dash_attn::routing::score_blocks_entmax_into;
 use katgpt_attn::dash_attn::vortex_flow::{VortexFlow, VortexScratch};
 use katgpt_core::types::DashAttnConfig;
 
-// ── fixture format (mirrors examples/asentmax_p07_gen_fixture.rs) ──────────
+mod common;
+use common::{cache_for, mean, parse_fixture, replay, stream_n_blocks};
 
 const FIXTURE: &[u8] = include_bytes!("data/asentmax_p07_bonsai8b.fixture");
-
-fn f16_to_f32(h: u16) -> f32 {
-    let sign = ((h >> 15) & 1) as u32;
-    let exp = ((h >> 10) & 0x1f) as u32;
-    let frac = (h & 0x3ff) as u32;
-    let bits = if exp == 0 {
-        if frac == 0 {
-            sign << 31
-        } else {
-            let mut e: i32 = -1;
-            let mut f = frac;
-            while f & 0x400 == 0 {
-                f <<= 1;
-                e += 1;
-            }
-            (sign << 31) | (((113 - e) as u32) << 23) | ((f & 0x3ff) << 13)
-        }
-    } else if exp == 0x1f {
-        (sign << 31) | (0xff << 23) | (frac << 13)
-    } else {
-        (sign << 31) | ((exp + 112) << 23) | (frac << 13)
-    };
-    f32::from_bits(bits)
-}
-
-struct Cur<'a> {
-    b: &'a [u8],
-    p: usize,
-}
-
-impl Cur<'_> {
-    fn u32(&mut self) -> u32 {
-        let v = u32::from_le_bytes(self.b[self.p..self.p + 4].try_into().unwrap());
-        self.p += 4;
-        v
-    }
-    fn u64(&mut self) -> u64 {
-        let v = u64::from_le_bytes(self.b[self.p..self.p + 8].try_into().unwrap());
-        self.p += 8;
-        v
-    }
-    fn f32(&mut self) -> f32 {
-        f32::from_bits(self.u32())
-    }
-    fn f16(&mut self) -> f32 {
-        let h = u16::from_le_bytes([self.b[self.p], self.b[self.p + 1]]);
-        self.p += 2;
-        f16_to_f32(h)
-    }
-}
-
-struct Stream {
-    layer: usize,
-    kv_head: usize,
-    n_blocks: usize,
-    /// [n_blocks][head_dim] mean-pooled post-rope K summaries.
-    sums: Vec<f32>,
-}
-
-struct Row {
-    layer: usize,
-    q_head: usize,
-    kv_head: usize,
-    n_blocks: usize,
-    query: Vec<f32>,
-    /// [n_blocks] ground-truth softmax attention mass per block.
-    masses: Vec<f32>,
-}
-
-struct Fixture {
-    head_dim: usize,
-    block: usize,
-    n_tokens: usize,
-    prompt_fnv: u64,
-    /// The planted needle sentence's 64-token block (Bench 032 axis).
-    needle_block: usize,
-    streams: Vec<Stream>,
-    rows: Vec<Row>,
-}
-
-fn parse_fixture(bytes: &[u8]) -> Fixture {
-    let mut c = Cur { b: bytes, p: 0 };
-    let magic = &bytes[0..8];
-    assert_eq!(magic, b"ASEP07\0\0", "fixture magic");
-    c.p = 8;
-    let version = c.u32();
-    assert_eq!(version, 1, "fixture version");
-    let head_dim = c.u32() as usize;
-    let block = c.u32() as usize;
-    let n_streams = c.u32() as usize;
-    let n_rows = c.u32() as usize;
-    let n_tokens = c.u32() as usize;
-    let prompt_fnv = c.u64();
-    let needle_block = c.u64() as usize;
-    let mut streams = Vec::with_capacity(n_streams);
-    for _ in 0..n_streams {
-        let layer = c.u32() as usize;
-        let kv_head = c.u32() as usize;
-        let n_blocks = c.u32() as usize;
-        let mut sums = vec![0f32; n_blocks * head_dim];
-        for s in &mut sums {
-            *s = c.f16();
-        }
-        streams.push(Stream { layer, kv_head, n_blocks, sums });
-    }
-    let mut rows = Vec::with_capacity(n_rows);
-    for _ in 0..n_rows {
-        let layer = c.u32() as usize;
-        let q_head = c.u32() as usize;
-        let kv_head = c.u32() as usize;
-        let n_blocks = c.u32() as usize;
-        let mut query = vec![0f32; head_dim];
-        for q in &mut query {
-            *q = c.f16();
-        }
-        let mut masses = vec![0f32; n_blocks];
-        for m in &mut masses {
-            *m = c.f32();
-        }
-        rows.push(Row { layer, q_head, kv_head, n_blocks, query, masses });
-    }
-    assert_eq!(c.p, bytes.len(), "fixture fully consumed");
-    Fixture { head_dim, block, n_tokens, prompt_fnv, needle_block, streams, rows }
-}
-
-// ── replay harness ──────────────────────────────────────────────────────────
-
-fn cache_for(fx: &Fixture, layer: usize, kv_head: usize, n_blocks: usize) -> EntmaxCache {
-    let stream = fx
-        .streams
-        .iter()
-        .find(|s| s.layer == layer && s.kv_head == kv_head)
-        .unwrap_or_else(|| panic!("stream for layer {layer} kvh {kv_head}"));
-    assert!(stream.n_blocks >= n_blocks);
-    let mut cache = EntmaxCache::with_capacity(n_blocks, fx.head_dim);
-    for b in 0..n_blocks {
-        cache.summaries.push(stream.sums[b * fx.head_dim..(b + 1) * fx.head_dim].to_vec());
-    }
-    cache
-}
-
-fn stream_n_blocks(fx: &Fixture, layer: usize, kv_head: usize) -> usize {
-    fx.streams
-        .iter()
-        .find(|s| s.layer == layer && s.kv_head == kv_head).map_or(0, |s| s.n_blocks)
-}
-
-struct Decision {
-    blocks: Vec<usize>,
-    weights: Vec<f32>,
-}
-
-/// Replay all rows through one arm. `scheduled` uses the P0.7 wiring exactly
-/// (rolling-σ̂ α=0.8 fed every row in stream order, `to_schedule()` per call).
-fn replay(fx: &Fixture, scheduled: bool) -> Vec<Decision> {
-    let router = if scheduled {
-        EntmaxRouter::default_router().with_asentmax_schedule()
-    } else {
-        EntmaxRouter::default_router()
-    };
-    let mut caches: std::collections::HashMap<(usize, usize), EntmaxCache> = Default::default();
-    let mut scratch = VortexScratch::new(256);
-    let mut out = Vec::with_capacity(fx.rows.len());
-    for row in &fx.rows {
-        let key = (row.layer, row.kv_head);
-        let cache = caches
-            .entry(key)
-            .or_insert_with(|| cache_for(fx, row.layer, row.kv_head, stream_n_blocks(fx, row.layer, row.kv_head)));
-        // ensure capacity for this row's n_blocks (caches only grow)
-        if cache.summaries.len() < row.n_blocks {
-            let full = cache_for(fx, row.layer, row.kv_head, row.n_blocks);
-            *cache = full;
-        }
-        let dec = router.forward_indexer(&row.query, cache, row.n_blocks, row.n_blocks, &mut scratch);
-        out.push(Decision { blocks: dec.blocks, weights: dec.weights });
-    }
-    out.shrink_to_fit();
-    out
-}
-
-fn mean(v: &[f32]) -> f32 {
-    v.iter().sum::<f32>() / v.len().max(1) as f32
-}
 
 // ── tests ───────────────────────────────────────────────────────────────────
 
@@ -318,7 +138,7 @@ fn p07_g2_support_and_fidelity_on_real_rows() {
         let idx: Vec<usize> = fx.rows.iter().enumerate().filter(|(_, r)| r.n_blocks == n).map(|(i, _)| i).collect();
         let rs: Vec<f32> = idx.iter().map(|&i| raw[i].blocks.len() as f32).collect();
         let ss: Vec<f32> = idx.iter().map(|&i| sched[i].blocks.len() as f32).collect();
-        let mass = |arm: &Vec<Decision>| -> f32 {
+        let mass = |arm: &Vec<common::Decision>| -> f32 {
             idx.iter()
                 .map(|&i| {
                     let row = &fx.rows[i];
@@ -327,7 +147,7 @@ fn p07_g2_support_and_fidelity_on_real_rows() {
                 .sum::<f32>()
                 / idx.len() as f32
         };
-        let recall = |arm: &Vec<Decision>| -> f32 {
+        let recall = |arm: &Vec<common::Decision>| -> f32 {
             let mut tot = 0f32;
             let mut hit = 0f32;
             for &i in &idx {
@@ -461,7 +281,7 @@ fn p07_g2_needle_retention_on_real_rows() {
 #[test]
 fn p07_g3_latency_no_regression_on_real_rows() {
     let fx = parse_fixture(FIXTURE);
-    let rows: Vec<&Row> = fx.rows.iter().filter(|r| r.n_blocks >= 16).collect();
+    let rows: Vec<&common::Row> = fx.rows.iter().filter(|r| r.n_blocks >= 16).collect();
     assert!(rows.len() >= 32, "latency rows");
     let caches: Vec<EntmaxCache> = rows.iter().map(|r| cache_for(&fx, r.layer, r.kv_head, r.n_blocks)).collect();
 
@@ -508,7 +328,7 @@ fn p07_sigma_hat_reflects_real_rows() {
     for row in fx.rows.iter().step_by(3) {
         let key = (row.layer, row.kv_head);
         let cache = caches.entry(key).or_insert_with(|| {
-            let n = fx.streams.iter().find(|s| s.layer == row.layer && s.kv_head == row.kv_head).map_or(row.n_blocks, |s| s.n_blocks);
+            let n = stream_n_blocks(&fx, row.layer, row.kv_head);
             cache_for(&fx, row.layer, row.kv_head, n)
         });
         if cache.summaries.len() < row.n_blocks {

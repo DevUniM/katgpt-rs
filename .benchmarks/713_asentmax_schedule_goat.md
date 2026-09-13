@@ -279,6 +279,101 @@ fixture drift that changes the routing scale is caught.
    the regime itself does not occur on this surface — caveat #2 of the P0
    record, now measured.
 
+## Long-context addendum — σ̂(n) at 173 blocks: climb-and-saturate below the σ≥1 regime; P0.7 verdict qualified at n≥24 (2026-09-13, Issue 762 T0)
+
+The P0.7 addendum's caveat #1 ("n ≤ 32 … production 65k contexts reach 1024
+blocks — untested") is closed on the axis it named: a second committed fixture
+at **11,093 tokens / 173 blocks** — the same P0.7 prompt with its needle
+replanted at the `.research/549`/`.research/489` boundary (block 94, ~55%
+depth) and a needle-referencing suffix appended (retrieval queries, no verbatim
+repeat). Same model, same capture pipeline, log-spaced k-ends to 173 + dense
+last-3 ends; **2400 rows / 32 streams / 2.71 MB** at
+`katgpt-attn/tests/data/asentmax_long_context.fixture` (FNV-pinned against
+the committed prompt; blocks ≤ 32 content-matched to the baseline fixture —
+the n≤32 buckets reproduce the baseline numbers bit-identically, proving
+capture determinism). Gate: `tests/asentmax_long_context_regate.rs` (5 tests,
+required-features `asentmax_schedule`).
+
+### σ̂(n) — the headline (T4.3/T4.4 priority answer)
+
+Fresh estimator per n-bucket (32 rows each):
+
+| n | 8 | 16 | 32 | 64 | 126 | 173 |
+|---|---|---|---|---|---|---|
+| σ̂ | 0.140 | 0.149 | 0.227 | 0.286 | 0.332 | 0.347 |
+
+σ̂ **climbs** with n (0.14 → 0.35, 2.5×) but **saturates** far below the
+σ ≥ 1 over-sparsification regime the correction targets. The n=8 bucket
+reproduces the baseline's 0.1409 exactly. **T4.3/T4.4 verdict: the large-σ
+surface does NOT appear even at 173 blocks — both stay deferred.** The gate
+pins σ̂ ∈ [0.05, 0.6] per bucket.
+
+### Support + oracle-mass vs n (raw vs scheduled)
+
+| n | raw \|S\| | sched \|S\| | raw mass | sched mass | Δ mass |
+|---|---|---|---|---|---|
+| 4 | 3.6 | 3.8 | 0.9852 | 0.9907 | +0.006 |
+| 8 | 5.0 | 5.2 | 0.8987 | 0.8670 | −0.032 |
+| 16 | 6.4 | 6.5 | 0.7374 | 0.7160 | −0.021 |
+| 24 | 6.5 | 7.6 | 0.6386 | 0.6543 | +0.016 |
+| 32 | 5.1 | 6.6 | 0.5791 | 0.6098 | +0.031 |
+| 48 | 5.8 | 8.2 | 0.5736 | 0.6089 | +0.035 |
+| 64 | 6.2 | 9.6 | 0.4886 | 0.5568 | +0.068 |
+| 94 | 6.2 | 10.7 | 0.5024 | 0.5579 | +0.056 |
+| 126 | 4.8 | 9.9 | 0.5199 | 0.5848 | +0.065 |
+| 173 | 4.9 | 10.5 | 0.5724 | 0.6224 | +0.050 |
+
+Mean over all 2400 rows: raw 0.5937, scheduled 0.6278 (**Δ +0.0341**) — the
+P0.7 "no gain" verdict (measured −0.0172 at n≤32) **REVERSES at n ≥ 24** and
+the scheduled arm wins every bucket from n=24 to 173. Raw support does not
+collapse (5.12 at n=32 → 4.88 at n=173 — no over-sparsification cliff) but it
+**erodes in coverage terms**: flat ~5 support against a 5.4× larger candidate
+set leaves covered mass falling to 0.46–0.57, while the scheduled arm scales
+support with n (6.6 → 10.5) and holds covered mass ≈ 0.62.
+
+**Budget confound (stated honestly):** the scheduled mass gain is largely a
+support-size effect. Per selected block the raw arm is far more efficient
+(0.117 mass/block at n=173 vs 0.059); the scheduled arm's 5.6 extra blocks
+carry avg mass ≈ 0.009/block — ~2.7× a random block (0.0033) but far below
+the raw arm's top picks. Whether the coverage gain is “worth” 2.1× gathered
+blocks is a routing-budget-policy question (the P1 derived-k controller is
+the mechanism that governs exactly this), not a free quality win. The gate
+pins parity-or-better (Δ ≥ −0.01) — the measured +0.034 is the pinned
+finding, the confound is the recorded context for reading it.
+
+### Deep needle (block 94) — oracle-limited, measured twice
+
+The deep needle NEVER wins oracle top-1 on this fixture: max needle mass
+**0.105**, measured on BOTH the unreferenced-needle prompt AND the
+retrieval-suffix prompt (the 8B ternary model does not solve indirect-anaphora
+needle retrieval at ~11k context on this content — a real model finding, not
+a harness gap). The rank axis is measurable though: needle reaches oracle
+top-8 in 27/704 rows past it (mean rank 48.9, top-16 in 91 rows). Among those
+top-8 rows, support retention: **raw 8/27 (29.6% vs a 4.8% random-selection
+baseline), scheduled 16/27 (59.3% vs 9.6%)** — both arms key on
+needle-relevant summaries ~6× above chance with no oracle concentration, and
+the scheduled arm retains at 2× the raw rate. Gates pin the diffuse-oracle
+band (max mass ∈ [0.02, 0.60]), ≥15% raw retention, and sched ≥ raw.
+
+### G3 latency at n ≥ 96
+
+Router latency/row (704 rows, 20 iters after warm-up): raw **52.89 µs**,
+scheduled **54.30 µs** (ratio **1.027**) — the O(n) estimator scan stays
+noise-level at 173 blocks. PASS.
+
+### Verdict
+
+- σ̂ climbs-and-saturates below the σ≥1 regime ⇒ **T4.3/T4.4 stay deferred**
+  (their premise surface still does not exist on real paths).
+- The P0.7 promotion verdict is **qualified, not reversed**: at n ≥ 24 the
+  scheduled arm wins mean oracle-mass (growing with n, +0.034 overall,
+  +0.05–0.07 at n ≥ 64) and doubles deep-needle top-8 retention — but the
+  gain is budget-confounded (support 2.1×). `asentmax_schedule` **stays
+  opt-in**; the reopen condition is now measurable: an equal-budget axis or
+  the P1 derived-k controller comparison must show the selection (not just
+  the support size) wins before any default-on proposal. Filed as the
+  promotion-review task in Issue 762.
+
 ## P2/P3 substrate check (substrate-first skill)
 
 - Searched vocabulary variants: `eviction`/`window`/`kv_retention`/`prune` on attention paths (katgpt-kv `cache_prune::SummedAreaTable` is a different concern — saliency-based, not distance-windowed; `WallPrefixState::min_retention_at_block` is decay-based, not theorem-backed); `incremental`/`streaming` entmax (nothing — `entmax_1p5_into` is the full-resort baseline P3 replaces on the decode path).

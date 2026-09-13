@@ -764,6 +764,38 @@ struct CaptureSpec {
     layers: Vec<usize>,
     q_heads: Vec<usize>,
     k_ends: std::collections::HashSet<usize>,
+    /// KV heads whose block summaries are captured. EMPTY = all (the P0.7
+    /// baseline shape; also the validate/dump arms, which capture nothing).
+    k_heads: std::collections::HashSet<usize>,
+}
+
+/// k_end sampling for capture: every end ≤ 32 (exact P0.7 baseline parity —
+/// the committed 32-block fixture regenerates bit-identically), then
+/// log-spaced strides beyond (2 to 64, 4 above) — the n-axis needs coverage,
+/// not every point, once n grows. Always includes the final block, and long
+/// profiles (> 40 blocks) additionally carry the last-3 dense ends: the
+/// needle-referencing suffix's retrieval queries live there, and a stride
+/// ladder alone skips the exact block-ends where the deep-needle axis fires.
+fn k_end_set(total_blocks: usize) -> Vec<usize> {
+    let mut ends: Vec<usize> = (4..=total_blocks.min(32)).collect();
+    let mut e = 34;
+    while e <= total_blocks {
+        ends.push(e);
+        e += if e <= 64 { 2 } else { 4 };
+    }
+    if ends.last().copied().unwrap_or(0) < total_blocks {
+        ends.push(total_blocks);
+    }
+    if total_blocks > 40 {
+        for t in (total_blocks - 3)..total_blocks {
+            if !ends.contains(&t) {
+                ends.push(t);
+            }
+        }
+        ends.sort_unstable();
+        ends.dedup();
+    }
+    ends
 }
 
 struct Summaries {
@@ -903,6 +935,9 @@ fn prefill_capture(
         if sampled {
             let n_blocks = t_len / BLOCK;
             for kvh in 0..m.n_kv {
+                if !cap.k_heads.is_empty() && !cap.k_heads.contains(&kvh) {
+                    continue;
+                }
                 let mut sums = vec![0f32; n_blocks * hd];
                 for b in 0..n_blocks {
                     for t in b * BLOCK..(b + 1) * BLOCK {
@@ -1035,6 +1070,7 @@ fn validate_ppl(m: &Qwen3, rope_for: &impl Fn(usize) -> RopeTable, tokens: &[u32
             layers: vec![],
             q_heads: vec![],
             k_ends: std::collections::HashSet::new(),
+            k_heads: std::collections::HashSet::new(),
         };
         let (_, _, hidden) = prefill_capture(m, &rope, chunk, &cap, n_threads);
         // final norm + lm_head
@@ -1063,45 +1099,53 @@ fn validate_ppl(m: &Qwen3, rope_for: &impl Fn(usize) -> RopeTable, tokens: &[u32
 // ──────────────────────────────────────────────────────────────────────────
 
 fn main() {
-    let prompt: &str = include_str!("../tests/data/asentmax_p07_prompt.txt");
     let mut model_path = PathBuf::from("/Users/katopz/git/riir-train/data/Ternary-Bonsai-8B-Q2_0.gguf");
     let mut out_path = PathBuf::from("tests/data/asentmax_p07_bonsai8b.fixture");
+    let mut prompt_file: Option<PathBuf> = None;
     let mut mode_validate = false;
     let mut mode_capture = false;
     let mut n_threads = 8usize;
+    let mut head_tokens: Option<usize> = None;
+    let mut dump_activations: Option<usize> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--model" => model_path = PathBuf::from(args.next().expect("--model PATH")),
             "--out" => out_path = PathBuf::from(args.next().expect("--out PATH")),
+            "--prompt-file" => prompt_file = Some(PathBuf::from(args.next().expect("--prompt-file PATH"))),
             "--threads" => n_threads = args.next().expect("--threads N").parse().expect("int"),
             "--validate-ppl" => mode_validate = true,
             "--capture" => mode_capture = true,
-            "--head-tokens" => {
-                let n: usize = args.next().expect("N").parse().expect("int");
-                let gg2 = read_gguf(&model_path).expect("gguf");
-                let tok2 = Bpe::from_gguf(&gg2);
-                let ids = tok2.encode(prompt);
-                println!("{}", ids[..n.min(ids.len())].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
-                return;
-            }
-            "--dump-activations" => {
-                // Debug: print per-layer residual norms for the first N tokens,
-                // comparable against llama-dump-layer-activations.
-                let n: usize = args.next().expect("N").parse().expect("int");
-                let gg2 = read_gguf(&model_path).expect("gguf");
-                let tok2 = Bpe::from_gguf(&gg2);
-                let ids = tok2.encode(prompt);
-                let ids = &ids[..n.min(ids.len())];
-                let m2 = load_qwen3(&gg2).expect("model");
-                let rope = rope_table(&m2, &gg2, ids.len());
-                let cap = CaptureSpec { layers: vec![], q_heads: vec![], k_ends: Default::default() };
-                eprintln!("tokens: {ids:?}");
-                let (_s, _r, _h) = prefill_capture(&m2, &rope, ids, &cap, n_threads);
-                return;
-            }
+            "--head-tokens" => head_tokens = Some(args.next().expect("N").parse().expect("int")),
+            "--dump-activations" => dump_activations = Some(args.next().expect("N").parse().expect("int")),
             other => panic!("unknown arg {other}"),
         }
+    }
+    let prompt: String = match &prompt_file {
+        Some(p) => std::fs::read_to_string(p).unwrap_or_else(|e| panic!("read {}: {e}", p.display())),
+        None => include_str!("../tests/data/asentmax_p07_prompt.txt").to_string(),
+    };
+    let prompt: &str = &prompt;
+    if let Some(n) = head_tokens {
+        let gg2 = read_gguf(&model_path).expect("gguf");
+        let tok2 = Bpe::from_gguf(&gg2);
+        let ids = tok2.encode(prompt);
+        println!("{}", ids[..n.min(ids.len())].iter().map(|i| i.to_string()).collect::<Vec<_>>().join(","));
+        return;
+    }
+    if let Some(n) = dump_activations {
+        // Debug: print per-layer residual norms for the first N tokens,
+        // comparable against llama-dump-layer-activations.
+        let gg2 = read_gguf(&model_path).expect("gguf");
+        let tok2 = Bpe::from_gguf(&gg2);
+        let ids = tok2.encode(prompt);
+        let ids = &ids[..n.min(ids.len())];
+        let m2 = load_qwen3(&gg2).expect("model");
+        let rope = rope_table(&m2, &gg2, ids.len());
+        let cap = CaptureSpec { layers: vec![], q_heads: vec![], k_ends: Default::default(), k_heads: Default::default() };
+        eprintln!("tokens: {ids:?}");
+        let (_s, _r, _h) = prefill_capture(&m2, &rope, ids, &cap, n_threads);
+        return;
     }
     if !mode_validate && !mode_capture {
         mode_validate = true;
@@ -1120,10 +1164,19 @@ fn main() {
         eprintln!("[validate] final PPL = {ppl:.4} (llama.cpp reference: 16.9778)");
     }
     if mode_capture {
+        let total_blocks = tokens.len() / BLOCK;
+        // Long-context profile (Issue 762 re-measure): beyond 40 blocks the
+        // n-axis needs coverage, not every point — log-spaced k-ends plus a
+        // gqa-spread 4-q-head row sample (kv-heads 0/2/4/7 only) keep the
+        // fixture ≈2 MB at 128+ blocks. ≤ 40 blocks stays the exact P0.7
+        // profile (8 q-heads, every end) so the committed baseline fixture
+        // regenerates bit-identically.
+        let long = total_blocks > 40;
         let cap = CaptureSpec {
             layers: vec![1, 5, 10, 14, 19, 23, 28, 33],
-            q_heads: vec![0, 4, 9, 13, 17, 22, 26, 31],
-            k_ends: (4..=tokens.len() / BLOCK).collect(),
+            q_heads: if long { vec![0, 9, 17, 31] } else { vec![0, 4, 9, 13, 17, 22, 26, 31] },
+            k_heads: if long { vec![0, 2, 4, 7].into_iter().collect() } else { Default::default() },
+            k_ends: k_end_set(total_blocks).into_iter().collect(),
         };
         let rope = rope_table(&m, &gg, tokens.len());
         let t0 = Instant::now();
