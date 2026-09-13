@@ -1284,6 +1284,18 @@ required-features = ["phase_separation"]
 name = "subspace_phase_gate_alloc_check"
 required-features = ["subspace_phase_gate"]
 
+# Issue 763 — signed-graph LIF reservoir GOAT gates: G1 exact dense parity
+# + G4 steady-state alloc (the green-zero rule: without the row, a plain
+# `cargo test` prints `ok. 0 passed` over the cfg'd-empty binary — the
+# cfg_gated_floor_gate SILENT-NOW class, caught by the docs gate on landing).
+[[test]]
+name = "lif_graph_g1"
+required-features = ["lif_graph"]
+
+[[test]]
+name = "lif_graph_g4_alloc"
+required-features = ["lif_graph"]
+
 # Plan 356 — Group Invariance Probe G4 (zero-allocation) GOAT gate. Uses a
 # CountingAllocator to verify discover_subgroup_into allocates 0 bytes after
 # warmup. Gated on group_invariance_probe so default features compile cleanly.
