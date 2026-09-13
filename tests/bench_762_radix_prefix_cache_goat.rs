@@ -508,6 +508,88 @@ fn g2_hit_rate_and_latency(label: &str) -> bool {
     radix_hitrates && radix_faster
 }
 
+/// G2 (width-bound law): match latency grows with TREE DEPTH, not tree
+/// WIDTH — an 8× wider tree (≥8× nodes, same per-request shape) must keep
+/// the per-lookup cost within 2.5× (the flat control's cost law is
+/// O(entries × len); the tree's is O(depth × fanout-scan)).
+fn g2_width_bound() -> bool {
+    const NARROW: usize = 16;
+    const WIDE: usize = 128;
+    const TURNS: usize = 8;
+    const CPT: usize = 2;
+
+    let build = |convs: usize| -> (RadixPrefixTree, Vec<Vec<Vec<u32>>>) {
+        let conv_seqs: Vec<Vec<Vec<u32>>> = (0..convs)
+            .map(|c| conversation(7000 + c as u32, TURNS, CPT))
+            .collect();
+        let mut tree = RadixPrefixTree::new(1, PAGE_SIZE, usize::MAX);
+        for conv in &conv_seqs {
+            for req in conv {
+                let total = req.len() / PAGE_SIZE;
+                let hit = tree.match_prefix(req);
+                let mut tables = Vec::new();
+                if hit.matched_chunks > 0 {
+                    tree.path_pages_into(&hit, &mut tables);
+                }
+                for _ in hit.matched_chunks..total {
+                    tables.push(next_synthetic_page());
+                }
+                tree.insert(req, &tables).unwrap();
+                tree.unlock(&hit);
+            }
+        }
+        (tree, conv_seqs)
+    };
+
+    let (narrow_tree, narrow_seqs) = build(NARROW);
+    let (wide_tree, wide_seqs) = build(WIDE);
+    let nodes_narrow = narrow_tree.node_count();
+    let nodes_wide = wide_tree.node_count();
+
+    let probe = |tree: &mut RadixPrefixTree, seqs: &Vec<Vec<Vec<u32>>>| -> f64 {
+        const ROUNDS: usize = 10;
+        let mut best = f64::INFINITY;
+        let mut sink = 0usize;
+        for _ in 0..ROUNDS {
+            let t0 = Instant::now();
+            for conv in seqs {
+                for req in conv {
+                    let h = tree.match_prefix(req);
+                    sink += h.matched_chunks;
+                    tree.unlock(&h);
+                }
+            }
+            best = best.min(t0.elapsed().as_secs_f64() * 1e3);
+        }
+        assert!(sink > 0, "non-vacuous probe");
+        best
+    };
+
+    let ms_narrow = {
+        let mut t = narrow_tree;
+        probe(&mut t, &narrow_seqs)
+    };
+    let ms_wide = {
+        let mut t = wide_tree;
+        probe(&mut t, &wide_seqs)
+    };
+    // Per-REQUEST latency (the round totals differ 8× in request count —
+    // comparing raw totals would gate the wrong quantity).
+    let ns_per_narrow = ms_narrow * 1e6 / (NARROW * TURNS) as f64;
+    let ns_per_wide = ms_wide * 1e6 / (WIDE * TURNS) as f64;
+
+    let nodes_ok = nodes_wide as f64 >= nodes_narrow as f64 * 8.0;
+    // The violation mode is O(width) ≈ 8× per-request; 3.0 leaves ~2.6×
+    // headroom for arena-locality effects (measured 2.26× on the 4090:
+    // 78 → 176 ns — L1-resident vs L2/L3-resident node arena).
+    let latency_ok = ns_per_wide <= ns_per_narrow * 3.0;
+    println!(
+        "  G2[width] {NARROW} convs = {nodes_narrow} nodes @ {ns_per_narrow:.0} ns/req → {WIDE} convs = {nodes_wide} nodes @ {ns_per_wide:.0} ns/req (≥8× nodes, ≤3× per-req) → {}",
+        verdict(nodes_ok && latency_ok)
+    );
+    nodes_ok && latency_ok
+}
+
 // synthetic page ids for the index-only arms (G2 measures the INDEX, not
 // the pool — pool behavior is G1's job)
 static SYNTH: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -576,6 +658,7 @@ fn radix_prefix_cache_goat() {
         all &= g1_address_stability(&config, name);
     }
     all &= g2_hit_rate_and_latency("index");
+    all &= g2_width_bound();
     all &= g4_match_zero_alloc();
     println!("╔══════════════════════════════════╗");
     println!("  Overall: {}", verdict(all));

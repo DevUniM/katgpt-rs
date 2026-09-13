@@ -363,3 +363,66 @@ fn clear_releases_every_hold() {
     assert_eq!(tree.held_pages(), 0);
     assert_eq!(tree.node_count(), 0);
 }
+
+/// Randomized oracle equivalence (the follow-up hardening from the 09-14
+/// racing duplicate — its one genuinely-additive test class, adapted to the
+/// chunk-floor contract): for arbitrary random inserts over a tiny alphabet
+/// (heavy sharing + mid-chunk divergence) and random query mutations,
+/// `match_prefix` must equal floor(lcp / page_tokens) of the brute-force
+/// oracle over every served sequence. Budget = ∞ so eviction never shrinks
+/// the indexed set; no lock leaks at the end (every serve unlocks).
+#[test]
+fn randomized_oracle_equivalence() {
+    for seed in 0u64..24 {
+        let mut r = fastrand::Rng::with_seed(seed);
+        let mut tree = RadixPrefixTree::new(NL, PT, usize::MAX);
+        let mut pool = MockPool::new();
+        let mut served: Vec<Vec<u32>> = Vec::new();
+
+        for _ in 0..40 {
+            // 1..=4 chunk-length sequences over an 8-token alphabet: forces
+            // trunk sharing, mid-chunk divergence, and duplicate inserts.
+            let chunks = 1 + r.usize(..4);
+            let toks: Vec<u32> = (0..chunks * PT).map(|_| r.u32(..8)).collect();
+            serve(&mut tree, &mut pool, &toks);
+            served.push(toks);
+        }
+
+        // Queries: the served sequences, their prefixes/extensions, and
+        // fresh mutations — each must match the chunk-floor oracle.
+        let mut queries: Vec<Vec<u32>> = served.clone();
+        for _ in 0..40 {
+            let base = &served[r.usize(..served.len())];
+            let cut = r.usize(..=base.len());
+            let mut q = base[..cut].to_vec();
+            for _ in 0..r.usize(..24) {
+                q.push(r.u32(..8));
+            }
+            queries.push(q);
+        }
+
+        for q in &queries {
+            let hit = tree.match_prefix(q);
+            tree.unlock(&hit);
+            let lcp = served
+                .iter()
+                .map(|s| {
+                    s.iter()
+                        .zip(q)
+                        .position(|(a, b)| a != b)
+                        .unwrap_or(s.len().min(q.len()))
+                })
+                .max()
+                .unwrap_or(0);
+            assert_eq!(
+                hit.matched_chunks,
+                lcp / PT,
+                "seed {seed} query len {} lcp {lcp}",
+                q.len()
+            );
+        }
+        // Every serve + probe unlocked — no lock leaks across 40 serves ×
+        // 80 probes.
+        assert_eq!(tree.total_locks(), 0, "seed {seed} lock leak");
+    }
+}

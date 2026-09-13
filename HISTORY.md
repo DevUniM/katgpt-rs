@@ -62,6 +62,19 @@ consumer note (T5) lives in `riir-gpu`'s `qwen38_prefix_cache.rs` module
 doc — when a multi-request serving lane lands, consume this primitive, do
 NOT re-derive a private tree.
 
+**Follow-up hardening (2026-09-14, 4090 session — the racing duplicate's
+additive tail):** a parallel session independently built the same primitive
+(the dual-allocation landed first here — the pushed implementation won,
+the duplicate dropped per the numbering-collision discipline). Its two
+genuinely-new test classes were adapted onto the landed API and added:
+`randomized_oracle_equivalence` (24 seeds × 40 random inserts × 80 mutated
+queries vs the brute-force floor(lcp/page_tokens) oracle — the class no
+hand-shaped test enumerates) and the `G2[width]` gate (78 → 186 ns/req at
+exactly 8× nodes, ≤3× per-request — the depth-not-width law, gated
+per-request after the first draft compared raw round totals across 8×
+request counts and false-REDA; violation mode is O(width) ≈ 8×, so 3.0
+leaves ~2.6× headroom over the measured 2.4× arena-locality effect).
+
 ## Issue 770 (2026-09-13, M3 session) resolved — the counter walker rebuilt per-commit; the 769 adjudication was partly an instrument artifact (verdict-review round 2)
 
 The verdict reviewer re-derived every landed reset row against its commit's
