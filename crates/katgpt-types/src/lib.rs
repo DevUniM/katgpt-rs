@@ -136,7 +136,7 @@ pub use inference::{DataGate, GateDecision, ProposerTask, TaskType};
 pub use kv_cache::QuantizedKVCache;
 pub use leaky_core::leaky_step;
 pub use looping::{CacheStrategy, IterationMode, SubStepStrategy, TrainingFreeLoopConfig};
-pub use lora::{LoraAdapter, LoraPair, lora_apply};
+pub use lora::{LoraAdapter, LoraPair, WeightEpoch, lora_apply};
 #[allow(deprecated)]
 pub use math::sample_token;
 #[cfg(feature = "sparse_mlp")]

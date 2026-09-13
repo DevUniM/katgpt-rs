@@ -291,6 +291,21 @@ fn main() {
         "bidirectional attn", "causal attn ×"
     );
 
+    // KV-cache epoch contract (riir-ai Issue 938 — the RLT staleness law):
+    // the shared cache below IS mixed-epoch by design — rows [0..P) carry
+    // the READER's weight epoch, decode rows carry the WRITER's. Plan 025
+    // accepts this (the modality switch is the point); the acceptance is
+    // documented HERE, at the switch site, per the law. Exactness-claiming
+    // consumers must not assume single-epoch exactness across this seam.
+    let reader_epoch = lora_pair.reader.as_ref().map(|a| a.weight_epoch());
+    let writer_epoch = lora_pair.writer.as_ref().map(|a| a.weight_epoch());
+    println!("  KV epochs: reader={reader_epoch:?} writer={writer_epoch:?}");
+    if reader_epoch != writer_epoch {
+        println!("  ✅ DOCUMENTED: mixed-epoch KV cache BY DESIGN (Plan 025 acceptance)");
+    } else {
+        println!("  ⚠️  reader/writer epochs match — no modality switch in effect");
+    }
+
     if all_valid && !generated.is_empty() {
         println!("  ✅ PROVEN: generate_with_prefill produces valid tokens");
         println!("  ✅ PROVEN: Reader→Writer LoRA switch works end-to-end");
