@@ -1318,6 +1318,45 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 
 ## Issue log (resolved)
 
+- **Issue 763 — signed-graph LIF reservoir primitive, event-driven sparse propagation (fly-connectome survey fusion)** RESOLVED + removed
+  (2026-09-13; landed `74fe08f1`; issue file removed at close, this row + [Bench 760](.benchmarks/760_lif_graph_goat.md) + git history are the durable record).
+  The fly-connectome architecture class as a katgpt-core primitive behind opt-in
+  `lif_graph`: `SignedAdjacency` (weighted signed CSR, sign pre-folded — the RuVector
+  layout) + `LifParams` (Shiu et al. Nature 2024 canonical current-based LIF constants,
+  exact exponential integration: `a_m`/`a_s`/`c_gs` precomputed, 3 muls per active
+  neuron per tick) + `LifReservoir` (timing-wheel delay ring, PSP-mV weight units
+  `w·t_mbr/tau_syn` — single-synapse 0.275 mV vs the 7 mV gap = coincidence
+  detection, ~26 synchronous synapses to fire) + `fit_readout` consuming
+  `linalg::ridge_solve_direct_f64` (the KARC precedent — closed-form, gradient-free;
+  `lif_graph` joined the linalg cfg any-list at birth, the Issue-701 class).
+  **The design's core: the exact-parity active set** — quiescence = the bitwise fixed
+  point of the shared per-node update, so skipping a quiescent node IS the identity:
+  event-driven `step` and dense `step_dense` produce bit-identical trajectories (not
+  tolerance-based — the RuVector dropout is approximate by design). G1: 7 tests across
+  sparse-burst / cascade-saturation / chain-ring regimes (per-tick spike sets + final
+  v/g/refrac bitwise; run-twice determinism; exact-delay chain 0/18/36; Maslov–Sneppen
+  degree preservation; never-hit nodes bitwise at rest; active-set churn + drain).
+  Two parity/alloc hazards caught by the gates during development, both recorded for
+  the class: (1) **spike-order ULP accumulation** — the event path originally scheduled
+  ring writes in active-set visit order while dense collected ascending; two spikers
+  hitting one target accumulated `g += w` in different orders → 2-ULP divergence (the
+  G1 gate caught it at g[295]); fix = canonical ascending spike order both paths.
+  (2) **the ring-slot alignment rule** — a G4 fixture failed with 6 recurring allocs at
+  every fire tick: one bucket's amortized doubling 4→…→128, recurring because the
+  period (1400) was not a multiple of the ring length (18), so the schedule slot
+  shifted 14/period cycling through 9 lazy-priming buckets; fix = slot-aligned period
+  (1404 = 18×78). G2 (Bench 760, 4090 host CPU): vs the classic dense-W·spike matvec
+  baseline **97,285× at N=10k/3.1% active** (gate ≥3×); vs the CSR full-scan arm
+  **34.8×** at 3.1% active (the honest active-set axis); saturated cells 0.91×/1.08×
+  — parity, the RuVector saturation-collapse class measured not asserted. G4: 0
+  steady-state allocs on both step paths (2,800-tick warmup, slot-aligned stationary
+  orbit, non-vacuous 60+ spikes). Controls ship as builders (`er_matched`,
+  `maslov_sneppen` — degree preservation pinned). **Stays OPT-IN** per the
+  consumer-first promotion rule (karc_lod_tier/hebbian precedents); the named consumer
+  path is the riir-ai per-archetype circuit shard + per-NPC readout (riir-ai Research
+  379 §7). Feature catalog §108; README/examples claim sites 596→597 (default count
+  unchanged at 200 — lif_graph is opt-in); count_features.py all-green at 597.
+
 - **Issue 764 — `LoraPair` KV-cache weight-epoch contract unspecified (public twin of riir-ai Issue 938)** RESOLVED + removed
   (2026-09-13; landed `49f5d245` + `aa163896` + `a7d6d8f0`; resolution verified on the 4090 session's issue sweep —
   issue file removed at close, this row + git history are the durable record).
