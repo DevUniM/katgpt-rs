@@ -105,6 +105,35 @@ pub enum SsmaxMode {
         /// large values give small `s_L`, sharpening mildly). Clamped on use.
         rolling_delta: f32,
     },
+    /// Hold concentration `c` over the top-`k` keys — the analytic
+    /// coefficient from **Lemma 2's softmax side** (Research 549 §2.3;
+    /// Issue 762 T4.1): under two-level logits, the top-`k` hold softmax
+    /// mass ≥ `c` iff the logit gap satisfies
+    /// `Δ ≥ ln((n−k)·c/(k·(1−c)))` — the exact finite-`n` requirement that
+    /// SSMax's `s_L·log N` approximates.
+    ///
+    /// The exact multiplier is `ln((n−k)·c/(k·(1−c)))/Δ̂` (the temperature
+    /// `θ* = Δ̂/ln(...)` inverted into this enum's logit-multiply socket).
+    /// [`Self::resolve_s_l`] returns the **large-n limit** — `1/Δ̂`, clamped
+    /// `[0.1, 10.0]`, identical to [`Self::Adaptive`] (the finite-n
+    /// correction vanishes as `ln n` dominates the constant);
+    /// [`Self::multiplier`] and [`crate::ssmax::SsmaxConfig::from_mode`]
+    /// carry the exact finite-`n` form. Degenerate rules: `k ≥ n`, `n ≤ 1`,
+    /// or a demand at/below the uniform share (`c ≤ k/n` — no sharpening
+    /// needed) resolve to the identity multiplier `1.0`.
+    HoldConcentration {
+        /// Target concentration — the top-`k` softmax mass to hold, in
+        /// `(0, 1)`. Clamped to `[1e-6, 1 − 1e-6]` on use.
+        c: f32,
+        /// Number of keys that should jointly hold the concentration
+        /// (`1 ≤ k < n`).
+        k: usize,
+        /// Caller-managed rolling estimate of the logit gap `Δ̂` — the same
+        /// producer/socket as [`Self::Adaptive`]'s `rolling_delta`
+        /// ([`RollingDeltaEstimator`] under `ssmax_adaptive`). Floored at
+        /// `1e-3` on use.
+        rolling_delta: f32,
+    },
 }
 
 impl Default for SsmaxMode {
@@ -121,11 +150,17 @@ impl SsmaxMode {
     /// - [`Adaptive`](SsmaxMode::Adaptive) → returns `1/rolling_delta` clamped
     ///   to `[0.1, 10.0]` (with `rolling_delta` floored at `1e-3` to avoid
     ///   division by zero).
+    /// - [`HoldConcentration`](SsmaxMode::HoldConcentration) → the **large-n
+    ///   limit** `1/rolling_delta` clamped `[0.1, 10.0]` (identical to
+    ///   Adaptive — the finite-n correction vanishes as `ln n` dominates).
+    ///   The exact finite-n form lives in [`Self::multiplier`] and
+    ///   [`SsmaxConfig::from_mode`].
     #[inline]
     pub fn resolve_s_l(&self) -> f32 {
         match self {
             Self::Fixed { s_l } => *s_l,
-            Self::Adaptive { rolling_delta } => {
+            Self::Adaptive { rolling_delta }
+            | Self::HoldConcentration { rolling_delta, .. } => {
                 (1.0_f32 / rolling_delta.max(1e-3)).clamp(0.1, 10.0)
             }
         }
@@ -136,9 +171,39 @@ impl SsmaxMode {
     /// `log_n` is `ln(N)` where N is the number of attended keys. The caller
     /// passes it in (rather than us computing `ln(N)` here) because the caller
     /// already knows N and we don't want to recompute `ln` in the hot loop.
+    ///
+    /// [`HoldConcentration`](SsmaxMode::HoldConcentration) is n-aware: it
+    /// reconstructs `n = exp(log_n)` (exact to f32 rounding — the same
+    /// precision class as any other `ln`/`exp` roundtrip here, and far below
+    /// the Δ̂ EMA's estimation error) and returns the exact finite-n
+    /// multiplier `ln((n−k)·c/(k·(1−c)))/Δ̂`, with the s_L-equivalent clamped
+    /// to `[0.1, 10.0]` for parity with Adaptive's safety band. Identity
+    /// (`1.0`) for the degenerate cases documented on the variant.
     #[inline]
     pub fn multiplier(&self, log_n: f32) -> f32 {
-        self.resolve_s_l() * log_n
+        match self {
+            Self::Fixed { .. } | Self::Adaptive { .. } => self.resolve_s_l() * log_n,
+            Self::HoldConcentration { c, k, rolling_delta } => {
+                if log_n <= 0.0 {
+                    return 1.0; // n ≤ 1 (or the SsmaxConfig n≤1 convention): no sharpening
+                }
+                let n = log_n.exp();
+                let kf = *k as f32;
+                if !n.is_finite() || n <= kf {
+                    return 1.0; // malformed n, or k ≥ n: no valid top-k
+                }
+                let c = c.clamp(1e-6, 1.0 - 1e-6);
+                // uniform top-k share is k/n; a demand at/below it needs no sharpening
+                if c * n <= kf {
+                    return 1.0;
+                }
+                let ln_ratio = ((n - kf) * c / (kf * (1.0 - c))).ln();
+                // Δ̂ floored at 1e-3 (the Adaptive convention); s_L-equivalent
+                // clamped to [0.1, 10.0] (parity with Adaptive's safety band).
+                let s_l = (ln_ratio / rolling_delta.max(1e-3) / log_n).clamp(0.1, 10.0);
+                s_l * log_n
+            }
+        }
     }
 }
 
@@ -162,13 +227,21 @@ impl SsmaxConfig {
     ///
     /// `log_n` is `ln(N)`, with `ln(1) = 0` and `ln(0) = 0` by convention
     /// (so SSMax is a no-op for sequences of length ≤ 1).
+    ///
+    /// For [`SsmaxMode::HoldConcentration`] the cached `s_l` is the **exact
+    /// finite-n** analytic coefficient (`multiplier(log_n)/log_n` — the
+    /// n-aware form; `resolve_s_l()` alone only carries its large-n limit).
+    /// For the other variants this is bit-identical to `resolve_s_l()`.
     #[inline]
     pub fn from_mode(mode: &SsmaxMode, n: usize) -> Self {
         let log_n = if n <= 1 { 0.0 } else { (n as f32).ln() };
-        Self {
-            s_l: mode.resolve_s_l(),
-            log_n,
-        }
+        let s_l = match mode {
+            SsmaxMode::HoldConcentration { .. } if log_n > 0.0 => {
+                mode.multiplier(log_n) / log_n
+            }
+            _ => mode.resolve_s_l(),
+        };
+        Self { s_l, log_n }
     }
 
     /// The multiplicative factor applied to pre-attention logits: `s_L · log(N)`.
@@ -575,6 +648,108 @@ mod tests {
     fn default_mode_is_fixed_one() {
         // The truly-modelless default: s_L = 1.0.
         assert_eq!(SsmaxMode::default(), SsmaxMode::Fixed { s_l: 1.0 });
+    }
+
+    // ── HoldConcentration (Issue 762 T4.1 — Lemma 2 softmax side) ──────────
+
+    /// Softmax top-k mass of a two-level logit row (top-k at `top`, rest at
+    /// `top − gap`) — the exact quantity Lemma 2's softmax side bounds.
+    fn two_level_topk_mass(n: usize, k: usize, gap: f32) -> f64 {
+        let top = 1.0_f64;
+        let rest = top - gap as f64;
+        let z = k as f64 * top.exp() + (n - k) as f64 * rest.exp();
+        k as f64 * top.exp() / z
+    }
+
+    #[test]
+    fn hold_concentration_exact_threshold_holds_c() {
+        // The G1 known-answer: on a two-level row with gap Δ̂, the analytic
+        // multiplier m* = ln((n−k)c/(k(1−c)))/Δ̂ lifts the top-k mass to
+        // exactly c (within f32 rounding + the [0.1,10] s_L band).
+        let (n, k, c) = (1000_usize, 1_usize, 0.9_f32);
+        let delta = 0.5_f32; // the rolling-Δ̂ estimate matches the row's true gap
+        let mode = SsmaxMode::HoldConcentration { c, k, rolling_delta: delta };
+        let m = mode.multiplier((n as f32).ln());
+        // exact-form check (inside the clamp band)
+        let ln_ratio = ((n as f32 - k as f32) * c / (k as f32 * (1.0 - c))).ln();
+        let expect = ln_ratio / delta;
+        assert!((m - expect).abs() < 1e-3, "m {m} vs exact {expect}");
+        // the contract: applying m* to a row with true gap Δ̂ gives an
+        // effective gap of m*·Δ̂ = ln_ratio → top-k mass ≈ c exactly.
+        let mass = two_level_topk_mass(n, k, m * delta);
+        assert!(
+            (mass - c as f64).abs() < 5e-3,
+            "post-multiplier top-k mass {mass} must be ≈ c = {c}"
+        );
+        // and without the intervention the row does NOT hold c
+        let base = two_level_topk_mass(n, k, 1.0);
+        assert!(base < c as f64, "sanity: base mass {base} already ≥ c");
+    }
+
+    #[test]
+    fn hold_concentration_identity_degenerates() {
+        // k ≥ n → identity
+        let m = SsmaxMode::HoldConcentration { c: 0.9, k: 8, rolling_delta: 0.5 }.multiplier((8.0_f32).ln());
+        assert_eq!(m, 1.0);
+        // n ≤ 1 → identity
+        let m = SsmaxMode::HoldConcentration { c: 0.9, k: 1, rolling_delta: 0.5 }.multiplier(0.0);
+        assert_eq!(m, 1.0);
+        // demand at/below the uniform share (c ≤ k/n) → identity
+        let m = SsmaxMode::HoldConcentration { c: 0.4, k: 500, rolling_delta: 0.5 }
+            .multiplier((1000.0_f32).ln());
+        assert_eq!(m, 1.0);
+    }
+
+    #[test]
+    fn hold_concentration_monotone_in_n_and_c() {
+        // More keys (bigger n) or a higher demand (bigger c) need a bigger
+        // multiplier — the Lemma-2 growth SSMax exists to cancel.
+        let mode = |c: f32| SsmaxMode::HoldConcentration { c, k: 1, rolling_delta: 0.5 };
+        let m_100 = mode(0.9).multiplier(100.0_f32.ln());
+        let m_10k = mode(0.9).multiplier(10_000.0_f32.ln());
+        assert!(m_10k > m_100, "multiplier must grow with n: {m_10k} !> {m_100}");
+        let m_low = mode(0.5).multiplier(1000.0_f32.ln());
+        let m_high = mode(0.99).multiplier(1000.0_f32.ln());
+        assert!(m_high > m_low, "multiplier must grow with c: {m_high} !> {m_low}");
+    }
+
+    #[test]
+    fn hold_concentration_resolve_s_l_is_the_large_n_limit() {
+        // resolve_s_l (n-free) = 1/Δ̂ clamped — identical to Adaptive; the
+        // finite-n exactness lives in multiplier()/from_mode.
+        let hc = SsmaxMode::HoldConcentration { c: 0.9, k: 1, rolling_delta: 0.25 };
+        let ad = SsmaxMode::Adaptive { rolling_delta: 0.25 };
+        assert_eq!(hc.resolve_s_l(), ad.resolve_s_l());
+        assert!((hc.resolve_s_l() - 4.0).abs() < TOL);
+        // finite-n multiplier is exact (n-aware), not resolve_s_l·log_n:
+        let log_n = 1000.0_f32.ln();
+        assert!((hc.multiplier(log_n) - ad.multiplier(log_n)).abs() > 1e-3);
+    }
+
+    #[test]
+    fn hold_concentration_config_caches_exact_form() {
+        let mode = SsmaxMode::HoldConcentration { c: 0.9, k: 1, rolling_delta: 0.5 };
+        let n = 10_000_usize;
+        let cfg = SsmaxConfig::from_mode(&mode, n);
+        let direct = mode.multiplier((n as f32).ln());
+        assert!(
+            (cfg.multiplier() - direct).abs() < 1e-3,
+            "config {} vs direct {direct}",
+            cfg.multiplier()
+        );
+        // Fixed/Adaptive stay bit-identical through from_mode (regression):
+        let fixed = SsmaxConfig::from_mode(&SsmaxMode::Fixed { s_l: 2.0 }, 10_000);
+        assert_eq!(fixed.s_l, 2.0);
+    }
+
+    #[test]
+    fn hold_concentration_delta_floor_and_clamp_band() {
+        // Δ̂ → 0 explodes the analytic multiplier; the s_L band caps it at
+        // 10·log_n, and Δ̂ is floored at 1e-3 (the Adaptive convention).
+        let mode = SsmaxMode::HoldConcentration { c: 0.99, k: 1, rolling_delta: 1e-9 };
+        let log_n = 1000.0_f32.ln();
+        let m = mode.multiplier(log_n);
+        assert!((m - 10.0 * log_n).abs() < 1e-3, "clamp cap: {m} vs {}", 10.0 * log_n);
     }
 }
 

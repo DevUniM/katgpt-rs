@@ -374,6 +374,16 @@ pub mod shard_embedding;
 // G1+G2+G3+G4+G5 ALL PASS.
 #[cfg(feature = "ssmax_temperature")]
 pub mod ssmax;
+// Kamath range-law regime detector + normalized-entropy dispersion diagnostic
+// (Issue 762 T4.2, Research 549 — the ASEntmax duality's measurement half,
+// beside ssmax: same statistics family). `ρ = Δ̂/(2σ̂√(2 ln n))` classifies a
+// routing logit row as Gaussian-band (the Eq-10 damping regime) vs spiked
+// (needle present — over-sparsification desired); `H(p)/ln n` measures
+// Prop-1 dispersion. Pure one/two-pass modelless statistics over the shared
+// ungated `simd::logsumexp_parts` kernel; opt-in `logit_regime` until a
+// consumer promotes.
+#[cfg(feature = "logit_regime")]
+pub mod logit_regime;
 // SIMD LUT Dequantization — software analog of StreamDQ near-memory DQ
 // (Plan 431, Research 418, arXiv:2607.08993 Jeong et al. SK Hynix 2026). Generic
 // format-parameterized dequantize primitive that replaces the per-element

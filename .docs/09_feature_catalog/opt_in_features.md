@@ -3740,9 +3740,55 @@ metabolic axis + swarm energy commons) re-gates at Phase 4 before any
 promotion decision.
 
 📖 Research: [550](../../.research/550_Metabolic_Gate_Energy_Coupled_Compute.md) ·
-Consumer: riir-ai [Plan 585](../../../riir-ai/.plans/585_metabolic_cognition_self_limiting_defection.md) ·
+Consumer: riir-ai [Plan 585](../../../riir-ai/.plans/585_metabolic_cognition_self_limiting_defeat.md) ·
 Bench: [716](../../.benchmarks/716_metabolic_gate_goat.md) — G1/G2/G3/G4
 ALL PASS (K-residual 6.7e-6; depth 3 ns / share sub-ns / K-solver 412 ns
 bounded; 0 allocs) ·
 Source: [arXiv:2609.10817](https://arxiv.org/abs/2609.10817) ·
 Substrate: `crates/katgpt-core/src/metabolic_gate.rs`.
+
+## 106. direction_bank_audit — asymmetric Odd-One-Out interpretability + Cross-OOO diversity + greedy curation (Research 552 / Issue 759)
+
+Distilled from Issa/Liu/Ballé/Klindt (bioRxiv 2026.09.05.748439): the OOO
+axis (asymmetric) + Cross-OOO diversity + greedy curation over a direction
+bank — high-dimensional population-code interpretability as a modelless
+inference-time audit. `audit_bank_into` + `greedy_curate` over
+`exemplar_rbf_sim_into` similarity, `planted_cluster_bank` fixtures.
+
+🔧 Feature flag: `direction_bank_audit = []` (katgpt-core) — opt-in per the
+no-default-consumer rule (promotion needs a production consumer win).
+
+📖 Research: [552](../../.research/552_Asymmetric_OOO_Direction_Bank_Audit.md) ·
+Issue: 759 ·
+Bench: [758](../../.benchmarks/758_ooo_audit_goat.md) — G1/G2/G4 ALL
+PASS ·
+Source: [bioRxiv 2026.09.05.748439](https://www.biorxiv.org/content/10.64898/2026.09.05.748439v1) ·
+Substrate: `crates/katgpt-core/src/ooo_audit.rs`, bench
+`bench_759_ooo_audit_goat.rs` (named for the issue; the record is 758).
+
+## 107. logit_regime — Kamath range-law regime detector + normalized-entropy dispersion (Issue 762 T4.2, Research 549)
+
+The ASEntmax duality's measurement half, beside `ssmax`: `ρ = Δ̂/(2σ̂√(2 ln n))`
+compares a routing logit row's range against the Gaussian extreme-value law
+via an INDEPENDENT two-pass moment σ̂ — the range-law estimator alone is
+self-consistent by construction (it IS the range over the law), so only the
+ratio DETECTS. Gaussian band [0.35, 1.15] vs spiked (needle present —
+over-sparsification desired, do NOT damp); `spike_score = sigmoid(ln ρ)`;
+`H(p)/ln n` over the shared ungated `simd::logsumexp_parts` kernel (no
+`regime_probe` gate chain). Honest calibration pinned: a single outlier gives
+`ρ ≈ √n/(2√(2 ln n))` — magnitude-INVARIANT — so single-needle rows score
+0.7–0.8; threshold 0.55–0.65 for “a spike exists”. Companion T4.1:
+`SsmaxMode::HoldConcentration{c,k,rolling_delta}` (Lemma 2 softmax side, the
+exact finite-n coefficient) in the default-on ssmax module — the
+Adaptive-variant precedent (zero cost unless constructed).
+
+🔧 Feature flag: `logit_regime = []` (katgpt-core) — opt-in until a consumer
+GOAT-gates it onto a production path (candidates: the ASEntmax arm decision,
+the T0.1 equal-budget axis).
+
+📖 Issue: [762](../../.issues/762_asentmax_p4_stretch.md) ·
+Research: [549](../../.research/549_ASEntmax_Length_Adaptive_Entmax_Attention.md) ·
+Bench: [759](../../.benchmarks/759_logit_regime_goat.md) — G1/G2/G4 ALL
+PASS (exact thresholds at n=100..10k; 8.2–8.6 ns/elem; 0 allocs) ·
+Substrate: `crates/katgpt-core/src/logit_regime.rs` + the
+`HoldConcentration` variant in `ssmax.rs`.

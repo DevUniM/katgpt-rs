@@ -1,6 +1,6 @@
 # Issue 762: ASEntmax P4 stretch — HoldConcentration softmax upgrade, Kamath regime detector, per-head grid table, RoPE cutoff spectrum
 
-**Status:** OPEN — T0 re-measure DONE (2026-09-13, Bench 713 long-context addendum: σ̂ saturates 0.35 < σ≥1 regime → T4.3/T4.4 stay deferred; T0.1 promotion-review OWNER-GATED). Stretch backlog; no owner priority on the remainder.
+**Status:** OPEN — T0 DONE (Bench 713 long-context: σ̂ saturates 0.35 → T4.3/T4.4 deferred) · T4.1+T4.2 DONE (Bench 759, 2026-09-13) · T0.1 promotion-review OWNER-GATED — the only open item.
 **Origin:** Issue 747 P4 (resolved + removed; full record in git history `.issues/747_asentmax_modelless_mining.md`) · **Research:** [katgpt-rs/.research/549](../.research/549_ASEntmax_Length_Adaptive_Entmax_Attention.md) · **Evidence base:** Bench 713 (+ P1/P2/P3/P0.7 addenda).
 
 The real-model harness landed at Issue 747 P0.7 is reusable for every task
@@ -44,7 +44,7 @@ see T0.1 for the reopen condition.
   before any default-on proposal. Options: (a) close as stays-opt-in with the
   recorded condition, (b) fund the equal-budget axis (small: one metric in
   the long gate), (c) propose default-on for long-context profiles only.
-- [ ] **T4.1** `SsmaxMode::HoldConcentration{c,k}` — analytic `θ*(n) = Δ̂/ln((n−k)c/(k(1−c)))` from Lemma 2's softmax side (upgrades shipped SSMax with the exact coefficient).
-- [ ] **T4.2** Kamath range-law detector `ρ = Δ̂/(2σ̂√(2 log n))` (Gaussian vs spiked regime) + normalized-entropy dispersion diagnostic `H(p)/log n` (O(s) over support) — `katgpt-core` estimator module beside ssmax.
+- [x] **T4.1** `SsmaxMode::HoldConcentration{c,k}` — analytic `θ*(n) = Δ̂/ln((n−k)c/(k(1−c)))` from Lemma 2's softmax side. DONE (2026-09-13, Bench 759 G1a): exact finite-n multiplier `ln((n−k)c/(k(1−c)))/Δ̂` via `multiplier(log_n)`; `resolve_s_l` = the large-n limit `1/Δ̂` (= Adaptive); `from_mode` caches the exact form (Fixed/Adaptive bit-identical, re-pinned). 6 default-lane tests + bench G1a exact at n=100..10k, k∈{1,8}; 7–30 ns/call; ships ungated-within-module (Adaptive-variant precedent).
+- [x] **T4.2** Kamath range-law detector `ρ = Δ̂/(2σ̂√(2 log n))` + normalized-entropy dispersion diagnostic `H(p)/log n` — katgpt-core module beside ssmax. DONE (2026-09-13, Bench 759): `logit_regime` module (opt-in feature) — ρ against an INDEPENDENT two-pass moment σ̂ (the range-law estimator alone is self-consistent by construction — only the ratio detects); spike_score = sigmoid(ln ρ); entropy via the shared ungated `simd::logsumexp_parts` kernel (no `regime_probe` gate chain). Gaussian band [0.35, 1.15]; single-needle rows score 0.7–0.8 with the magnitude-invariance calibration documented; 8.2–8.6 ns/elem; 0 allocs. Consumers: the ASEntmax arm decision (don't-damp-spiked) + the T0.1 equal-budget axis.
 - [ ] **T4.3** Offline per-head (β,γ) grid sweep (frozen table, freeze/thaw-versioned) — only if the derived γ=−0.5 default passes P0 and a swept fit demonstrably beats it; harvested constants may also arrive from riir-train Plan 396 Ph2. **T0 verdict: stays deferred — the σ ≥ 1 regime does not appear at n ≤ 173 (σ̂ saturates 0.35).**
 - [ ] **T4.4** Prop 7/8 RoPE cutoff spectrum — retention must respect periodic re-entry windows (window union, not first cutoff). **Stretch (unchanged).**
