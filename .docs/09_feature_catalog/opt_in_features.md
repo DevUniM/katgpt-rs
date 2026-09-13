@@ -3826,3 +3826,47 @@ Research: [379](../../../riir-ai/.research/379_fly_connectome_fixed_wiring_reser
 Bench: [760](../../.benchmarks/760_lif_graph_goat.md) — G1/G2/G4 ALL PASS ·
 Substrate: `crates/katgpt-core/src/lif_graph.rs`, tests
 `lif_graph_g1.rs`/`lif_graph_g4_alloc.rs`, bench `bench_760_lif_graph_goat.rs`.
+
+## 109. mb_value — bounded three-factor (dopamine) plasticity value circuit (Issue 767, Research 380)
+
+The mushroom-body architecture class (riir-ai Research 380, distilled from
+adonis-singh/TMNF-C @ `eb6be045`; mechanism after Bennett/Nowotny et al., Nat.
+Commun. 12:2569, 2021): fixed random sparse PN rows → quantile-calibrated
+ReLU → **top-k KC code** (`select_nth_unstable_by` under the total order
+(drive, idx) — the selected set is exactly the full-sort reference's,
+G1-pinned) → approach-minus-avoid linear readout. The ENTIRE learning
+machinery is one bounded local rule — `w ← clamp(w − η·code_active·RPE·
+compartment_sign, 0, w0)` — online × reward-RPE × context-generalizing ×
+bounded, the quadrant no shipped mechanism covers (ridge/Hebbian readouts are
+batch; Elo/Beta are context-free per-candidate counters; cgsp curiosity
+consumes self-prediction error, not reward). The bound `[0, w0]` holds by
+construction under arbitrary (even ±inf) RPE streams; non-finite RPE is a
+no-op. Calibration is measurement, not learning: z-scores, PN quantile
+thresholds, a 17-step action-gain bisection to a target code-overlap, per-MBON
+`w0` normalization, and derived `η = α/(eff_app+eff_avd)` (scale-free
+ΔV-per-RPE). No softmax; `w()`/`set_w()` are the BLAKE3 freeze/thaw seam; NO
+connectome data ships (`fly()`/`toy()` are shape classes, seeded random
+wiring). For VALUE FORMATION feeding external selection — the source's own
+measured negative (action selection from shared codes is near-random at 50%
+KC overlap) ships verbatim in the module docs. Not UQ-bearing (point value
+for ranking).
+
+Measured (Bench 761, M3): toy-class full learning cycle ≈ 2.2 µs — **1,000
+NPCs learning online every tick ≈ 2.2 ms of the 50 ms 20 Hz budget**; fly
+scale: code 28.9 µs (2.28× over full sort, sparse regime), value 1.9 µs,
+update 4.1 µs; saturated honesty line: top-k 0.90× (degenerate at k=n). G1:
+toy-corridor value formation **r = 0.9705 vs the ridge-batch floor 0.9998 on
+the SAME codes** (margin 0.029 < 0.05 gate); distribution-shift arm — online
+re-adapts to 0.9444 while the frozen batch fit inverts to −0.9945.
+
+🔧 Feature flag: `mb_value = []` (katgpt-core) — opt-in until a consumer
+GOAT-gates it onto a production path (the named consumer: the riir-ai
+per-archetype frozen circuit + per-NPC dopamine-readout personality overlay,
+Research 380 §8).
+
+📖 Issue: [767](../../.issues/767_mb_value_dopamine_plasticity_primitive.md) ·
+Research: [380](../../riir-ai/.research/380_tmnf_c_mb_dopamine_value_circuit.md)
+(riir-ai, private) ·
+Bench: [761](../../.benchmarks/761_mb_value_goat.md) — G1/G2/G4 ALL PASS ·
+Substrate: `crates/katgpt-core/src/mb_value.rs`, tests
+`mb_value_g1.rs`/`mb_value_g4_alloc.rs`, bench `bench_767_mb_value_goat.rs`.

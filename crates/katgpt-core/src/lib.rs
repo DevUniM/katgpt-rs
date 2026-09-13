@@ -2223,7 +2223,11 @@ pub use katgpt_types::depth_invariance::{
     feature = "leakage_probe",
     // Issue 763: `lif_graph::fit_readout` consumes `ridge_solve_direct_f64`
     // (the KARC-precedent closed-form readout) — same rule, joined at birth.
-    feature = "lif_graph"
+    feature = "lif_graph",
+    // Issue 767: `mb_value`'s G1 floor test consumes `ridge_solve_direct_f64`
+    // (the ridge-batch-on-the-same-code baseline) — joined at birth per the
+    // same rule (the crate must compile when only this feature is on).
+    feature = "mb_value"
 ))]
 pub mod linalg;
 
@@ -2289,6 +2293,21 @@ pub use karc_dp::{KarcDpNoiseConfig, apply_dp_noise_to_wout};
 // consumer (the riir-ai per-archetype circuit shard path, Research 379 §7).
 #[cfg(feature = "lif_graph")]
 pub mod lif_graph;
+
+// mb_value — bounded three-factor (dopamine) plasticity value circuit
+// (Issue 767 / riir-ai Research 380, distilled from adonis-singh/TMNF-C @
+// eb6be045; mechanism after Bennett/Nowotny Nat. Commun. 12:2569 2021).
+// Fixed random sparse projection → top-k KC code → approach-minus-avoid
+// readout, with ONE bounded local rule as the entire learning machinery
+// (w ← clamp(w − η·code·RPE·sign, 0, w0) — the rating.rs Elo precedent for
+// legal online error-driven latent-state mutation). Value FORMATION feeding
+// external selection; no softmax; not UQ-bearing (point value for ranking);
+// no connectome data ships (seeded random wiring; fly-scale SHAPE classes
+// only). Calibration is measurement, not learning (z-scores, quantile
+// thresholds, 17-step action-gain bisection, derived η — ΔV-per-RPE ≈ α).
+// Opt-in — GOAT gate in .benchmarks/761_mb_value_goat.md.
+#[cfg(feature = "mb_value")]
+pub mod mb_value;
 
 // HOPE — Hilbert-Schmidt Capacity Kernel + Optimal Rank-1 Parent (Plan 469,
 // Research 454, arXiv:2607.21366 Mobahi & Bartlett, Google DeepMind 2026-07-24).

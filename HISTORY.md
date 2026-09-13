@@ -1945,6 +1945,32 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
   member manifests (owner call if ever wanted; the toolchain file already
   gates every command).
 
+- **Issue 767 — mb_value: bounded three-factor (dopamine) plasticity value circuit** RESOLVED + removed
+  (2026-09-13; landed with this commit; issue file removed at close, this row +
+  [Bench 761](.benchmarks/761_mb_value_goat.md) + git history are the durable record).
+  The mushroom-body architecture class (riir-ai Research 380, distilled from
+  adonis-singh/TMNF-C @ `eb6be045`; mechanism after Bennett/Nowotny Nat. Commun.
+  12:2569 2021) as a katgpt-core primitive behind opt-in `mb_value`: fixed random
+  sparse PN rows → quantile-calibrated ReLU → top-k KC code (`select_nth_unstable_by`
+  under the total order (drive, idx) — set ≡ full-sort reference, G1-pinned incl.
+  forced-ties) → approach-minus-avoid readout over per-KC distinct MBON synapses;
+  the ENTIRE learning machinery is `w ← clamp(w − η·code·RPE·compartment_sign, 0,
+  w0)` — online × reward-RPE × context-generalizing × bounded, the quadrant no
+  shipped mechanism covers (ridge/Hebbian batch, Elo/Beta context-free, cgsp
+  prediction-error). Bounds hold under adversarial RPE (±inf no-op, NaN no-op);
+  calibration is measurement (z-scores, quantile θ, 17-step action-gain bisection —
+  measured landing 0.4999 on target 0.5 — per-MBON w0 normalization, derived η =
+  α/(eff_app+eff_avd)); `w()`/`set_w()` the freeze/thaw seam; no softmax; NO
+  connectome data ships (fly()/toy() are shape classes). GOAT G1–G4 ALL PASS
+  (Bench 761): corridor value formation r=0.9705 vs ridge-batch floor 0.9998 on
+  the SAME codes (margin 0.029 < 0.05), shift arm — online re-adapts 0.9444 while
+  the frozen batch fit inverts −0.9945; toy cycle 2.2 µs (1,000 NPCs ≈ 4.4% of the
+  20 Hz tick budget); fly code 28.9 µs (2.28× full-sort, sparse), saturated
+  honesty line 0.90×. Joined the `linalg` cfg any-list at birth (the Bench-696
+  rule; the G1 floor consumes `ridge_solve_direct_f64`). Stays OPT-IN pending
+  consumer (riir-ai per-archetype circuit + per-NPC dopamine readout, Research
+  380 §8).
+
 ## Issue 744 — HRM-Text second-pass modelless extraction queue: CLOSED as resolved-negative (2026-09-11)
 
 The 8-candidate queue (3 ranked GOAT-worthy, 5 consumer-gated; source

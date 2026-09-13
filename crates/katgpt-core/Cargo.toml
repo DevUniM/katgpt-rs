@@ -311,6 +311,17 @@ leakage_probe = []
 # PASS (Bench 760); promotion needs a consumer (the riir-ai per-archetype
 # circuit shard path, Research 379 §7). Zero runtime cost unless invoked.
 lif_graph = []
+# mb_value (Issue 767 / riir-ai Research 380 — the fly wave's online-learning
+# half, distilled from adonis-singh/TMNF-C @ eb6be045 MIT, mechanism after
+# Bennett/Nowotny Nat. Commun. 12:2569 2021): bounded three-factor (dopamine)
+# plasticity value circuit — fixed random sparse projection → top-k KC code →
+# approach-minus-avoid readout; the ONLY weight change is the local rule
+# w ← clamp(w − η·code_active·RPE·compartment_sign, 0, w0). Online ×
+# reward-RPE × context-generalizing × bounded — the quadrant no shipped
+# mechanism covers (ridge/Hebbian = batch, Elo/Beta = context-free, cgsp =
+# prediction error). Value FORMATION feeding external selection (TMNF-C's
+# measured negative: selection from shared codes is near-random). Opt-in.
+mb_value = []
 # support_regime (Issue 693 / Research 513, arXiv:2608.22764 — LpWM: A Case
 # for Sparse Representations in World Models, Kuang et al. 2026-08-24): the
 # consecutive-tick TEMPORAL consumer of the iou kernel — support instability
@@ -1295,6 +1306,17 @@ required-features = ["lif_graph"]
 [[test]]
 name = "lif_graph_g4_alloc"
 required-features = ["lif_graph"]
+
+# Issue 767 — mb_value G1 (bounds-by-construction, toy-MDP value vs the
+# ridge-batch floor on the same code, distribution-shift arm, canonical
+# top-k parity, determinism). The ridge floor consumes linalg.
+[[test]]
+name = "mb_value_g1"
+required-features = ["mb_value"]
+
+[[test]]
+name = "mb_value_g4_alloc"
+required-features = ["mb_value"]
 
 # Plan 356 — Group Invariance Probe G4 (zero-allocation) GOAT gate. Uses a
 # CountingAllocator to verify discover_subgroup_into allocates 0 bytes after
@@ -2938,6 +2960,15 @@ required-features = ["logit_regime", "ssmax_temperature"]
 # Issue 763 — signed-graph LIF reservoir GOAT G2: event-driven vs CSR
 # full-scan vs the classic dense-W·spike-matvec baseline, at the sparse and
 # saturated activity regimes (G1 parity + G4 alloc gates live in tests/).
+# lif_graph (Issue 767 / riir-ai Research 380 — the fly wave's online-learning
+# half): the mushroom-body value circuit GOAT gate. Arms: canonical top-k
+# (select_nth) vs the full-sort reference; value; dopamine update; sparse
+# (kc_active/n_kc = 4.9%) and saturated (kc_active = n_kc) regimes.
+[[bench]]
+name = "bench_767_mb_value_goat"
+harness = false
+required-features = ["mb_value"]
+
 [[bench]]
 name = "bench_760_lif_graph_goat"
 harness = false
