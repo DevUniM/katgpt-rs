@@ -3096,8 +3096,12 @@ pub mod cond_audit;
 pub mod tpr;
 
 // special_fn — shared Lanczos ln_gamma substrate (Plan 597 T1.1): the one
-// ln_gamma in the crate, consumed by best_belief + bmr. UNGATED,
-// pub(crate), zero-cost when unused.
+// ln_gamma in the crate, consumed by best_belief + bmr. pub(crate), gated
+// to its consumer set (2026-09-13): under --no-default-features both
+// consumers compile away and the ungated module tripped dead_code — it now
+// compiles to nothing with them (the cfg-gated-target discipline, not an
+// #[allow(dead_code)] blanket).
+#[cfg(any(feature = "best_belief", feature = "bmr"))]
 pub(crate) mod special_fn;
 
 // slice_tca — modelless slice-rank decomposition for 3rd-order tensors
