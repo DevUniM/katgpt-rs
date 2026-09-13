@@ -50,7 +50,7 @@ rustfmt'd (it had never been formatted). Verified on Windows:
 the stub prints, and the workspace default-features lane is 0-warnings
 for the first time on this box.
 
-## riir-ai Issue 766 resolved — len_derived audit: caller tracer (HALF C) + two instrument defects found and fixed (2026-09-13, 4090 session)
+## Issue 766 (2026-09-13, 4090 session) resolved — len_derived audit: caller tracer (HALF C) + two instrument defects found and fixed
 
 Follow-up to riir-train Issue 515's standing work list (220 UNRESOLVED
 wrapper-param binds). Three additions to
@@ -91,6 +91,23 @@ Standing after: **52 kernels, 164 binds** — 25 GUARDED, 14 GUARD-ONLY,
 dims), **118 UNRESOLVED — the honest floor** (mixed-caller sets,
 pass-through params, method-form wrappers; a work list, never a defect
 set). T4 N/A: no capacity-vs-live mismatch found, no new guards needed.
+
+*Heading correction (2026-09-13, M3 session): this row's heading first
+landed bare (`## Issue 766 resolved — …`) and 4573af13 then "qualified" it
+to riir-ai — a mis-repair, caught while clearing riir-train's Issue-515
+citation rows. The allocation witness was in the fix commit all along:
+`e4792a4b` bumps `.issues/.highwater` 765→766 (file-and-resolve, the issue
+file never committed — the Issue 754 invisible class), so katgpt-rs owns
+766. riir-ai's own 766 is the August 4090 holding queue — a different
+issue entirely (the dual-allocation class; cf. `Issue 665` in riir-clippy).
+riir-train's addendum "katgpt-rs Issue 766 resolved the standing list" was
+correct as written and stands. The heading is now in the `## Issue NNN
+(date)` form `heading_allocated()` reads (Issue 754), so the citation
+instrument sees the allocation the highwater already witnessed. Residual
+gap — `allocated()` never consults `.highwater`, so a highwater-only
+allocation with no readable heading stays invisible — filed as Issue 768
+with the measured-widening plan (the suppression direction must be measured
+before it is widened).*
 
 ## WeightEpoch — the KV-cache weight-identity epoch (riir-ai Issue 938; Plan 025 contract) (`49f5d245`, 2026-09-13)
 

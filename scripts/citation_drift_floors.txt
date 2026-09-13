@@ -138,6 +138,19 @@ seal-remake                39      0               0       0
 # lookup). Repaired seal-remake `196e015d`; sweep 0 CROSS over all 20
 # repos again. The corpus MOVES (below) is not a warning — it is the
 # measured recurrence rate of exactly this.
+# A FOURTH arc the same day (2026-09-13, evening) — and this one was a
+# MIS-REPAIR, not new prose: 4573af13 "qualified" katgpt-rs HISTORY's bare
+# `Issue 766` heading to riir-ai while katgpt-rs owned 766 all along
+# (e4792a4b's `.issues/.highwater` 765→766 bump — file-and-resolve, the 754
+# invisible class with no readable heading). Heading restored to the
+# `## Issue NNN (date)` form heading_allocated() reads; riir-train's two
+# sibling rows ("katgpt-rs Issue 766") were CORRECT as written and cleared
+# without editing once the heading became readable; its two BARE rows
+# (Issue 716 / Issue 710, both riir-ai-owned by content — the q8kv sink
+# policy and the kimi-backward H11 hazard) were qualified with the one-word
+# repair. The underlying gap (allocated() never consults .highwater) filed
+# as katgpt-rs Issue 768 with the measured-widening plan. Sweep 0 CROSS over
+# all 20 repos again after the repairs.
 # riir-game-sdk held the density record at 124/287 (43%) and is now at 0: its
 # `.issues` top out at 029 while it cited riir-ai's SDK-extraction arc
 # (458-531, 79 rows) by bare number throughout, plus riir-mmorpg-examples'
