@@ -29,7 +29,7 @@ rustfmt'd (it had never been formatted). Verified on Windows:
 the stub prints, and the workspace default-features lane is 0-warnings
 for the first time on this box.
 
-## Issue 766 resolved — len_derived audit: caller tracer (HALF C) + two instrument defects found and fixed (2026-09-13, 4090 session)
+## riir-ai Issue 766 resolved — len_derived audit: caller tracer (HALF C) + two instrument defects found and fixed (2026-09-13, 4090 session)
 
 Follow-up to riir-train Issue 515's standing work list (220 UNRESOLVED
 wrapper-param binds). Three additions to
