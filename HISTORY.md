@@ -11,6 +11,48 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 766 resolved — len_derived audit: caller tracer (HALF C) + two instrument defects found and fixed (2026-09-13, 4090 session)
+
+Follow-up to riir-train Issue 515's standing work list (220 UNRESOLVED
+wrapper-param binds). Three additions to
+`scripts/len_derived_binding_audit.py`, each shrinking the honest residue —
+and the first two are INSTRUMENT DEFECTS the backlog surfaced:
+
+- **HALF A window fix (the big one)**: the fixed 6000-char body window bled
+  into whatever followed a kernel. Measured: the deltanet tree-verify
+  kernels were flagged off `parent.len()` in the HOST-side
+  `TreeVerifyPlan::from_parents_topo` below them — while deriving every dim
+  from `params` (the correct pattern). 22 of 74 kernels were such bleed
+  false positives; 89 of 253 bind rows were phantom (including ALL 8
+  PERSISTENT rows T2-of-515 had triaged "benign" — moot, never
+  `.len()` kernels). Body window is now the brace-matched fn body;
+  `min_kernels` floor re-pinned 40 → 45 (52 measured).
+- **HALF C caller tracer (the backlog item)**: for path-form wrappers
+  (`impl Struct { fn launch(params) }`, no self), every workspace caller
+  `Struct::fn::<T>(args)` is collected (turbofish-tolerant, comment-stripped
+  — inline `// [0..n]` comments after an arg's comma were riding into the
+  NEXT arg and breaking field detection, measured on the Split4 call) and
+  the (handle, length) param pair classified per site: EXACT-UPSTREAM
+  (`create_from_slice(&v)`+`v.len()`, `empty(k)`+`k`), TRIMMED-UPSTREAM
+  (slice views), PERSISTENT-UPSTREAM (struct-field handles — the eyes
+  list), CAPACITY-UPSTREAM (size-method/capacity-constant lengths — the
+  compact_temp join one level up). Clean requires ALL workspace callers
+  clean; bare-name/method-form callers stay UNRESOLVED (unsound by name).
+  Selftest pins include the false-clean canaries (a field handle NEVER
+  resolves exact; a call result is never a field handle).
+- **GUARD-ONLY class**: a len-use that only bounds thread indices (`let n =
+  output.len(); if tid < n`) is capacity-tolerant — the compact hazard
+  needs STRUCTURAL derivation feeding index math. 14 rows (copy/fill/
+  lm_head_lora training kernels) re-verdict GUARD-ONLY automatically.
+
+Standing after: **52 kernels, 164 binds** — 25 GUARDED, 14 GUARD-ONLY,
+3 EXACT-UPSTREAM (verified true), 4 PERSISTENT-UPSTREAM adjudicated BENIGN
+  by allocation-site reads (gemma2 F16 weights + ternary down_proj/ffn/x —
+  all exactly-sized at construction; structural derivation recovers true
+dims), **118 UNRESOLVED — the honest floor** (mixed-caller sets,
+pass-through params, method-form wrappers; a work list, never a defect
+set). T4 N/A: no capacity-vs-live mismatch found, no new guards needed.
+
 ## WeightEpoch — the KV-cache weight-identity epoch (riir-ai Issue 938; Plan 025 contract) (`49f5d245`, 2026-09-13)
 
 `LoraAdapter::weight_epoch() -> WeightEpoch` (katgpt-types `lora` module):
