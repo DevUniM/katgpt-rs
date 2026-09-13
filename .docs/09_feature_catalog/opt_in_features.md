@@ -3702,7 +3702,7 @@ absent there), so promotion to default-on is NOT justified by the evidence
 unwired on any production KV path (the riir-ai consumer follow-up would be
 their hot-path gate).
 
-📖 Issue: [747](../../.issues/747_asentmax_modelless_mining.md) ·
+📖 Issue: `747` ·
 Research: [549](../../.research/549_ASEntmax_Length_Adaptive_Entmax_Attention.md) ·
 Bench: [713](../../.benchmarks/713_asentmax_schedule_goat.md) ·
 Source: [arXiv:2506.16640](https://arxiv.org/abs/2506.16640) ·
@@ -3740,7 +3740,7 @@ metabolic axis + swarm energy commons) re-gates at Phase 4 before any
 promotion decision.
 
 📖 Research: [550](../../.research/550_Metabolic_Gate_Energy_Coupled_Compute.md) ·
-Consumer: riir-ai [Plan 585](../../../riir-ai/.plans/585_metabolic_cognition_self_limiting_defeat.md) ·
+Consumer: riir-ai [Plan 585](../../../riir-ai/.plans/585_metabolic_cognition_self_limiting_defection.md) ·
 Bench: [716](../../.benchmarks/716_metabolic_gate_goat.md) — G1/G2/G3/G4
 ALL PASS (K-residual 6.7e-6; depth 3 ns / share sub-ns / K-solver 412 ns
 bounded; 0 allocs) ·
@@ -3820,8 +3820,8 @@ synapses). Data-agnostic: no connectome datasets ship here.
 GOAT-gates it onto a production path (the named consumer: the riir-ai
 per-archetype circuit shard + per-NPC readout, Research 379 §7).
 
-📖 Issue: [763](../../.issues/763_lif_graph_reservoir_primitive.md) ·
-Research: [379](../../riir-ai/.research/379_fly_connectome_fixed_wiring_reservoir.md)
+📖 Issue: `763` ·
+Research: [379](../../../riir-ai/.research/379_fly_connectome_fixed_wiring_reservoir.md)
 (riir-ai, private) ·
 Bench: [760](../../.benchmarks/760_lif_graph_goat.md) — G1/G2/G4 ALL PASS ·
 Substrate: `crates/katgpt-core/src/lif_graph.rs`, tests
