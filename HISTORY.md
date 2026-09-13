@@ -11,7 +11,7 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
-## WeightEpoch — the KV-cache weight-identity epoch (riir-ai Issue 938; Plan 025 contract) (`a446154a`, 2026-09-13)
+## WeightEpoch — the KV-cache weight-identity epoch (riir-ai Issue 938; Plan 025 contract) (`49f5d245`, 2026-09-13)
 
 `LoraAdapter::weight_epoch() -> WeightEpoch` (katgpt-types `lora` module):
 BLAKE3 over a domain-separated canonical serialization (tag
