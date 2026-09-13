@@ -526,6 +526,28 @@ impl WeightEpoch {
         h.update(b"none");
         Self(*h.finalize().as_bytes())
     }
+
+    /// Identity over an arbitrary tagged weight walk — the general
+    /// constructor for consumers whose "effective weights" are not a single
+    /// [`LoraAdapter`] (e.g. a full frozen transformer: hash every tensor in
+    /// a documented fixed order, plus any forward-affecting scalars, in the
+    /// `tag`).
+    ///
+    /// Each part is length-prefixed, so part boundaries cannot alias
+    /// (`[a,b],[c]` ≠ `[a],[b,c]`). The caller's `tag` must name the weight
+    /// family + layout (two different walks must never share a tag).
+    /// Compute ONCE per model load / swap — never in a hot loop.
+    pub fn from_parts<'a>(tag: &[u8], parts: impl IntoIterator<Item = &'a [u8]>) -> Self {
+        let mut h = blake3::Hasher::new();
+        h.update(WEIGHT_EPOCH_TAG);
+        h.update(&(tag.len() as u64).to_le_bytes());
+        h.update(tag);
+        for part in parts {
+            h.update(&(part.len() as u64).to_le_bytes());
+            h.update(part);
+        }
+        Self(*h.finalize().as_bytes())
+    }
 }
 
 impl LoraAdapter {
@@ -537,15 +559,27 @@ impl LoraAdapter {
         h.update(WEIGHT_EPOCH_TAG);
         h.update(&u64::try_from(self.rank).unwrap_or(u64::MAX).to_le_bytes());
         h.update(&u64::try_from(self.in_dim).unwrap_or(u64::MAX).to_le_bytes());
-        h.update(&u64::try_from(self.out_dim).unwrap_or(u64::MAX).to_le_bytes());
+        h.update(
+            &u64::try_from(self.out_dim)
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
         h.update(&self.alpha.to_le_bytes());
         // Length prefixes make the serialization unambiguous (no concatenation
         // aliasing across dims).
-        h.update(&u64::try_from(self.a.len()).unwrap_or(u64::MAX).to_le_bytes());
+        h.update(
+            &u64::try_from(self.a.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
         for f in &self.a {
             h.update(&f.to_le_bytes());
         }
-        h.update(&u64::try_from(self.b.len()).unwrap_or(u64::MAX).to_le_bytes());
+        h.update(
+            &u64::try_from(self.b.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
         for f in &self.b {
             h.update(&f.to_le_bytes());
         }
@@ -725,15 +759,27 @@ mod tests {
 
         let mut tweaked = base.clone();
         tweaked.a[0] += 1.0;
-        assert_ne!(base_epoch, tweaked.weight_epoch(), "a byte must change the epoch");
+        assert_ne!(
+            base_epoch,
+            tweaked.weight_epoch(),
+            "a byte must change the epoch"
+        );
 
         let mut tweaked = base.clone();
         tweaked.b[0] += 1.0;
-        assert_ne!(base_epoch, tweaked.weight_epoch(), "b byte must change the epoch");
+        assert_ne!(
+            base_epoch,
+            tweaked.weight_epoch(),
+            "b byte must change the epoch"
+        );
 
         let mut tweaked = base.clone();
         tweaked.alpha += 1.0;
-        assert_ne!(base_epoch, tweaked.weight_epoch(), "alpha must change the epoch");
+        assert_ne!(
+            base_epoch,
+            tweaked.weight_epoch(),
+            "alpha must change the epoch"
+        );
 
         // Dims change the serialization shape → new epoch.
         let mut tweaked = base.clone();
@@ -741,19 +787,75 @@ mod tests {
         // Keep lengths consistent so the epoch is well-defined (identity does
         // not validate shapes; the lengths are hashed as-is).
         tweaked.a.push(0.0);
-        assert_ne!(base_epoch, tweaked.weight_epoch(), "in_dim must change the epoch");
+        assert_ne!(
+            base_epoch,
+            tweaked.weight_epoch(),
+            "in_dim must change the epoch"
+        );
 
         let _ = tweaked;
     }
 
     #[test]
     fn weight_epoch_none_is_distinct_and_stable() {
-        assert_eq!(WeightEpoch::none(), WeightEpoch::none(), "none epoch is stable");
+        assert_eq!(
+            WeightEpoch::none(),
+            WeightEpoch::none(),
+            "none epoch is stable"
+        );
         for (i, a) in make_test_adapters().iter().enumerate() {
             assert_ne!(
                 WeightEpoch::none(),
                 a.weight_epoch(),
                 "adapter {i}: no-adapter epoch must never alias a real adapter"
+            );
+        }
+    }
+
+    #[test]
+    fn weight_epoch_from_parts_is_deterministic_and_tag_sensitive() {
+        let p1: &[u8] = &[1, 2, 3];
+        let p2: &[u8] = &[4, 5];
+        let t_a: &[u8] = b"frozen-model-a";
+        let t_b: &[u8] = b"frozen-model-b";
+        assert_eq!(
+            WeightEpoch::from_parts(t_a, [p1, p2]),
+            WeightEpoch::from_parts(t_a, [p1, p2]),
+            "same tag + same parts → same epoch"
+        );
+        assert_ne!(
+            WeightEpoch::from_parts(t_a, [p1, p2]),
+            WeightEpoch::from_parts(t_b, [p1, p2]),
+            "different weight-family tag → different epoch"
+        );
+        assert_ne!(
+            WeightEpoch::from_parts(t_a, [p1, p2]),
+            WeightEpoch::from_parts(t_a, [p2, p1]),
+            "part ORDER is part of the identity"
+        );
+    }
+
+    #[test]
+    fn weight_epoch_from_parts_length_prefixes_prevent_concat_aliasing() {
+        // [1,2],[3] must NOT equal [1],[2,3] — the failure the length
+        // prefixes exist to prevent.
+        let left: [&[u8]; 2] = [&[1, 2], &[3]];
+        let right: [&[u8]; 2] = [&[1], &[2, 3]];
+        assert_ne!(
+            WeightEpoch::from_parts(b"t", left),
+            WeightEpoch::from_parts(b"t", right)
+        );
+    }
+
+    #[test]
+    fn weight_epoch_from_parts_is_distinct_from_adapter_and_none_epochs() {
+        let from_parts = WeightEpoch::from_parts(b"t", [&[1u8][..]]);
+        assert_ne!(from_parts, WeightEpoch::none());
+        for (i, a) in make_test_adapters().iter().enumerate() {
+            assert_ne!(
+                from_parts,
+                a.weight_epoch(),
+                "adapter {i}: a tagged walk must never alias an adapter identity"
             );
         }
     }
