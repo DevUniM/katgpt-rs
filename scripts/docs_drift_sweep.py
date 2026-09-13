@@ -73,7 +73,7 @@ def read_floors() -> dict[str, tuple[int, int]]:
     floors: dict[str, tuple[int, int]] = {}
     if not FLOORS_FILE.is_file():
         return floors
-    for raw in FLOORS_FILE.read_text().splitlines():
+    for raw in FLOORS_FILE.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue

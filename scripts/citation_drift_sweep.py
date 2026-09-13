@@ -600,6 +600,10 @@ def selftest() -> list[str]:
         # run must not either.
         fz = ws / "riir-fencerepo"
         (fz / ".issues").mkdir(parents=True)
+        # Fixture IO is pinned UTF-8 — pathlib text IO defaults to the LOCALE
+        # codec, so an unpinned em-dash fixture round-trips on a Thai-locale
+        # box (cp874 carries U+2014) but the same bytes read as UTF-8 elsewhere
+        # diverge. The selftest must not be locale-dependent by construction.
         (fz / "HISTORY.md").write_text(
             "## Issue 042 (2026-01-01) — a REAL local allocation\n"
             "```markdown\n"
@@ -624,8 +628,10 @@ def selftest() -> list[str]:
         # level over) and is reported as its own hazard.
         (fz / "AGENTS.md").write_text(
             "```text\n"
-            "## Issue 046 (2026-01-01) — inside an UNTERMINATED fence\n")
-        inside, open_at = icg.fenced_lines((fz / "AGENTS.md").read_text())
+            "## Issue 046 (2026-01-01) — inside an UNTERMINATED fence\n",
+            encoding="utf-8")
+        inside, open_at = icg.fenced_lines(
+            (fz / "AGENTS.md").read_text(encoding="utf-8"))
         if inside or open_at != 0:
             fails.append(f"unterminated fence: got inside={sorted(inside)} open_at={open_at}, "
                          f"expected an EMPTY exclusion set and open_at=0")

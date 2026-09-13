@@ -70,7 +70,7 @@ def read_lb_allow() -> set[str]:
     """
     allowed = {
         line.split("#", 1)[0].strip()
-        for line in LB_ALLOW_FILE.read_text().splitlines()
+        for line in LB_ALLOW_FILE.read_text(encoding="utf-8").splitlines()
     }
     allowed.discard("")
     if not allowed:
@@ -116,7 +116,7 @@ def check_membership(measured: set[str], allowed: set[str]) -> list[str]:
 def read_pins() -> dict[str, int]:
     """Committed expectations. A missing pin is an error, never a skip."""
     pins: dict[str, int] = {}
-    for raw in PINS_FILE.read_text().splitlines():
+    for raw in PINS_FILE.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
