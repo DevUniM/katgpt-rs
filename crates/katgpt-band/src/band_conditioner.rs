@@ -432,24 +432,26 @@ fn inverse_normal_cdf_two_sided(alpha: f32) -> f32 {
 pub type InfoNceCritic = fn(&[f32], &[f32], &[f32]) -> f32;
 
 /// Configuration for the InfoNCE CMI estimator.
+// Issue 772 S6: `default_critic` removed — never read; the critic is always a
+// direct `critic` parameter of `conditional_dependence_infonce` (no fallback).
 #[derive(Clone, Copy, Debug)]
 pub struct InfoNceConfig {
     /// Number of negative samples per positive pair. Default `8`.
     pub n_negatives: usize,
-    /// Default critic if none is provided (simple dot product on concatenated emb).
-    pub default_critic: InfoNceCritic,
 }
 
 impl Default for InfoNceConfig {
     fn default() -> Self {
         Self {
             n_negatives: 8,
-            default_critic: default_dot_critic,
         }
     }
 }
 
 /// Default critic: dot product of `x_emb` and `y_emb`, modulated by `z_emb` magnitude.
+// Test-only since Issue 772 S6 removed `InfoNceConfig.default_critic` (never
+// read — the critic is always a direct parameter).
+#[cfg(test)]
 fn default_dot_critic(x_emb: &[f32], y_emb: &[f32], z_emb: &[f32]) -> f32 {
     let mut dot = 0.0f32;
     // `zip` truncates at `min(len)` with no per-element bounds check.
@@ -472,7 +474,7 @@ fn default_dot_critic(x_emb: &[f32], y_emb: &[f32], z_emb: &[f32]) -> f32 {
 /// - `negatives`: each slice is a negative `y_emb` (drawn by shuffling within
 ///   `z_emb` buckets per the paper). Length `n_negatives`.
 /// - `critic`: a frozen critic function (modelless engines pass a pretrained
-///   encoder; pass `default_critic` for dot-product baseline).
+///   encoder; a dot-product baseline is available in this module's tests).
 /// - `config`: tuning knobs.
 pub fn conditional_dependence_infonce(
     x_emb: &[f32],

@@ -136,9 +136,7 @@ fn bench_165_hydra_budget_goat_proof() {
 
     let config_p1 = HydraBudgetConfig {
         skip_threshold: 0.01,
-        modelless: true,
         skip_erasure_draft: false,
-        cumulative_threshold: 0.95,
     };
     let plan_p1 = hydra_layer_skip(&profiles_p1, &config_p1);
 
@@ -248,9 +246,7 @@ fn bench_165_hydra_budget_goat_proof() {
     // Config with erasure skip enabled for draft.
     let config_p2 = HydraBudgetConfig {
         skip_threshold: 0.01,
-        modelless: true,
         skip_erasure_draft: true,
-        cumulative_threshold: 0.95,
     };
     let plan_p2 = hydra_layer_skip(&profiles_p2, &config_p2);
 
@@ -309,9 +305,7 @@ fn bench_165_hydra_budget_goat_proof() {
     let profiles_p3 = calibrate_profiles(&de_matrix_p3);
     let config_p3 = HydraBudgetConfig {
         skip_threshold: 0.01,
-        modelless: true,
         skip_erasure_draft: false,
-        cumulative_threshold: 0.95,
     };
     let plan_p3 = hydra_layer_skip(&profiles_p3, &config_p3);
     let result_p3 = hydra_adaptive_budget(&plan_p3, N_LAYERS);

@@ -18,15 +18,14 @@ pub struct HydraLayerProfile {
 }
 
 /// Hydra budget configuration.
+// Issue 772 S6: `cumulative_threshold` + `modelless` removed — never read;
+// hydra_adaptive_budget hardcodes the 0.95 convergence fraction and mode is
+// chosen by which function the caller invokes (hydra_layer_skip vs logit lens).
 #[cfg(feature = "hydra_budget")]
 #[derive(Clone, Copy, Debug)]
 pub struct HydraBudgetConfig {
     /// Skip layers with |DE| below this threshold.
     pub skip_threshold: f32,
-    /// Early-terminate when cumulative DE reaches this fraction of total.
-    pub cumulative_threshold: f32,
-    /// Use modelless mode (lookup) vs model-based (logit lens).
-    pub modelless: bool,
     /// Skip erasure MLPs during draft stage.
     pub skip_erasure_draft: bool,
 }
@@ -36,8 +35,6 @@ impl Default for HydraBudgetConfig {
     fn default() -> Self {
         Self {
             skip_threshold: 0.01,
-            cumulative_threshold: 0.95,
-            modelless: true,
             skip_erasure_draft: false,
         }
     }

@@ -83,7 +83,6 @@ fn p2_catalyst_scored_topk_better_than_random_topk() {
     let config = InfluenceConfig {
         top_k_fraction: 0.2,
         catalyst_threshold: 0.0,
-        ..Default::default()
     };
     let proxy = ActivationInfluenceProxy::new(8);
 

@@ -8,7 +8,7 @@
 //!
 //! TRDraft applies this insight to speculative decoding:
 //! 1. Detect prefix failure when LeviathanVerifier rejects a branch
-//! 2. Re-draft from the failure point with ConstraintPruner constraints + ELF SDE noise
+//! 2. Re-draft from the failure point with ConstraintPruner constraints
 //! 3. Rank raw vs refined branches via BT Rank pairwise comparison
 //! 4. Bandit learns when refinement helps (skip/1-step/2-step)
 //!
@@ -98,19 +98,17 @@ pub struct RefinementResult {
 // ── TrajectoryRefinedDraft: Core refinement engine ───────────
 
 /// Configuration for TRDraft.
+// Issue 772 S6: `max_refinement_steps`, `refine_correct_branches`, and
+// `elf_noise_scale` removed — never read: refinement depth is UCB1-bandit-
+// chosen (Skip/1-step/2-step arms), correct branches are never refined
+// (detect_prefix_failure returns None on full acceptance), and no ELF SDE
+// noise injection exists in the re-draft loop.
 #[derive(Debug, Clone, Copy)]
 pub struct TrdConfig {
-    /// Maximum refinement attempts per failed branch.
-    pub max_refinement_steps: usize,
     /// Entropy threshold above which we consider a branch for refinement.
     pub entropy_threshold: f32,
     /// BT Rank temperature for pairwise comparison.
     pub rank_temperature: f32,
-    /// ELF SDE noise scale for re-drafting diversity (0.0 = no noise).
-    pub elf_noise_scale: f32,
-    /// Whether to attempt refinement on branches that were "correct" but low-confidence.
-    /// Paper shows TRD helps even on correct rollouts (alternative derivations).
-    pub refine_correct_branches: bool,
     /// Maximum time budget per refinement in microseconds. 0 = no budget.
     pub latency_budget_us: u64,
     /// Whether to apply ThoughtFold pre-fold on the prefix before re-drafting.
@@ -122,11 +120,8 @@ pub struct TrdConfig {
 impl Default for TrdConfig {
     fn default() -> Self {
         Self {
-            max_refinement_steps: 2,
             entropy_threshold: 0.5,
             rank_temperature: 1.0,
-            elf_noise_scale: 0.1,
-            refine_correct_branches: false,
             latency_budget_us: 0,
             enable_prefold: true,
         }
@@ -297,7 +292,6 @@ impl<'a, P: ConstraintPruner> TrajectoryRefinedDraft<'a, P> {
     /// This is the modelless equivalent of TRD's yr ~ πT(·|x, yo):
     /// - Roll back to the failure point
     /// - Re-draft using ConstraintPruner to constrain candidates
-    /// - Inject ELF SDE noise for diversity
     /// - BT Rank the raw vs refined branch
     ///
     /// When `latency_budget_us > 0`, checks budget before each re-draft step.

@@ -21,8 +21,8 @@ pub enum PipelineConfig {
 pub struct QueryFeatures {
     /// Shannon entropy of the input distribution.
     pub entropy: f32,
-    /// Expected output length (from heuristics).
-    pub expected_output_len: usize,
+    // Issue 772 S6: `expected_output_len` removed — never read; classify()
+    // decides on entropy/input_len/syntax_ratio only.
     /// Input prompt length in tokens.
     pub input_len: usize,
     /// Ratio of syntactic tokens (brackets, semicolons, etc.) to total.
@@ -35,7 +35,6 @@ impl Default for QueryFeatures {
     fn default() -> Self {
         Self {
             entropy: 0.5,
-            expected_output_len: 64,
             input_len: 32,
             syntax_ratio: 0.0,
             rv_signal: None,
@@ -98,7 +97,6 @@ impl QueryClassifier {
 
         let features = QueryFeatures {
             entropy: 0.5, // default
-            expected_output_len: prompt.len(),
             input_len: prompt.len(),
             syntax_ratio: syntax_count as f32 / prompt.len().max(1) as f32,
             rv_signal: None,
@@ -121,7 +119,6 @@ mod tests {
         let classifier = QueryClassifier::new();
         let features = QueryFeatures {
             entropy: 0.3,
-            expected_output_len: 32,
             input_len: 64,
             syntax_ratio: 0.0,
             ..Default::default()
@@ -134,7 +131,6 @@ mod tests {
         let classifier = QueryClassifier::new();
         let features = QueryFeatures {
             entropy: 0.5,
-            expected_output_len: 128,
             input_len: 256,
             syntax_ratio: 0.15, // high syntax ratio
             ..Default::default()
@@ -147,7 +143,6 @@ mod tests {
         let classifier = QueryClassifier::new();
         let features = QueryFeatures {
             entropy: 0.3,
-            expected_output_len: 2048,
             input_len: 4096,
             syntax_ratio: 0.0,
             ..Default::default()
@@ -160,7 +155,6 @@ mod tests {
         let classifier = QueryClassifier::new();
         let features = QueryFeatures {
             entropy: 0.9,
-            expected_output_len: 512,
             input_len: 256,
             syntax_ratio: 0.0,
             ..Default::default()

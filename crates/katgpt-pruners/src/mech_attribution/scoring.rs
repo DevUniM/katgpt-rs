@@ -194,7 +194,6 @@ mod tests {
         let config = InfluenceConfig {
             top_k_fraction: 0.5,
             catalyst_threshold: 0.0,
-            ..Default::default()
         };
         let proxy = ActivationInfluenceProxy::new(8);
 

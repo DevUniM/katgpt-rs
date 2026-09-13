@@ -31,9 +31,8 @@ pub struct SpKvConfig {
     /// Gate threshold τ for hard gating at inference (default: 0.5).
     /// Higher τ = more aggressive sparsity (fewer KV retained).
     pub threshold: f32,
-    /// Utility predictor learning rate multiplier (default: 5.0).
-    /// Paper ablation: 1× → more density, 0.1× → 82% density (barely sparsifies).
-    pub predictor_lr_mult: f32,
+    // Issue 772 S6: `predictor_lr_mult` removed — never read; a training-time
+    // knob (paper ablation) with no trainer in this modelless crate.
     /// Initial bias for utility predictor (default: 5.0).
     /// σ(5) ≈ 0.993 → gates start nearly fully open.
     pub predictor_init_bias: f32,
@@ -48,7 +47,6 @@ impl Default for SpKvConfig {
             predictor_hidden: 0, // resolved from config.n_embd / 4 at init
             tahg_anneal_steps: 500,
             threshold: 0.5,
-            predictor_lr_mult: 5.0,
             predictor_init_bias: 5.0,
             tahg_start_fraction: 0.75,
         }

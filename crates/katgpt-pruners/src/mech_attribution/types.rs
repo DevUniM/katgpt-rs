@@ -43,14 +43,14 @@ impl std::fmt::Display for CatalystPattern {
 }
 
 /// Configuration for influence scoring.
+// Issue 772 S6: `min_repetition_length` removed — never read;
+// pure_repetition_score hardcodes min_len = 3 (mech_attribution/catalyst.rs).
 #[derive(Debug, Clone, Copy)]
 pub struct InfluenceConfig {
     /// Fraction of top-K samples to mark as high-influence. Default: 0.1
     pub top_k_fraction: f32,
     /// Minimum catalyst score to be considered a catalyst. Default: 0.5
     pub catalyst_threshold: f32,
-    /// Minimum repetition length for pure repetition detection. Default: 3
-    pub min_repetition_length: usize,
 }
 
 impl Default for InfluenceConfig {
@@ -58,7 +58,6 @@ impl Default for InfluenceConfig {
         Self {
             top_k_fraction: 0.1,
             catalyst_threshold: 0.5,
-            min_repetition_length: 3,
         }
     }
 }
