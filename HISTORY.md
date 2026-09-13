@@ -11,6 +11,23 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 773 (2026-09-14, M3 session) resolved — the 772-B2 removal's stale re-export: root lib E0432 under `flashar_consensus,plasma_path`, found by riir-ai's guard through the path dep
+
+`3c3c52ce` (Issue 772 B2) deleted `ternary_fusion_gate` from
+katgpt-forward but missed the root shim's `plasma_path`-gated re-export
+(`src/speculative/flashar_consensus.rs:19`). The shim compiles only under
+`flashar_consensus` (`src/speculative/mod.rs:324`, non-default) — the
+double cfg is why the 772 wave's own default-lane validations never saw
+it (the cfg-gated green-zero class, biting its own landing lane) while
+riir-ai's guard Layer 1 DID: its default graph forwards both features
+into the path-depped katgpt-rs root crate and died E0432 before checking
+any riir-ai crate. No consumers anywhere (in-repo grep + six sibling
+repos). Filed `1d873f8c`, fixed `b7fcabd8` (3-line deletion; red→green
+under `--features flashar_consensus,plasma_path`, default lane
+unchanged). The scoped-closeout meta-pattern's sixth instance this
+bevy-lane week — and the first found cross-repo, by a DOWNSTREAM full
+gate.
+
 ## Issue 771 (2026-09-14, M3 session) resolved — the radix-tree prefix KV cache primitive (RadixAttention index) shipped opt-in; G1–G4 ALL PASS, promotion deferred to the serving lane
 
 **The question that opened it:** "do we have RadixAttention yet?" — No. The
