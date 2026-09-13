@@ -131,6 +131,13 @@ seal-remake                39      0               0       0
 # b4f6c3d98 (a worktree read off origin shows `katgpt-rs Research 551` at
 # both sites) — same class, same cure: the local checkout was 12 behind,
 # and the red clears when that session syncs.
+# And once MORE the next day (2026-09-13), the new-prose arm of the same
+# class: seal-remake's item-sync HISTORY tail landed `Plan 586 /
+# Proposal 046` bare — both riir-ai's, and the SAME FILE already said so
+# three headings up (the REPEAT label; the repair is a copy, not a
+# lookup). Repaired seal-remake `196e015d`; sweep 0 CROSS over all 20
+# repos again. The corpus MOVES (below) is not a warning — it is the
+# measured recurrence rate of exactly this.
 # riir-game-sdk held the density record at 124/287 (43%) and is now at 0: its
 # `.issues` top out at 029 while it cited riir-ai's SDK-extraction arc
 # (458-531, 79 rows) by bare number throughout, plus riir-mmorpg-examples'
