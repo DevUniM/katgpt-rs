@@ -2705,3 +2705,80 @@ P4 stretch (T4.1–T4.4) deferred to Issue 762. Issue file removed per the
 noise-reduction rule; the full record lives in git history
 (`git log -- .issues/747_asentmax_modelless_mining.md`).
 
+## Issue 772 — config-audit first pass over katgpt-rs (7 inert/assert-only knobs + orphan-report layer): CLOSED (2026-09-14)
+
+The 09-13 14-repo `--config-audit`/`--orphan-report` consumer sweep
+excluded this repo as sibling-hot; the first in-repo runs (2026-09-14,
+riir-clippy Plans 124/126 instruments) filed 7 verified class-A/B knobs +
+an orphan-report layer (0 orphaned / 33 stillborn → S1–S6). Every fix
+landed same day, wire-vs-delete adjudicated per finding:
+
+- **A1/A2 WIRED** (`3c3c52ce`): monopoly `execute_turn` reads
+  `GameConfig.max_jail_turns`/`max_doubles` (the consts had shadowed the
+  knobs at both logic sites); two wire-proof tests discriminate — red
+  under the old consts (scripted `StubPlayer` AI + self-locating seed
+  probe for the dice).
+- **S1 `BranchRouter.tau_spawn` DELETED, not wired** — the sharpest
+  call of the batch: the router tests PIN spawn-on-no-snap as the
+  intended semantics (`route_returns_spawn_when_below_snap_threshold`
+  expects Spawn at cosine 0.707; the empty-tokens variant at cosine
+  0.0), so wiring `best_score < tau_spawn` would invert the
+  [τ_spawn, τ_snap) band to Frozen and break 4+ pinned tests. Field +
+  `DEFAULT_TAU_SPAWN` + `new()` 3rd param + re-exports deleted here and
+  in riir-engine's `cognitive_branches_runtime` re-export (riir-ai
+  `8e748e936`).
+- **B2 `use_ternary_gate` + `ternary_fusion_gate` DELETED, overriding
+  the issue's wire-preference with evidence**: no weight source exists
+  (a 6→1 `TernaryWeights` row nobody constructs), a linear gate cannot
+  encode `route_one`'s threshold cascade, the lane is opt-in after its
+  G1 quality FAIL (Issue 136), and the only test asserted the default
+  `false`. `simd_ternary_matvec` remains substrate with its own
+  consumers.
+- **B3 `TransformerConfig.stop_token` DELETED** — the vocab owns
+  stopping; the config mirror was write-only (`test_predict_token_argmax`
+  was the proof: config "halt" vs vocab "c").
+- **B1 `BcConfig.anneal`, B4 `lod_adaptive`, B5 `quant_levels` (→ 1-param
+  `new(quant_scale)`), S2 `fft_size`, S3 `injection_layer`, S4
+  `avg_bits_v`, S5 `solve_rate_floor/ceiling` DELETED** — each with a
+  no-wiring-point rationale on record in the issue. S4's bonus honesty
+  fix: test_147 "Proof 7 asymmetric vs symmetric" was fiction (the V
+  path was identical VQ in both arms — `avg_bits_v` never changed
+  anything); relabeled as the K-bit sweep it actually measured.
+- **S6: 12 stillborn knobs DELETED** (`a3ef1830`)
+  `DepthInvarianceConfig.magnitude_slope_collapse`, `HydraBudgetConfig.`
+  `.cumulative_threshold`/`.modelless`, `CollapseDetectorFrozen.`
+  `.budget_ema_mean` (option_stripper — the serialized COLP 24-byte wire
+  struct in collapse_detector.rs is a DIFFERENT type, untouched),
+  `InfluenceConfig.min_repetition_length`, `InfoNceConfig.default_critic`,
+  `QbConfig.causality_strict` (grep refuted the doc's "kept for
+  riir-train consumers"), `QueryFeatures.expected_output_len`,
+  `SpKvConfig.predictor_lr_mult`, `TrdConfig.max_refinement_steps`/
+  `.refine_correct_branches`/`.elf_noise_scale` (refinement depth is
+  UCB1-bandit-chosen; correct branches are never refined). Sibling grep
+  (riir-ai/riir-train/riir-neuron-db/riir-game-sdk) verified zero
+  consumers per field before each delete.
+- **FP record (the C2 trait-operational class)** kept in the issue for
+  the riir-clippy post-mining harvest: `ColinearityBatchGate`,
+  `RuleBasedVerifier`, `EntropyConflictDetector` — reads inside
+  `impl Trait for X` bodies are operational (externally dispatchable),
+  unlike inherent validate-shaped methods; the cheap detector
+  refinement is exempting trait-impl bodies from the
+  "own-validate-impl" bucket. riir-train 546 extended the class:
+  `Display`-impl reads are operational too. Harvest into riir-clippy
+  `.distill/001` deferred while that tree is sibling-hot.
+
+Verification: clippy `--all-targets` per touched crate INCLUDING the
+feature arms that gate each module (`monopoly`, `shard_kv`,
+`precision_aware_draft`, `flashar_consensus,dllm`, `depth_invariance`,
+`hydra_budget`, `sp_kv`, `trd_refined_draft`, …) — the cfg-gated-target
+trap bit once during landing (monopoly compiled to nothing under the
+bare `--all-targets` run and hid E0596); affected suites green (92
+monopoly, 15 shard_kv, 11 flashar, 9 test_147, 2048 core, …);
+workspace `cargo check` 0 errors; riir-ai `cargo check -p riir-engine`
+green. Twin issue riir-train 546 landed same day (2 wired, 12 deleted,
+3 structs deleted — `b9f42028`).
+
+Issue file removed per the noise-reduction rule; the full record lives
+in git history
+(`git log -- .issues/772_config_audit_inert_knobs.md`).
+
