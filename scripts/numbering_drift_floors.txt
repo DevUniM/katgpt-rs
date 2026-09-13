@@ -24,7 +24,12 @@
 #                  walk. After `517→511` the re-climb re-spends numbers: the
 #                  never-reuse rule broken at counter granularity. A RATCHET
 #                  at the measured count — a NEW reset reds, the standing
-#                  history stays visible here.
+#                  history stays visible here. The unit is reset ROWS (one
+#                  commit each), NOT distinct incidents: `627→614 ×2` is two
+#                  commits, and one incident can surface as more than one
+#                  row (e.g. the lower-side resolution on a branch and again
+#                  at the merge that carries it). Lower a pin by the rows the
+#                  repair removes, never by the incidents you counted.
 #
 # ── why max_dup is a ratchet at the measured value, not 0 ───────────────────
 #

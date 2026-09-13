@@ -153,10 +153,12 @@ def counter_history(repo: Path, subdir: str) -> list[dict]:
     for c, *ps in pairs:
         v = val.get(c)
         if v is None:
-            if not any(p in val for p in ps):
-                continue                   # file absent here and at every parent
-            continue                       # deletion mid-history — counters are
-                                           # never deleted; hold the last state
+            continue                       # absent at this commit — not yet
+                                           # committed, or a mid-history deletion
+                                           # (counters never are). No event row
+                                           # either way: each later commit is
+                                           # judged against its own parents, so
+                                           # there is no walk state to hold.
         pv = [val[p] for p in ps if p in val]
         base = max(pv) if pv else 0
         if v < base:
