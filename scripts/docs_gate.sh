@@ -38,6 +38,16 @@
 # — regenerating repo_set.txt on a partial box would corrupt the canonical set;
 # the M3 is the canonical full workstation for that half. Issue 765 (2026-09-13)
 # added the explicit marker for known-partial boxes: DOCS_GATE_PARTIAL_CLONE=1
+#
+# UPDATE 2026-09-13 (4090 session): (1) and (2) are now SELF-SUPPLIED — the
+# gate resolves its interpreter by EXECUTION probing python3/python/py and
+# prefers the HIGHEST version (a working `python` 3.10 was shadowing `py`
+# 3.14; the stub python3 is skipped), warns loudly below 3.11, and exports
+# PYTHONIOENCODING=utf-8 unless the caller set their own. skill_repo_set_gate
+# reads UTF-8 with an explicit encoding (a cp874-default read_text() crashed
+# the scan). First 17/17 green on the 4090 at that commit; (3) remains the
+# one M3-canonical requirement (the deferral rides each population check's
+# final line under the marker).
 # makes the three population checks (skill_repo_set_gate,
 # population_sync_gate, issue_citation_gate) print a loud deferral on the
 # population axis instead of a remedy that invites the corruption. Marker-gated,
@@ -106,10 +116,47 @@ CHECKS=(
     "scripts/docs_gate_checks_sync.py:this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750)"
 )
 
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "✗ python3 not found — docs gate cannot run"
-    exit 1
+# Resolve the interpreter by EXECUTION, never by `command -v` alone (the
+# Issue-770 T4-4090 class, fixed in riir-ai's perf_rematch 2026-08-31 and
+# here 2026-09-13): Windows ships App Execution Alias STUBS at
+# AppData/.../WindowsApps/python3(.exe) that `command -v python3` FINDS —
+# the stub prints a Microsoft Store ad instead of running code, so a
+# presence-only probe green-lights an interpreter that cannot execute a
+# single check (measured: all 17 checks red on the 4090 box while a real
+# Python310 sat one name away as `python`). Probe function, not presence.
+resolve_py() {
+    # Probe by execution AND pick the HIGHEST version: `python` (3.10) can
+    # shadow `py` (3.14) on a Windows box that carries both — and this gate's
+    # checks need tomllib (3.11+), so a working-but-old interpreter silently
+    # reds 7 checks as ImportError (measured on the 4090: py -0 lists 3.14 +
+    # 3.10; the first-working probe order resolved 3.10).
+    local c best_c="" best_v="" v=""
+    for c in python3 python py; do
+        command -v "$c" >/dev/null 2>&1 || continue
+        [ "$("$c" -c 'print("pyok")' 2>/dev/null | tr -d '\r')" = "pyok" ] || continue
+        v=$("$c" -c 'import sys; print("%d" % (sys.version_info[0]*100 + sys.version_info[1]))' 2>/dev/null | tr -d '\r')
+        [ -n "$v" ] || continue
+        if [ -z "$best_v" ] || [ "$v" -gt "$best_v" ]; then
+            best_c="$c"; best_v="$v"
+        fi
+    done
+    [ -n "$best_c" ] || return 1
+    printf '%s\n' "$best_c"
+}
+PY="$(resolve_py)" || { echo "✗ no WORKING python interpreter on PATH (python3/python/py probed by execution; Windows Store stubs are skipped) — docs gate cannot run"; exit 1; }
+# The checks import tomllib (3.11+). A lower interpreter is allowed (the
+# non-tomllib checks still run) but the limitation is named loudly, never
+# discovered as seven ImportErrors.
+PY_V="$("$PY" -c 'import sys; print(sys.version_info[0]*100 + sys.version_info[1])' 2>/dev/null | tr -d '\r')"
+if [ -n "$PY_V" ] && [ "$PY_V" -lt 311 ]; then
+    echo "⚠ resolved interpreter '$PY' is python $((PY_V / 100)).$((PY_V % 100)) < 3.11 — tomllib-dependent checks (count_features, bench_doc_audit, cargo_comment_audit, cfg_gated_floor, required_features_static, cfg_row_implication, population_sync) will fail on import; install 3.11+ or expose it via the py launcher"
 fi
+
+# Self-supply documented workstation prerequisite (2), header above: a
+# cp874/cp1252 Windows console cannot encode the gates' checkmark output and
+# the UnicodeEncodeError masquerades as a gate failure. utf-8 unless the
+# caller deliberately set their own.
+export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 
 # ── This gate times ITSELF ──────────────────────────────────────────────────
 # The duration used to be hand-typed in AGENTS.md, and a hand-typed duration
@@ -122,8 +169,8 @@ fi
 # load-invariant figure to compare across runs. Numbers and the measured
 # non-explanation live in AGENTS.md §Docs gate, not duplicated here.
 # `$EPOCHREALTIME` is bash >= 5.0 and this box is 3.2.57, so the stamp goes
-# through python3 — already a hard dependency three lines above.
-now() { python3 -c 'import time; print("%.2f" % time.time())'; }
+# through the resolved interpreter — already a hard dependency above.
+now() { "$PY" -c 'import time; print("%.2f" % time.time())'; }
 GATE_T0="$(now)"
 
 failed=0
@@ -139,14 +186,14 @@ for entry in "${CHECKS[@]}"; do
     fi
     echo "▸ $script — $what"
     check_t0="$(now)"
-    if out="$(python3 "$script" 2>&1)"; then
+    if out="$("$PY" "$script" 2>&1)"; then
         printf '%s\n' "$out" | tail -1 | sed 's/^/    /'
     else
         failed=$((failed + 1))
         printf '%s\n' "$out" | sed 's/^/    /'
         echo "  ✗ $script FAILED"
     fi
-    check_dt="$(python3 -c "print('%.1f' % ($(now) - $check_t0))")"
+    check_dt="$("$PY" -c "print('%.1f' % ($(now) - $check_t0))")"
     case "$check_dt" in
         # Only the slow ones are worth a line; the rest are noise at 0.0-0.9s.
         0.*) ;;
@@ -157,7 +204,7 @@ done
 # CPU is the load-invariant total (`times` reports this shell + its children);
 # wall is what the operator experiences. A large gap means the box was busy —
 # compare CPU across runs before concluding a check got slower.
-gate_wall="$(python3 -c "print('%.1f' % ($(now) - $GATE_T0))")"
+gate_wall="$("$PY" -c "print('%.1f' % ($(now) - $GATE_T0))")"
 
 # `times` must be REDIRECTED, never captured. Measured on bash 3.2.57 against
 # a child that burned 0.167s of user time:

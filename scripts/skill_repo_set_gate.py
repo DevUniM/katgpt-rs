@@ -94,7 +94,7 @@ def partial_clone_state(derived: list[str]) -> tuple[bool, list[str], list[str]]
     marker_on = os.environ.get(PARTIAL_MARKER) == "1"
     if not SNAPSHOT.is_file():
         return marker_on, [], []
-    snap = [l.strip() for l in SNAPSHOT.read_text().splitlines()
+    snap = [l.strip() for l in SNAPSHOT.read_text(encoding="utf-8").splitlines()
             if l.strip() and not l.startswith("#")]
     return marker_on, sorted(set(snap) - set(derived)), sorted(set(derived) - set(snap))
 
@@ -160,7 +160,7 @@ def load_vocabulary(derived: list[str]) -> tuple[list[str], str | None, str | No
     if not SNAPSHOT.is_file():
         return [], (f"{SNAPSHOT.name} is missing — the gate has no repo "
                     f"vocabulary. Regenerate on the workstation."), None
-    snap = [l.strip() for l in SNAPSHOT.read_text().splitlines()
+    snap = [l.strip() for l in SNAPSHOT.read_text(encoding="utf-8").splitlines()
             if l.strip() and not l.startswith("#")]
     if len(derived) > 1 and sorted(snap) != sorted(derived):
         missing = sorted(set(derived) - set(snap))
@@ -200,7 +200,7 @@ def scan(path: Path, repos: list[str]) -> list[tuple[int, int, set[str], bool]]:
     brace_re = re.compile(r"/\{([^}]*)\}")
     repo_set = set(repos)
     out = []
-    for start, end, body, prev in fenced_blocks(path.read_text()):
+    for start, end, body, prev in fenced_blocks(path.read_text(encoding="utf-8")):
         if MARKER_RE.search(prev) or any(MARKER_RE.search(l) for l in body):
             continue
         names: set[str] = set()
