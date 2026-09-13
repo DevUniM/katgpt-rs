@@ -2668,8 +2668,8 @@ pub use factorized_action::{
 pub mod ooo_audit;
 #[cfg(feature = "direction_bank_audit")]
 pub use ooo_audit::{
-    AuditScratch, BankAudit, CurationResult, OooAuditConfig, audit_bank_into, cross_ooo,
-    exemplar_rbf_sim_into, greedy_curate, ooo_score, select_meis_into,
+    AuditScratch as OooAuditScratch, BankAudit, CurationResult, OooAuditConfig, audit_bank_into,
+    cross_ooo, exemplar_rbf_sim_into, greedy_curate, ooo_score, select_meis_into,
 };
 
 // Velocity-Field Ensemble — Algebraic Combination of Pre-Trained Models
