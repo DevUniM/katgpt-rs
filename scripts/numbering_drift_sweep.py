@@ -57,6 +57,35 @@ because a file that is not an integer is undecidable under no convention.
 Report + gate. Exit 0 clean, 1 on drift above the pins, **2 if the instrument
 itself is untrustworthy** (selftest failure) — an unreliable instrument is not
 the same finding as drift and must not be reported as one.
+
+The counter-transition classes (Issue 769, landed 2026-09-13)
+--------------------------------------------------------------
+`.highwater` is not only checked for CONTENT (malformed / above-max) but for
+HISTORY: `highwater_contiguity_audit.py`'s walker classifies every committed
+transition of the counter file, and two of its classes are verdicts here —
+
+  resets     a committed BACKWARD move. After `517→511`, the numbers 512..517
+             can be allocated AGAIN — the never-reuse rule broken by
+             construction, the `.issues/121` collision class at counter
+             granularity. First full adjudication (Issue 769 T2): all 31
+             measured resets workspace-wide are NON-MERGE stale-lineage
+             writebacks — a diverged-checkout session committing its local
+             counter over a newer mainline value (the exact class the
+             Numbering Discipline's "read `.highwater` AND `git status -sb`
+             together" rule warns about). The historical hazard was absorbed
+             by subsequent gap fast-forwards and push-wins renumbers; no live
+             file duplicates exist (the max_dup column proves that separately).
+             Pinned at the MEASURED count per repo — a NEW reset reds
+             immediately, the standing history stays visible in the pins.
+  unbumped   the WORKTREE counter sits BELOW its committed history max — the
+             counter moved backward in the worktree (a branch/checkout state,
+             not a commit). Measured: seal-game-editor ×3 (its worktree is the
+             read-only surface this box carries); REPORT to the owner, never
+             auto-repair.
+
+Both run over EVERY dir carrying a `.highwater`, not just SERIAL_DIRS — a
+backward move is anomalous under number- and count-based conventions alike
+(the malformed check's precedent).
 """
 
 from __future__ import annotations
@@ -66,6 +95,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
+import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -98,20 +128,21 @@ def parse_rows(path: Path) -> dict[str, dict[str, int]]:
         if not line:
             continue
         parts = line.split()
-        if len(parts) != 5:
-            raise ValueError(f"malformed pin row (want 5 fields): {raw!r}")
-        repo, mn, dup, above, mal = parts
+        if len(parts) != 7:
+            raise ValueError(f"malformed pin row (want 7 fields): {raw!r}")
+        repo, mn, dup, above, mal, resets, unb = parts
         rows[repo] = {
             "min_files": int(mn), "max_dup": int(dup),
             "max_above": int(above), "max_malformed": int(mal),
+            "max_resets": int(resets), "max_unbumped": int(unb),
         }
     return rows
 
 
 def audit(repo: Path) -> dict:
-    """One repo -> its three finding classes + the population that produced them."""
+    """One repo -> its five finding classes + the population that produced them."""
     tracked = ng.tracked_paths(repo, list(ALL_DIRS))
-    dup, above, malformed = [], [], []
+    dup, above, malformed, resets, unbumped = [], [], [], [], []
     n_serial = 0
     for dirname in ALL_DIRS:
         by_num, hw, n, hw_bad = ng.scan(repo, dirname, tracked)
@@ -127,7 +158,28 @@ def audit(repo: Path) -> dict:
             dup.append(f"{dirname}/{num:03d} ×{len(files)}: {names}")
         if hw is not None and by_num and max(by_num) > hw:
             above.append(f"{dirname}: max {max(by_num)} > .highwater {hw}")
-    return {"dup": dup, "above": above, "malformed": malformed, "n_files": n_serial}
+    # ── the counter-transition classes (Issue 769): every dir WITH a counter,
+    # regardless of numbering convention — a backward move is anomalous under
+    # both number- and count-based semantics. The walker is the audit's,
+    # imported not re-implemented.
+    for dirname in ALL_DIRS:
+        hw_f = repo / dirname / ".highwater"
+        if not hw_f.is_file():
+            continue
+        tr = hca.counter_transitions(repo, dirname)
+        if not tr:
+            continue                       # never committed — nothing to walk
+        w = hca.walk_transitions(tr)
+        for a, b, h, s in w["resets"]:
+            resets.append(f"{dirname}: {a}->{b} @ {h[:10]} ({s[:48]})")
+        try:
+            wt = int(hw_f.read_text(encoding="utf-8").strip().split()[-1])
+        except (ValueError, IndexError, OSError):
+            continue                       # malformed — ng's class owns it
+        if w["final"] is not None and wt < w["final"]:
+            unbumped.append(f"{dirname}: worktree {wt} < history max {w['final']}")
+    return {"dup": dup, "above": above, "malformed": malformed,
+            "resets": resets, "unbumped": unbumped, "n_files": n_serial}
 
 
 def selftest() -> list[str]:
@@ -178,6 +230,33 @@ def selftest() -> list[str]:
         if got2["dup"]:
             fails.append(f"untracked split broken: {got2['dup']}")
 
+        # counter-transition classes (Issue 769): stub the walker — a committed
+        # backward move is a RESET; a worktree below the history max is UNBUMPED.
+        # walk([1→2, 4→3]): the second transition diverges (dual) and lands
+        # below its base — one reset, history max 4.
+        (repo / ".issues").mkdir(exist_ok=True)
+        (repo / ".issues" / ng.HIGHWATER).write_text("3\n")
+        real_tr = hca.counter_transitions
+        hca.counter_transitions = (
+            lambda r, d: [("h1", "s1", 1, 2), ("h2", "s2", 4, 3)]
+            if d == ".issues" else [])
+        try:
+            got3 = audit(repo)
+        finally:
+            hca.counter_transitions = real_tr
+        if len(got3["resets"]) != 1 or "4->3" not in got3["resets"][0]:
+            fails.append(f"reset: committed backward move not reported: {got3['resets']}")
+        if len(got3["unbumped"]) != 1 or "3 < history max 4" not in got3["unbumped"][0]:
+            fails.append(f"unbumped: worktree 3 < history max 4 must report: {got3['unbumped']}")
+        # a counter climbing in the worktree (in-flight) is NOT unbumped
+        (repo / ".issues" / ng.HIGHWATER).write_text("5\n")
+        try:
+            got4 = audit(repo)
+        finally:
+            hca.counter_transitions = real_tr
+        if got4["unbumped"]:
+            fails.append(f"in-flight: worktree above history max must not report: {got4['unbumped']}")
+
         # population derivation: BOUNDARY.md + a .git DIR, both required
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
@@ -190,16 +269,17 @@ def selftest() -> list[str]:
         if [p.name for p in contract_repos(ws)] != ["fake-repo"]:
             fails.append("population: derivation is not BOUNDARY.md + .git dir")
 
-        # row parser: 5 fields, comments stripped, arity enforced
+        # row parser: 7 fields, comments stripped, arity enforced
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a\t10\t0\t0\t0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a\t10\t0\t0\t0\t0\t0  # trailing\n\n")
         if parse_rows(pins) != {"repo-a": {"min_files": 10, "max_dup": 0,
-                                           "max_above": 0, "max_malformed": 0}}:
-            fails.append("row parse: 5-field row not read correctly")
-        pins.write_text("repo-a 1 2 3\n")
+                                           "max_above": 0, "max_malformed": 0,
+                                           "max_resets": 0, "max_unbumped": 0}}:
+            fails.append("row parse: 7-field row not read correctly")
+        pins.write_text("repo-a 1 2 3 4 5\n")
         try:
             parse_rows(pins)
-            fails.append("row parse: 4-field row accepted")
+            fails.append("row parse: 5-field row accepted")
         except ValueError:
             pass
     return fails
@@ -242,7 +322,7 @@ def main() -> int:
 
     seen = {p.name for p in repos}
     bad = False
-    tot_dup = tot_above = tot_mal = 0
+    tot_dup = tot_above = tot_mal = tot_reset = tot_unb = 0
 
     for repo in repos:
         got = audit(repo)
@@ -250,6 +330,8 @@ def main() -> int:
         tot_dup += len(got["dup"])
         tot_above += len(got["above"])
         tot_mal += len(got["malformed"])
+        tot_reset += len(got["resets"])
+        tot_unb += len(got["unbumped"])
         flags = []
         if row is None:
             flags.append("UNPINNED — add a row (or it can never red)")
@@ -262,15 +344,25 @@ def main() -> int:
                 flags.append(f"stale allocators {len(got['above'])} > pinned {row['max_above']}")
             if len(got["malformed"]) > row["max_malformed"]:
                 flags.append(f"malformed allocators {len(got['malformed'])} > pinned {row['max_malformed']}")
-        status = "✗" if flags else ("·" if (got["dup"] or got["above"] or got["malformed"]) else "✓")
+            if len(got["resets"]) > row["max_resets"]:
+                flags.append(f"counter resets {len(got['resets'])} > pinned {row['max_resets']} — a committed BACKWARD move: the re-climb re-spends numbers (Issue 769)")
+            if len(got["unbumped"]) > row["max_unbumped"]:
+                flags.append(f"un-bumped counters {len(got['unbumped'])} > pinned {row['max_unbumped']} — worktree counter below its committed history max")
+        status = "✗" if flags else ("·" if (got["dup"] or got["above"] or got["malformed"]
+                                    or got["resets"] or got["unbumped"]) else "✓")
         print(f"{status} {repo.name:22s} files={got['n_files']:<5d} "
-              f"dup={len(got['dup'])} stale={len(got['above'])} malformed={len(got['malformed'])}")
+              f"dup={len(got['dup'])} stale={len(got['above'])} malformed={len(got['malformed'])} "
+              f"resets={len(got['resets'])} unbumped={len(got['unbumped'])}")
         for r in got["malformed"]:
             print(f"      malformed:  {r}")
         for r in got["above"]:
             print(f"      stale:      {r}")
         for r in got["dup"]:
             print(f"      duplicate:  {r}")
+        for r in got["resets"]:
+            print(f"      reset:      {r}")
+        for r in got["unbumped"]:
+            print(f"      unbumped:   {r}")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
@@ -281,7 +373,14 @@ def main() -> int:
               f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(repos)} contract repo(s) · {tot_dup} tracked duplicate(s) · "
-          f"{tot_above} stale allocator(s) · {tot_mal} malformed allocator(s)")
+          f"{tot_above} stale allocator(s) · {tot_mal} malformed allocator(s) · "
+          f"{tot_reset} counter reset(s) · {tot_unb} un-bumped counter(s)")
+    print(f"  resets are HISTORICAL stale-lineage writebacks at their pins "
+          f"(Issue 769 T2 adjudication: all measured resets are non-merge "
+          f"diverged-checkout commits; the re-climb re-spends numbers until a "
+          f"gap fast-forward repairs the range) — a NEW reset reds at its pin. "
+          f"unbumped rows REPORT to the owning repo; seal-game-editor is "
+          f"read-only here.")
     # Say the scope at the point of READING, not only in the docstring. A green
     # `dup=0` is green over SERIAL_DIRS only, and riir-ai carried four genuine
     # cross-topic `.benchmarks/` collisions (617/619, resolved 2026-09-05) while

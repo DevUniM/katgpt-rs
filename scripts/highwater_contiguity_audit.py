@@ -45,7 +45,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
-import issue_citation_gate as icg  # noqa: E402
+# issue_citation_gate is imported LAZILY inside main(): this module sits BELOW
+# the citation gate in the import graph (numbering_drift_sweep imports this
+# walker, and the gate imports numbering_drift_sweep for its seventh
+# population predicate), so a module-level import here is a CYCLE that
+# detonates only when the gate runs as a script — the __main__ double-load
+# trap, caught by docs_gate on the Issue 769 landing.
 
 REPO_ROOT = HERE.parent
 WORKSPACE = Path(os.environ.get("WORKSPACE_ROOT", str(REPO_ROOT.parent)))
@@ -56,24 +61,26 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_ROOT", str(REPO_ROOT.parent)))
 COUNT_BASED_BENCH = {"riir-auth"}
 
 
-def counter_transitions(repo: Path, subdir: str) -> list[tuple[int, int]]:
-    """Committed (old, new) value transitions, oldest first.
+def counter_transitions(repo: Path, subdir: str) -> list[tuple[str, str, int, int]]:
+    """Committed (hash, subject, old, new) transitions, oldest first.
 
     `git log --reverse -p` over the counter file; each hunk's -old/+new pair
-    is one transition. Merge commits that leave the value unchanged emit no
-    hunk and no transition. A repo without history for the file (never
-    committed, or not a git repo) returns [] — the caller reports that shape
-    rather than guessing.
+    is one transition, tagged with its commit. Merge commits that leave the
+    value unchanged emit no hunk and no transition. A repo without history
+    for the file (never committed, or not a git repo) returns [] — the caller
+    reports that shape rather than guessing.
     """
     r = subprocess.run(
         ["git", "-C", str(repo), "log", "--all", "--reverse", "-p",
-         "--format=format:__C__", "--", f"{subdir}/.highwater"],
+         "--format=format:__C__%H_%s", "--", f"{subdir}/.highwater"],
         capture_output=True, text=True,
     )
-    out: list[tuple[int, int]] = []
+    out: list[tuple[str, str, int, int]] = []
     old = new = None
+    head = ""
     for line in r.stdout.splitlines():
         if line.startswith("__C__"):
+            head = line[5:]
             old = new = None
             continue
         m = re.match(r"^-(\d+)\s*$", line)
@@ -84,24 +91,33 @@ def counter_transitions(repo: Path, subdir: str) -> list[tuple[int, int]]:
         if m:
             new = int(m.group(1))
             if old is not None:
-                out.append((old, new))
+                out.append((*head.split("_", 1), old, new))
             old = new = None
     return out
 
 
-def walk_transitions(transitions: list[tuple[int, int]]) -> dict:
-    """Classify a transition timeline: gaps, resets, dual-bumps.
+def walk_transitions(transitions: list) -> dict:
+    """Classify a transition timeline: gaps, resets, duals.
 
     `current` walks the timeline; a transition whose `old` is NOT `current`
     comes from a diverged lineage (two branches each bumped the counter —
     the intra-repo dual-allocation shape). Those are counted, not condemned:
-    a dual-bump spends the SAME number twice and creates no gap.
+    a dual-bump spends the SAME number twice and creates no gap. Reset rows
+    carry their (hash, subject) for the double-allocation-vs-merge-artifact
+    adjudication (Issue 769 T2).
+
+    On divergence the walk absorbs the lineage's OWN `old` (numbers up to it
+    were spent THERE even if the mainline never saw them — pinned by the
+    Issue 769 sweep selftest: a `4→3` landing when the walk sits at 2 is a
+    reset against 4, not a climb to 3): `base = max(current, old)` and
+    `current = max(current, old, new)`.
     """
     gaps: list[tuple[int, int]] = []
-    resets: list[tuple[int, int]] = []
+    resets: list[tuple[int, int, str, str]] = []
     duals = 0
     current: int | None = None
-    for old, new in transitions:
+    for t in transitions:
+        old, new, h, s = t[2], t[3], t[0], t[1]
         if current is None:
             current = new
             if new - old > 1:
@@ -109,14 +125,14 @@ def walk_transitions(transitions: list[tuple[int, int]]) -> dict:
             continue
         if old != current:
             duals += 1
-            base = current
+            base = max(current, old)
         else:
             base = old
         if new > base + 1:
             gaps.append((base, new))
         elif new < base:
-            resets.append((base, new))
-        current = max(current, new)
+            resets.append((base, new, h, s))
+        current = max(current, old, new)
     return {"gaps": gaps, "resets": resets, "duals": duals,
             "final": current}
 
@@ -124,30 +140,32 @@ def walk_transitions(transitions: list[tuple[int, int]]) -> dict:
 def selftest() -> list[str]:
     fails: list[str] = []
     # gap: 765 -> 768 skips 766/767
-    if walk_transitions([(765, 768)])["gaps"] != [(765, 768)]:
+    if walk_transitions([("h1", "s1", 765, 768)])["gaps"] != [(765, 768)]:
         fails.append("gap: a +3 step must record (765, 768)")
     # clean: three +1 steps
-    w = walk_transitions([(1, 2), (2, 3), (3, 4)])
+    w = walk_transitions([("h1", "s1", 1, 2), ("h2", "s2", 2, 3), ("h3", "s3", 3, 4)])
     if w["gaps"] or w["resets"] or w["final"] != 4:
         fails.append("clean: +1 steps must produce no findings")
-    # reset: 766 -> 763
-    if walk_transitions([(765, 766), (766, 763)])["resets"] != [(766, 763)]:
-        fails.append("reset: a negative step must record (766, 763)")
+    # reset: 766 -> 763 carries its commit for adjudication
+    r = walk_transitions([("h1", "s1", 765, 766), ("h2", "s2", 766, 763)])["resets"]
+    if len(r) != 1 or r[0][:2] != (766, 763) or r[0][2] != "h2" or r[0][3] != "s2":
+        fails.append(f"reset: a negative step must carry (base, new, hash, subject): {r}")
     # dual-bump: two branches each 765->766, then 766->767
-    w = walk_transitions([(765, 766), (765, 766), (766, 767)])
+    w = walk_transitions([("h1", "s1", 765, 766), ("h2", "s2", 765, 766), ("h3", "s3", 766, 767)])
     if w["duals"] != 1 or w["gaps"] or w["final"] != 767:
         fails.append("dual: a diverged-lineage bump is counted, not a gap")
     # initial creation at N: the first transition's old is the pre-counter
     # state; a first hunk 0->100 is a jump from nothing, recorded as a gap
     # only when it skips (old != 0). Creation 0->1 is clean.
-    if walk_transitions([(0, 1)])["gaps"]:
+    if walk_transitions([("h1", "s1", 0, 1)])["gaps"]:
         fails.append("creation: 0->1 must be clean")
-    if walk_transitions([(0, 100)])["gaps"] != [(0, 100)]:
+    if walk_transitions([("h1", "s1", 0, 100)])["gaps"] != [(0, 100)]:
         fails.append("creation: 0->100 must record the skipped 1..99")
     return fails
 
 
 def main() -> int:
+    import issue_citation_gate as icg  # noqa: E402  (lazy: see the module header)
     fails = selftest()
     if fails:
         print("✗ highwater contiguity audit SELFTEST FAILED:")
@@ -197,7 +215,10 @@ def main() -> int:
             if w["gaps"]:
                 notes.append("GAPS " + ", ".join(f"{a}->{b}" for a, b in w["gaps"][:4]))
             if w["resets"]:
-                notes.append("RESETS " + ", ".join(f"{a}->{b}" for a, b in w["resets"][:4]))
+                notes.append("RESETS " + ", ".join(
+                    f"{a}->{b}" for a, b, _, _ in w["resets"][:4]))
+                for a, b, h, s in w["resets"][:4]:
+                    notes.append(f"    reset {a}->{b} @ {h[:10]} {s[:70]}")
             if missing and len(missing) > 8:
                 notes.append(f"{len(missing)} unwitnessed (file-and-removed "
                              f"class, or jump children)")

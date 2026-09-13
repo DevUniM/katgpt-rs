@@ -11,6 +11,37 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 769 resolved — the counter-reset class lands in the numbering sweep; all 31 measured resets adjudicated (2026-09-13, M3 session)
+
+Filed and resolved the same session, out of Issue 768's T3 measurement.
+`numbering_drift_sweep.py` gains two verdict classes over `.highwater`
+HISTORY (the walker imported from `highwater_contiguity_audit.py`, not
+re-implemented):
+
+- **resets** — committed BACKWARD moves. After `517→511` the re-climb
+  re-spends numbers: the never-reuse rule broken at counter granularity, the
+  `.issues/121` collision class reborn. **T2 adjudication: all 31 measured
+  resets workspace-wide are NON-MERGE stale-lineage writebacks** — a
+  diverged-checkout session committing its local counter over a newer
+  mainline value (katgpt-rs Bench `564→204`/`564→205` — a long-diverged
+  lane allocating 204/205 while main sat at 564; riir-train Bench ×8; katgpt-rs
+  Issue `577→25` — a worktree branch from base 24). The historical hazard
+  was absorbed by gap fast-forwards and push-wins renumbers; the max_dup
+  column proves no live file duplicates. Pinned at measured (ratchet): a NEW
+  reset reds at its pin.
+- **unbumped** — the WORKTREE counter below its committed history max
+  (a checkout state, not a commit): seal-game-editor ×3 (150<152, 191<194,
+  1<2) — REPORT-to-owner class, the repo is read-only to these sessions.
+
+Pin format 5→7 fields (`max_resets`, `max_unbumped`); the selftest grew a
+synthetic diverged-lineage fixture that caught a REAL walker defect on
+landing — a `4→3` landing when the walk sat at 2 read as a climb to 3,
+because the walker ignored the diverged lineage's own `old` (numbers up to
+it were spent THERE); `base = max(current, old)` now, and 17 rows moved
+from the gap bucket to their true hazard classes (332→315 gaps). The
+instrument proving itself before it shipped is the whole point of the
+fixture.
+
 ## Issue 768 resolved — the .highwater ownership witness REFUTED by measurement; highwater_contiguity_audit.py landed (2026-09-13, M3 session)
 
 Filed the same day from the Issue-766 mis-repair arc; closed MEASURED-NEGATIVE
@@ -21,8 +52,10 @@ here" — the counter as allocation ledger). The landed
 population-derived; two views — the static unwitnessed count, and the
 counter's own committed transition walk) answers NO, workspace-wide:
 
-- **332 gaps + 31 resets over 73 counters** — no major repo's counter is
-  contiguous. katgpt-rs Issue: 18 gaps + a `577→25` lineage reset; riir-ai
+- **315 gaps + 31 resets over 73 counters** (332 gaps at first measure; the
+  walker then learned to absorb a diverged lineage's own base — 17 rows
+  moved from the gap bucket to their true hazard classes) — no major repo's
+  counter is contiguous. katgpt-rs Issue: 18 gaps + a `577→25` lineage reset; riir-ai
   Issue: 38 gaps + 2 resets; riir-neuron-db Issue jumped `33→589` (a
   deliberate rebaseline — 34..588 were never allocated there);
   seal-game-editor/Plan carries 46 gaps; riir-shader's Issue counter moved
