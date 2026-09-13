@@ -2496,9 +2496,9 @@ pub use branching::{
     BudgetCompiler, CognitiveBranch, CompiledContext, CompiledItem,
     DEFAULT_ASSIGN_MAX_INTERFERENCE, DEFAULT_BUDGET_BYTES, DEFAULT_MAX_BRANCHES,
     DEFAULT_ORTHOGONAL_EPSILON, DEFAULT_PROJECTION_DIM, DEFAULT_QUARANTINE_CENTROID_THRESH,
-    DEFAULT_TAU_CURIOSITY, DEFAULT_TAU_JACCARD, DEFAULT_TAU_SNAP, DEFAULT_TAU_SPAWN,
-    DEFAULT_TAU_WRITE, EpisodicEntry, FailureEntry, NonInterferenceProjection, PriorityTier,
-    ProceduralRule, RetrievedMaterials, RouteMode, RouteResult, VerifierGate, WriteDecision,
+    DEFAULT_TAU_CURIOSITY, DEFAULT_TAU_JACCARD, DEFAULT_TAU_SNAP, DEFAULT_TAU_WRITE,
+    EpisodicEntry, FailureEntry, NonInterferenceProjection, PriorityTier, ProceduralRule,
+    RetrievedMaterials, RouteMode, RouteResult, VerifierGate, WriteDecision,
     max_orthogonal_branches,
 };
 

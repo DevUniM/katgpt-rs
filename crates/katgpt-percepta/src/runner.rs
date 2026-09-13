@@ -317,7 +317,6 @@ impl Runner {
             n_heads: weights.n_heads,
             n_layers: weights.n_layers,
             d_ffn: weights.d_ffn,
-            stop_token: "halt",
             max_gen: 50000,
         };
 

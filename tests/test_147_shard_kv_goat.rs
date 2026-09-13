@@ -96,13 +96,11 @@ fn make_shard_cache(
     head_dim: usize,
     max_seq_len: usize,
     avg_bits_k: f32,
-    avg_bits_v: f32,
     sink_tokens: usize,
     window_tokens: usize,
 ) -> ShardKVCache {
     let config = ShardConfig {
         avg_bits_k,
-        avg_bits_v,
         min_tail_bits: 1,
         max_bits: 8,
         n_layers: 1,
@@ -308,7 +306,7 @@ fn test_proof2_k_cosine_similarity() {
     let head_dim = 128;
     let max_seq_len = 512; // larger to accommodate sink + window + interior
     let n_keys = 128;
-    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 2.0, 4, 64);
+    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 4, 64);
 
     let layer = 0;
     // Use interior positions (skip sink tokens, stay clear of window)
@@ -371,7 +369,7 @@ fn test_proof3_v_cosine_similarity() {
     let head_dim = 128;
     let max_seq_len = 512; // larger to accommodate sink + window + interior
     let n_vals = 128;
-    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 2.0, 4, 64);
+    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 4, 64);
 
     let layer = 0;
     let start_pos = 4; // right after sink tokens
@@ -431,7 +429,7 @@ fn test_proof3_v_cosine_similarity() {
 fn test_proof4_compression_ratio() {
     let head_dim = 128;
     let max_seq_len = 256;
-    let cache = make_shard_cache(head_dim, max_seq_len, 4.0, 2.0, 4, 64);
+    let cache = make_shard_cache(head_dim, max_seq_len, 4.0, 4, 64);
     let ratio = cache.compression_ratio();
 
     println!("=== Proof 4: Compression ratio (G5) ===");
@@ -452,7 +450,7 @@ fn test_proof5_sink_window_protection() {
     let max_seq_len = 256;
     let sink_tokens = 4;
     let window_tokens = 64;
-    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 2.0, sink_tokens, window_tokens);
+    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, sink_tokens, window_tokens);
 
     let layer = 0;
     let mut rng = katgpt_rs::types::Rng::new(77);
@@ -582,7 +580,6 @@ fn bench_shard_kv(
     max_seq_len: usize,
     n_keys: usize,
     avg_bits_k: f32,
-    avg_bits_v: f32,
 ) -> MethodResult {
     let sink_tokens = 0; // Disable for fair comparison (interior positions only)
     let window_tokens = 0;
@@ -590,7 +587,6 @@ fn bench_shard_kv(
         head_dim,
         max_seq_len,
         avg_bits_k,
-        avg_bits_v,
         sink_tokens,
         window_tokens,
     );
@@ -627,7 +623,7 @@ fn bench_shard_kv(
 
     let n = n_keys as f32;
     MethodResult {
-        name: format!("ShardKV(K={avg_bits_k:.0},V={avg_bits_v:.0})"),
+        name: format!("ShardKV(K={avg_bits_k:.0},V=VQ)"),
         avg_cos_k: cos_k_sum / n,
         avg_cos_v: cos_v_sum / n,
         avg_mse_k: mse_k_sum / n,
@@ -810,7 +806,7 @@ fn test_proof6_cross_method_benchmark() {
     println!();
 
     let mut results: Vec<MethodResult> =
-        vec![bench_shard_kv(head_dim, max_seq_len, n_keys, 4.0, 2.0)];
+        vec![bench_shard_kv(head_dim, max_seq_len, n_keys, 4.0)];
 
     // SpectralQuant at 3-bit
     results.push(bench_spectral_quant(head_dim, max_seq_len, n_keys, 3.0));
@@ -872,34 +868,36 @@ fn test_proof7_asymmetric_vs_symmetric() {
 
     println!("=== Proof 7: Asymmetric K/V bit allocation vs symmetric (G3 analog) ===");
 
-    // Asymmetric: K=4, V=2 (total budget = 6 bits per KV pair)
-    let asymmetric = bench_shard_kv(head_dim, max_seq_len, n_keys, 4.0, 2.0);
+    // Asymmetric: K=4 (V always VQ — group 4 × codebook 256 ⇒ 2.0 bits/coord).
+    // (Issue 772 S4: the old "K=4,V=2 vs K=3,V=3 symmetric" framing was a
+    // phantom — the deleted avg_bits_v knob never changed the V path, so the
+    // "symmetric" arm was really K=3 with the same VQ V. This is the same
+    // comparison with honest labels: a K-bit sweep at fixed V.)
+    let k4 = bench_shard_kv(head_dim, max_seq_len, n_keys, 4.0);
+    let k3 = bench_shard_kv(head_dim, max_seq_len, n_keys, 3.0);
 
-    // Symmetric: K=3, V=3 (same total budget = 6 bits)
-    let symmetric = bench_shard_kv(head_dim, max_seq_len, n_keys, 3.0, 3.0);
-
-    let asym_fidelity = asymmetric.avg_cos_k + asymmetric.avg_cos_v;
-    let sym_fidelity = symmetric.avg_cos_k + symmetric.avg_cos_v;
+    let k4_fidelity = k4.avg_cos_k + k4.avg_cos_v;
+    let k3_fidelity = k3.avg_cos_k + k3.avg_cos_v;
 
     println!(
-        "  Asymmetric (K=4,V=2): cos_k={:.4}, cos_v={:.4}, combined={:.4}",
-        asymmetric.avg_cos_k, asymmetric.avg_cos_v, asym_fidelity
+        "  K=4 (V=VQ): cos_k={:.4}, cos_v={:.4}, combined={:.4}",
+        k4.avg_cos_k, k4.avg_cos_v, k4_fidelity
     );
     println!(
-        "  Symmetric  (K=3,V=3): cos_k={:.4}, cos_v={:.4}, combined={:.4}",
-        symmetric.avg_cos_k, symmetric.avg_cos_v, sym_fidelity
+        "  K=3 (V=VQ): cos_k={:.4}, cos_v={:.4}, combined={:.4}",
+        k3.avg_cos_k, k3.avg_cos_v, k3_fidelity
     );
 
-    if asym_fidelity >= sym_fidelity {
+    if k4_fidelity >= k3_fidelity {
         println!(
-            "  VERDICT: PASS — asymmetric allocation wins by {:.4} combined fidelity",
-            asym_fidelity - sym_fidelity
+            "  VERDICT: PASS — K=4 wins by {:.4} combined fidelity",
+            k4_fidelity - k3_fidelity
         );
     } else {
         // Let the data speak honestly
         println!(
-            "  VERDICT: Symmetric allocation wins by {:.4} combined fidelity",
-            sym_fidelity - asym_fidelity
+            "  VERDICT: K=3 wins by {:.4} combined fidelity",
+            k3_fidelity - k4_fidelity
         );
         println!("  (Honest data — test does not fail on this comparison)");
         println!(
@@ -919,7 +917,7 @@ fn test_proof8_lossless_decode_streaming() {
 
     println!("=== Proof 8: Guarantee lossless decode streaming (Shard §8) ===");
 
-    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 2.0, 0, 0);
+    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 0, 0);
 
     // Phase 1: Prefill (uses VQ prefill path)
     let mut rng = katgpt_rs::types::Rng::new(42);
@@ -1037,7 +1035,7 @@ fn test_final_verdict_summary() {
         .collect();
 
     // We need a new cache since make_shard_cache has no sink/window for this test
-    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 2.0, 0, 0);
+    let mut cache = make_shard_cache(head_dim, max_seq_len, 4.0, 0, 0);
 
     for (pos, (k, v)) in keys.iter().zip(values.iter()).enumerate() {
         cache.store_key(0, pos, k);

@@ -303,8 +303,6 @@ fn run_ab(label: &str, hint_policy: HintPolicy) -> RunOutcome {
         k: 4,
         tau_low: 0.05, // low threshold so entropy doesn't trigger collapse on small pool
         exploration_magnitude: 0.2,
-        solve_rate_floor: 0.0,
-        solve_rate_ceiling: 1.0,
         k_npc: 1,
         staleness_lambda: 0.0,
     };

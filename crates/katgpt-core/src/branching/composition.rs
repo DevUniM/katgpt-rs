@@ -413,7 +413,7 @@ mod t43_engram_composition {
         let branch = bank.spawn(anchor_a.clone()).expect("spawn");
 
         // Router with a low snap threshold (un-normalized anchors).
-        let router = BranchRouter::new(0.0, 0.40, 0.0);
+        let router = BranchRouter::new(0.0, 0.40);
         // Query from the same suffix → same hashes → same anchor → high dot.
         let result = router.route(&anchor_a, &bank);
         assert_eq!(result.mode, RouteMode::Reuse);
@@ -444,7 +444,7 @@ mod t43_engram_composition {
         let mut bank: BranchBank<()> = BranchBank::new(8);
         let _branch = bank.spawn(anchor_a).expect("spawn");
 
-        let router = BranchRouter::new(0.92, 0.40, 0.0);
+        let router = BranchRouter::new(0.92, 0.40);
         let result = router.route(&anchor_b, &bank);
         // anchor_b != anchor_a → no dot-product snap → Spawn (capacity avail).
         assert_eq!(result.mode, RouteMode::Spawn);
@@ -472,7 +472,7 @@ mod t43_engram_composition {
 
         let mut bank: BranchBank<()> = BranchBank::new(8);
         let id = bank.spawn(anchor1.clone()).expect("spawn");
-        let router = BranchRouter::new(0.0, 0.40, 0.0);
+        let router = BranchRouter::new(0.0, 0.40);
         let r1 = router.route(&anchor1, &bank);
         let r2 = router.route(&anchor2, &bank);
         assert_eq!(r1, r2);

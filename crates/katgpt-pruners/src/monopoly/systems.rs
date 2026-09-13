@@ -9,9 +9,8 @@ use super::board::{build_board, group_squares, shuffle_decks};
 use super::players::{DecisionContext, MonopolyPlayer};
 use super::{
     BOARD_SIZE, Board, BoardSquare, CardDeck, CardEffect, GameConfig, GameEvent, JAIL_SQUARE,
-    JailDecision, JailReason, MAX_DOUBLES, MAX_HOUSES, MAX_JAIL_TURNS, Owned, Player,
-    PlayerEntities, Property, PropertyGroup, ReleaseMethod, SquareKind, Statistics, TaxKind,
-    TurnState,
+    JailDecision, JailReason, MAX_HOUSES, Owned, Player, PlayerEntities, Property, PropertyGroup,
+    ReleaseMethod, SquareKind, Statistics, TaxKind, TurnState,
 };
 
 // ---------------------------------------------------------------------------
@@ -835,9 +834,12 @@ pub fn execute_turn(
                         &mut events,
                     );
                 } else {
+                    // Issue 772 A1: read the knob (was the MAX_JAIL_TURNS const,
+                    // which shadowed GameConfig.max_jail_turns).
+                    let max_jail_turns = world.resource::<GameConfig>().max_jail_turns;
                     if let Some(mut p) = world.get_mut::<Player>(entity) {
                         p.jail_turns += 1;
-                        if p.jail_turns >= MAX_JAIL_TURNS {
+                        if p.jail_turns >= max_jail_turns {
                             release_from_jail(
                                 world,
                                 entity,
@@ -867,6 +869,9 @@ pub fn execute_turn(
 
     // ── Phase 2-4: Rolling / Resolving / Doubles Loop ──
     let mut doubles_count = 0u8;
+    // Issue 772 A2: read the knob once per turn (was the MAX_DOUBLES const,
+    // which shadowed GameConfig.max_doubles).
+    let max_doubles = world.resource::<GameConfig>().max_doubles;
 
     loop {
         let (d1, d2, is_doubles) = roll_dice(rng);
@@ -880,7 +885,7 @@ pub fn execute_turn(
 
         if is_doubles {
             doubles_count += 1;
-            if doubles_count >= MAX_DOUBLES {
+            if doubles_count >= max_doubles {
                 send_to_jail(world, entity, &mut events, JailReason::Speeding);
                 break;
             }
@@ -1286,6 +1291,7 @@ pub fn run_game(
 #[cfg(test)]
 mod tests {
     use super::super::players::RandomPlayer;
+    use super::super::{TradeOffer, TradeResponse};
     use super::*;
 
     fn test_world() -> World {
@@ -1452,5 +1458,122 @@ mod tests {
         let squares = world.resource::<Board>().squares;
         world.entity_mut(squares[1]).insert(Owned::new(entity));
         assert_eq!(calculate_net_worth(&world, entity), 1560);
+    }
+
+    // ── Issue 772 A1/A2 wire proofs ────────────────────────────────────────
+
+    /// Scripted no-op AI: never buys/bids/builds/trades, and always follows
+    /// the configured jail strategy. Lets the dice path (and only the dice
+    /// path) drive turn outcomes deterministically under a chosen seed.
+    struct StubPlayer {
+        jail: JailDecision,
+    }
+
+    impl MonopolyPlayer for StubPlayer {
+        fn should_buy_property(&mut self, _ctx: &DecisionContext, _square: u8, _price: u32) -> bool {
+            false
+        }
+        fn auction_bid(&mut self, _ctx: &DecisionContext, _square: u8, _current_bid: u32) -> u32 {
+            0
+        }
+        fn jail_decision(&self, _ctx: &DecisionContext) -> JailDecision {
+            self.jail
+        }
+        fn build_houses(&mut self, _ctx: &DecisionContext) -> Vec<u8> {
+            Vec::new()
+        }
+        fn trade_response(&mut self, _offer: &TradeOffer, _ctx: &DecisionContext) -> TradeResponse {
+            TradeResponse::Decline
+        }
+        fn propose_trade(&self, _ctx: &DecisionContext) -> Option<TradeOffer> {
+            None
+        }
+        fn mortgage_priority(&self, _ctx: &DecisionContext) -> Vec<u8> {
+            Vec::new()
+        }
+        fn name(&self) -> &str {
+            "stub"
+        }
+        fn emoji(&self) -> &str {
+            "🤖"
+        }
+        fn reset(&mut self) {}
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// First two u8(1..=6) draws of `roll_dice` for a seed.
+    fn first_dice_pair(seed: u64) -> (u8, u8) {
+        let mut r = fastrand::Rng::with_seed(seed);
+        (r.u8(1..=6), r.u8(1..=6))
+    }
+
+    #[test]
+    fn jail_release_respects_config_max_jail_turns() {
+        // Find a seed whose first roll is NOT doubles (the jail_turns path).
+        let seed = (0..1000u64)
+            .find(|&s| first_dice_pair(s).0 != first_dice_pair(s).1)
+            .expect("a non-doubles seed exists");
+        let mut world = test_world();
+        world.insert_resource(GameConfig {
+            max_jail_turns: 1,
+            ..Default::default()
+        });
+        let entity = player_entity(&world, 0);
+        send_to_jail(&mut world, entity, &mut Vec::new(), JailReason::Speeding);
+
+        let mut ai = StubPlayer {
+            jail: JailDecision::RollForDoubles,
+        };
+        let mut rng = fastrand::Rng::with_seed(seed);
+        let result = execute_turn(&mut world, 0, &mut ai, &mut rng);
+
+        // With max_jail_turns = 1 the single non-doubles jail roll must release
+        // (jail_turns 1 >= 1). Under the old const (3) the player stays jailed.
+        let p = world.get::<Player>(entity).unwrap();
+        assert!(!p.in_jail, "player must be released after 1 configured jail turn");
+        assert!(result.events.iter().any(|e| matches!(
+            e,
+            GameEvent::PlayerReleasedFromJail {
+                method: ReleaseMethod::MaxTurnsExceeded,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn speeding_jail_respects_config_max_doubles() {
+        // Find a seed whose first roll IS doubles.
+        let seed = (0..1000u64)
+            .find(|&s| first_dice_pair(s).0 == first_dice_pair(s).1)
+            .expect("a doubles seed exists");
+        let mut world = test_world();
+        world.insert_resource(GameConfig {
+            max_doubles: 1,
+            ..Default::default()
+        });
+        let entity = player_entity(&world, 0);
+
+        let mut ai = StubPlayer {
+            jail: JailDecision::RollForDoubles,
+        };
+        let mut rng = fastrand::Rng::with_seed(seed);
+        let result = execute_turn(&mut world, 0, &mut ai, &mut rng);
+
+        // With max_doubles = 1 the first doubles must send the player to jail
+        // for speeding. Under the old const (3) one doubles is not enough.
+        let p = world.get::<Player>(entity).unwrap();
+        assert!(p.in_jail, "player must be jailed after 1 configured doubles");
+        assert!(result.events.iter().any(|e| matches!(
+            e,
+            GameEvent::PlayerJailed {
+                reason: JailReason::Speeding,
+                ..
+            }
+        )));
     }
 }

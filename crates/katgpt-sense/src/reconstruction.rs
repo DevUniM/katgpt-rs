@@ -76,9 +76,6 @@ pub enum TraversalAction {
 pub struct ReconstructionConfig {
     /// Maximum reconstruction steps (default: 3, MRAgent shows diminishing returns after 3-4).
     pub max_steps: u8,
-    /// Enable LOD-adaptive pruning (default: true).
-    /// Reduces octree depth when activation spread is narrow.
-    pub lod_adaptive: bool,
     /// Learning rate for belief state evolution (default: 0.1).
     pub belief_learning_rate: f32,
     /// Entropy threshold for early stopping (default: 0.05).
@@ -130,7 +127,6 @@ impl Default for ReconstructionConfig {
     fn default() -> Self {
         Self {
             max_steps: 3,
-            lod_adaptive: true,
             belief_learning_rate: 0.1,
             entropy_threshold: 0.05,
             max_belief_delta: 0.3,
@@ -1389,7 +1385,6 @@ mod tests {
         assert_eq!(config.max_steps, 3);
         assert!((config.belief_learning_rate - 0.1).abs() < 1e-6);
         assert!((config.entropy_threshold - 0.05).abs() < 1e-6);
-        assert!(config.lod_adaptive);
     }
 
     #[test]

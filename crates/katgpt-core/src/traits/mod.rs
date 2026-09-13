@@ -882,7 +882,10 @@ pub enum BcTarget {
 /// early in training, then the BC coefficient decays to 0.
 ///
 /// From `dual_leo_ppo.py`: bc_coef_policy=0.1, bc_coef_value=0.0,
-/// bc_policy_target="argmax", anneal_bc=true.
+/// bc_policy_target="argmax". (The paper's `anneal_bc=true` is training-loop
+/// territory — an anneal schedule belongs to the consumer's training loop
+/// (see AlphaSchedule::LinearAnneal on DualLeoMixer); no anneal knob is
+/// carried here.)
 #[cfg(feature = "dual_leo")]
 #[derive(Clone, Copy, Debug)]
 pub struct BcConfig {
@@ -893,8 +896,6 @@ pub struct BcConfig {
     pub value_coef: f32,
     /// Which action to use as BC target.
     pub target: BcTarget,
-    /// Whether to anneal BC coefficient to 0 over training.
-    pub anneal: bool,
 }
 
 #[cfg(feature = "dual_leo")]
@@ -904,7 +905,6 @@ impl Default for BcConfig {
             policy_coef: 0.1,
             value_coef: 0.0,
             target: BcTarget::Argmax,
-            anneal: true,
         }
     }
 }

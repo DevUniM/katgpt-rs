@@ -64,7 +64,7 @@ fn test_boundary_penalty_overhead() {
 
 #[test]
 fn test_on_grid_vs_boundary_scores() {
-    let bp = BoundaryPenalty::new(256, 1.0 / 127.0);
+    let bp = BoundaryPenalty::new(1.0 / 127.0);
 
     // On-grid values (quantized)
     let on_grid: Vec<f32> = (0..10).map(|i| i as f32 / 127.0 * 127.0).collect();
@@ -83,7 +83,7 @@ fn test_on_grid_vs_boundary_scores() {
 #[test]
 fn test_default_config_reasonable() {
     let bp = BoundaryPenalty::default();
-    assert_eq!(bp.quant_levels, 256);
+    assert!((bp.quant_scale - 1.0 / 127.0).abs() < 1e-9);
     assert!(bp.penalty_weight > 0.0 && bp.penalty_weight < 1.0);
     assert!(bp.boundary_epsilon > 0.0 && bp.boundary_epsilon < 1.0);
 }
