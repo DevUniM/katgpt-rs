@@ -2764,8 +2764,10 @@ landed same day, wire-vs-delete adjudicated per finding:
   unlike inherent validate-shaped methods; the cheap detector
   refinement is exempting trait-impl bodies from the
   "own-validate-impl" bucket. riir-train 546 extended the class:
-  `Display`-impl reads are operational too. Harvest into riir-clippy
-  `.distill/001` deferred while that tree is sibling-hot.
+  `Display`-impl reads are operational too. Harvest landed in riir-clippy
+  `.distill/001` Post-mining intake as FP class #3 (`eb35dfcd`, 2026-09-14 —
+  the C2 trait-impl-body exemption + the wire-schema `[wire-const]`
+  downgrade + the wire-vs-delete protocol note).
 
 Verification: clippy `--all-targets` per touched crate INCLUDING the
 feature arms that gate each module (`monopoly`, `shard_kv`,
