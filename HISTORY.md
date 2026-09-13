@@ -11,6 +11,42 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 768 resolved — the .highwater ownership witness REFUTED by measurement; highwater_contiguity_audit.py landed (2026-09-13, M3 session)
+
+Filed the same day from the Issue-766 mis-repair arc; closed MEASURED-NEGATIVE
+in one session. T3 asked whether `.highwater` is contiguous enough to serve
+as a fourth ownership witness in `allocated()` ("n ≤ hw ⇒ n was allocated
+here" — the counter as allocation ledger). The landed
+`scripts/highwater_contiguity_audit.py` (report-only, selftested,
+population-derived; two views — the static unwitnessed count, and the
+counter's own committed transition walk) answers NO, workspace-wide:
+
+- **332 gaps + 31 resets over 73 counters** — no major repo's counter is
+  contiguous. katgpt-rs Issue: 18 gaps + a `577→25` lineage reset; riir-ai
+  Issue: 38 gaps + 2 resets; riir-neuron-db Issue jumped `33→589` (a
+  deliberate rebaseline — 34..588 were never allocated there);
+  seal-game-editor/Plan carries 46 gaps; riir-shader's Issue counter moved
+  `11→9`. riir-auth's `.benchmarks` counter is COUNT-BASED by its own
+  AGENTS.md (records, not numbers) — excluded from witness semantics by
+  design.
+- The blanket witness would therefore CLAIM never-allocated numbers — and an
+  ownership witness that over-claims does not merely miss findings, it
+  VALIDATES wrong addresses: the exact failure class (766/4573af13) inverted.
+- A maximal-contiguous-suffix witness is derivable but unpredictable
+  (coverage starts after each counter's LAST gap/reset, wherever history put
+  it) and still carries the T2 dual-allocation false-validation risk; T1
+  measured ZERO live rows the witness would change (the corpus sits at 0
+  CROSS after the same-day repairs). Benefit ≈ 0 today, cost real, soundness
+  refuted → **declined. Decline is a correct answer.**
+
+The 766-class protection stands on the already-landed repair instead: the
+canonical `## Issue NNN (date)` heading form IS the allocation record
+`heading_allocated()` reads (Issue 754). Standing counter-hygiene findings
+from the audit (the resets are number-reuse-shaped; seal-game-editor's
+worktree counter sits BELOW its committed history max) are re-runnable per
+repo via the script; the reset class as a NUMBERING sweep check is filed as
+Issue 769.
+
 ## The all-features E0252 root-name collision — ooo_audit::AuditScratch aliased (2026-09-13, M3 idle sweep)
 
 Found by the idle clippy sweep (`cargo clippy --workspace --all-targets
