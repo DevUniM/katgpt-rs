@@ -11,6 +11,27 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## The all-features E0252 root-name collision — ooo_audit::AuditScratch aliased (2026-09-13, M3 idle sweep)
+
+Found by the idle clippy sweep (`cargo clippy --workspace --all-targets
+--all-features`): E0252 — the crate root re-exported the name `AuditScratch`
+twice, once per opt-in feature (`latent_confounder_audit`, Bench 194, the
+older resident; `direction_bank_audit`, landed `83518b30` 09-12, the
+newcomer). Both-features-on is the only state that collides: the landing
+lane's single-feature validation had `latent_confounder_audit` off, and CI
+is main-only since 09-09, so develop carried the break unverified — the
+dual of the documented "non-default gated code compiles to nothing" blind
+spot (here even the all-features lane broke, because TWO opt-in features
+collide only in combination). Fixed at the newcomer's re-export
+(`a0ca7d36`): `AuditScratch as OooAuditScratch` at the crate root only;
+module paths unchanged — zero root-path consumers existed (both benches,
+riir-poc, and riir-clippy score_bench all import via module paths).
+Validation: default unaffected (`direction_bank_audit = []`, the edited
+block cfg-off); `-p katgpt-core --features direction_bank_audit` clippy
+clean + 2051/2051 lib tests; workspace `--all-features --all-targets`
+clippy clean (only the upstream `block v0.1.6` future-compat note,
+shared with riir-shader's tree).
+
 ## The Windows default-features workspace lane — bench_mtp_metal_batch_floor platform gate (2026-09-13, 4090 session)
 
 Found by the idle clippy sweep (`cargo clippy --workspace --all-targets` at
