@@ -2220,7 +2220,10 @@ pub use katgpt_types::depth_invariance::{
     // Issue 736: `leakage_probe::transport` consumes `symmetric_eig` (f64
     // eigenvalues+vectors) for PCA whitening and the orthogonal-Procrustes
     // polar factor — same rule, joined at birth rather than late.
-    feature = "leakage_probe"
+    feature = "leakage_probe",
+    // Issue 763: `lif_graph::fit_readout` consumes `ridge_solve_direct_f64`
+    // (the KARC-precedent closed-form readout) — same rule, joined at birth.
+    feature = "lif_graph"
 ))]
 pub mod linalg;
 
@@ -2272,6 +2275,20 @@ pub use karc::lod_tier::{KarcLodTier, is_identity_projection, project_wout_lod_i
 pub mod karc_dp;
 #[cfg(feature = "karc_forecaster")]
 pub use karc_dp::{KarcDpNoiseConfig, apply_dp_noise_to_wout};
+
+// lif_graph — signed-graph LIF reservoir: event-driven sparse propagation
+// (Issue 763 / riir-ai Research 379, the fly-connectome class). Current-based
+// LIF (Shiu et al. Nature 2024 canonical constants) on a fixed signed CSR
+// adjacency, exact exponential integration (3 muls per active neuron per
+// tick), timing-wheel spike delays, and an EXACT-parity event-driven active
+// set (quiescence = bitwise fixed point of the leak map — the dense update
+// of a skipped node IS the identity). Closed-form ridge readout consumes
+// `linalg::ridge_solve_direct_f64` (the KARC precedent). Data-agnostic:
+// callers supply any signed sparse graph; no connectome datasets ship here.
+// Opt-in — POC landed with GOAT G1–G4 PASS (Bench 760); promotion needs a
+// consumer (the riir-ai per-archetype circuit shard path, Research 379 §7).
+#[cfg(feature = "lif_graph")]
+pub mod lif_graph;
 
 // HOPE — Hilbert-Schmidt Capacity Kernel + Optimal Rank-1 Parent (Plan 469,
 // Research 454, arXiv:2607.21366 Mobahi & Bartlett, Google DeepMind 2026-07-24).

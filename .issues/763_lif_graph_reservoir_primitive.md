@@ -1,6 +1,6 @@
 # Issue 763: Signed-graph LIF reservoir primitive — event-driven sparse propagation POC (fly-connectome survey fusion)
 
-**Status:** OPEN — fusion idea, novelty TBD pending POC (application novelty only; mechanism prior art is published — Costi et al. 2025, Suárez et al. 2024 conn2res, Shiu et al. Nature 2024).
+**Status:** RESOLVED (2026-09-13) — POC LANDED behind `lif_graph` (opt-in), GOAT G1–G4 ALL PASS ([Bench 760](../.benchmarks/760_lif_graph_goat.md)); stays opt-in pending a consumer (the riir-ai per-archetype circuit shard path, Research 379 §7). Record: Bench 760 + git history; this file removed at close.
 **Origin:** fly-connectome landscape survey ([riir-ai Research 379](../../riir-ai/.research/379_fly_connectome_fixed_wiring_reservoir.md), private) · sibling motor-half idea: riir-ai Issue 935 (flybody WPG, parked).
 **Date:** 2026-09-13
 
@@ -21,12 +21,12 @@ The primitive is **data-agnostic**: callers supply any signed sparse graph (CSR)
 
 ## Tasks
 
-- [ ] **T1** Substrate-first re-check at implementation time (the class is new, but re-grep `lif|spike|graph.*propag` for anything landed since 2026-09-13).
-- [ ] **T2** `lif_graph` module behind `feature = "lif_graph"`: `SignedAdjacency` (CSR), `LifState`, event-driven `step()` with reused scratch; zero allocation in the tick loop.
-- [ ] **T3** G1 correctness: bit/trajectory parity of event-driven step vs a dense reference LIF on synthetic signed graphs (same spike trains).
-- [ ] **T4** G2 perf bench: N = 1k / 10k nodes, ~1–5% active fraction per tick, event-driven vs dense matvec-style update; gate = ≥3× at 10k/1% (tune to a defensible bar before promoting).
-- [ ] **T5** G4 alloc-free gate (existing alloc-count validator pattern).
-- [ ] **T6** GOAT verdict + promote/demote decision recorded in `.benchmarks/`; if promoted, note the consumer path (riir-ai per-archetype circuit shard + per-NPC readout — riir-ai Research 379 §7).
+- [x] **T1** Substrate-first re-check at implementation time — RUN 2026-09-13 (the skill's run log row): LIF/membrane/refractory = zero substrate workspace-wide (every "spike" hit metaphorical); ridge = CONSUMED (`linalg::ridge_solve_direct_f64`, the KARC precedent); CSR = new home (`EngramKgCsr` is downstream/KG-specific, `dirichlet` uses unweighted pairs). Decision recorded in the module doc + the skill's run log.
+- [x] **T2** `lif_graph` module behind `feature = "lif_graph"`: `SignedAdjacency` (CSR), `LifState` via `LifReservoir` (v/g/refrac Box slices), event-driven `step()` with reused scratch (active set, delay ring, spike list — all warmup-primed); zero allocation in the steady-state tick loop.
+- [x] **T3** G1 correctness: bit/trajectory parity of event-driven step vs dense reference — `tests/lif_graph_g1.rs` 7/7 (sparse-burst / cascade-saturation / chain-ring regimes × seeds, per-tick spike sets + final v/g/refrac bitwise; run-twice determinism; exact-delay chain 0/18/36; Maslov–Sneppen degree preservation; never-hit nodes bitwise at rest; active-set churn + drain). Caught + fixed the spike-order ULP-accumulation hazard (canonical ascending schedule order).
+- [x] **T4** G2 perf bench: `bench_760_lif_graph_goat.rs` — vs dense matvec **97,285×** at N=10k/3.1% active (gate ≥3×); vs CSR full-scan 34.8×; BOTH regimes reported per the dig's gate refinement (saturated = 0.91×/1.08× parity, the RuVector honesty line). Measured active fractions printed per run (2.3%/3.1% sparse — the 1–5% cell).
+- [x] **T5** G4 alloc-free gate: `tests/lif_graph_g4_alloc.rs` 2/2 (event + dense paths, 0 steady-state allocs, non-vacuous). En-route lesson recorded: the ring-slot alignment rule (period must be a multiple of the ring length or buckets prime lazily — 6-alloc signature diagnosed to root cause).
+- [x] **T6** GOAT verdict + promote/demote decision: G1+G2+G4 ALL PASS, modelless (closed-form ridge, fixed graph) — **stays OPT-IN** per the consumer-first promotion rule (`karc_lod_tier`/`hebbian` precedents); consumer path noted (riir-ai Research 379 §7). Recorded in [Bench 760](../.benchmarks/760_lif_graph_goat.md).
 
 ## Implementation references (2026-09-13 dig — 10 repos cloned at pinned SHAs, read-only; full record: riir-ai Research 379 §9)
 

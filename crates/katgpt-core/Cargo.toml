@@ -293,6 +293,24 @@ incidence_algebra = []
 # consumer is riir-neuron-db Issue 614 E2; no GOAT bench claim until that
 # consumer lands (the cond_audit precedent).
 leakage_probe = []
+# lif_graph (Issue 763 / riir-ai Research 379 — the fly-connectome class):
+# signed-graph LIF reservoir, event-driven sparse propagation. Current-based
+# LIF (Shiu et al. Nature 2024 canonical constants: v0=v_rst=−52mV, v_th=−45mV,
+# t_mbr=20ms, tau_syn=5ms, refrac 22 ticks, delay 18 ticks @ dt=0.1ms) on a
+# fixed signed CSR adjacency; exact exponential integration (3 muls per
+# ACTIVE neuron per tick); timing-wheel spike delays; an EXACT-parity active
+# set (quiescence = bitwise fixed point of the leak map — the dense update of
+# a skipped node IS the identity, so event-driven and dense paths produce
+# bit-identical trajectories); Maslov–Sneppen + ER-matched control builders;
+# closed-form ridge readout via `linalg::ridge_solve_direct_f64` (KARC
+# precedent — no training loop, gradient-free by construction). Data-agnostic:
+# callers supply any signed sparse graph; NO connectome datasets ship here
+# (FlyWire/MaleCNS licensing). Per-tick cost O(|active|) node updates +
+# O(Σ out-degree of spikers) — the O(active)-not-O(N²) property that let
+# Shiu et al. simulate a whole fly brain on a laptop. Opt-in — GOAT G1–G4
+# PASS (Bench 760); promotion needs a consumer (the riir-ai per-archetype
+# circuit shard path, Research 379 §7). Zero runtime cost unless invoked.
+lif_graph = []
 # support_regime (Issue 693 / Research 513, arXiv:2608.22764 — LpWM: A Case
 # for Sparse Representations in World Models, Kuang et al. 2026-08-24): the
 # consecutive-tick TEMPORAL consumer of the iou kernel — support instability
@@ -2904,3 +2922,11 @@ required-features = ["direction_bank_audit"]
 name = "bench_759_logit_regime_goat"
 harness = false
 required-features = ["logit_regime", "ssmax_temperature"]
+
+# Issue 763 — signed-graph LIF reservoir GOAT G2: event-driven vs CSR
+# full-scan vs the classic dense-W·spike-matvec baseline, at the sparse and
+# saturated activity regimes (G1 parity + G4 alloc gates live in tests/).
+[[bench]]
+name = "bench_760_lif_graph_goat"
+harness = false
+required-features = ["lif_graph"]

@@ -3792,3 +3792,37 @@ Bench: [759](../../.benchmarks/759_logit_regime_goat.md) — G1/G2/G4 ALL
 PASS (exact thresholds at n=100..10k; 8.2–8.6 ns/elem; 0 allocs) ·
 Substrate: `crates/katgpt-core/src/logit_regime.rs` + the
 `HoldConcentration` variant in `ssmax.rs`.
+
+## 108. lif_graph — signed-graph LIF reservoir, event-driven sparse propagation (Issue 763, Research 379)
+
+The fly-connectome architecture class: a **fixed signed sparse graph** (CSR,
+sign pre-folded into f32 weights) running current-based LIF (Shiu et al.
+Nature 2024 canonical constants — v0=v_rst=−52mV, v_th=−45mV, t_mbr=20ms,
+tau_syn=5ms, refrac 22 ticks, delay 18 ticks @ dt=0.1ms) with exact
+exponential integration (3 muls per active neuron per tick), timing-wheel
+spike delays, and a closed-form ridge readout consuming
+`linalg::ridge_solve_direct_f64` (the KARC precedent — no training loop,
+gradient-free by construction). The core property is the **exact-parity
+active set**: quiescence is defined as the bitwise fixed point of the shared
+per-node update, so the event-driven `step` and the dense reference
+`step_dense` produce bit-identical trajectories (G1-pinned across sparse /
+cascade / chain-ring regimes). Per-tick cost O(|active|) + O(Σ out-degree of
+spikers) — the property that let Shiu et al. simulate a whole fly brain on
+a laptop. Measured (Bench 760): vs the classic dense-W·spike matvec
+baseline **97,285×** at N=10k/3.1% active (gate ≥3×); vs the CSR full scan
+**34.8×** at 3.1% active; saturated parity 1.08× (the honesty line).
+Controls ship as builders: `er_matched` + `maslov_sneppen`
+(degree-preserving, G1-pinned). Weights are PSP millivolts (Shiu
+`w = 0.275 mV × count`); firing is coincidence detection (~26 synchronous
+synapses). Data-agnostic: no connectome datasets ship here.
+
+🔧 Feature flag: `lif_graph = []` (katgpt-core) — opt-in until a consumer
+GOAT-gates it onto a production path (the named consumer: the riir-ai
+per-archetype circuit shard + per-NPC readout, Research 379 §7).
+
+📖 Issue: [763](../../.issues/763_lif_graph_reservoir_primitive.md) ·
+Research: [379](../../riir-ai/.research/379_fly_connectome_fixed_wiring_reservoir.md)
+(riir-ai, private) ·
+Bench: [760](../../.benchmarks/760_lif_graph_goat.md) — G1/G2/G4 ALL PASS ·
+Substrate: `crates/katgpt-core/src/lif_graph.rs`, tests
+`lif_graph_g1.rs`/`lif_graph_g4_alloc.rs`, bench `bench_760_lif_graph_goat.rs`.
