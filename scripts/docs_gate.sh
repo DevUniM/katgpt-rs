@@ -36,7 +36,12 @@
 # skill_repo_set_gate.py re-derives the live repo set and FAILS on repos the
 # box simply has not cloned (10 of 16 here, incl. riir-mmorpg-examples/riir-dao)
 # — regenerating repo_set.txt on a partial box would corrupt the canonical set;
-# the M3 is the canonical full workstation for that half.
+# the M3 is the canonical full workstation for that half. Issue 765 (2026-09-13)
+# added the explicit marker for known-partial boxes: DOCS_GATE_PARTIAL_CLONE=1
+# makes the three population checks (skill_repo_set_gate,
+# population_sync_gate, issue_citation_gate) print a loud deferral on the
+# population axis instead of a remedy that invites the corruption. Marker-gated,
+# never auto-detected — a genuinely-missing sibling still refuses.
 #
 # skill_repo_set_gate.py (added 2026-09-01, Issue 703) has a second axis the
 # other three do not: it reads SIBLING repos, which CI does not have. It does

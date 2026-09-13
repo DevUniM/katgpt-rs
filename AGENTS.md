@@ -222,6 +222,21 @@ develop work. One line per check:
 The `CHECKS` count is deliberately not written here — it drifted once, which
 is exactly the drift this gate exists to catch.
 
+**Partial-clone boxes (Issue 765):** the three population checks
+(`skill_repo_set_gate`, `population_sync_gate`, `issue_citation_gate`)
+hard-red on a box carrying a subset of the workspace — and their raw remedy
+used to invite regenerating `repo_set.txt` there, which deletes live repos
+from the canonical set. A known-partial box (the 4090: 14 of 20) exports
+`DOCS_GATE_PARTIAL_CLONE=1` and gets a loud instrument-alive DEFERRAL on the
+population axis instead (predicate agreement + the local axes still run; the
+deferral rides each check's final line, the one `docs_gate.sh` forwards). The
+marker is an explicit opt-in in the `DOCS_GATE_CI` idiom — **never
+auto-detected**, because a genuine removal whose `repo_set.txt` update was
+forgotten is set-identical to a partial clone from the walk alone, and an
+inferred green would ship the stale file. Gone-only disagreement WITHOUT the
+marker reds naming both hypotheses; a repo on disk the file does not know
+reds in every posture, marker or not.
+
 Workstation-only cross-repo sweep family — `docs_drift_sweep.py`,
 `numbering_drift_sweep.py`, `required_features_drift_sweep.py`,
 `percentile_drift_sweep.py`, `cfg_gated_drift_sweep.py`,

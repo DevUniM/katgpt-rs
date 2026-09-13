@@ -46,13 +46,19 @@ and dies in code.
 The real-workspace cross-check runs too, but only when the walk finds more than
 one repo (i.e. on a workstation). It is REPORTED either way, never silently
 skipped — a gate that skips without saying so is the vacuous green this family
-exists to refuse.
+exists to refuse. On a box the operator has marked as a PARTIAL CLONE
+(DOCS_GATE_PARTIAL_CLONE=1, Issue 765 — an explicit marker, never
+auto-detected), a gone-only file-vs-walk disagreement defers THAT comparison
+loudly: the predicate-agreement half still runs at full strength, and the
+deferral rides the final line. A repo on disk that the file does not know is
+genuine staleness in every posture and always reds.
 
 Exit 0 clean · 1 on disagreement · 2 if the gate cannot import a predicate.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -60,8 +66,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from skill_repo_set_gate import PARTIAL_MARKER  # noqa: E402 — the marker definition, reused not re-derived
+
 REPO_ROOT = HERE.parent
-WORKSPACE = REPO_ROOT.parent
+# Overridable for testing (the skill_repo_set_gate precedent): the
+# partial-clone sims (Issue 765) run the real instruments over a symlink
+# farm without copying repos.
+WORKSPACE = Path(os.environ.get("WORKSPACE_ROOT", str(REPO_ROOT.parent)))
 REPO_SET = HERE / "repo_set.txt"
 
 # (label, module, attribute). Kept as DATA so adding an eighth instrument is a
@@ -169,6 +180,7 @@ def main() -> int:
     real = {label: call(fn, WORKSPACE) for label, fn in preds}
     sizes = {len(v) for v in real.values()}
     n = max(sizes)
+    partial_defer: list[str] | None = None
     if n <= 1:
         print(f"▸ real-workspace cross-check SKIPPED — the walk under "
               f"{WORKSPACE} found {n} repo(s), so this is a single-checkout "
@@ -192,18 +204,47 @@ def main() -> int:
                 l.strip() for l in REPO_SET.read_text(encoding="utf-8").splitlines()
                 if l.strip() and not l.lstrip().startswith("#")
             )
-            if committed != base:
-                bad = True
-                print(f"    ✗ {REPO_SET.name} disagrees with the derived walk: "
-                      f"only-in-file={sorted(set(committed) - set(base))} "
-                      f"missing-from-file={sorted(set(base) - set(committed))}")
-            else:
+            if committed == base:
                 print(f"    ✓ {REPO_SET.name} matches ({len(committed)} repos)")
+            else:
+                only_file = sorted(set(committed) - set(base))
+                only_disk = sorted(set(base) - set(committed))
+                if only_disk:
+                    # A repo the file does not know: genuine staleness in
+                    # every posture — including a marked partial clone.
+                    bad = True
+                    print(f"    ✗ {REPO_SET.name} disagrees with the derived walk: "
+                          f"only-in-file={only_file} missing-from-file={only_disk}")
+                elif os.environ.get(PARTIAL_MARKER) == "1":
+                    # Issue 765: gone-only disagreement on a marked partial
+                    # clone. The predicate agreement above ran at full
+                    # strength — only this file-vs-walk comparison is
+                    # deferred, and the deferral rides the final line
+                    # (docs_gate.sh forwards tail -1 of a pass).
+                    partial_defer = only_file
+                    print(f"    ▸ PARTIAL-CLONE DEFERRAL ({PARTIAL_MARKER}=1): "
+                          f"{len(only_file)} snapshot repo(s) absent on this "
+                          f"box — {only_file}. File-vs-walk comparison deferred "
+                          f"to a full-workstation run; do NOT regenerate the "
+                          f"snapshot on a partial box")
+                else:
+                    bad = True
+                    print(f"    ✗ {REPO_SET.name} names {len(only_file)} repo(s) "
+                          f"absent from this box — {only_file}. Either this is "
+                          f"a PARTIAL CLONE (export {PARTIAL_MARKER}=1 to defer "
+                          f"the population axis loudly; do NOT regenerate the "
+                          f"snapshot on a partial box — that deletes live repos "
+                          f"from the canonical set), or a full workstation whose "
+                          f"file is stale (regenerate and commit).")
 
     if bad:
         print("✗ population sync gate FAILED — the cross-repo instruments do "
               "NOT all audit the same set of repos")
         return 1
+    if partial_defer:
+        print(f"✓ population sync gate PASSED — {len(preds)} predicates agree "
+              f"[PARTIAL CLONE: {n} present, snapshot-vs-walk DEFERRED]")
+        return 0
     print(f"✓ population sync gate PASSED — {len(preds)} predicates agree")
     return 0
 

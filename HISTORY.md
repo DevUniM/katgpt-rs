@@ -1318,6 +1318,38 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 
 ## Issue log (resolved)
 
+- **Issue 765 — the docs gate's 3 workstation-only instruments red with a MISLEADING remedy on a partial clone (the 4090 box class)** RESOLVED + removed
+  (2026-09-13; the `DOCS_GATE_PARTIAL_CLONE=1` marker axis; issue file removed at close,
+  this row + git history are the durable record; filed by the 4090 session while
+  resolving Issue 764). The trap: on a box carrying 14 of the 20 contract repos,
+  `skill_repo_set_gate` / `population_sync_gate` / `issue_citation_gate` red, and the
+  first two printed "regenerate repo_set.txt and commit" — executing that on the
+  partial box deletes the 6 absent-but-live repos from the canonical set. The fix
+  DEVIATES from the issue's auto-detect proposal (disk ⊂ file → defer) deliberately:
+  a genuine removal whose `repo_set.txt` update was forgotten is set-identical to a
+  partial clone from the walk alone, and an inferred green would ship the stale file —
+  the same reasoning `issue_citation_gate`'s docstring already records for
+  DOCS_GATE_CI ("never auto-detected, so a blind WORKSTATION run still refuses").
+  Landed, per instrument: (1) a known-partial box exports `DOCS_GATE_PARTIAL_CLONE=1`
+  and gets a loud instrument-alive DEFERRAL on the population axis — predicate
+  agreement + the local axes still run, the deferral rides each check's FINAL line
+  (docs_gate.sh forwards `tail -1`); the citation gate reuses `ci_deferred` with a
+  `posture` param (the marker defers the cross-repo half even ABOVE the floor — a
+  15-of-20 box would otherwise run the full path and manufacture MISATTRIBUTED rows
+  for citations naming the 5 absent repos, who cannot own anything); (2) gone-only
+  disagreement WITHOUT the marker reds naming BOTH hypotheses (partial clone →
+  marker; stale snapshot → regenerate) with the corruption warning inline; (3) a
+  repo on disk the snapshot does not know reds in EVERY posture, marker or not.
+  Shared helper `partial_clone_state()` in `skill_repo_set_gate.py` (the fence-scanner
+  import precedent), `WORKSPACE_ROOT` test override added to the other two (the
+  pre-existing skill_repo_set precedent) enabling the symlink-farm sim. Validation:
+  M3 full box 17/17 green in both postures (marker inert when walk == snapshot); a
+  14-of-20 symlink farm — unmarked: 3 reds with the new two-hypothesis remedy;
+  marked: 3 deferred greens; negative guard: an unregistered repo on the farm reds
+  skill_repo_set + population_sync even WITH the marker; CI single-checkout paths
+  (DOCS_GATE_CI / unmarked refusal) byte-identical in behavior. 4090 usage:
+  `DOCS_GATE_PARTIAL_CLONE=1 ./scripts/docs_gate.sh` (shell profile or per-run).
+
 - **Issue 763 — signed-graph LIF reservoir primitive, event-driven sparse propagation (fly-connectome survey fusion)** RESOLVED + removed
   (2026-09-13; landed `74fe08f1`; issue file removed at close, this row + [Bench 760](.benchmarks/760_lif_graph_goat.md) + git history are the durable record).
   The fly-connectome architecture class as a katgpt-core primitive behind opt-in

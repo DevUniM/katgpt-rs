@@ -63,10 +63,13 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from numbering_drift_sweep import contract_repos  # noqa: E402 — the SEVENTH predicate, reused not re-derived
-from skill_repo_set_gate import fenced_blocks  # noqa: E402 — the fence scanner, reused not re-derived
+from skill_repo_set_gate import PARTIAL_MARKER, fenced_blocks, partial_clone_state  # noqa: E402 — the fence scanner + the partial-clone axis (Issue 765), reused not re-derived
 
 REPO_ROOT = HERE.parent
-WORKSPACE = REPO_ROOT.parent
+# Overridable for testing (the skill_repo_set_gate precedent): the
+# partial-clone sims (Issue 765) run the real instruments over a symlink
+# farm without copying repos.
+WORKSPACE = Path(os.environ.get("WORKSPACE_ROOT", str(REPO_ROOT.parent)))
 FLOORS = HERE / "issue_citation_floors.txt"
 
 # ── vocabulary: DATA, not derived ──────────────────────────────────────────
@@ -465,14 +468,21 @@ def citations(text: str) -> list[tuple[int, str, int, str]]:
     return out
 
 
-def ci_deferred(pins: dict, docs: list, n_repos: int) -> int:
-    """The marked-CI verdict: instrument ALIVE, cross-repo adjudication DEFERRED.
+def ci_deferred(pins: dict, docs: list, n_repos: int, posture: str = "CI") -> int:
+    """The marked-deferred verdict: instrument ALIVE, cross-repo
+    adjudication DEFERRED.
 
     Only the locally-decidable axes run here: the pinned documents exist, the
     `\\d{2,4}` width bound's complement is still empty, and the citation walk
     still clears its floor. The ownership half is impossible without the
     sibling workspace and is NOT guessed at — the verdict says so in its last
     line, which is the one docs_gate.sh forwards on a pass.
+
+    `posture` names WHY the workspace is absent: "CI" (DOCS_GATE_CI=1, a
+    single checkout) or "partial" (DOCS_GATE_PARTIAL_CLONE=1, a box with a
+    subset of the canonical repos — Issue 765). Same instrument-alive
+    verdict; a partial clone additionally CANNOT adjudicate citations naming
+    its absent repos, so the full path would manufacture MISATTRIBUTED rows.
     """
     local = {k: allocated(REPO_ROOT, d) for k, d in KINDS.items()}
     scanned = local_hits = 0
@@ -500,11 +510,13 @@ def ci_deferred(pins: dict, docs: list, n_repos: int) -> int:
         print(f"✗ INSTRUMENT: scanned {scanned} citations < floor "
               f"{pins['min_citations_scanned']} — the citation regex went blind")
         return 2
-    print(f"  CI: {scanned} citations scanned in {len(docs)} document(s); "
+    print(f"  {posture}: {scanned} citations scanned in {len(docs)} document(s); "
           f"{local_hits} resolve locally, {scanned - local_hits} cross-repo")
-    print(f"✓ CI scope (DOCS_GATE_CI=1) — instrument alive over {n_repos} repo(s): "
+    label = ("CI scope (DOCS_GATE_CI=1)" if posture == "CI"
+             else f"partial-clone scope ({PARTIAL_MARKER}=1)")
+    print(f"✓ {label} — instrument alive over {n_repos} repo(s): "
           f"width bound clean, walk above floor; cross-repo adjudication DEFERRED "
-          f"to the workstation docs_gate run — this line is not an adjudication")
+          f"to the full-workspace docs_gate run — this line is not an adjudication")
     return 0
 
 
@@ -515,12 +527,38 @@ def main() -> int:
 
     repos = contract_repos(WORKSPACE)
     sibs = [r for r in repos if r.resolve() != REPO_ROOT]
-    if len(repos) < pins["min_repos"]:
-        if os.environ.get("DOCS_GATE_CI") != "1":
-            print(f"✗ INSTRUMENT: derived {len(repos)} contract repos < floor {pins['min_repos']} — "
-                  f"the population went blind; every ceiling below would pass vacuously")
-            return 2
-        return ci_deferred(pins, docs, len(repos))
+    # The partial-clone axis (Issue 765): a marked box with a SUBSET of the
+    # canonical repos defers the cross-repo half exactly like CI — not only
+    # below the floor, because a 15-of-20 box would run the full path and
+    # manufacture MISATTRIBUTED rows for citations naming the 5 absent repos
+    # (absent repos cannot own anything). The marker is explicit, never
+    # auto-detected; a full box (walk == snapshot) ignores it entirely.
+    _, absent, _ = partial_clone_state(sorted(r.name for r in repos))
+    marker_partial = (os.environ.get(PARTIAL_MARKER) == "1"
+                      and bool(absent) and len(repos) > 1)
+    if len(repos) < pins["min_repos"] or marker_partial:
+        if os.environ.get("DOCS_GATE_CI") == "1":
+            return ci_deferred(pins, docs, len(repos))
+        if marker_partial:
+            return ci_deferred(pins, docs, len(repos), posture="partial")
+        if len(repos) > 1:
+            print(f"✗ INSTRUMENT: derived {len(repos)} contract repos < floor "
+                  f"{pins['min_repos']} — the population went blind; every ceiling "
+                  f"below would pass vacuously. Either this box is a PARTIAL "
+                  f"CLONE (canonical repos simply not cloned here; the snapshot "
+                  f"names {len(absent)} absent: {absent}) — export "
+                  f"{PARTIAL_MARKER}=1 for the instrument-alive deferral, do "
+                  f"NOT regenerate anything — or it is a full workstation and a "
+                  f"sibling moved or went missing: fix the walk, do not mark "
+                  f"the box.")
+        else:
+            print(f"✗ INSTRUMENT: derived {len(repos)} contract repos < floor "
+                  f"{pins['min_repos']} — the population went blind; every ceiling "
+                  f"below would pass vacuously. A single checkout cannot "
+                  f"adjudicate cross-repo citations — the CI lane marks the "
+                  f"context with DOCS_GATE_CI=1 for the deferred verdict; a "
+                  f"workstation run must fix the walk instead.")
+        return 2
 
     # An unterminated fence disarms the allocation path's fence filter (it fails
     # SAFE, excluding nothing), so the gate would still be correct — but it is a
@@ -624,6 +662,15 @@ def main() -> int:
             print(row)
         print("  Fix: name the owning repo in the prose — `riir-ai Issue 750`, "
               "`riir-train Issue 513`. The number alone is not an address.")
+        if absent:
+            # Reached only on the FULL path (a marked partial clone deferred
+            # above) — but the walk can still be short of the canonical set on
+            # an UNMARKED box above the floor. Those rows are then suspect,
+            # and the box, not the prose, is the likely cause.
+            print(f"  note: {len(absent)} canonical repo(s) absent on this box "
+                  f"({', '.join(absent)}) — citations naming them CANNOT be "
+                  f"adjudicated here; if this is a partial clone, export "
+                  f"{PARTIAL_MARKER}=1 and re-run for the deferral verdict")
         return 1
 
     print(f"✓ issue citation gate PASSED — every cross-repo citation names its repo")
