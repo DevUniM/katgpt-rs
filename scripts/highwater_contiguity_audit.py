@@ -61,106 +61,293 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_ROOT", str(REPO_ROOT.parent)))
 COUNT_BASED_BENCH = {"riir-auth"}
 
 
-def counter_transitions(repo: Path, subdir: str) -> list[tuple[str, str, int, int]]:
-    """Committed (hash, subject, old, new) transitions, oldest first.
-
-    `git log --reverse -p` over the counter file; each hunk's -old/+new pair
-    is one transition, tagged with its commit. Merge commits that leave the
-    value unchanged emit no hunk and no transition. A repo without history
-    for the file (never committed, or not a git repo) returns [] — the caller
-    reports that shape rather than guessing.
-    """
+def commit_subject(repo: Path, h: str) -> str:
+    """One-line subject for a commit (lazy: only reset rows need it)."""
     r = subprocess.run(
-        ["git", "-C", str(repo), "log", "--all", "--reverse", "-p",
-         "--format=format:__C__%H_%s", "--", f"{subdir}/.highwater"],
+        ["git", "-C", str(repo), "show", "-s", "--format=%s", h],
         capture_output=True, text=True,
     )
-    out: list[tuple[str, str, int, int]] = []
-    old = new = None
-    head = ""
-    for line in r.stdout.splitlines():
-        if line.startswith("__C__"):
-            head = line[5:]
-            old = new = None
-            continue
-        m = re.match(r"^-(\d+)\s*$", line)
-        if m:
-            old = int(m.group(1))
-            continue
-        m = re.match(r"\+(\d+)\s*$", line)
-        if m:
-            new = int(m.group(1))
-            if old is not None:
-                out.append((*head.split("_", 1), old, new))
-            old = new = None
-    return out
+    return r.stdout.strip()
 
 
-def walk_transitions(transitions: list) -> dict:
-    """Classify a transition timeline: gaps, resets, duals.
+def counter_history(repo: Path, subdir: str) -> list[dict]:
+    """Per-commit counter events over HEAD's history, parent-compared.
 
-    `current` walks the timeline; a transition whose `old` is NOT `current`
-    comes from a diverged lineage (two branches each bumped the counter —
-    the intra-repo dual-allocation shape). Those are counted, not condemned:
-    a dual-bump spends the SAME number twice and creates no gap. Reset rows
-    carry their (hash, subject) for the double-allocation-vs-merge-artifact
-    adjudication (Issue 769 T2).
+    The Issue-770 walker. The Issue-769 one ordered ALL refs' transitions by
+    commit DATE and walked one `current` — two defects, both measured against
+    the real diffs: after any real backward event, every ordinary +1 bump on
+    the OTHER lineage landed below the walk's base and was flagged (15 of 31
+    phantom reset rows); and `git log -p` emits no diff for MERGE commits, so
+    a merge resolving a counter conflict by taking the lower value — the
+    dangerous case — was invisible while an innocent concurrent bump took
+    the blame (making the "all non-merge" adjudication true by construction).
 
-    On divergence the walk absorbs the lineage's OWN `old` (numbers up to it
-    were spent THERE even if the mainline never saw them — pinned by the
-    Issue 769 sweep selftest: a `4→3` landing when the walk sits at 2 is a
-    reset against 4, not a climb to 3): `base = max(current, old)` and
-    `current = max(current, old, new)`.
+    Per-commit parent comparison is lineage-correct by construction: for
+    every HEAD-reachable commit, the counter blob is read at the commit and
+    at EACH parent (one `git cat-file --batch` for the whole walk), and the
+    event is judged against `max(parent values)` only — never against a
+    cross-lineage walk position. Merge commits are ordinary rows here.
+    HEAD-reachable, not --all: sweep pins must be a function of the branch
+    the box carries, not of which refs happen to be fetched (Issue 770 T3).
+
+    Event dicts: {hash, value, base, kind} where kind is 'reset' | 'gap' |
+    'alloc' (+1 on its own lineage — the dual-allocation feed) | 'hold'
+    (equal, or a merge keeping a parent's value). [] when the repo carries
+    no committed counter at all — the caller reports that shape.
     """
-    gaps: list[tuple[int, int]] = []
-    resets: list[tuple[int, int, str, str]] = []
-    duals = 0
-    current: int | None = None
-    for t in transitions:
-        old, new, h, s = t[2], t[3], t[0], t[1]
-        if current is None:
-            current = new
-            if new - old > 1:
-                gaps.append((old, new))
-            continue
-        if old != current:
-            duals += 1
-            base = max(current, old)
+    # (1) every (commit, parents) on HEAD
+    r = subprocess.run(
+        ["git", "-C", str(repo), "rev-list", "--parents", "HEAD"],
+        capture_output=True, text=True,
+    )
+    pairs = [tuple(parts) for parts in
+             (ln.split() for ln in r.stdout.splitlines()) if parts]
+    if not pairs:
+        return []
+
+    # (2) blob values for every commit that could carry the file, in ONE
+    # cat-file --batch pass. The wire format per response is
+    #   `<oid> blob <size>\n<content>\n\n`  — content then a BLANK separator
+    # (missing objects answer `<spec> missing\n`, one line, no blank). The
+    # counter is a single short line, so one content line per blob; the
+    # separator is consumed explicitly — skipping it desyncs every
+    # subsequent response onto the wrong spec (measured: half the parents
+    # read as missing, every base collapsed to 0).
+    rel = f"{subdir}/.highwater"
+    want: list[str] = []
+    for c, *ps in pairs:
+        want.append(c)
+        want.extend(ps)
+    val: dict[str, int] = {}
+    batch = subprocess.run(
+        ["git", "-C", str(repo), "cat-file", "--batch"],
+        input="\n".join(f"{s}:{rel}" for s in want) + "\n",
+        capture_output=True, text=True,
+    )
+    it = iter(want)
+    lines = batch.stdout.split("\n")
+    i = 0
+    while i < len(lines):
+        spec = next(it, None)
+        if spec is None:
+            break
+        head = lines[i]
+        i += 1
+        m = re.match(r"^[0-9a-f]+ blob (\d+)$", head)
+        if not m:
+            continue                       # "<spec> missing" — never existed
+        size = int(m.group(1))
+        body = ""
+        if size > 0:
+            body = lines[i] if i < len(lines) else ""
+            i += 1
+        if i < len(lines) and lines[i] == "":
+            i += 1                       # the blank separator after content
+        try:
+            val[spec] = int(body.strip().split()[-1])
+        except (ValueError, IndexError):
+            continue                       # malformed — ng's class owns it
+
+    # (3) classify each commit against ITS OWN parents
+    events: list[dict] = []
+    for c, *ps in pairs:
+        v = val.get(c)
+        if v is None:
+            if not any(p in val for p in ps):
+                continue                   # file absent here and at every parent
+            continue                       # deletion mid-history — counters are
+                                           # never deleted; hold the last state
+        pv = [val[p] for p in ps if p in val]
+        base = max(pv) if pv else 0
+        if v < base:
+            kind = "reset"
+        elif v > base + 1:
+            kind = "gap"
+        elif v == base + 1:
+            kind = "alloc"
         else:
-            base = old
-        if new > base + 1:
-            gaps.append((base, new))
-        elif new < base:
-            resets.append((base, new, h, s))
-        current = max(current, old, new)
-    return {"gaps": gaps, "resets": resets, "duals": duals,
-            "final": current}
+            kind = "hold"
+        events.append({"hash": c, "value": v, "base": base, "kind": kind})
+    return events
+
+
+def classify_history(events: list[dict], repo: Path | None = None,
+                     is_ancestor=None) -> dict:
+    """Group per-commit events into the audit's classes.
+
+    resets/gaps pass through sorted (stable output), each row naming the
+    commit that DID it (subjects are fetched lazily by the printer — only
+    reset rows need them). Duals — the same number allocated on two
+    non-ancestor lineages — come from `alloc` events grouped by value: two
+    allocs of v where neither commit is an ancestor of the other.
+    `is_ancestor(a, b)` is injectable for tests; the default shells
+    `git -C repo merge-base --is-ancestor` per pair, bounded by
+    DUAL_PAIR_CAP per value.
+    """
+    DUAL_PAIR_CAP = 6
+    resets = sorted((e["base"], e["value"], e["hash"])
+                    for e in events if e["kind"] == "reset")
+    gaps = sorted((e["base"], e["value"])
+                  for e in events if e["kind"] == "gap")
+    if is_ancestor is None:
+        if repo is None:
+            raise ValueError("classify_history needs repo= for the default "
+                             "is_ancestor (or an injected is_ancestor)")
+        def is_ancestor(a: str, b: str) -> bool:
+            return subprocess.run(
+                ["git", "-C", str(repo), "merge-base", "--is-ancestor",
+                 a, b]).returncode == 0
+    duals = 0
+    by_value: dict[int, list[str]] = {}
+    for e in events:
+        if e["kind"] == "alloc":
+            by_value.setdefault(e["value"], []).append(e["hash"])
+    for _, hs in sorted(by_value.items()):
+        if len(hs) < 2:
+            continue
+        checked = 0
+        for i in range(len(hs)):
+            for j in range(len(hs)):
+                if i == j:
+                    continue
+                checked += 1
+                if checked > DUAL_PAIR_CAP:
+                    break
+                # hs order follows rev-list (child-before-parent); a pair is
+                # dual iff neither reaches the other
+                if not is_ancestor(hs[i], hs[j]):
+                    duals += 1
+                    break
+            else:
+                continue
+            break
+    final = max((e["value"] for e in events), default=None)
+    return {"gaps": gaps, "resets": resets, "duals": duals, "final": final}
 
 
 def selftest() -> list[str]:
+    """Regression fixtures on REAL git repos (Issue 770): the merge-reset the
+    old walker could not see, the phantom reset it manufactured, and straight
+    line semantics. The first two were measured against constructed repos by
+    the verdict reviewer; landing them as fixtures pins the repairs."""
+    import tempfile
+
     fails: list[str] = []
-    # gap: 765 -> 768 skips 766/767
-    if walk_transitions([("h1", "s1", 765, 768)])["gaps"] != [(765, 768)]:
-        fails.append("gap: a +3 step must record (765, 768)")
-    # clean: three +1 steps
-    w = walk_transitions([("h1", "s1", 1, 2), ("h2", "s2", 2, 3), ("h3", "s3", 3, 4)])
-    if w["gaps"] or w["resets"] or w["final"] != 4:
-        fails.append("clean: +1 steps must produce no findings")
-    # reset: 766 -> 763 carries its commit for adjudication
-    r = walk_transitions([("h1", "s1", 765, 766), ("h2", "s2", 766, 763)])["resets"]
-    if len(r) != 1 or r[0][:2] != (766, 763) or r[0][2] != "h2" or r[0][3] != "s2":
-        fails.append(f"reset: a negative step must carry (base, new, hash, subject): {r}")
-    # dual-bump: two branches each 765->766, then 766->767
-    w = walk_transitions([("h1", "s1", 765, 766), ("h2", "s2", 765, 766), ("h3", "s3", 766, 767)])
-    if w["duals"] != 1 or w["gaps"] or w["final"] != 767:
-        fails.append("dual: a diverged-lineage bump is counted, not a gap")
-    # initial creation at N: the first transition's old is the pre-counter
-    # state; a first hunk 0->100 is a jump from nothing, recorded as a gap
-    # only when it skips (old != 0). Creation 0->1 is clean.
-    if walk_transitions([("h1", "s1", 0, 1)])["gaps"]:
-        fails.append("creation: 0->1 must be clean")
-    if walk_transitions([("h1", "s1", 0, 100)])["gaps"] != [(0, 100)]:
-        fails.append("creation: 0->100 must record the skipped 1..99")
+
+    def git(repo: Path, *args: str) -> None:
+        subprocess.run(["git", "-C", str(repo), *args], check=True,
+                       capture_output=True)
+
+    def git_may_conflict(repo: Path, *args: str) -> None:
+        """Merges over a counter both sides touched CONFLICT (exit 1) — that
+        is the fixture's point; the resolution that follows is the event."""
+        r = subprocess.run(["git", "-C", str(repo), *args],
+                           capture_output=True, text=True)
+        if r.returncode not in (0, 1):
+            raise subprocess.CalledProcessError(r.returncode, r.args, r.stdout,
+                                                r.stderr)
+
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+
+        # ── fixture 1 (the reviewer's constructed case): branch bumps to 20,
+        # main bumps to 11, the MERGE resolves 20→11. The merge is the reset;
+        # the innocent main bump (10→11) is NOT.
+        repo = ws / "merge-repo"
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        (repo / ".issues").mkdir()
+        hw = repo / ".issues" / ".highwater"
+        hw.write_text("10\n")
+        git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "base 10")
+        git(repo, "checkout", "-q", "-b", "side")
+        hw.write_text("20\n")
+        git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "branch a bumps to 20")
+        git(repo, "checkout", "-q", "main")
+        hw.write_text("11\n")
+        git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "main bumps to 11")
+        git_may_conflict(repo, "merge", "--no-commit", "side")
+        hw.write_text("11\n")  # the conflict resolution that RESETS 20→11
+        git(repo, "add", "-A")
+        subprocess.run(["git", "-C", str(repo), "commit", "-q",
+                        "-m", "MERGE: resolve conflict by RESETTING 20 to 11"],
+                       check=True, capture_output=True)
+        w = classify_history(counter_history(repo, ".issues"), repo=repo)
+        if len(w["resets"]) != 1 or w["resets"][0][:2] != (20, 11):
+            fails.append(f"merge-reset: the merge taking 11 over a parent's 20 "
+                         f"must be the ONE reset (20, 11): {w['resets']}")
+        else:
+            subj = commit_subject(repo, w["resets"][0][2])
+            if "MERGE" not in subj:
+                fails.append(f"merge-reset: the blamed commit must be the merge, "
+                             f"got subject {subj!r}")
+        if w["final"] != 20:
+            fails.append(f"final must reflect the highest committed value (20), "
+                         f"got {w['final']}")
+
+        # ── fixture 2 (the phantom): two lineages each allocate 205 from the
+        # same base, main then climbs to 564, the merge keeps 564. NO reset
+        # anywhere — the old walker flagged 15 such rows; 205 twice on
+        # non-ancestor lineages is one DUAL.
+        repo2 = ws / "phantom-repo"
+        repo2.mkdir()
+        git(repo2, "init", "-q", "-b", "main")
+        (repo2 / ".benchmarks").mkdir()
+        hw2 = repo2 / ".benchmarks" / ".highwater"
+        hw2.write_text("204\n")
+        git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "base 204")
+        git(repo2, "checkout", "-q", "-b", "old-lane")
+        hw2.write_text("205\n")
+        git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "side lane allocates 205")
+        git(repo2, "checkout", "-q", "main")
+        hw2.write_text("205\n")
+        git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "main allocates 205 too")
+        hw2.write_text("564\n")
+        git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "main jumps to 564")
+        git_may_conflict(repo2, "merge", "--no-commit", "old-lane")
+        hw2.write_text("564\n")  # the merge keeps main's higher value
+        git(repo2, "add", "-A")
+        subprocess.run(["git", "-C", str(repo2), "commit", "-q",
+                        "-m", "MERGE: keep 564"],
+                       check=True, capture_output=True)
+        w2 = classify_history(counter_history(repo2, ".benchmarks"), repo=repo2)
+        if w2["resets"]:
+            fails.append(f"phantom: a merged side-lane +1 must not be a reset "
+                         f"(the merge kept main's higher value): {w2['resets']}")
+        if w2["duals"] != 1:
+            fails.append(f"phantom: 205 allocated on two non-ancestor lineages "
+                         f"— one dual expected: {w2}")
+
+        # ── fixture 3 (straight-line semantics): a jump is a gap; a real
+        # backward commit is a reset at its own commit.
+        repo3 = ws / "line-repo"
+        repo3.mkdir()
+        git(repo3, "init", "-q", "-b", "main")
+        (repo3 / ".issues").mkdir()
+        hw3 = repo3 / ".issues" / ".highwater"
+        hw3.write_text("765\n")
+        git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "765")
+        hw3.write_text("768\n")
+        git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "jump to 768")
+        hw3.write_text("769\n")
+        git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "769")
+        w3 = classify_history(counter_history(repo3, ".issues"), repo=repo3)
+        if w3["gaps"] != [(0, 765), (765, 768)] or w3["resets"] or w3["final"] != 769:
+            fails.append(f"line: creation (0,765) + jump (765,768) gaps only — "
+                         f"got gaps={w3['gaps']} resets={w3['resets']} "
+                         f"final={w3['final']}")
+        hw3.write_text("4\n")
+        git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "back to 4")
+        w3b = classify_history(counter_history(repo3, ".issues"), repo=repo3)
+        if len(w3b["resets"]) != 1 or w3b["resets"][0][:2] != (769, 4):
+            fails.append(f"line: a real backward commit is a reset (769, 4): "
+                         f"{w3b['resets']}")
+
+        # ── non-git dir: [] (the sweep selftest's tempdir shape)
+        ng_repo = ws / "not-a-repo"
+        ng_repo.mkdir()
+        if counter_history(ng_repo, ".issues") != []:
+            fails.append("non-git: must return []")
     return fails
 
 
@@ -197,9 +384,9 @@ def main() -> int:
                 continue
             witnessed = icg.allocated(repo, sub)
             missing = [n for n in range(1, hw + 1) if n not in witnessed]
-            tr = counter_transitions(repo, sub)
-            w = walk_transitions(tr) if tr else {"gaps": [], "resets": [],
-                                                 "duals": 0, "final": None}
+            events = counter_history(repo, sub)
+            w = classify_history(events, repo=repo) if events else {"gaps": [], "resets": [],
+                                                        "duals": 0, "final": None}
             rows += 1
             gaps_total += len(w["gaps"])
             resets_total += len(w["resets"])
@@ -207,18 +394,19 @@ def main() -> int:
             if repo.name in COUNT_BASED_BENCH and kind == "Bench":
                 notes.append("COUNT-BASED counter (records, not numbers) — "
                              "witness EXCLUDED by design")
-            if not tr:
+            if not events:
                 notes.append("no committed history for the counter")
-            elif w["final"] is not None and w["final"] != hw:
-                notes.append(f"history final {w['final']} != worktree {hw} "
-                             f"(uncommitted bump, the in-flight case)")
+            elif w["final"] is not None and w["final"] > hw:
+                notes.append(f"history max {w['final']} > worktree {hw} "
+                             f"(un-bumped worktree — checkout state, REPORT)")
             if w["gaps"]:
                 notes.append("GAPS " + ", ".join(f"{a}->{b}" for a, b in w["gaps"][:4]))
             if w["resets"]:
                 notes.append("RESETS " + ", ".join(
-                    f"{a}->{b}" for a, b, _, _ in w["resets"][:4]))
-                for a, b, h, s in w["resets"][:4]:
-                    notes.append(f"    reset {a}->{b} @ {h[:10]} {s[:70]}")
+                    f"{a}->{b}" for a, b, _ in w["resets"][:4]))
+                for a, b, h in w["resets"][:4]:
+                    notes.append(f"    reset {a}->{b} @ {h[:10]} "
+                                 f"{commit_subject(repo, h)[:70]}")
             if missing and len(missing) > 8:
                 notes.append(f"{len(missing)} unwitnessed (file-and-removed "
                              f"class, or jump children)")

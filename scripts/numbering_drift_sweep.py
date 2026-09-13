@@ -58,34 +58,42 @@ Report + gate. Exit 0 clean, 1 on drift above the pins, **2 if the instrument
 itself is untrustworthy** (selftest failure) — an unreliable instrument is not
 the same finding as drift and must not be reported as one.
 
-The counter-transition classes (Issue 769, landed 2026-09-13)
---------------------------------------------------------------
+The counter-transition classes (Issues 769 + 770, landed 2026-09-13)
+---------------------------------------------------------------------
 `.highwater` is not only checked for CONTENT (malformed / above-max) but for
-HISTORY: `highwater_contiguity_audit.py`'s walker classifies every committed
-transition of the counter file, and two of its classes are verdicts here —
+HISTORY: `highwater_contiguity_audit.py`'s walker classifies every commit
+that touched the counter against ITS OWN PARENTS' blob values (the Issue-770
+repair — the 769 walker ordered all refs' hunks by commit DATE, which
+manufactured phantom resets from lineage interleaving and could not see
+MERGE commits at all; `git log -p` emits no merge diffs). Two classes are
+verdicts here —
 
-  resets     a committed BACKWARD move. After `517→511`, the numbers 512..517
-             can be allocated AGAIN — the never-reuse rule broken by
-             construction, the `.issues/121` collision class at counter
-             granularity. First full adjudication (Issue 769 T2): all 31
-             measured resets workspace-wide are NON-MERGE stale-lineage
-             writebacks — a diverged-checkout session committing its local
-             counter over a newer mainline value (the exact class the
-             Numbering Discipline's "read `.highwater` AND `git status -sb`
-             together" rule warns about). The historical hazard was absorbed
-             by subsequent gap fast-forwards and push-wins renumbers; no live
-             file duplicates exist (the max_dup column proves that separately).
-             Pinned at the MEASURED count per repo — a NEW reset reds
-             immediately, the standing history stays visible in the pins.
-  unbumped   the WORKTREE counter sits BELOW its committed history max — the
-             counter moved backward in the worktree (a branch/checkout state,
-             not a commit). Measured: seal-game-editor ×3 (its worktree is the
-             read-only surface this box carries); REPORT to the owner, never
-             auto-repair.
+  resets     a commit (or merge resolution) whose counter value is below
+             max(parent values). After `517→511` the re-climb re-spends
+             numbers — the never-reuse rule broken by construction, the
+             `.issues/121` collision class at counter granularity. Each row
+             names the commit that DID it (merge commits included — a merge
+             taking the lower side IS the hazard). First corrected
+             adjudication (Issue 770): 27 resets workspace-wide, a mix of
+             stale-lineage writebacks and merge resolutions taking the lower
+             side; historical hazard absorbed by gap fast-forwards and
+             push-wins renumbers; the max_dup column proves no live file
+             duplicates. Pinned at the MEASURED count per repo — a NEW reset
+             reds immediately, the standing history stays visible in the pins.
+  unbumped   the WORKTREE counter sits below its committed history max on
+             HEAD — a checkout/branch state, not a commit. REPORT-ONLY,
+             deliberately unpinned (Issue 770 finding 4): the quantity is a
+             function of which branch the box carries (seal-game-editor's
+             bevy worktree vs other refs' 194), so a pin would be ref-set
+             dependent and red on a box that owes nothing — the class the
+             AGENTS.md "a verdict the box can invalidate should refuse" law
+             assigns to printing, never gating.
 
 Both run over EVERY dir carrying a `.highwater`, not just SERIAL_DIRS — a
 backward move is anomalous under number- and count-based conventions alike
-(the malformed check's precedent).
+(the malformed check's precedent). HEAD-reachable only, never --all: pins
+must be a function of the branch the box carries, not of which refs happen
+to be fetched.
 """
 
 from __future__ import annotations
@@ -128,13 +136,13 @@ def parse_rows(path: Path) -> dict[str, dict[str, int]]:
         if not line:
             continue
         parts = line.split()
-        if len(parts) != 7:
-            raise ValueError(f"malformed pin row (want 7 fields): {raw!r}")
-        repo, mn, dup, above, mal, resets, unb = parts
+        if len(parts) != 6:
+            raise ValueError(f"malformed pin row (want 6 fields): {raw!r}")
+        repo, mn, dup, above, mal, resets = parts
         rows[repo] = {
             "min_files": int(mn), "max_dup": int(dup),
             "max_above": int(above), "max_malformed": int(mal),
-            "max_resets": int(resets), "max_unbumped": int(unb),
+            "max_resets": int(resets),
         }
     return rows
 
@@ -158,26 +166,27 @@ def audit(repo: Path) -> dict:
             dup.append(f"{dirname}/{num:03d} ×{len(files)}: {names}")
         if hw is not None and by_num and max(by_num) > hw:
             above.append(f"{dirname}: max {max(by_num)} > .highwater {hw}")
-    # ── the counter-transition classes (Issue 769): every dir WITH a counter,
-    # regardless of numbering convention — a backward move is anomalous under
-    # both number- and count-based semantics. The walker is the audit's,
-    # imported not re-implemented.
+    # ── the counter-transition classes (Issues 769 + 770): every dir WITH a
+    # counter, judged per-commit against its own parents (merge commits
+    # included). The walker is the audit's, imported not re-implemented.
     for dirname in ALL_DIRS:
         hw_f = repo / dirname / ".highwater"
         if not hw_f.is_file():
             continue
-        tr = hca.counter_transitions(repo, dirname)
-        if not tr:
+        events = hca.counter_history(repo, dirname)
+        if not events:
             continue                       # never committed — nothing to walk
-        w = hca.walk_transitions(tr)
-        for a, b, h, s in w["resets"]:
-            resets.append(f"{dirname}: {a}->{b} @ {h[:10]} ({s[:48]})")
+        w = hca.classify_history(events, repo=repo)
+        for a, b, h in w["resets"]:
+            resets.append(f"{dirname}: {a}->{b} @ {h[:10]} "
+                          f"({hca.commit_subject(repo, h)[:48]})")
         try:
             wt = int(hw_f.read_text(encoding="utf-8").strip().split()[-1])
         except (ValueError, IndexError, OSError):
             continue                       # malformed — ng's class owns it
         if w["final"] is not None and wt < w["final"]:
-            unbumped.append(f"{dirname}: worktree {wt} < history max {w['final']}")
+            unbumped.append(f"{dirname}: worktree {wt} < history max {w['final']} "
+                            f"(checkout state — REPORT only)")
     return {"dup": dup, "above": above, "malformed": malformed,
             "resets": resets, "unbumped": unbumped, "n_files": n_serial}
 
@@ -230,32 +239,38 @@ def selftest() -> list[str]:
         if got2["dup"]:
             fails.append(f"untracked split broken: {got2['dup']}")
 
-        # counter-transition classes (Issue 769): stub the walker — a committed
-        # backward move is a RESET; a worktree below the history max is UNBUMPED.
-        # walk([1→2, 4→3]): the second transition diverges (dual) and lands
-        # below its base — one reset, history max 4.
+        # counter-transition classes (Issues 769 + 770): stub the walker's
+        # history reader — a per-commit reset is reported with its commit; a
+        # worktree below the history max is REPORTED (unbumped). The stub
+        # spans BOTH arms: the Issue-770 review caught the landed version
+        # restoring the real walker between them, so the in-flight arm read a
+        # non-git tempdir and asserted nothing (mutation-proof: inverting the
+        # guard passed clean).
         (repo / ".issues").mkdir(exist_ok=True)
         (repo / ".issues" / ng.HIGHWATER).write_text("3\n")
-        real_tr = hca.counter_transitions
-        hca.counter_transitions = (
-            lambda r, d: [("h1", "s1", 1, 2), ("h2", "s2", 4, 3)]
+        real_hist = hca.counter_history
+        real_cls = hca.classify_history
+        hca.counter_history = (
+            lambda r, d: [{"hash": "h2", "value": 3, "base": 4, "kind": "reset"}]
             if d == ".issues" else [])
+        hca.classify_history = (
+            lambda ev, repo=None, is_ancestor=None:
+            {"gaps": [], "duals": 0, "final": 4,
+             "resets": [(4, 3, "h2")]})
         try:
             got3 = audit(repo)
+            (repo / ".issues" / ng.HIGHWATER).write_text("5\n")
+            got4 = audit(repo)
         finally:
-            hca.counter_transitions = real_tr
+            hca.counter_history = real_hist
+            hca.classify_history = real_cls
         if len(got3["resets"]) != 1 or "4->3" not in got3["resets"][0]:
-            fails.append(f"reset: committed backward move not reported: {got3['resets']}")
+            fails.append(f"reset: a per-commit reset must be reported: {got3['resets']}")
         if len(got3["unbumped"]) != 1 or "3 < history max 4" not in got3["unbumped"][0]:
             fails.append(f"unbumped: worktree 3 < history max 4 must report: {got3['unbumped']}")
         # a counter climbing in the worktree (in-flight) is NOT unbumped
-        (repo / ".issues" / ng.HIGHWATER).write_text("5\n")
-        try:
-            got4 = audit(repo)
-        finally:
-            hca.counter_transitions = real_tr
         if got4["unbumped"]:
-            fails.append(f"in-flight: worktree above history max must not report: {got4['unbumped']}")
+            fails.append(f"in-flight: worktree 5 > history max 4 must not report: {got4['unbumped']}")
 
         # population derivation: BOUNDARY.md + a .git DIR, both required
         (ws / "no-boundary").mkdir()
@@ -269,17 +284,17 @@ def selftest() -> list[str]:
         if [p.name for p in contract_repos(ws)] != ["fake-repo"]:
             fails.append("population: derivation is not BOUNDARY.md + .git dir")
 
-        # row parser: 7 fields, comments stripped, arity enforced
+        # row parser: 6 fields, comments stripped, arity enforced
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a\t10\t0\t0\t0\t0\t0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a\t10\t0\t0\t0\t0  # trailing\n\n")
         if parse_rows(pins) != {"repo-a": {"min_files": 10, "max_dup": 0,
                                            "max_above": 0, "max_malformed": 0,
-                                           "max_resets": 0, "max_unbumped": 0}}:
-            fails.append("row parse: 7-field row not read correctly")
-        pins.write_text("repo-a 1 2 3 4 5\n")
+                                           "max_resets": 0}}:
+            fails.append("row parse: 6-field row not read correctly")
+        pins.write_text("repo-a 1 2 3 4 5 6\n")
         try:
             parse_rows(pins)
-            fails.append("row parse: 5-field row accepted")
+            fails.append("row parse: 7-field row accepted")
         except ValueError:
             pass
     return fails
@@ -345,9 +360,10 @@ def main() -> int:
             if len(got["malformed"]) > row["max_malformed"]:
                 flags.append(f"malformed allocators {len(got['malformed'])} > pinned {row['max_malformed']}")
             if len(got["resets"]) > row["max_resets"]:
-                flags.append(f"counter resets {len(got['resets'])} > pinned {row['max_resets']} — a committed BACKWARD move: the re-climb re-spends numbers (Issue 769)")
-            if len(got["unbumped"]) > row["max_unbumped"]:
-                flags.append(f"un-bumped counters {len(got['unbumped'])} > pinned {row['max_unbumped']} — worktree counter below its committed history max")
+                flags.append(f"counter resets {len(got['resets'])} > pinned {row['max_resets']} — a commit (or merge resolution) landed below its parents' max: the re-climb re-spends numbers (Issues 769+770)")
+        # unbumped is REPORT-ONLY (Issue 770 finding 4): a checkout-state
+        # quantity is a function of which branch the box carries — printed
+        # like the citation sweep's undecided rows, never pinned, never red.
         status = "✗" if flags else ("·" if (got["dup"] or got["above"] or got["malformed"]
                                     or got["resets"] or got["unbumped"]) else "✓")
         print(f"{status} {repo.name:22s} files={got['n_files']:<5d} "
@@ -374,13 +390,13 @@ def main() -> int:
 
     print(f"\n{len(repos)} contract repo(s) · {tot_dup} tracked duplicate(s) · "
           f"{tot_above} stale allocator(s) · {tot_mal} malformed allocator(s) · "
-          f"{tot_reset} counter reset(s) · {tot_unb} un-bumped counter(s)")
-    print(f"  resets are HISTORICAL stale-lineage writebacks at their pins "
-          f"(Issue 769 T2 adjudication: all measured resets are non-merge "
-          f"diverged-checkout commits; the re-climb re-spends numbers until a "
-          f"gap fast-forward repairs the range) — a NEW reset reds at its pin. "
-          f"unbumped rows REPORT to the owning repo; seal-game-editor is "
-          f"read-only here.")
+          f"{tot_reset} counter reset(s) · {tot_unb} un-bumped counter(s) [report-only]")
+    print(f"  resets are judged per-commit against each commit's OWN parents "
+          f"(Issue 770: the 769 walker's date-ordered interleaving manufactured "
+          f"phantoms and never saw merges; this walk blames the commit that did "
+          f"it — merge resolutions taking the lower side included). Pinned at "
+          f"measured as a ratchet — a NEW reset reds at its pin. unbumped rows "
+          f"are checkout state (branch-dependent), printed, never gated.")
     # Say the scope at the point of READING, not only in the docstring. A green
     # `dup=0` is green over SERIAL_DIRS only, and riir-ai carried four genuine
     # cross-topic `.benchmarks/` collisions (617/619, resolved 2026-09-05) while

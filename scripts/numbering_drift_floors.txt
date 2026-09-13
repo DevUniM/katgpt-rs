@@ -4,7 +4,7 @@
 # here; deriving both from one walk is what makes a cross-repo gate permanently
 # green (the Issue 702 lesson, one instrument over).
 #
-# Format:  <repo>  <min_files>  <max_dup>  <max_above>  <max_malformed>  <max_resets>  <max_unbumped>
+# Format:  <repo>  <min_files>  <max_dup>  <max_above>  <max_malformed>  <max_resets>
 #
 #   min_files      FLOOR over the ALLOCATOR-SERIAL dirs only
 #                  (.plans/.issues/.research/.proposals). Every other column is
@@ -19,18 +19,12 @@
 #   max_above      .highwater below its dir max: `value + 1` is already taken,
 #                  so the next allocation is GUARANTEED to collide.
 #   max_malformed  .highwater present but not a bare integer.
-#   max_resets     committed BACKWARD moves of .highwater (Issue 769): after
-#                  `517→511` the re-climb re-spends numbers. First full
-#                  adjudication (769 T2, 2026-09-13): all 31 measured resets
-#                  are NON-MERGE stale-lineage writebacks — a diverged-checkout
-#                  session committing its local counter over a newer mainline
-#                  value; historical hazard absorbed by gap fast-forwards and
-#                  push-wins renumbers. A RATCHET at the measured count: a NEW
-#                  reset reds, the standing history stays visible here.
-#   max_unbumped   the WORKTREE counter sits BELOW its committed history max
-#                  (a checkout/branch state, not a commit). REPORT to the
-#                  owning repo; seal-game-editor is read-only to these
-#                  sessions — never auto-repair.
+#   max_resets     commits (or merge resolutions) whose counter value landed
+#                  below max(parent values) — Issue 770's per-commit-parent
+#                  walk. After `517→511` the re-climb re-spends numbers: the
+#                  never-reuse rule broken at counter granularity. A RATCHET
+#                  at the measured count — a NEW reset reds, the standing
+#                  history stays visible here.
 #
 # ── why max_dup is a ratchet at the measured value, not 0 ───────────────────
 #
@@ -59,29 +53,50 @@
 # value-preserving repairs with no arbitration attached, so there is no reason
 # to tolerate a single one. A regression reds.
 #
-# max_resets follows the max_dup doctrine, not the zeros doctrine: the standing
-# 31 are COMMITTED HISTORY — un-committing them rewrites every repo's past, and
-# the hazard they created was already absorbed (gap fast-forwards; the max_dup
-# column proves no live file duplicates). A pin of 0 would red on landing for
-# seven repos and be ignored. The ratchet catches the NEXT one.
+# ── max_resets: the 770 correction, and why the 769 numbers were wrong ─────
+#
+# The Issue-769 landing pinned resets from a walker that ordered ALL refs'
+# hunks by commit DATE around one `current`: 15 of its 31 rows named
+# FORWARD-stepping commits (phantoms from lineage interleaving — riir-chain's
+# entire ×4 and riir-train Issue's ×2 were phantoms), and it could not see
+# MERGE commits at all (`git log -p` emits no merge diffs), so its "all 31 are
+# non-merge stale-lineage writebacks" adjudication was true BY CONSTRUCTION.
+# The Issue-770 walk (verdict-review findings 1+2) judges every HEAD-reachable
+# commit against its OWN parents' blob values: merge resolutions taking the
+# lower side are now visible and correctly blamed (riir-ai Issue 627→614 at a
+# Merge commit; seal-game-editor Plan 152→150 ×3 at merges). Corrected count:
+# 27 workspace-wide. Same doctrine as max_dup — the standing history is
+# COMMITTED (un-committing it rewrites every repo's past; the hazard was
+# absorbed by gap fast-forwards and push-wins renumbers; the max_dup column
+# proves no live file duplicates). A pin of 0 would red on landing for seven
+# repos and be ignored. The ratchet catches the NEXT one.
+#
+# The walk is HEAD-reachable only, never --all: pins are a function of the
+# branch the box carries, not of which refs happen to be fetched.
+#
+# ⛔ There is deliberately NO max_unbumped column (Issue 770 finding 4): the
+# worktree-below-history-max quantity is checkout state — seal-game-editor's
+# bevy worktree reads 191 while other refs sit at 194 — a pin would be ref-set
+# dependent and red on a box that owes nothing. It is PRINTED by the sweep
+# every run, never gated.
 
-katgpt-rs           	795	0	0	0	5	0	# resets (769 T2): Issue 577→25 (worktree-branch writeback) + Plan 572→526 + Bench 564→204, 564→205, 585→584 — all stale-lineage, absorbed
-katgpt-web          	0	0	0	0	0	0	# observed 2026-09-05: 0 files (no .plans/.research yet)
-riir-ai             	493	0	0	0	5	0	# resets: Issue 627→614, 763→762 + Bench 641→640, 676→675, 790→786 — single-step stale writebacks; 2026-09-05 dups RESOLVED (T4b)
-riir-auth           	0	0	0	0	0	0	# observed 2026-09-05: 0 files
-riir-chain          	48	0	0	0	4	0	# resets: Issue 68→61, 72→68, 72→70, 74→71 — the early-work diverged-lane cluster; 2026-09-05 allocator repaired 007->008
-riir-clippy         	183	0	0	0	4	0	# resets: Issue 82→81 + Research 87→86 + Bench 16→13, 42→41; 2026-09-05 dups RESOLVED (Issue 069 T2)
-riir-dao            	3	0	0	0	0	0	# observed 2026-09-05: 4 files
-riir-dapps          	15	0	0	0	0	0	# observed 2026-09-05: 19 files
-riir-deployer        	4	0	0	0	0	0	# observed 2026-09-05: 5 files
-riir-esp32           	1	0	0	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content
-riir-game-sdk        	6	0	0	0	0	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
-riir-kat              	0	0	0	0	0	0	# observed 2026-09-12: 0 allocator-serial files
-riir-mmorpg-examples	28	0	0	0	0	0	# observed 2026-09-06: 36 files · malformed .issues allocator repaired 097 (adc8877, push-wins after a same-unit collision)
-riir-neuron-db      	37	0	0	0	0	0	# observed 2026-09-05: 47 files
-riir-shader           	2	0	0	0	1	0	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)
-riir-train          	258	0	0	0	10	0	# resets: Issue 517→511, 519→512 + Bench ×8 (523→518 … 577→576) — the busiest counter; 2026-09-05 dups RESOLVED (Issue 514)
-riir-viewbridge     	0	0	0	0	0	0	# observed 2026-09-05: 0 files
-seal-game-editor    	175	13	0	0	2	3	# resets: Issue 141→137, Plan 108→107 · unbumped ×3 (worktree 150<152, 191<194, 1<2 — READ-ONLY, report to owner); dup 12→13 2026-09-12 (+1 .plans pair; renumber is the editor owners' repair)
-seal-online-remaster  	30	0	0	0	0	0	# observed 2026-09-12: 52 files
-seal-remake         	1	0	0	0	0	0	# observed 2026-09-05: 1 file
+katgpt-rs           	795	0	0	0	5	# resets (770 walk): Issue 577→25 + Plan 572→526 + Bench 427→205 (the promote-to-main merge), 564→204, 585→584
+katgpt-web          	0	0	0	0	0	# observed 2026-09-05: 0 files (no .plans/.research yet)
+riir-ai             	493	0	0	0	9	# resets: Issue 627→614 ×2 (one at a Merge), 763→762 + Bench ×6 (incl. 641→640 ×2, one at a Merge); 2026-09-05 dups RESOLVED (T4b)
+riir-auth           	0	0	0	0	0	# observed 2026-09-05: 0 files
+riir-chain          	0	0	0	0	0	# resets 0 under the 770 walk — the 769 walker's ×4 rows were ALL phantoms (forward bumps on diverged lineages); allocator repaired 007->008 2026-09-05
+riir-clippy         	183	0	0	0	5	# resets: Issue 82→81 + Research 57→54, 87→86 + Bench 16→13, 42→41; 2026-09-05 dups RESOLVED (Issue 069 T2)
+riir-dao            	3	0	0	0	0	# observed 2026-09-05: 4 files
+riir-dapps          	15	0	0	0	0	# observed 2026-09-05: 19 files
+riir-deployer        	4	0	0	0	0	# observed 2026-09-05: 5 files
+riir-esp32           	1	0	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content
+riir-game-sdk        	6	0	0	0	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
+riir-kat              	0	0	0	0	0	# observed 2026-09-12: 0 allocator-serial files
+riir-mmorpg-examples	28	0	0	0	1	# reset: Plan (1) — first pinned under the 770 walk (invisible to the 769 one); malformed .issues allocator repaired 097 2026-09-06 (adc8877, push-wins)
+riir-neuron-db      	37	0	0	0	0	# observed 2026-09-05: 47 files
+riir-shader           	2	0	0	0	1	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)
+riir-train          	258	0	0	0	2	# resets (770 walk): Bench 523→518, 570→569 — the 769 walker's other 8 rows (Issue ×2, Bench ×6) were phantoms; 2026-09-05 dups RESOLVED (Issue 514)
+riir-viewbridge     	0	0	0	0	0	# observed 2026-09-05: 0 files
+seal-game-editor    	175	13	0	0	4	# resets: Plan 152→150 ×3 (all MERGE resolutions) + 191→190 · dup 13 (READ-ONLY per owner rule — renumber is the editor owners' repair; every bump here is a measured event, never a silent tolerance)
+seal-online-remaster  	30	0	0	0	0	# observed 2026-09-12: 52 files
+seal-remake         	1	0	0	0	0	# observed 2026-09-05: 1 file

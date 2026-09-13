@@ -11,7 +11,60 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 770 resolved — the counter walker rebuilt per-commit; the 769 adjudication was partly an instrument artifact (2026-09-13, M3 session, verdict-review round 2)
+
+The verdict reviewer re-derived every landed reset row against its commit's
+OWN diff and found the 769 walker lineage-blind — two structural defects,
+both now regression-fixture-pinned:
+
+- **15 of the 31 rows named a FORWARD-stepping commit.** The walker ordered
+  ALL refs' hunks by commit DATE around one `current`; after any real
+  backward event, every ordinary `+1` on the OTHER lineage landed below the
+  walk's base and was re-flagged. riir-chain's entire ×4 and riir-train
+  Issue's ×2 were phantoms; riir-train Bench's 8 was really 2.
+- **"All 31 non-merge" was true BY CONSTRUCTION.** `git log -p` emits no
+  diff for merge commits, so a merge resolving a counter conflict by taking
+  the LOWER side — the dangerous case — was invisible while an innocent
+  concurrent bump took the blame. The T2 adjudication checked a hypothesis
+  the instrument was structurally incapable of falsifying.
+
+The repair (`highwater_contiguity_audit.py::counter_history`): every
+HEAD-reachable commit's counter blob is read at the commit AND at each
+parent (one `git cat-file --batch`; the response stream's blank separator
+after each blob had to be consumed explicitly — skipping it desynced half
+the reads, caught by the fixtures), and the event is judged against
+`max(parent values)` only. Merge commits are ordinary rows: riir-ai Issue
+`627→614` at a Merge commit and seal-game-editor Plan `152→150` ×3 at
+merges are now visible and correctly blamed. Corrected count: **27 resets
+workspace-wide** (katgpt-rs 5, riir-ai 9, riir-clippy 5, riir-train 2,
+seal-game-editor 4, riir-mmorpg-examples 1, riir-shader 1; riir-chain 0).
+The floors re-pinned from the corrected walk (format 5→6 fields; the
+7-field max_unbumped column lasted one landing — the worktree-below-history
+quantity is CHECKOUT state (seal-game-editor's bevy worktree vs other refs'
+194), ref-set dependent, and is now REPORT-ONLY, printed like the citation
+sweep's undecided rows, never gated). The walk is HEAD-reachable only,
+never `--all`, for the same reproducibility reason. The selftest's inert
+in-flight arm (the stub was restored before `got4` ran — mutation-proven
+by the reviewer) is fixed; the stub now spans both arms. And the sweep
+caught THIS session's own highwater write-back miss (filed 770, forgot the
+769→770 bump — the stale-allocator class red on cue). The Issue-768
+measured-negative verdict STANDS — the reviewer's findings only strengthen
+it (the old walker was even less able to certify contiguity than its report
+claimed); its figures re-measured under the corrected walk: 438 gaps + 27
+resets over 73 counters (creation gaps `0→N` now counted honestly where the
+old first-hunk special case suppressed them).
+
 ## Issue 769 resolved — the counter-reset class lands in the numbering sweep; all 31 measured resets adjudicated (2026-09-13, M3 session)
+
+*(Correction 2026-09-13, same session, verdict-review round 2 — read with
+Issue 770: the counts and the adjudication below are the DATE-ORDERED
+walker's. 15 of the 31 rows were phantoms naming forward-stepping commits;
+the "all non-merge" partition was true by construction (`git log -p` never
+diffs merges — the merge-resolution resets were invisible, and at least one
+row blamed an innocent concurrent bump). The corrected per-commit count is
+27, merge resets included; the ratchet doctrine survived with honest
+numbers. The class itself, the pin plumbing, and the DRY single-walker
+import all stand.)*
 
 Filed and resolved the same session, out of Issue 768's T3 measurement.
 `numbering_drift_sweep.py` gains two verdict classes over `.highwater`
@@ -52,10 +105,13 @@ here" — the counter as allocation ledger). The landed
 population-derived; two views — the static unwitnessed count, and the
 counter's own committed transition walk) answers NO, workspace-wide:
 
-- **315 gaps + 31 resets over 73 counters** (332 gaps at first measure; the
-  walker then learned to absorb a diverged lineage's own base — 17 rows
-  moved from the gap bucket to their true hazard classes) — no major repo's
-  counter is contiguous. katgpt-rs Issue: 18 gaps + a `577→25` lineage reset; riir-ai
+- **438 gaps + 27 resets over 73 counters** under the Issue-770 per-commit
+  walk (the figures at first landing were 332 gaps + 31 resets from the
+  date-ordered walker — 15 of its reset rows were phantoms and its merge
+  resets were invisible; re-measured after the repair, with creation gaps
+  `0→N` now counted where the old first-hunk special case suppressed them) —
+  no major repo's counter is contiguous. katgpt-rs Issue: 19 gaps + a
+  `577→25` lineage reset; riir-ai
   Issue: 38 gaps + 2 resets; riir-neuron-db Issue jumped `33→589` (a
   deliberate rebaseline — 34..588 were never allocated there);
   seal-game-editor/Plan carries 46 gaps; riir-shader's Issue counter moved

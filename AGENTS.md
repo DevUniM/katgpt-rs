@@ -247,9 +247,10 @@ the Issue 756 unterminated-fence verdict workspace-wide; its first run caught
 the then-new `seal-online-remaster`), (feat: markdown_fence_drift_sweep.py — the Issue 756 unterminated-fence verdict over every contract repo (workstation, two-axis pins: min_md_files walk floor + max_unterminated=0 wall); its FIRST workspace run caught seal-online-remaster .plans/005:600 (14 swallowed lines — the repo joined the contract set at Issue 760 after the landing measurement; repaired seal-online-remaster 99064c5, floored at 50); AGENTS.md sweep-family row)
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
-REFUTATION of the counter-as-ownership-witness: 315 gaps + 31 resets over 73
-counters, no major repo contiguous; the reset/unbumped verdict halves live in
-`numbering_drift_sweep.py` per Issue 769),
+REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73
+counters under the Issue-770 per-commit-parent walk, no major repo contiguous;
+the reset verdict half + the report-only unbumped observation live in
+`numbering_drift_sweep.py` per Issues 769+770),
 `sibling_docs_drift.yml` (reusable workflow, one caller), and
 `ci_gate_coverage.py` (report, always exit 0: which repos gate their full
 compile+lint surface in CI, and whether anything automatically starts it).
