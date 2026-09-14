@@ -95,6 +95,32 @@ def gate_selftest() -> list[str]:
     eq("a terminated block is never reported no matter how long",
        scan_text("a.md", "```\n" + "y\n" * 50 + "```"), [])
     eq("the floor is a floor, not a ceiling", MIN_FILES > 0, True)
+
+    # ── the WALK, on a throwaway git repo (Issue 790 T2) ────────────────
+    #
+    # `git ls-files` lists a path that has been DELETED from the worktree, so
+    # `unterminated` must skip it. Nothing reached that guard: dropping the
+    # `not` makes the walk read a nonexistent file and die, and dropping the
+    # file from `walked` under-counts the population the MIN_FILES floor is
+    # measured against — a quiet shrink, which is this gate's whole subject.
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
+               "GIT_CONFIG_SYSTEM": os.devnull}
+        run = lambda *a: subprocess.run(  # noqa: E731
+            ["git", "-C", str(repo), *a], capture_output=True, env=env)
+        run("init", "-q")
+        (repo / "live.md").write_text("x\n```\ny\n", encoding="utf-8")
+        (repo / "ghost.md").write_text("ok\n", encoding="utf-8")
+        run("add", "live.md", "ghost.md")
+        (repo / "ghost.md").unlink()          # tracked, absent from the worktree
+        rows, walked = unterminated(repo)
+        eq("the walk finds the live unterminated fence",
+           rows, [("live.md", 2, 1)])
+        eq("a tracked-but-DELETED file is skipped, not counted and not read",
+           walked, 1)
     return fails
 
 

@@ -1,6 +1,6 @@
 # Issue 790 — an arm that exists and runs may still reach nothing
 
-**Filed:** 2026-09-14 · **Status:** OPEN (T1 + T4 landed, T3 substantially done; T2 remains) · **Branch:** develop
+**Filed:** 2026-09-14 · **Status:** OPEN (T1–T4 landed; **T5, the sweep half, remains**) · **Branch:** develop
 
 ## Progress
 
@@ -8,9 +8,10 @@
 documented in AGENTS.md. **T4 landed** — all four NO-ARM gates now carry a
 `gate_selftest` over their own pin arithmetic, so **NO-ARM is 0**.
 
-Standing after T3/T4 (2026-09-14): **21 modules · 521 mutants · ~73s · 243
-KILLED · 123 SURVIVED (live) · 155 survived in exempt functions · 0 CRASHED ·
-0 NO-ARM · 0 UNREACHED**.
+Standing after T2 (2026-09-15): **22 modules · 552 mutants · 157.6s · 360
+KILLED · 31 SURVIVED (live) · 0 CRASHED · 0 NO-ARM · 0 UNREACHED**, every live
+survivor pinned with a reason. (After T3/T4 it was 21 modules · 519 mutants ·
+317 KILLED · 47 SURVIVED; T2 closed 16 of the 47 as real gaps.)
 
 ⛔ **The first post-T4 figure was `127 KILLED · 112 CRASHED · 5 UNREACHED`, and
 the CRASHED column was a DEFECT IN THIS HARNESS rather than a property of the
@@ -113,11 +114,106 @@ the line it lives on. Three classes: provably EQUIVALENT redundant guards (a
 **git/subprocess I/O shell** an arm cannot enter without spawning the auditor
 it reads, and message-formatting arithmetic. Do NOT read 47 as a defect count.
 
+⛔ **The paragraph above is SUPERSEDED — see the T2 section.** "Characterised,
+not unread" was true of the reading; it was not true of the classification.
+About a third of those 47 were real gaps wearing an EQUIVALENT label, and that
+only surfaced when T2 tried to write one defensible sentence per row.
+
 ⚠ Wall clock moved **~73s -> ~370s** across T3, and that is the arms working:
 several gates now build fixture repos per mutant. The price of reach.
 
 ---
 
+
+### T2 — the verdict half, and what writing the reasons found
+
+⛔ **T3's three-class characterisation of the 47 was TOO GENEROUS, and the way
+that surfaced is the transferable part.** A pin file demands one sentence per
+row. For about a third of them the sentence could not be written: they were
+plain functions over plain data — `_parse_feature_spec`, `parse_status_phrase`,
+the `local_default_closure` walk, the three manifest READERS that decide which
+packages enter the model at all, `_tracked_manifests`' two fallback returns —
+with no fixture repo and no subprocess between an arm and the decision. They
+were **real gaps wearing an EQUIVALENT label**. Pinning them would have been a
+backlog wearing a pin, which is exactly what Issue 785 forbids.
+
+**Writing the reason IS the adjudication.** A classification made while reading
+a list is a different act from one made while defending each row in writing,
+and only the second catches this. **47 → 21** in the original population (the
+final pin file holds **31**: those 21 plus the 10 in the gate's own `measure()`,
+which joins the population because the gate gates itself):
+
+| module | before | after | what closed it |
+|---|---|---|---|
+| `bench_doc_audit` | 23 | **3** | `pure_rule_arms` + `manifest_reader_arms` + 4 end-to-end fixtures |
+| `cfg_gated_floor_gate` | 4 | 2 | `sole_row` EXTRACTED from `measure()` (and it was written twice) |
+| `markdown_fence_gate` | 3 | 1 | a throwaway git repo with a tracked-but-DELETED `.md` |
+| `skill_repo_set_gate` | 3 | 2 | the `len(derived) > 1` blindness guard at its exact boundary |
+| `trap_sentinel_gate` | 1 | **0** | `load_audit` took a `path` parameter |
+
+Two repairs are worth carrying forward as patterns rather than fixes:
+
+- **`cfg_gated_floor_gate.sole_row`** — the one-row refusal sat inline in
+  `measure()`, between two `subprocess.run` calls, written TWICE. Extracted, it
+  arms in three lines. This is T4's finding again ("the verdict arithmetic sat
+  inline in `main()` beside its own error messages, unreachable by
+  construction"), and the DRY win came free with the reach.
+- **`trap_sentinel_gate.load_audit(path)` but NOT
+  `platform_dead_code_floor_gate.load_audit`** — the two look identical and the
+  answer differs. trap_sentinel's probed path is the one
+  `spec_from_file_location` receives, so an arm tests the real thing.
+  platform_dead_code probes a path and then imports by NAME through `sys.path`
+  (deliberately: a dataclass-bearing module must be in `sys.modules`), so
+  parameterising its probe would assert a refusal for a path it does not then
+  load. Same shape, different code, different verdict — the row is pinned with
+  that argument rather than armed.
+
+⚠ One arm was WITHDRAWN rather than written: `find_own_crate_defaults` has no
+`[package] name` guard at all, so it unions an unnamed manifest's defaults —
+an asymmetry against `own_closures_by_pkg`, and the mirror image of the one
+AGENTS.md records for `cargo_comment_audit.find_cargo_defaults` (which returns
+EMPTY there). Neither behaviour is reachable: a `[features]` table with no
+`[package]` is not valid cargo, and a virtual workspace manifest may not carry
+features. Asserting either direction would cement an arbitrary answer to a
+question no input can ask, so the omission is documented at the line instead.
+
+#### The gate
+
+Key design points, each forced by a measurement rather than chosen:
+
+- **The key is LINE-FREE** —
+  `<module>::<function>::<op-token>::<8-hex digest of the line TEXT>#<n>`, with
+  the ordinal scoped to the WHOLE address (`len_derived_eyes_expected.txt`'s
+  precedent). A line NUMBER drifts on every edit above it, and a pin file that
+  reds on noise is one people delete. Two rows legitimately share an address:
+  three `+` on one `print`, two `True` kwargs on one `subprocess` line.
+- The digest is unreadable, so each row carries its source line in a `#= `
+  comment **which the gate verifies against the observed text**. A comment
+  nothing can red is a comment that drifts into a lie. ⚑ It earned its keep on
+  the FIRST real run: the membership wall was clean (31 pinned = 31 observed)
+  and the only failure was a hand-copied comment missing its trailing `:`.
+  Without the check that row would have read, to every future human, as a line
+  that is not the line it pins.
+- **It gates ITSELF.** Not symmetry — an exempt gate certifies nothing
+  (`subprocess_encoding_gate`'s rule). The first self-hosted run immediately
+  found a degenerate arm in its own key builder: the ordinal counter's `+ 1`
+  flipped to `- 1` yields `#-1`/`#-2`, still two distinct keys, so the
+  count-only assertion read green. The ordinal VALUES are asserted now.
+- **The two permissive sets are pinned by membership** — `EXEMPT_FUNCTIONS`
+  and `ARM_NAMES` both live in the audit and SHRINK the finding set when they
+  grow, and no floor notices. Adding `main` to `ARM_NAMES` would look like a
+  tidy-up.
+- Three floors: `MIN_MODULES` the walk, `MIN_MUTANTS` the operators,
+  `MIN_KILLED` the **runner** — a runner reporting KILLED for everything empties
+  the survivor set, reds every pin as "no longer survives", and the obvious
+  remedy is to delete them all.
+- **No `--prove-fires`**, and that is a cost measurement: the known-answer
+  validation would be a full mutation run over a `git archive`d tree, minutes
+  per invocation, to re-derive a fact this file already records. The 16 canary
+  arm groups carry it instead.
+- **Not a `docs_gate.sh` CHECK** — minutes against a ~13s budget. Workstation
+  verdict, same standing as the eleven drift sweeps, reachable from AGENTS.md
+  so `instrument_reachability_gate` counts it.
 
 ## How this was found
 
@@ -198,9 +294,24 @@ per function, not a quality score, and the exempt functions are pinned by
   against fixtures whose answer is known independently — the
   `wasm32_surface_audit` rule, which produced three confident wrong answers
   before a right one.
-- **T2** — the verdict half for this repo, if and only if the SURVIVED count
-  after a per-row read is small enough to WALL rather than ratchet. Decide from
-  the measurement: a ratchet over a large backlog is what Issue 785 forbids.
+- **T2** — ✅ **LANDED.** `scripts/arm_reach_gate.py` +
+  `scripts/arm_reach_survivors_expected.txt`. The answer was neither a wall on
+  the count nor a ratchet: it is **MEMBERSHIP with a reason per row**, walled at
+  **0 UNPINNED**, which is this repo's own rule for `cfg_gated_floor_gate` —
+  *a set is gateable where its cardinality is not.* `UNREACHED` and `NO-ARM` are
+  walled at 0 separately. See the T2 section below.
+- **T5** — the SWEEP half, now owed. Issue 789 T4 declined a sweep on a
+  measurement (population of ONE: katgpt-rs is the only repo with a
+  `docs_gate.sh` CHECKS array) and the instinct was to carry that answer
+  across. Re-measured for ARMS rather than CHECKS, it does not transfer:
+  **18 arm-bearing `scripts/*.py` across three sibling repos** — riir-train 14
+  of 58, riir-ai 3 of 7, riir-clippy 1 of 5. That is a real population and the
+  class generalises. ⚠ Two things to settle first, both measured rather than
+  assumed: the per-repo COST (this repo alone is minutes, and riir-train has
+  58 scripts), and whether the ceiling can be a wall there or must be a
+  RATCHET — `instrument_reachability_drift_sweep` found riir-train's
+  `scripts/` is almost entirely plan-scoped one-offs, where the predicate
+  over-captures, and the same is likely true of arm reach.
 - **T3** — read every SURVIVED row once and classify EQUIVALENT vs a real gap;
   repair the real gaps by widening the arm, and pin the equivalents by
   membership with a reason.

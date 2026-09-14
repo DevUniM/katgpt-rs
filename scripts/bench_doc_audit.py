@@ -669,6 +669,211 @@ def iter_bench_doc_labels(repo_root: Path):
                     yield (rel, ln, line.strip(), qual, feat, raw, parsed)
 
 
+def pure_rule_arms() -> list[str]:
+    """Arms over the PURE rules `selftest` and `TOKENIZER_CASES` step past.
+
+    Issue 790 T2. The arm-reach audit found 23 live survivors in this module
+    after T3, and the prior read filed them all as EQUIVALENT / I/O shell /
+    message formatting. **That was too generous**: a third of them are plain
+    functions over plain data, with no fixture repo and no subprocess between
+    an arm and the decision. They are armed here.
+
+    ⚠ One row that IS equivalent is kept out and proved rather than armed:
+    `local_default_closure`'s `range(len(deps) + 2)`. For a chain seeded from
+    `default`, the iterations NEEDED are the longest path from the seed, and
+    `len(deps)` already counts `default` plus every node on it — so
+    `len(deps) - 2` is still exactly sufficient on every graph that terminates.
+    T3 reached the same conclusion by construction and could not build a
+    discriminating fixture; the pin file records the proof rather than an arm.
+    """
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    # ── `return name or None`: an `and` here returns None for every REAL
+    # feature, so every qualified spec would vanish and the audit would print
+    # a smaller label count with "0 mismatches" — clean-looking.
+    eq("_parse_feature_spec: qualified spec keeps the feature",
+       _parse_feature_spec("pkg/feat"), "feat")
+    eq("_parse_feature_spec: empty tail is None, not ''",
+       _parse_feature_spec("pkg/"), None)
+
+    # ── `has_not`'s three disjuncts. A fixture must make exactly ONE true, or
+    # `and` and `or` agree and the arm is degenerate — the shape T3 found six
+    # of. `!default-on` trips only the `"!" in w` arm.
+    eq("parse_status_phrase: bare `!` negates",
+       parse_status_phrase("!default-on"), "unknown")
+    eq("parse_status_phrase: leading `not ` negates",
+       parse_status_phrase("not default-on"), "opt-in")
+    eq("parse_status_phrase: unnegated default-on still reads default",
+       parse_status_phrase("default-on"), "default")
+
+    # ── the closure walk. `default -> a -> b` with every hop DEFINED as a
+    # feature: a 1-hop chain cannot distinguish the `not in resolved` filter
+    # from its flip, and a hop whose target is not itself a key is dropped by
+    # the final `f in feats` filter and discriminates nothing either.
+    chain = {"default": ["a"], "a": ["b"], "b": []}
+    eq("local_default_closure: a two-hop chain resolves transitively",
+       sorted(local_default_closure(chain)), ["a", "b"])
+    # `dep:` activations and `pkg/feat` forwards are NOT local defaults. With
+    # `or` flipped to `and` in the filter, both would be admitted.
+    eq("local_default_closure: dep: and pkg/ entries are not local",
+       sorted(local_default_closure(
+           {"default": ["dep:x", "other/y", "a"], "a": []})), ["a"])
+
+    # ── `reachable_nodes`' skip guard, same shape one function over: with
+    # `and`, a `dep:` entry is a real node and the graph grows phantom nodes.
+    eq("reachable_nodes: a dep: activation is not a node",
+       sorted(reachable_nodes({"p": {"default": ["dep:q", "f"], "f": []}})),
+       [("p", "default"), ("p", "f")])
+
+    # ── the scan itself IS armed (the later transition wins), but its `>` is
+    # deliberately NOT: `>` and `>=` differ only on a TIE, and no two
+    # TRANSITION_RES can match at one index — the only shared prefix is
+    # `\bnow\s+`, whose two tails (`default-on` / `opt-in`) are mutually
+    # exclusive. Proved, not armed; the pin file carries the argument.
+    eq("parse_terminal_transition: the LATER transition wins",
+       parse_terminal_transition("now default-on, and now opt-in", 0)[0],
+       "opt-in")
+
+    # ── `widened_status`' 160-char fallback window. A line with no clause end
+    # must still yield the status AFTER from_idx; a flipped `+` makes the
+    # slice empty and the function returns None, silently dropping the label.
+    long_line = "x" * 40 + "default-on" + "y" * 5
+    got = widened_status(long_line, 40)
+    eq("widened_status: the no-clause-end window reaches forward",
+       got[0] if got else None, "default")
+
+    return fails
+
+
+def manifest_reader_arms() -> list[str]:
+    """Arms over the three functions that READ manifests into the models.
+
+    Issue 790 T2. `audit_repo_arms` builds fixture repos and reaches the
+    verdict; `selftest` feeds the closure functions hand-written dicts. Between
+    them sat the readers — `load_manifests`, `own_closures_by_pkg`,
+    `find_own_crate_defaults` — whose guards decide which packages enter the
+    model at all. Every one of them fails in the QUIET direction: a package
+    silently dropped here shrinks `checked` and still prints "0 mismatches".
+
+    The fixture is two packages, and BOTH halves are load-bearing: one with
+    features and one without. With only the first, `if not feats` and
+    `if not name` flip harmlessly; with only the second, `feats = ... or {}`
+    does.
+    """
+    import tempfile
+
+    fails: list[str] = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "withfeat").mkdir()
+        (root / "withfeat" / "Cargo.toml").write_text(
+            '[package]\nname = "withfeat"\n'
+            '[features]\ndefault = ["a"]\na = []\n', encoding="utf-8")
+        (root / "nofeat").mkdir()
+        (root / "nofeat" / "Cargo.toml").write_text(
+            '[package]\nname = "nofeat"\n', encoding="utf-8")
+
+        mans = load_manifests(root)
+        if sorted(mans) != ["withfeat"]:
+            fails.append(
+                f"    load_manifests: got {sorted(mans)}, want ['withfeat'] — "
+                f"a package with a name and NO features must not enter the "
+                f"model as an empty feature table")
+        own = own_closures_by_pkg(root)
+        if own != {"withfeat": {"a"}}:
+            fails.append(
+                f"    own_closures_by_pkg: got {own}, want "
+                f"{{'withfeat': {{'a'}}}}")
+        if find_own_crate_defaults(root) != {"a"}:
+            fails.append(
+                f"    find_own_crate_defaults: got "
+                f"{find_own_crate_defaults(root)}, want {{'a'}}")
+
+        # A package with NO `[package] name` must be skipped, not credited to
+        # the empty string. ⚠ Added as its own arm because the two flips of
+        # `if not name` and `if not feats` are otherwise indistinguishable on
+        # a fixture where every package has both.
+        (root / "anon").mkdir()
+        (root / "anon" / "Cargo.toml").write_text(
+            '[features]\ndefault = ["zz"]\nzz = []\n', encoding="utf-8")
+        if "" in own_closures_by_pkg(root):
+            fails.append(
+                "    own_closures_by_pkg: a manifest with no [package] name "
+                "was credited under the empty string")
+        # ── `_tracked_manifests`' two FALLBACK returns (Issue 790 T2). Both
+        # return None to mean "ask the filesystem walk instead", and the
+        # distinction from `[]` is the whole point: `[]` means AUDIT NOTHING,
+        # which prints "0 mismatches" over an empty population. The guards sit
+        # behind a `git` invocation, but the invocation is cheap and both
+        # answers are reachable — a non-repo for the returncode arm, a repo
+        # with no manifests for the empty-result arm.
+        import subprocess
+        nogit = root / "notarepo"
+        nogit.mkdir()
+        if _tracked_manifests(nogit) is not None:
+            fails.append(
+                "    _tracked_manifests: a non-git directory did not fall "
+                "back — a nonzero `git` exit must yield None, never a list")
+        empty = root / "emptyrepo"
+        empty.mkdir()
+        subprocess.run(["git", "-C", str(empty), "init", "-q"],
+                       capture_output=True)
+        if _tracked_manifests(empty) is not None:
+            fails.append(
+                "    _tracked_manifests: a git repo with NO manifests "
+                "returned a list — an empty result is ambiguous (a repo "
+                "genuinely without manifests vs a broken invocation) and must "
+                "fall back rather than silently audit nothing")
+        # ⚠ The SUCCESS case is a separate arm and both above are satisfied
+        # without it: the two fallbacks each return None, so a `returncode
+        # != 0` flipped to `== 0` still answers None to both — it just answers
+        # None to EVERYTHING, and the audit quietly reverts to the 10.7s
+        # unpruned walk on every repo. Only a repo that HAS a tracked manifest
+        # distinguishes them.
+        live = root / "liverepo"
+        live.mkdir()
+        subprocess.run(["git", "-C", str(live), "init", "-q"],
+                       capture_output=True)
+        (live / "Cargo.toml").write_text(
+            '[package]\nname = "live"\n', encoding="utf-8")
+        subprocess.run(["git", "-C", str(live), "add", "Cargo.toml"],
+                       capture_output=True)
+        got = _tracked_manifests(live)
+        if got is None or [p.name for p in got] != ["Cargo.toml"]:
+            fails.append(
+                f"    _tracked_manifests: a git repo WITH a tracked manifest "
+                f"returned {got!r} — git tracking is the fast path and "
+                f"falling back on success is silent, not wrong-looking")
+        # …and the untracked-skipped DIAGNOSTIC counts the difference. An
+        # untracked manifest is deliberately NOT audited; the count is how a
+        # reader learns the population was smaller than the tree.
+        (live / "sub").mkdir()
+        (live / "sub" / "Cargo.toml").write_text(
+            '[package]\nname = "untracked"\n', encoding="utf-8")
+        list(iter_cargo_manifests(live))
+        if UNTRACKED_SKIPPED.get(str(live)) != 1:
+            fails.append(
+                f"    iter_cargo_manifests: UNTRACKED_SKIPPED is "
+                f"{UNTRACKED_SKIPPED.get(str(live))!r}, want 1 — the "
+                f"diagnostic that tells a reader the audited population was "
+                f"smaller than the tree")
+
+        # ⚠ `find_own_crate_defaults` is deliberately NOT asserted on this
+        # input. It has no name guard at all, so it DOES union an unnamed
+        # manifest's defaults — an asymmetry against the per-package function
+        # above, and the mirror image of the one AGENTS.md already records for
+        # `cargo_comment_audit.find_cargo_defaults` (which returns EMPTY
+        # there). Neither behaviour is reachable: a `[features]` table with no
+        # `[package]` is not valid cargo, and a virtual workspace manifest may
+        # not carry features. Asserting either direction would cement an
+        # arbitrary answer to a question no input can ask.
+    return fails
+
+
 def audit_repo_arms() -> list[str]:
     """End-to-end arms over the VERDICT, on fixture repos.
 
@@ -751,6 +956,45 @@ def audit_repo_arms() -> list[str]:
     n, out = run({"Cargo.toml": one}, "Some prose about `alpha` (opt-in).\n")
     eq("a non-header line is not scanned", (n, "checked 0 labels" in out),
        (0, True))
+
+    # ── the qualified-DEFAULT-drift branch is guarded on `parsed == "default"`
+    # (Issue 790 T2). The LAYER-SPLIT shape: the qualifier DEFINES the flag and
+    # ships it OFF, while a DIFFERENT crate defaults the same NAME. A
+    # **default** label there is drift — and an **opt-in** label is exactly
+    # right, because the qualifier really does ship it off. Nothing reached
+    # that conjunct: `qualified_default_drift` is armed on its own in
+    # `selftest`, but no end-to-end fixture ever put a NON-default label in
+    # front of it, so flipping the test to `!=` flagged correct opt-in labels
+    # and every arm stayed green.
+    split = {
+        "engine/Cargo.toml":
+            '[package]\nname = "riir-engine"\n'
+            '[features]\ndefault = ["mop_runtime"]\nmop_runtime = []\n',
+        "civ/Cargo.toml":
+            '[package]\nname = "riir-games-civ"\n'
+            '[features]\ndefault = []\nmop_runtime = []\n',
+    }
+    n, out = run(split, "**Feature:** `riir-games-civ/mop_runtime` (opt-in)\n")
+    eq("a qualified OPT-IN label on a layer-split flag is correct, not drift",
+       (n, "checked 1 labels" in out), (0, True))
+    n, _ = run(split, "**Feature:** `riir-games-civ/mop_runtime` (**DEFAULT-ON**)\n")
+    eq("…while the qualified DEFAULT label on the same flag IS drift", n, 1)
+
+    # ── the mismatch REPORT line, on a QUALIFIED label (Issue 790 T2). Every
+    # arm above reports through `{qual + '/' if qual else ''}` with qual=None,
+    # so the conditional's live branch never ran and the same source line
+    # survived in all three mismatch blocks. A reader acts on this line: it is
+    # the only place the report says WHICH crate's flag is mislabelled.
+    twocrate = {
+        "a/Cargo.toml": '[package]\nname = "demo"\n'
+                        '[features]\ndefault = ["alpha"]\nalpha = []\nbeta = []\n',
+    }
+    n, out = run(twocrate, "**Feature:** `demo/beta` (**DEFAULT-ON**)\n")
+    eq("a qualified DEFAULT label on an opt-in flag names its qualifier",
+       (n, "feat: demo/beta" in out), (1, True))
+    n, out = run(twocrate, "**Feature:** `demo/alpha` (opt-in)\n")
+    eq("a qualified OPT-IN label on a default flag names its qualifier",
+       (n, "feat: demo/alpha" in out), (1, True))
 
     # SCOPED CLAIM: an explicit per-crate reading is trusted and counted.
     n, out = run({"Cargo.toml": one},
@@ -1096,6 +1340,15 @@ def selftest() -> None:
         raise SystemExit("✗ audit_repo self-test FAILED — the verdict logic that "
                          "joins the reachability model to the tokenizer does not "
                          "behave as documented:\n" + "\n".join(verdict))
+    # The PURE rules and the manifest READERS (Issue 790 T2). Everything above
+    # tests the two models and their join; these are the guards that decide
+    # what enters a model in the first place, and each fails by quietly
+    # shrinking the population rather than by saying anything.
+    rules = pure_rule_arms() + manifest_reader_arms()
+    if rules:
+        raise SystemExit("✗ rule/reader self-test FAILED — a guard that decides "
+                         "which packages and labels enter the models does not "
+                         "behave as documented:\n" + "\n".join(rules))
 
 
 def main(argv: list[str]) -> int:

@@ -420,6 +420,20 @@ def selftest() -> list[str]:
             eq("the marker does not excuse an UNREGISTERED repo",
                load_vocabulary(["katgpt-rs", "riir-ai", "riir-chain", "riir-dao"])[0],
                [])
+            # ⚑ The `len(derived) > 1` BLINDNESS guard, at its exact boundary
+            # (Issue 790 T2 — it survived a `> -> >=` flip, because every arm
+            # above passes two or more repos). A one-repo walk is the walk
+            # having collapsed, not a workspace with one repo, and auditing
+            # the snapshot against it would report 19 phantom removals and
+            # invite regenerating the canonical set from the wreckage — the
+            # Issue 765 remedy this gate exists to refuse.
+            os.environ.pop(PARTIAL_MARKER, None)
+            eq("a ONE-repo walk defers the snapshot audit entirely",
+               load_vocabulary(["riir-dao"]),
+               (["katgpt-rs", "riir-ai", "riir-chain"], None, None))
+            eq("…and TWO repos is enough to audit, so the guard is a "
+               "boundary and not an off switch",
+               load_vocabulary(["riir-dao", "riir-ai"])[0], [])
     finally:
         SNAPSHOT = _real_snap
         if _real_env is None:

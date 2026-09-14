@@ -1,0 +1,98 @@
+# Mutants that SURVIVE every arm, pinned by MEMBERSHIP with a reason per row
+# (Issue 790 T2). Read by `scripts/arm_reach_gate.py`.
+#
+# Format, 2+ whitespace-separated fields, plus a verified source-line comment:
+#
+#   <module>::<function>::<op-token>::<digest>#<n>   <reason>   #= <source line>
+#
+# The reason is REQUIRED and the parser refuses a row without one. The `#= `
+# comment is VERIFIED against the observed line on every run — the key carries
+# an unreadable digest, so the comment is the only part of this file a human
+# adjudicates from, and a comment nothing can red is a comment that drifts into
+# a lie.
+#
+# ── the key is LINE-FREE, on purpose ────────────────────────────────────────
+# A line NUMBER drifts on every edit above it, so a line-numbered pin file reds
+# on commits that changed nothing about it — and a pin file that reds on noise
+# is one people delete. The digest is over the stripped source TEXT and the
+# `#<n>` ordinal is scoped to the WHOLE address, so adding a new mutation site
+# to a function renumbers nothing. Only genuinely DUPLICATE line text shares a
+# sequence; there are two such rows below and both are real.
+#
+# ── reds in BOTH directions ─────────────────────────────────────────────────
+# A new UNPINNED survivor is a finding. A pinned row an arm now reaches is a
+# finding too — the row and the repair belong in the same commit. A count would
+# be green on the swap.
+#
+# ⛔ THE DEFAULT IS TO CLOSE THE GAP, NOT TO ADD A ROW. Writing the reason IS
+# the adjudication: T2 set out to pin 47 rows that T3 had characterised as
+# EQUIVALENT / I-O / formatting, and could not write a true sentence for about
+# a third of them. They were plain functions over plain data and they are armed
+# now — 47 down to the rows below, `bench_doc_audit` alone 23 -> 3. A row whose
+# reason is "not written yet" is a backlog wearing a pin, which Issue 785
+# forbids; if you cannot state WHY no arm should reach a line, write the arm.
+#
+# Three classes qualify, and each row says which it is:
+#   EQUIVALENT  the mutant cannot change any output — with the argument, not
+#               the assertion. "It looked fine" is not a reason.
+#   I/O SHELL   reaching it means spawning the auditor or the cargo/git child
+#               that produces its input, inside the arm that reads it.
+#   CROSS-MODULE the rule IS asserted, by a different module's arm. Reach is
+#               measured per module, so this reads SURVIVED (Issue 755).
+
+# ── EQUIVALENT: a `find()` sentinel test flipped to `<= 0` ──────────────────
+# `<= 0` is inert on the -1 return and bites only at OFFSET 0 — which cannot
+# occur where the search starts after an earlier match. Documented in AGENTS.md.
+agents_repo_set_gate.py::parse_paragraph::lt2le::27c21d48#1   EQUIVALENT: `j` is a find() from after the section heading, so offset 0 is unreachable and `<= 0` differs only there   #= if j < 0:
+agents_repo_set_gate.py::parse_paragraph::lt2le::ed47a2be#1   EQUIVALENT: `k` searches from after `j`, so offset 0 is unreachable   #= if k < 0:
+agents_repo_set_gate.py::product_set::lt2le::ed47a2be#1   EQUIVALENT: same shape — `k` searches from a prior match, never from 0   #= if k < 0:
+docs_gate_checks_sync.py::parse_table::gt2ge::e4986119#1   EQUIVALENT: `nxt` is a find() for the NEXT table after `start`, so it is -1 or > start >= 0; it can never be 0   #= body = text[start : nxt if nxt > 0 else len(text)]
+issue_citation_gate.py::fenced_lines::lt2le::59be7750#1   EQUIVALENT: `last` is either the negative unterminated sentinel or a 1-based line number, never 0   #= if last < 0:            # the unterminated-block sentinel
+markdown_fence_gate.py::scan_text::lt2le::8349afbc#1   EQUIVALENT: same sentinel, same parser — `last` is negative or a 1-based line number   #= for first, last, _body, _prev in fenced_blocks(text) if last < 0]
+skill_repo_set_gate.py::scan::lt2le::768634d5#1   EQUIVALENT: `end` is the closing-fence find() from after the opening fence, so offset 0 is unreachable   #= if end < 0:
+
+# ── EQUIVALENT: a redundant guard whose work a later filter already does ────
+bench_doc_audit.py::local_default_closure::and2or::fba14dfd#1   EQUIVALENT: with `or`, `dep:`/`pkg/feat` entries are admitted to the walk — and the trailing `f in feats` filter drops every one of them, because no feature is NAMED `dep:x`. The returned set is identical   #= if x and not x.startswith("dep:") and "/" not in x:
+cargo_comment_audit.py::find_cargo_defaults_per_manifest::and2or::a3a435e9#1   EQUIVALENT: with `or`, already-resolved deps re-enter `new_added`; `resolved |= new_added` is a no-op for them and the extra `changed` passes are bounded by the same range. Same fixpoint   #= if dep not in resolved and dep not in new_added:
+cargo_comment_audit.py::find_cargo_defaults_per_manifest::false2true::766991c8#1   EQUIVALENT: `changed` is an early-EXIT optimisation. Seeded True, the loop simply runs its full bound and converges to the same set   #= changed = False
+cargo_comment_audit.py::iter_cargo_comment_labels::or2and::d8255f02#1   EQUIVALENT and already documented at the line: the `^[a-zA-Z]...=\s*\[` match below rejects blank, `#` and `[` lines anyway; the guard is kept for cost and legibility   #= if not stripped or stripped.startswith("#") or stripped.startswith("["):
+instrument_reachability_gate.py::reachable::or2and::ff6d085c#1   EQUIVALENT: `by_name` holds only script paths, so `path == cur` can hold only when `cur` is itself an already-reached script; re-adding it to a set and re-queueing it behind the `seen` guard changes nothing   #= if path == cur or path in reached:
+
+# ── EQUIVALENT: an iteration bound with no slack to remove ──────────────────
+# The closure is seeded with `default`'s entries, so the iterations NEEDED are
+# the longest path from that seed — and `len(deps)` already counts `default`
+# plus every node on the path. `len(deps) - 2` is therefore still exactly
+# sufficient on every graph that terminates. Reached independently by T3 (which
+# could build no discriminating fixture) and by T2.
+bench_doc_audit.py::local_default_closure::add2sub::bc234cc5#1   EQUIVALENT: the bound has no slack to remove — see the argument above this block   #= for _ in range(len(deps) + 2):
+cargo_comment_audit.py::find_cargo_defaults_per_manifest::add2sub::bc234cc5#1   EQUIVALENT: the same bound over the same graph shape in the other closure   #= for _ in range(len(deps) + 2):
+
+# ── EQUIVALENT: a comparison whose operands can never be equal ──────────────
+bench_doc_audit.py::parse_terminal_transition::gt2ge::0bf36063#1   EQUIVALENT: `>` and `>=` differ only on a TIE, and no two TRANSITION_RES can match at one index — the only shared prefix is `\bnow\s+`, whose two tails (`default-on` / `opt-in`) are mutually exclusive   #= if m.start() > best_at:
+
+# ── CROSS-MODULE: asserted, by another module's arm ─────────────────────────
+skill_repo_set_gate.py::derive_repos::and2or::ad9e778c#1   CROSS-MODULE: the BOUNDARY.md + .git conjunction is armed by population_sync_gate's synthetic-workspace canary, which builds directories missing each half. Reach is measured per module, so it reads SURVIVED here (Issue 755)   #= if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
+
+# ── I/O SHELL: reaching it means spawning the child that feeds it ───────────
+cfg_gated_floor_gate.py::run_auditor::ne2eq::b5b785ed#1   I/O SHELL: needs a FAILING auditor subprocess over the real tree. The refusal ARITHMETIC it guards was extracted to `sole_row` by T2 and is armed there   #= if proc.returncode != 0:
+cfg_gated_floor_gate.py::run_auditor::true2false::d9379eab#1   I/O SHELL: `capture_output` on the same subprocess; flipping it means reading the auditor's real stdout from a real run   #= capture_output=True,
+numbering_gate.py::tracked_paths::true2false::1ba9f975#1   I/O SHELL: `capture_output` on `git ls-files` over the real tree   #= capture_output=True, encoding="utf-8", errors="replace", check=True,
+numbering_gate.py::tracked_paths::true2false::1ba9f975#2   I/O SHELL: `check=True` on the SAME line — two bool kwargs, which is why the key carries an ordinal   #= capture_output=True, encoding="utf-8", errors="replace", check=True,
+platform_dead_code_floor_gate.py::load_audit::dropnot::84c1a92c#1   I/O SHELL: the classifier-absence refusal. Its probe path is bound to HERE and is deliberately NOT parameterised — the import that follows resolves by NAME through sys.path (a dataclass-bearing module must be registered in sys.modules), so an arm passing a fake path would assert a refusal for a path the function does not then load. The sibling case in trap_sentinel_gate, where the probed path IS the loaded one, was armed by T2 instead   #= if not path.is_file():
+
+# ── I/O SHELL: arm_reach_gate's own `measure()` ────────────────────────────
+# This gate is in its OWN population — an exempt gate certifies nothing, and
+# self-hosting is what caught a degenerate arm in its key builder. `measure()`
+# runs the full mutation audit over every module (minutes), so the canary
+# cannot enter it without spawning the thing it reads. Every row below is that
+# one function.
+arm_reach_gate.py::measure::add2sub::58f7306e#1   I/O SHELL: population assembly inside measure()   #= paths = list(paths) + [me]
+arm_reach_gate.py::measure::and2or::553d0fa2#1   I/O SHELL: the UNREACHED test, over a per-module audit result   #= if r["killed"] == 0 and r["total"] > 0:
+arm_reach_gate.py::measure::dropnot::8aa55a21#1   I/O SHELL: the NO-ARM test, over a per-module audit result   #= if not (set(r["arms"]) & A.RUN_ARMS):
+arm_reach_gate.py::measure::eq2ne::553d0fa2#1   I/O SHELL: same UNREACHED test, second operator on the line   #= if r["killed"] == 0 and r["total"] > 0:
+arm_reach_gate.py::measure::false2true::426af375#1   I/O SHELL: the population selector   #= paths = A.population(include_all=False)
+arm_reach_gate.py::measure::gt2ge::553d0fa2#1   I/O SHELL: same UNREACHED test, third operator on the line   #= if r["killed"] == 0 and r["total"] > 0:
+arm_reach_gate.py::measure::in2notin::846a0d32#1   I/O SHELL: the exempt-function filter, over a per-module audit result   #= if func in A.EXEMPT_FUNCTIONS:
+arm_reach_gate.py::measure::in2notin::cb420e3f#1   I/O SHELL: the `--module-filter` selector, which the gate REFUSES to draw a verdict from anyway   #= paths = [p for p in paths if any(o in p.name for o in only)]
+arm_reach_gate.py::measure::notin2in::7ce54100#1   I/O SHELL: the self-inclusion test   #= if me not in {p.resolve() for p in paths}:
+arm_reach_gate.py::measure::sub2add::f9cdce25#1   I/O SHELL: 1-based line number to 0-based index, on a source file read after the audit   #= text = src[ln - 1].strip() if 0 < ln <= len(src) else ""

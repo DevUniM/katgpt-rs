@@ -258,26 +258,31 @@ def run_auditor(script: Path) -> dict:
     return json.loads(proc.stdout)
 
 
-def measure() -> dict[str, int]:
-    """Both auditors, merged into one measurement dict."""
-    data = run_auditor(AUDITOR)
-    # Keyed by directory NAME, and the checkout directory is not guaranteed to
-    # be `katgpt-rs` (a fork, a worktree, a rename). Exactly one repo was
-    # requested, so exactly one row is the correct answer regardless of what it
-    # is called; anything else is refused rather than averaged.
+def sole_row(data: dict, label: str) -> dict:
+    """The ONE row an auditor must return for the ONE repo it was given.
+
+    Keyed by directory NAME, and the checkout directory is not guaranteed to
+    be `katgpt-rs` (a fork, a worktree, a rename). Exactly one repo was
+    requested, so exactly one row is the correct answer regardless of what it
+    is called; anything else is refused rather than averaged.
+
+    Extracted from `measure()` by Issue 790 T2, for the reason T4 found in
+    four other gates: the refusal arithmetic sat inline beside its own error
+    message and beside the `subprocess.run` that produces its input, so no arm
+    could reach it without spawning the auditor. It was also written twice.
+    """
     if len(data) != 1:
         raise SystemExit(
-            f"✗ auditor returned {len(data)} rows for one repo ({list(data)}) — "
+            f"✗ {label} returned {len(data)} rows for one repo ({list(data)}) — "
             "refusing to report a verdict over an ambiguous population"
         )
-    m = dict(next(iter(data.values())))
+    return next(iter(data.values()))
 
-    ig = run_auditor(IGNORE_AUDITOR)
-    if len(ig) != 1:
-        raise SystemExit(
-            f"✗ ignore auditor returned {len(ig)} rows for one repo ({list(ig)})"
-        )
-    igm = next(iter(ig.values()))
+
+def measure() -> dict[str, int]:
+    """Both auditors, merged into one measurement dict."""
+    m = dict(sole_row(run_auditor(AUDITOR), "auditor"))
+    igm = sole_row(run_auditor(IGNORE_AUDITOR), "ignore auditor")
     m["reasonless_targets"] = igm["reasonless_targets"]
     m["ignore_scanned"] = igm["scanned"]
     m["all_ignored"] = igm["all_ignored"]
@@ -485,6 +490,32 @@ def selftest() -> None:
     assert check_membership({"tests/a_goat.rs", "tests/z_goat.rs"}, allow), (
         "a same-size membership SWAP passed — the pin is behaving like a count"
     )
+
+    # ── the one-row refusal (Issue 790 T2) ──────────────────────────────
+    #
+    # `sole_row` was inline in `measure()`, written twice, wedged between two
+    # `subprocess.run` calls — so no arm could reach it without spawning both
+    # auditors over the real tree, where the branch is unreachable by
+    # construction. Extracted, it arms in three lines. BOTH directions of
+    # "not exactly one" matter and they fail differently: ZERO rows is a
+    # blind auditor, and TWO is a population the gate would otherwise average
+    # over silently.
+    assert sole_row({"katgpt-rs": {"scanned": 1}}, "x") == {"scanned": 1}, (
+        "the sole row of a one-row payload was not returned"
+    )
+    for bad, why in (({}, "a BLIND auditor (zero rows)"),
+                     ({"a": {}, "b": {}}, "an AMBIGUOUS population (two rows)")):
+        try:
+            sole_row(bad, "x")
+            raise AssertionError(f"{why} was accepted as one repo")
+        except SystemExit:
+            pass
+    # The row must be returned VERBATIM: the checkout directory name is not
+    # guaranteed, so keying on anything but "there is exactly one" is wrong.
+    assert sole_row({"some-fork-name": {"gated": 7}}, "x") == {"gated": 7}, (
+        "the row was matched by repo NAME rather than by being the only one"
+    )
+
 
 def main() -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked

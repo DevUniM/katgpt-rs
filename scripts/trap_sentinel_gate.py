@@ -64,8 +64,23 @@ PINNED_SENTINELLED = {
 POPULATION_FLOOR = 2  # a FLOOR: the classifier going blind must RED, not pass
 
 
-def load_audit():
-    path = os.path.join(HERE, "trap_exit_launder_audit.py")
+def load_audit(path: str | None = None):
+    """Import the classifier, or REFUSE — never fall back to a local copy.
+
+    `path` is a parameter ONLY so the refusal is armable: Issue 790 measured
+    the `not os.path.isfile` guard surviving every mutation, because the
+    probed path was bound to `HERE` and no arm could make it absent without
+    deleting the classifier from the working tree.
+
+    ⚠ It is safe to parameterise here and NOT in
+    `platform_dead_code_floor_gate.load_audit`, which looks identical. That
+    one probes a path and then imports by NAME through `sys.path` (on purpose
+    — a dataclass-bearing module must be registered in `sys.modules`), so
+    parameterising its probe would assert a refusal for a path it does not
+    then load. Here the probed path IS the one `spec_from_file_location`
+    receives, so the arm tests the real thing.
+    """
+    path = path or os.path.join(HERE, "trap_exit_launder_audit.py")
     if not os.path.isfile(path):
         print(f"✗ trap sentinel gate FAILED — {path} is MISSING; the classifier this")
         print("  gate reads its verdicts from is gone, so a green here would mean nothing.")
@@ -165,6 +180,31 @@ def gate_selftest(audit=None) -> list[str]:
     def eq(label, got, want):
         if got != want:
             fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    # ── the classifier-absence refusal (Issue 790 T2). A green printed over a
+    # MISSING classifier is the one outcome this gate must never produce, and
+    # nothing reached the guard until `load_audit` took a path.
+    # Its own `✗` lines are SWALLOWED and merely asserted to have been said:
+    # a passing gate that prints a failure message is a gate people learn to
+    # read past.
+    import contextlib
+    import io
+    said = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(said):
+            load_audit(os.path.join(HERE, "no_such_classifier_xyz.py"))
+        fails.append("    load_audit: a MISSING classifier did not refuse — "
+                     "this gate would print a verdict over an absence")
+    except SystemExit:
+        if "MISSING" not in said.getvalue():
+            fails.append("    load_audit: refused without saying the "
+                         "classifier is MISSING — the reader cannot tell a "
+                         "missing classifier from a real finding")
+    # …and the present path still loads, or the arm above is satisfied by a
+    # function that refuses unconditionally.
+    if not hasattr(load_audit(), "analyse"):
+        fails.append("    load_audit: the real classifier did not load, so "
+                     "the refusal arm above proves nothing")
 
     # The stub must speak the classifier's actual vocabulary, or every filter
     # below compares against a string the real population never contains and

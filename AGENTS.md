@@ -936,13 +936,17 @@ scripts/arm_reach_audit.py                    # the report, the CHECKS populatio
 scripts/arm_reach_audit.py --self-test        # 27 arms over its own buckets
 scripts/arm_reach_audit.py skill_repo_set     # one module, by substring
 scripts/arm_reach_audit.py --include-all      # every scripts/*.py DEFINING an arm
+scripts/arm_reach_gate.py                     # the VERDICT (T2) — workstation, minutes
+scripts/arm_reach_gate.py --canary            # 16 arm groups over its own arithmetic
 ```
 
 Mutate a module's source **outside its own arm bodies**, re-exec, run its arm,
-ask whether the arm noticed. Standing (2026-09-14, after T3/T4): **21 modules ·
-519 mutants · 317 KILLED · 47 SURVIVED (live) · 155 survived in exempt
-functions · 0 CRASHED · 0 NO-ARM · 0 UNREACHED**, with **9 of 21 modules at
-zero live survivors**.
+ask whether the arm noticed. Standing (2026-09-15, after T2): **22 modules ·
+552 mutants · 360 KILLED · 31 SURVIVED (live) · 0 CRASHED · 0 NO-ARM ·
+0 UNREACHED**, every live survivor pinned with a reason. The 22nd module is
+the gate itself. ⚠ The T3/T4 figure was **21 modules · 519 mutants · 317
+KILLED · 47 SURVIVED**; T2 closed 16 of those 47 as real gaps, so read the
+drop as arms being written, not as the population shrinking.
 
 ⚠ **The wall clock moved from ~73s to ~370s over T3 and that is the arms
 working, not a regression.** The repairs gave several gates fixture-repo arms
@@ -1029,9 +1033,75 @@ blaming the gates for its own boundary.
   earlier match; a set membership test `or`-ed with another; the closure
   bound whose slack-less form is exactly sufficient), the **git/subprocess I/O
   shell** an arm cannot enter without spawning the auditor it reads, and
-  message-formatting arithmetic. T2 (a verdict half) is still deferred until
-  those 47 are individually adjudicated: a ratchet over a backlog is what
-  Issue 785's rule forbids, and 47 is not yet a wall.
+  message-formatting arithmetic.
+- ⛔ **That three-class characterisation of the 47 was TOO GENEROUS, and T2
+  found it by trying to write the reasons down.** A pin file demands one
+  sentence per row, and the sentence could not be written for about a third of
+  them: they were plain functions over plain data — `_parse_feature_spec`,
+  `parse_status_phrase`, the `local_default_closure` walk, the three manifest
+  READERS that decide which packages enter the model at all — with no fixture
+  repo and no subprocess between an arm and the decision. They were **real
+  gaps wearing an EQUIVALENT label**, and pinning them would have been a
+  backlog wearing a pin, which is exactly what Issue 785 forbids. Closing them
+  first took the set **47 → 27**: `bench_doc_audit` 23 → 9, `markdown_fence`
+  3 → 1, `cfg_gated_floor_gate` 4 → 2, `skill_repo_set` 3 → 2,
+  `trap_sentinel` 1 → 0. **Writing the reason is the adjudication** — a
+  classification made while reading a list is not the same act.
+
+### The verdict half — `scripts/arm_reach_gate.py` (T2)
+
+The quantity to gate is **not the count**, and this repo already had the rule
+written for `cfg_gated_floor_gate`: *a set is gateable where its cardinality is
+not.* The survivors are pinned by MEMBERSHIP with a REASON per row in
+`scripts/arm_reach_survivors_expected.txt`, and the wall is **0 UNPINNED**. A
+ratchet would tolerate a new unreached decision line as long as somebody armed
+an old one; membership does not. It reds in BOTH directions, and `UNREACHED`
+and `NO-ARM` are walled at 0 **separately** — pooling either into the survivor
+count is what the bucket note above forbids.
+
+- **The key is LINE-FREE**, and that is load-bearing rather than tidy: a line
+  NUMBER drifts on every edit above it, so a line-numbered pin file reds on
+  commits that changed nothing about it, and a pin file that reds on noise is
+  one people delete. It is
+  `<module>::<function>::<operator-token>::<8-hex digest of the line TEXT>#<n>`,
+  with the ordinal scoped to the WHOLE address — the
+  `len_derived_eyes_expected.txt` precedent. Scoping it that way is what makes
+  it stable: a new `>=` site in a function hashes differently and renumbers
+  nothing. Only genuinely duplicate line text shares a sequence (there are two
+  such rows, both real: three `+` on one `print`, two `True` kwargs on one
+  `subprocess` line).
+- The digest is unreadable by design, so each row carries its source line in a
+  `#= ` comment **which the gate VERIFIES against the observed text**. A
+  comment is the part of a pin file a human adjudicates from, and a comment
+  nothing can red is a comment that drifts into a lie. ⚑ It earned its keep on
+  the first real run: the membership wall was clean and the only failure was a
+  hand-copied comment missing its trailing `:`.
+- **It gates ITSELF** (population = the CHECKS set **+ this file**). Not
+  symmetry: an exempt gate certifies nothing, and on its first self-hosted run
+  it found a degenerate arm in its own key builder — the ordinal counter's
+  `+ 1` flipped to `- 1` still yields two distinct keys, so a count-only
+  assertion read green. Assert the ordinal VALUES.
+- **The two PERMISSIVE sets are pinned by membership**, because no floor
+  guards them: `EXEMPT_FUNCTIONS` (a name added there deletes every survivor
+  in that function from the finding set) and `ARM_NAMES` (arm bodies are never
+  mutated, so a name added there turns decision code into unwatched code —
+  adding `main` would look like a tidy-up). `check_validation_gate` found the
+  same shape in its own vocabulary.
+- Three floors, failing differently: `MIN_MODULES` the walk, `MIN_MUTANTS` the
+  operators, and `MIN_KILLED` the **runner** — a runner that reports KILLED for
+  everything empties the survivor set, reds every pin as "no longer survives",
+  and the obvious remedy is to delete them all.
+- **Not a `docs_gate.sh` CHECK, and not a sweep.** Measured **157.6s** over
+  22 modules / 552 mutants, against the docs gate's ~13s budget. It is a
+  workstation verdict, the same standing as the eleven drift sweeps. There is also deliberately **no `--prove-fires`** — the
+  known-answer validation would be a full mutation run over a `git archive`d
+  tree to re-derive a fact the issue already records.
+- ⚠ **Unlike Issue 789's, this class DOES generalise and a sweep half is
+  owed.** 789 measured its population at ONE (katgpt-rs is the only repo with
+  a CHECKS array) and declined a sweep on that measurement. Re-measured here
+  for arms rather than CHECKS: **18 arm-bearing `scripts/*.py` across three
+  sibling repos** (riir-train 14, riir-ai 3, riir-clippy 1). Do not carry 789's
+  "no sweep" answer across — it was an answer to a different question.
 - **What T3 found by fixing, and it is the pattern worth carrying forward:**
   in every module the CLASSIFIER was well armed and the **VERDICT** was not.
   `bench_doc_audit` had fixtures from real workspace shapes for its

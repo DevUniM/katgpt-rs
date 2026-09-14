@@ -14,6 +14,11 @@ So: classic mutation testing, scoped small enough to be free. Mutate a module's
 source OUTSIDE its own arm functions, re-exec it, run its arm, and ask whether
 the arm noticed.
 
+This file is the REPORT. The VERDICT half is `scripts/arm_reach_gate.py`
+(Issue 790 T2): it pins every live survivor by MEMBERSHIP with a reason per row
+and walls UNPINNED at 0. Read this one while fixing; run that one to find out
+whether a commit added a decision line no arm reaches.
+
     KILLED     the arm noticed. The only good outcome.
     SURVIVED   no arm distinguishes this line's behaviour. The finding.
     NO-ARM     the module has no arm of its own, so every mutant survives
