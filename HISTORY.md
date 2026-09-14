@@ -237,6 +237,225 @@ wiring is synthetic shape-class (FlyWire licensing, riir-ai R379), so the
 experiment would compare random-vs-rewired-random — structurally unable to
 attribute. Full record: `.research/556` §7; issue file removed per the
 noise-reduction rule.
+## Issue 789 (2026-09-14) — a gate whose own failure path is asserted by nothing: CLOSED
+
+⚠ This heading is deliberately in the form `## Issue NNN (date) — …` rather
+than this file's recent `## Issue NNN — …: CLOSED (date)`, because the second
+form is one `heading_allocated()` cannot read (Issue 781's measured style gap,
+where katgpt-rs scores 7 of 29 and "its own newest closes in the form its own
+instrument cannot read"). Writing the record in the shape the instrument reads
+costs nothing.
+
+### How it was found
+
+Issue 775 landed `platform_dead_code_floor_gate.py` with *"six canary arms over
+the gate's own pin arithmetic, **which the classifier's self-test cannot
+reach**"*. That sentence was in AGENTS.md, it was correct, and it named a rule.
+The rule landed in **one** gate and was never generalised — the **sixth**
+recorded instance of that shape (Issues 777, 778, 779, 782, 783). It was found
+by asking the question one level up from Issue 787: 787 mechanised *"is every
+instrument findable?"*, and nothing asked *"is every gate's own verdict
+validated?"*
+
+⛔ **The first census was wrong, in the over-reporting direction.** It grepped
+the CLI flag strings `--canary` / `--prove-fires` / `--self-test` and reported
+**nine of twenty** CHECKS bare. Three of those nine invoke an arm they
+**delegate** to the classifier they read (`percentile_floor_gate` →
+`percentile_index_audit.selftest`, plus `cfg_row_implication_gate` and
+`trap_sentinel_gate`), which is the DRY answer and the correct one. A census
+over one representation — here a CLI flag string — is blind to whatever that
+representation omits. Issue 787's lesson, reproduced within ten minutes of
+going looking for a fresh instance of it.
+
+### The measurement
+
+Resolved by AST, crediting a call to `selftest` / `self_test` / `canary` /
+`gate_selftest` / `prove_fires` whether defined locally or reached through an
+imported module:
+
+| | count |
+|---|---|
+| invokes its own arm | 10 |
+| invokes a **delegated** arm | 3 |
+| invokes both (775's shape) | 1 |
+| **invokes NOTHING** | **6** |
+
+`issue_citation_gate` 750 lines · `cargo_comment_audit` 480 ·
+`skill_repo_set_gate` 306 · `count_features` 261 · `docs_gate_checks_sync` 141 ·
+`markdown_fence_gate` 112 = **2,050 lines** of per-push gate logic whose failure
+path no test had ever executed. `docs_gate.sh`'s own header is the argument:
+*"An assertion nobody invokes is decoration, and a red one nobody invokes is
+worse: it trains the next reader to assume the tool is broken."* Two of the
+three checks that file was written for were RED on `develop` when it landed.
+
+### T1 — the shared fence parser was blind to half of CommonMark
+
+Two of the six shared one function, and a third (`issue_citation_gate`) imports
+it too. `skill_repo_set_gate.fenced_blocks` is read by **three** per-push gates
+under Issue 755's explicit DRY call — *"a second copy of a rule this subtle is a
+second thing to get wrong"* — which was right, and which concentrated the whole
+risk into one function no test had ever touched. AGENTS.md documented the
+mis-phasing hazard it exists to prevent and recorded that **its own first canary
+was swallowed by exactly that bug**. The canary was never replaced.
+
+`fence_run()` counted leading **backticks only** from the day it was written.
+CommonMark fences are backtick **or tilde** and the families do not interoperate.
+Ten known-answer arms: eight passed, **two failed**.
+
+| arm | expected | got |
+|---|---|---|
+| `~~~` / `x` / `~~~` | one block `(1,3)` | `[]` — invisible |
+| `~~~` / ` ``` ` / `~~~` | one block `(1,3)` | `[(2,-3)]` — a phantom unterminated fence on a body line |
+
+Both directions of damage: **silent** (a tilde-fenced command block is never
+scanned, so `skill_repo_set_gate` certifies a repo set it never read, and a
+tilde-fenced *unterminated* block is invisible to the gate written for exactly
+that class) and **loud at the wrong address** (an odd number of backtick lines
+inside a tilde block reds at a line that is not the defect — the failure mode
+`markdown_fence_gate`'s own docstring warns the reader about).
+
+**Exposure was LATENT: 0 tilde-fence lines over 5116 tracked `.md` across 16
+repos.** The `orphaned_attr_gate` standing — pinned at zero, measured zero
+everywhere, worth forbidding because the guarded gate's docstring claimed to be
+"CommonMark-ish" on precisely the axis it could not read.
+
+`selftest()` is the replacement canary: 19 parser arms over both families, 11
+over `scan()`'s own detector arithmetic, and the Issue-765 partial-clone
+deferral in both directions. Covering only the imported parser would have marked
+the gate "validated" while 306 lines of verdict logic stayed unasserted — the
+same over-crediting the first census committed. It exits **2**, not 1: a
+mis-phasing scanner reports clean in both directions, so its failure is not a
+finding, it is the absence of a verdict.
+
+⛔ **Two of nine perturbations red nothing, and both are recorded where they are
+read rather than quietly patched:**
+
+- `ch == open_ch` is **REDUNDANT today** — `.strip(open_ch)` already
+  discriminates the family, so perturbing the family test away alone reds zero
+  arms. The first version of that comment called it load-bearing; the
+  perturbation refuted it. **A line a canary cannot red is not doing the work
+  you think it is.** It stays, because the two are independent CommonMark
+  requirements and each becomes load-bearing the moment the other is loosened.
+- one lookbehind arm was aimed at the name's **right** side, where the pattern's
+  trailing slash already does the work. Kept, labelled inert, and joined by the
+  nested-path arm that discriminates it.
+
+T4's free half: `markdown_fence_drift_sweep.py` imports the same parser, and 0
+unterminated holds over 5121 tracked+untracked `.md` with tildes now visible.
+
+### T3 — the four remaining bare checks, and two more real defects
+
+**`cargo_comment_audit`** — `WEAK_DEFAULT_RE`'s negative lookahead excluded
+``default (`0.82L`)``, a shape appearing in **no manifest in any repo**, while
+the one live instance is the other order — ``default `(0.82L→0.45L)` ``, the
+exact string the lookahead's own comment has always quoted
+(`cross_stage_relocation`, root `Cargo.toml`). Latent, because that line also
+says "promotion blocked" and rung 1 reaches a verdict before rung 6 misfires.
+The fix covers both orders and changes **zero** classifications over **7,465**
+inline comments workspace-wide.
+
+⚠ Deliberately **not** widened to any backtick: `(?!\s*\(?`)` reads a code
+reference as no claim and takes **21** comments of the form *"Not in `default`
+directly; transitively enabled via `X`"* from `default` to `unknown` — silently
+out of the cross-check. Measured before choosing. Those 21 do carry a claim no
+rung reads, which is a separate gap, recorded where `WEAK_DEFAULT_RE` is read.
+
+Also pinned: the **rung-2 paren guard is load-bearing only in combination with
+rung 3.** Its comment names `default-on (behavior opt-in …)` as the false match
+it prevents; the lowercase form falls through rung 3 and rung 4 classifies it
+`default` anyway. Both arms pinned so the asymmetry is a measurement.
+
+**`count_features`** — `CLAIMS` hoisted to module level and the paren-depth
+tokenizer extracted as `outside_parens()` so an arm can reach it. `SWEEP`'s arms
+are the exact phrasings its comments record having escaped ("999 tunable flags",
+"999 default features"). Those comments said it was *"canaried at each
+widening"* and that was TRUE — but the canary was a person at a terminal, so
+nothing re-ran it and a later **narrowing** would have been silent.
+
+**`docs_gate_checks_sync`** — arms over both parsers and the quantity extractor,
+including addresses-are-not-quantities at four shapes. Its refusal paths print
+an `✗ INSTRUMENT` line, so `expect_exit()` swallows the arm's output: a clean
+run that prints two fake failures is a gate whose next reader assumes it is
+broken.
+
+**`issue_citation_gate`** — the largest, and the one with the worst record:
+AGENTS.md documents it wrong **twice** in the direction that absolves (752's
+`named != {}` read 45 rows as clean; 754 then refuted the census that found
+them, because all 45 reads asked the same blind `allocated()` the same
+question). So its 39 arms aim at the **suppressing** paths first —
+`is_qualified`'s owner-consistency and ORPHAN branch, `heading_allocated`'s
+three filters (the only path here that can make a finding disappear) including
+Issue 781's two measured negatives, the window/adjacent split and the alias's
+one direction, list expansion at all four separators, and `fenced_lines`
+failing **safe**. It runs before the deferral branches, not after: this gate's
+loudest posture is an instrument-ALIVE deferral, and a deferral printed on top
+of a broken classifier is the one output here that must not be possible.
+
+### T2 — the mechanism: `scripts/check_validation_gate.py`
+
+The predicate is **invokes an arm UNCONDITIONALLY**, not "has an arm", and that
+distinction found a case one day old. `docs_gate.sh` runs each check as
+`"$PY" "$script"` — **no arguments** — so `population_sync_gate.py`'s eight
+adversary arms, landed by Issue 788 the day before, sat behind `--canary` and
+ran on **no push at all**. They cost **0.17s**, so the flag was never buying
+anything. The canary is unconditional now (output swallowed on success,
+`--canary` kept as the verbose mode), and perturbing its docstring headline
+count reds `main()` with rc=2, which it could not do before.
+
+`ARM_NAMES` is the **permissive** direction and the floors alone do not guard
+it: an empty set reds every check and is impossible to miss, while a set that
+quietly widens (add `main`) greens every check silently — so a canary arm
+asserts `main` is not in the vocabulary. Two blindness floors: `MIN_CHECKS` the
+array parse, `MIN_ARMED` the AST resolution, because a walk that finds every
+check and credits none looks exactly like nobody having written any arms.
+
+`check_validation_expected.txt` is **deliberately empty**: T3 wrote the four
+remaining arms rather than pinning them, because a row reading "not written yet"
+is a backlog wearing a pin (785's rule). A reasonless row is refused; a row
+whose check has since grown an arm reds.
+
+⚠ **What it does not assert:** that an arm which exists and runs is any *good*.
+**Seven** arms written for this issue certified nothing until they were fixed —
+one whose anchor string was wrong, one whose fixture had no terminated fence for
+the fail-safe to discard, one aimed at the wrong side of a lookbehind, one whose
+input order already matched sorted order. Arm quality is not statically
+decidable and is not claimed; the verdict is the weaker thing, said out loud
+where it is read.
+
+`--prove-fires 6804d983` (the commit that FILED 789) is two-sided against an
+independently known answer: **7** checks unarmed there, 6 bare and 1 flag-gated,
+named individually. ~0.3s, opt-in, `scripts/` only.
+
+### T4 — no sweep, and that is a measurement
+
+Every other verdict class here has a workspace half because the question
+generalised. This one does not. Measured over the 16 repos on this box:
+**katgpt-rs is the only repo with a `scripts/docs_gate.sh` CHECKS array at
+all** — riir-train has 58 `scripts/*.py` and riir-ai 7, and neither has such an
+array. A sweep would derive a population of ONE and print a confident green over
+it, which is the stated reason `ci_gate_coverage.py` is kept out of the CHECKS
+set. The cross-repo question that *does* generalise is "is this instrument
+findable?", already ratcheted by
+`instrument_reachability_drift_sweep.py`. **Do not add a sweep here by symmetry
+with the family; re-run the measurement first.**
+
+### Verification
+
+docs gate **21/21** (CHECKS 20 → 21) after every landing. New check ~**0.11s**
+standalone — the cheapest in the set, and the fourth same-day CHECKS move, which
+is the argument for writing the count next to the timing figure rather than the
+figure alone. `markdown_fence_drift_sweep` 0 unterminated over 5121 `.md`, both
+population postures. 30 + 14 + 9 = **53 perturbations** run across the new arms;
+all red after the four inert ones were re-aimed.
+
+### The standing lesson, now recorded seven times
+
+A rule landed in one instrument and never generalised (777, 778, 779, 782, 783,
+789) — and a census over one representation is blind to whatever that
+representation omits (787, then 789's own first pass, ten minutes in). Before
+fixing a class, grep the whole family and land the repair as one shared
+mechanism; and before trusting a census, ask which representation it read.
+
 ## Issue 788 — the population-predicate registry was hand-maintained, and a careful reading missed two of ten: CLOSED (2026-09-14)
 
 `population_sync_gate.py` exists because a hand-duplicated **predicate** drifts

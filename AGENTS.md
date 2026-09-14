@@ -977,6 +977,16 @@ scripts/check_validation_gate.py --prove-fires 6804d983
   independently known answer: seven checks unarmed there, six bare and one
   flag-gated, named individually. ~0.3s, opt-in on the
   `platform_dead_code_floor_gate` precedent — only `scripts/` is extracted.
+- ⛔ **There is NO sweep half, and that is a measurement rather than an
+  omission** (Issue 789 T4). Every other verdict class here got one because the
+  question generalised; this one does not. Measured over the 16 repos on this
+  box: **katgpt-rs is the only repo with a `scripts/docs_gate.sh` CHECKS array
+  at all** (riir-train has 58 `scripts/*.py` and riir-ai 7, but no such array).
+  A sweep would derive a population of ONE and print a confident green over it
+  — the exact reason `ci_gate_coverage.py` is kept out of the CHECKS set. The
+  cross-repo question that *does* generalise is "is this instrument findable?",
+  and `instrument_reachability_drift_sweep.py` already ratchets it. Do not add
+  a sweep here by symmetry with the family; re-run the measurement first.
 
 ## A census reads the DOCUMENT, so an undocumented instrument is invisible — `scripts/instrument_reachability_gate.py`
 
