@@ -190,6 +190,13 @@ def selftest() -> list[str]:
                                 "beta.py": "second (Issue 749)"})
     eq("a later section's table is NOT absorbed",
        "gamma.py" in parse_table(sample_ag), False)
+    # ⚑ A document that BEGINS at the section heading. `text.find(SECTION)`
+    # returns 0 there, and `start <= 0` reads that as NOT FOUND — inert on the
+    # -1 return, so only an offset-0 fixture can kill it (Issue 790 T3).
+    at_zero = sample_ag[sample_ag.find(SECTION):]
+    eq("a document beginning AT the section heading still parses",
+       parse_table(at_zero), {"alpha.py": "first, with two lists",
+                              "beta.py": "second (Issue 749)"})
     with expect_exit("a retitled section exits 2", 2):
         parse_table("# doc\n\n## Retitled\n\n| `alpha.py` | x |\n")
 

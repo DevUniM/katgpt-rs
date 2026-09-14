@@ -109,6 +109,38 @@ def selftest() -> None:
     assert "BOUNDARY" not in " ".join(names), "a dotted token leaked in"
     assert product_set(sample) == {"aa", "bb"}, product_set(sample)
 
+    # ── the `find() < 0` guards, added by Issue 790 T3 ───────────────────
+    # `arm_reach_audit` reported this gate UNREACHED with four survivors, all
+    # of them a `< 0` not-found guard flipped to `<= 0`. That flip is INERT on
+    # the -1 return and only bites when the match is at OFFSET 0 — so a fixture
+    # starting AT the marker is the only thing that can kill it, and the sample
+    # above deliberately does not (its marker is mid-line).
+    at_zero = sample[sample.find(START):]
+    assert at_zero.startswith(START), "fixture does not begin at the marker"
+    names0, prod0, total0 = parse_paragraph(at_zero)
+    assert names0 == {"aa", "bb", "cc"}, (
+        f"a paragraph beginning AT the marker parsed as {names0} — a `find() "
+        f"<= 0` guard reads offset 0 as NOT FOUND")
+    assert (prod0, total0) == (2, 3), (prod0, total0)
+    assert product_set(at_zero) == {"aa", "bb"}, product_set(at_zero)
+
+    # …and each guard must still REFUSE when its marker is genuinely absent,
+    # which is the direction that matters: every one of them degrades to
+    # "membership is empty", and an empty set compares equal to nothing.
+    for label, broken in (
+        ("no marker", "> nothing here at all\n"),
+        ("no '(add ' list", sample.replace("(add ", "(plus ")),
+        ("unterminated '(add ' list", sample.replace(").", "), ")),
+        ("one declared count missing", sample.replace("workspace is **3 repos**",
+                                                      "workspace is big")),
+    ):
+        try:
+            parse_paragraph(broken)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"parse_paragraph ACCEPTED a paragraph with {label}")
+
 
 def main() -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked

@@ -74,6 +74,20 @@ def load_features(path: Path) -> tuple[set[str], set[str], dict[str, list[str]]]
     return default_on, all_flags, feats
 
 
+def line_of(text: str, idx: int) -> int:
+    """1-indexed line number of offset `idx` in `text`.
+
+    ONE copy since Issue 790 T3. There were two identical closures — `line_of`
+    inside the per-doc loop and `line_of_readme` below it — and
+    `arm_reach_audit` reported the `+ 1` in BOTH surviving an off-by-one flip,
+    because neither was reachable from any arm. The `+ 1` is the 0-to-1-indexed
+    conversion, and getting it wrong sends whoever reads a finding to the wrong
+    line: the "reported line is not the defect" hazard `markdown_fence_gate`'s
+    docstring warns about, one file over.
+    """
+    return text.count("\n", 0, idx) + 1
+
+
 def outside_parens(line: str) -> str:
     """`line` with every parenthesised span removed, nesting-aware.
 
@@ -202,6 +216,16 @@ def selftest() -> list[str]:
     eq("an unbalanced closer does not go negative and swallow the tail",
        outside_parens("a) b"), "a b")
 
+    # ── line_of: the 0-to-1-indexed conversion ────────────────────────────
+    # ⚑ Issue 790 T3. This was two identical closures inside `main`, and the
+    # `+ 1` in both survived an off-by-one flip because no arm could reach
+    # either. A wrong line number sends the reader to the wrong line.
+    eq("offset 0 is line 1", line_of("a\nb\nc", 0), 1)
+    eq("an offset inside the first line is still line 1", line_of("ab\ncd", 1), 1)
+    eq("the offset just past the first newline is line 2", line_of("ab\ncd", 3), 2)
+    eq("the last line", line_of("a\nb\nc", 4), 3)
+    eq("a single-line text is line 1", line_of("no newlines here", 5), 1)
+
     return fails
 
 
@@ -310,16 +334,13 @@ def main() -> int:
             continue
         text = path.read_text(encoding="utf-8")
 
-        def line_of(idx: int, _t: str = text) -> int:
-            return _t.count("\n", 0, idx) + 1
-
         covered: list[tuple[int, int]] = []
         sites = 0
         for rx, fields in claims:
             for m in re.finditer(rx, text):
                 sites += 1
                 covered.append(m.span())
-                ln = line_of(m.start())
+                ln = line_of(text, m.start())
                 for field, raw in zip(fields, m.groups()):
                     got = int(raw)
                     mark = "✓" if got == expect[field] else "✗"
@@ -341,7 +362,7 @@ def main() -> int:
             if any(a <= m.start() < b for a, b in covered):
                 continue
             failures.append(
-                f"{rel}:{line_of(m.start())} unrecognised flag-count phrasing "
+                f"{rel}:{line_of(text, m.start())} unrecognised flag-count phrasing "
                 f"{m.group(0)!r} — add it to `claims` or reword it; NOT checked")
 
     print(f"  … {total_sites} claim site(s) recognised across {len(docs)} doc(s)")
@@ -357,15 +378,13 @@ def main() -> int:
     # it is computable and therefore assertable.
     readme_text = (root / "README.md").read_text(encoding="utf-8")
 
-    def line_of_readme(idx: int) -> int:
-        return readme_text.count("\n", 0, idx) + 1
 
     dm = re.search(r"Default features include:(.*)", readme_text)
     if not dm:
         failures.append("README.md: 'Default features include:' block not found "
                         "— the list check silently covers nothing")
     else:
-        line, ln = dm.group(1), line_of_readme(dm.start())
+        line, ln = dm.group(1), line_of(readme_text, dm.start())
         # Parenthesised commentary is not a list entry — rule and rationale at
         # `outside_parens`, which Issue 789 extracted so an arm can reach it.
         toks = set(re.findall(r"`([a-z0-9_]+)`", outside_parens(line)))

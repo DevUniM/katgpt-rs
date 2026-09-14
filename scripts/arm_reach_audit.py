@@ -175,6 +175,13 @@ def mutants(src: str, arms: set[str]):
     tree = ast.parse(src)
     arm_spans = [(f.lineno, f.end_lineno or f.lineno) for f in ast.walk(tree)
                  if isinstance(f, ast.FunctionDef) and f.name in arms]
+    # The whole BODY of `if __name__ == "__main__":`, not just its test. It is
+    # CLI dispatch — `if "--canary" in sys.argv[1:]` and friends — which is the
+    # entry point by another name, and no arm is imported as `__main__` so none
+    # can ever reach it. Measured: `population_sync_gate`'s flag dispatch
+    # survived as a finding until this span was skipped.
+    arm_spans += [(n.lineno, n.end_lineno or n.lineno) for n in ast.walk(tree)
+                  if isinstance(n, ast.If) and _is_main_guard(n.test)]
     owner = _enclosing_function(tree)
 
     def in_arm(ln: int) -> bool:
@@ -417,6 +424,12 @@ def selftest() -> list[str]:
        descs("x = a * b\n"), [])
     eq("the __main__ guard is NOT a mutation site",
        descs('if __name__ == "__main__":\n    main()\n'), [])
+    eq("the __main__ guard's BODY is not a mutation site either",
+       descs('if __name__ == "__main__":\n'
+             '    if "--canary" in sys.argv[1:]:\n        canary()\n'
+             '    main(a - b)\n'), [])
+    eq("the same dispatch OUTSIDE the guard still is",
+       descs('if "--canary" in sys.argv[1:]:\n    canary()\n'), ["in -> not in"])
     eq("an ordinary __name__ comparison against a NAME still is",
        descs("if __name__ == other:\n    main()\n"), ["== -> !="])
     eq("an int constant is not a mutation site", descs("x = 3\n"), [])
@@ -643,13 +656,18 @@ def main(argv: list[str]) -> int:
               f"Every one either died at import or landed in an exempt function, so "
               f"the arm distinguished nothing THESE OPERATORS can express: "
               f"{', '.join(unreached)}")
-    print("  ⛔ OPERATOR SCOPE is the limit to read this by, and it is narrow: only "
-          "control flow is mutated (comparison flips, and/or, dropped `not`, bool "
-          "constants). REGEX AND STRING LITERALS ARE NOT TOUCHED — and that is "
-          "where most of this repo's decision logic lives. Measured: "
+    print("  ⛔ OPERATOR SCOPE is the limit to read this by, and it is narrow: "
+          "control flow and off-by-one only (comparison flips, and/or, dropped "
+          "`not`, bool constants, +/-). REGEX AND STRING LITERALS ARE NOT TOUCHED "
+          "— and that is where most of this repo's decision logic lives. Measured: "
           "docs_gate_checks_sync has 20 hand-verified arms that red under regex "
-          "perturbation and scores 0 killed here. A low kill count is NOT evidence "
+          "perturbation and 10 mutable sites here. A low kill count is NOT evidence "
           "an arm is weak; a SURVIVED row is evidence about one line.")
+    print("  ⚠ A `find() < 0` guard flipped to `<= 0` is INERT on the -1 return and "
+          "bites only at OFFSET 0, so it is killable ONLY by a fixture that begins "
+          "at the match — and it is provably EQUIVALENT wherever the search starts "
+          "after an earlier match (measured: 3 such rows in agents_repo_set_gate, "
+          "1 in docs_gate_checks_sync). Check that before writing an arm for one.")
     return 0
 
 

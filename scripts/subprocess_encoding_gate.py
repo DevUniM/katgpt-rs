@@ -204,6 +204,18 @@ def selftest() -> list[str]:
         # A non-True value is not this defect: `text=flag` is somebody's own
         # switch and `text=False` is bytes mode.
         "text-not-true": 'subprocess.run(cmd, text=flag)\n',
+        # ⚑ The detector's own BOUNDARY, added by Issue 790 T3: every negative
+        # above is still a `subprocess.<func>` call, so nothing tested the
+        # three conjuncts that decide whether a call IS one. A bare-name call
+        # exercises the `isinstance(f, ast.Attribute)` term, and an
+        # attribute call on another object exercises `f.value.id ==
+        # "subprocess"` — `sp.run(...)` is an alias somebody else owns, and
+        # `self.run(...)` is an ordinary method.
+        "bare-name call": 'run(cmd, text=True)\n',
+        "another module's run": 'sp.run(cmd, text=True)\n',
+        "a method named run": 'self.run(cmd, text=True)\n',
+        "a nested attribute": 'a.b.run(cmd, text=True)\n',
+        "an unrelated builtin call": 'print(cmd, text=True)\n',
     }.items():
         d, _, n = scan_text(src)
         check(d == [], f"DECODE false positive on {label}: {d}")

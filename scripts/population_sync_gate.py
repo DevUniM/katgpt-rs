@@ -489,11 +489,41 @@ def canary() -> int:  # population-predicate: not a contract-repo walk (its FIXT
                 return [d for d in root.iterdir()
                         if (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()]
             ''')
+        # 5. ⚑ The function-SPAN arithmetic (Issue 790 T3). `unregistered_
+        #    predicates` slices each def's body as `lines[i:starts[n+1]]`, and
+        #    `arm_reach_audit` reported that `n + 1` surviving an off-by-one
+        #    flip because every fixture above holds exactly ONE def. With two,
+        #    an off-by-one either folds the second def's body into the first
+        #    (so a clean function inherits its neighbour's walk and is reported
+        #    falsely) or truncates the first (so a real walk goes unseen).
+        #    ⚠ THREE defs, with the walk in the MIDDLE, and that is measured
+        #    rather than tidy: with two defs the flip is arithmetically
+        #    IDENTICAL for the first (`starts[-1] == starts[1]`) and never
+        #    evaluated for the last (the `n + 1 < len(starts)` guard is already
+        #    false), so a two-def fixture reads INERT against the very mutation
+        #    it is aimed at. Only a def with a successor AND a predecessor
+        #    discriminates it.
+        w("scripts/threedefs.py", '''
+            def innocent(x):
+                return x + 1
+
+            def derive_repos(root):
+                return [d for d in root.iterdir()
+                        if (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()]
+
+            def trailing(y):
+                return y
+            ''')
         subprocess.run(["git", "init", "-q", str(fake)], capture_output=True)
         subprocess.run(["git", "-C", str(fake), "add", "-A"], capture_output=True)
 
         got = unregistered_predicates(fake)
         arm("unregistered walk reported", ("rogue", "derive_repos") in got, str(got))
+        arm("a walk in the MIDDLE def of a file is reported",
+            ("threedefs", "derive_repos") in got, str(got))
+        arm("…and neither neighbour is (no span bleed either way)",
+            ("threedefs", "innocent") not in got
+            and ("threedefs", "trailing") not in got, str(got))
         arm("a mentioning main() is NOT reported",
             ("mentions", "main") not in got, str(got))
         arm("a fixture builder is NOT reported",
