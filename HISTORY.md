@@ -11,6 +11,21 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Post-513 develop drift — the 09-12→09-14 touched-rows window audited green on the workstation (2026-09-14, M3 session)
+
+Issue 513's T2 sweep measured this repo's 623 rows through its 09-05..09-11 window; the
+row count has since drifted to 710 with develop landings the main-only CI lane never
+audits. T4's own gate (`required_features_touched_gate.py`) run over the defined window
+base `9b8cf60e7` (2026-09-12 00:00 +07) → HEAD, 191 commits → **25 selected rows**
+(katgpt-core 13 · katgpt-rs root 7 · katgpt-attn 3 · katgpt-kv 1 · katgpt-backend 1) —
+**25/25 BUILDS at their own EXACT feature set · 0 FAIL · 0 NO-FEAT · 0 UNSEEN** (isolated
+`/tmp/katgpt-rs-rf`, ~11 min wall at load ≈5-7, the transient-build class the 09-13
+owner call leaves to sessions; dir left warm for the next run). Read narrowly per the
+gate's own NOTE — rows reachable only through a library change remain the full sweep's.
+The 09-11→09-12 inter-window sliver (between T2's per-repo HEADs and this base) is
+unmeasured; the other row-carrying repos' same-window tails (30 rows / 7 repos) defer
+to the new hardware with riir-ai's record — this box no longer runs multi-repo batches.
+
 ## Issue 774 (2026-09-14, M3 session) resolved in `22e65be4` — the wasm32 surface audit's BY-DEP verdict: the row predicate was dep-blind, closed with a five-canary self-test
 
 Filed and landed the same day, from the quiet-repo audit sweep. The
