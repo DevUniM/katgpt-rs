@@ -1101,7 +1101,16 @@ count is what the bucket note above forbids.
   a CHECKS array) and declined a sweep on that measurement. Re-measured here
   for arms rather than CHECKS: **18 arm-bearing `scripts/*.py` across three
   sibling repos** (riir-train 14, riir-ai 3, riir-clippy 1). Do not carry 789's
-  "no sweep" answer across — it was an answer to a different question.
+  "no sweep" answer across — it was an answer to a different question. ⚠ But
+  the population's SHAPE settles the ceiling, and it is **4 standing
+  instruments + 14 plan-SCOPED** riir-train `planNNN_*.py` gates — so the
+  ceiling is a **RATCHET on the derivative**, not a wall
+  (`instrument_reachability_drift_sweep`'s answer, for its reason). ⛔ And
+  T5 is BLOCKED on something no other sweep in the family faces: all eleven
+  are STATIC readers, and this one would **EXECUTE** ~700 mutated copies of
+  another repo's gate scripts, whose arms may read metrics blobs or write
+  artifacts, in a repo another agent writes concurrently. It needs a sandbox
+  story first. Do not land it by symmetry.
 - **What T3 found by fixing, and it is the pattern worth carrying forward:**
   in every module the CLASSIFIER was well armed and the **VERDICT** was not.
   `bench_doc_audit` had fixtures from real workspace shapes for its

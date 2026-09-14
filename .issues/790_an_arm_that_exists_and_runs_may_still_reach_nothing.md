@@ -312,6 +312,29 @@ per function, not a quality score, and the exempt functions are pinned by
   RATCHET — `instrument_reachability_drift_sweep` found riir-train's
   `scripts/` is almost entirely plan-scoped one-offs, where the predicate
   over-captures, and the same is likely true of arm reach.
+
+  ⚠ **Both were measured before building anything, and both answers moved.**
+
+  1. **The population's SHAPE, not its size, is the finding.** All 14
+     riir-train scripts are `planNNN_*.py` — and they are not trivial one-offs
+     (`plan341_ab_gate.py` is 579 lines and returns a pre-registered gate
+     verdict), they are **plan-SCOPED**: substantive decision code whose whole
+     life is one plan task. riir-ai's 3 and riir-clippy's 1 are ordinary
+     standing instruments. So the honest split is **4 instruments + 14
+     plan-scoped**, which is `instrument_reachability_drift_sweep`'s shape
+     exactly, and the answer it reached applies: constrain the **DERIVATIVE**
+     (the commit that adds another unreached decision line reds) and leave
+     existing rows to their own repo to adjudicate. A wall is wrong here.
+  2. ⛔ **This sweep would EXECUTE other repos' code, and all eleven existing
+     sweeps are STATIC.** They read files. This one mutates a module, `exec`s
+     it, and runs its arm — 14 riir-train plan scripts × ~50 mutants is ~700
+     executions of someone else's gate scripts, whose arms may read metrics
+     blobs or write artifacts, in a repo another agent writes concurrently.
+     That is a material architectural difference from the family, not a
+     mechanical copy of it, and T5 is BLOCKED on a sandbox story (a
+     `git archive` of the sibling into a scratch tree, the `--prove-fires`
+     idiom one axis over?) rather than on effort. **Do not land it by symmetry
+     with the other eleven.**
 - **T3** — read every SURVIVED row once and classify EQUIVALENT vs a real gap;
   repair the real gaps by widening the arm, and pin the equivalents by
   membership with a reason.
