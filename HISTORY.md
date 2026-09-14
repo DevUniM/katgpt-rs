@@ -11,6 +11,39 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 775 (2026-09-14, M3 session) resolved — dual_wave: the PC-ALM dual accumulator + closed-form rate laws (core) + the ballistic DEC wave kernel (dec), GOAT ALL PASS, opt-in
+
+Research 554 (PC-ALM, arXiv:2605.31022) distilled into a two-crate opt-in
+feature (`dual_wave` in BOTH katgpt-core and katgpt-dec, same name). Core
+`dual` module: the accumulator/shift/credit/energy arithmetic (T1), the
+Jury setters + regime classifier with the α-independent annulus (T2), the
+arrival laws t_infl = L/√(αη) / alpha_reach / budget_ticks = 2L (T3), and
+the exact-adjoint readout λ → −δ (T8) — rates from power iteration on the
+STACKED constraint operator's AᵀA. dec `wave_kernel`: the interleaved
+(h, λ) recurrence on CochainField pairs (T5) + hodge_triage (T9). α=0
+bit-identical to the incumbent diffusion step (T4, unit-pinned).
+
+Three measured engineering lessons are recorded in the bench doc because
+they cost real iterations: (1) per-LAYER Jury rates blow up the COUPLED
+chain — the bound applies to the stacked operator; (2) the Gershgorin
+bound (1+σ̂)² overshrinks η ~2× and kills convergence — power-iterate AᵀA
+itself; (3) a power-iteration estimate is ‖AᵀAv‖, NOT ‖AᵀAv‖² — the
+first implementation shipped the square (dense-truth probe 3.28 vs the
+buggy 10.7). And one honest physics finding: settled-readout settling is
+low-mode-limited (~L² worst case — Jury caps ηρσ²_max < 2 while settling
+needs ηρσ₁²T ≳ 6), so the T=2L shortcut holds at L ≤ 8 and is the paper's
+own "finite-T misaligns" limitation beyond; the convergence-detected
+protocol (cosine 0.96–1.0 at every layer, 95–264 ticks) is the honest
+gate. GOAT (Bench 763): G2 reach — wave 18/97/212 ticks at L=16/64/128
+(linear) vs heat 44/954/4687 (quadratic, ratio ×9 growth — the Eq-23
+law); G4 — 2.38 µs @ K=100, 29.9 µs @ K=1024, 0 allocs; G1-adjoint —
+cosine ≥ 0.9 every layer every chain. NOT promoted (R554 Q3: game zone
+hierarchies are L≈4 — the improvement is real but modest at game depth;
+the closed-form laws are the durable value). README/examples counts
+synced 601→602 (docs-gate count_features green). Full record: Issue 775
+file + `.benchmarks/763_dual_wave_goat.md`; issue closed with the commit
+hash referenced in R554.
+
 ## Issue 777 (2026-09-14, M3 session) resolved in `7e2a2638` — modality_additive belief kernel: FLYNN's linear-sensory-integration property distilled, measured, GOAT-passed, promoted same-day
 
 Research 556 (FLYNN, arXiv:2607.00025) predicted the shipped belief fusion

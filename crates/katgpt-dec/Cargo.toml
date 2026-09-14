@@ -114,6 +114,28 @@ pca_global = ["grid_3d"]
 # (Gain verdict — substrate completeness, not a default-path win).
 cochain_point_sampler = []
 
+# DEC wave kernel (Issue 775, Research 554 — PC-ALM arXiv:2605.31022): the
+# ballistic (hyperbolic) twin of the heat-kernel family. The 1:1-interleaved
+# primal-dual step (`wave_step_into`) on CochainField pairs — primal rank-k
+# field h + dual rank-(k+1) field λ on the constraint surface (the
+# coboundary δ, literally a first-difference operator with σ(k) = 2 sin(k/2),
+# λ_max ≈ 4): h ← h − η·δᵀ(λ + ρ·δh) then λ ← λ + α·δh on the POST-primal
+# residual. That interleave makes credit/anomaly propagation through a
+# chain of L cells BALLISTIC (damped-wave dispersion μ±(k) ≈ exp(−½ρη_h k² ±
+# i√(αη_h)k), group velocity √(αη_h), reach O(T)) instead of the incumbent
+# family's diffusive O(√T) — sheaf_admm's z-update, heat_kernel, leaky
+# evolve_belief are all parabolic. Per-mode Jury stability ησ²(2ρ+α) < 4 and
+# the α-independent annulus |μ±| = √(1−ηρσ²); closed-form rate setters live
+# in katgpt-core's `dual` module (same-named flag there). α=0 reduces
+# bit-identically to the diffusion step h ← h − (ηρ)·Δh (same operators,
+# same order — unit-pinned). Also ships `hodge_triage` (T9): classify a
+# residual flow exact/harmonic/coexact — the harmonic class is the part NO
+# local dual can ever fix (escalate, don't iterate). Opt-in pending the
+# Bench-763 GOAT verdict (reach margin at game-relevant depths); the
+# self-calibrated constants for path/difference operators are
+# WaveParams::self_calibrated() = {η: 1/4, ρ: 1, α: 1} at budget T = 2L.
+dual_wave = []
+
 # SE(2)-equivariant lifting layer (Plan 560, Research 457) — Smets
 # *Mathematics of Neural Networks* Ch. 3 §3.4.1. Lifts a 2D scalar field on
 # a regular grid into a 3D orientation stack by cross-correlating with N
@@ -158,3 +180,12 @@ required-features = ["se2_equivariant_lift"]
 name = "bench_591_pca_global_goat"
 harness = false
 required-features = ["pca_global"]
+
+# Issue 775 — PC-ALM dual-wave GOAT gates: G2 reach (wave vs heat ticks-
+# to-detectable at L ∈ {16, 64, 128} on path graphs), G1-adjoint (duals vs
+# explicit reverse-mode, cosine ≥ 0.9 at T=2L on frozen random chains),
+# G4 latency + zero-alloc (one wave step, K=100 / K=1000).
+[[bench]]
+name = "bench_775_dual_wave_goat"
+harness = false
+required-features = ["dual_wave"]

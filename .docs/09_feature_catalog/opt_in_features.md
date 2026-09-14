@@ -1664,6 +1664,7 @@ The grid-stencil fast path (Issue 001 fix) closed the G5 gap decisively: **120 �
 | `se2_equivariant_lift` | DEFAULT-ON | SE(2) rotation-equivariant lift |
 | `cochain_point_sampler` (§16) | opt-in | point sampling on cochains |
 | `htno_v_cycle` (§13) | opt-in | multi-scale V-cycle |
+| `dual_wave` (Issue 775) | opt-in | ballistic dual-wave kernel + Hodge triage |
 | **`motor_gated_field`** (this) | opt-in | motor-gated field evolution |
 
 🔧 Feature flag: `motor_gated_field` (opt-in; in `katgpt-dec`).
@@ -3878,3 +3879,43 @@ Research: [380](../../../riir-ai/.research/380_tmnf_c_mb_dopamine_value_circuit.
 Bench: [761](../../.benchmarks/761_mb_value_goat.md) — G1/G2/G4 ALL PASS ·
 Substrate: `crates/katgpt-core/src/mb_value.rs`, tests
 `mb_value_g1.rs`/`mb_value_g4_alloc.rs`, bench `bench_767_mb_value_goat.rs`.
+
+## 110. dual_wave — PC-ALM dual accumulator, closed-form rate laws + the DEC wave kernel (Issue 775 / Research 554)
+
+The ballistic (hyperbolic) twin of the heat-kernel family. Two crates, one
+flag name: `katgpt-core::dual` (the dual accumulator `λ ← λ + α·r`, the
+completing-the-square target shift, composite credit, dual energy, the Jury
+setters `jury_eta_max = 4/(σ̂²(2ρ+α))` / `jury_alpha_max`, the regime
+classifier `{Monotone, DampedOscillatory, Unstable}` with the α-independent
+annulus `|μ±| = √(1−ηρσ²)`, the arrival laws `t_infl = L/√(αη)` /
+`alpha_reach = L²/(ηT²)` / `budget_ticks = 2L`, spectral conditioning
+`normalize_spectral_into`, and the exact-adjoint readout
+`adjoint_readout_into` — λ → −δ at KKT, "backprop without backprop" on
+frozen linear chains, rates from power-iteration σ̂² on the stacked
+constraint operator) + `katgpt-dec::wave_kernel` (`wave_step_into`: the
+1:1-interleaved primal-dual step on CochainField pairs — damped-wave
+dispersion, group velocity √(αη), reach O(T) vs the incumbent family's
+O(√T); and `hodge_triage`: exact/harmonic/coexact residual classification —
+the harmonic class is the part NO local dual can ever fix).
+
+**GOAT (Bench 763, 2026-09-14): ALL PASS** — G2 reach: wave 18/97/212 ticks
+at L=16/64/128 (linear ≈ 1.66·L, inside the 2L prediction band) vs heat
+44/954/4687 (quadratic; ratio 2.44 → 22.11, ×9 growth — the Eq-23 law);
+G4: 2.38 µs @ K=100 (gate < 5), 29.9 µs @ K=1024, 0 allocs steady-state;
+G1-adjoint: cosine(λ, −δ) ≥ 0.96 at every layer on every chain
+(convergence-detected readout, 95–264 ticks); the T=2L shortcut holds at
+L ≤ 8 and is the paper's own finite-T limitation beyond (low-mode settling
+is ~L² — physics, documented in the bench); α=0 bit-identical to the
+incumbent diffusion step (unit-pinned, same operators same order).
+
+🔧 Feature flag: `dual_wave = []` — in BOTH `katgpt-core` (the `dual`
+module) and `katgpt-dec` (the `wave_kernel` module; zero-dep by contract).
+Opt-in pending game-relevant-depth consumers; the closed-form laws travel
+with the flag either way.
+
+📖 Issue: [775](../../.issues/775_dual_wave_kernel_pcalm.md) ·
+Research: [554](../../.research/554_PC_ALM_Ballistic_Dual_Wave_Credit_Propagation.md) ·
+Bench: [763](../../.benchmarks/763_dual_wave_goat.md) ·
+Substrate: `crates/katgpt-core/src/dual.rs` +
+`crates/katgpt-dec/src/wave_kernel.rs`, benches
+`bench_775_adjoint_goat.rs` (core) + `bench_775_dual_wave_goat.rs` (dec).

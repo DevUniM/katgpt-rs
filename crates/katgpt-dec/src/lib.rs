@@ -84,6 +84,19 @@ pub mod simd;
 pub mod stokes_calculus;
 pub mod types;
 
+// DEC wave kernel — the ballistic (hyperbolic) twin of the heat-kernel
+// family (Issue 775, Research 554 — PC-ALM arXiv:2605.31022): the 1:1-
+// interleaved primal-dual step on CochainField pairs, damped-wave
+// dispersion, group velocity √(αη), α=0 bit-identical to the diffusion
+// step. Plus the Hodge triage helper for residual flows. Opt-in.
+#[cfg(feature = "dual_wave")]
+pub mod wave_kernel;
+#[cfg(feature = "dual_wave")]
+pub use wave_kernel::{
+    HodgeTriage, ResidualClass, TriageVerdict, WaveParams, WaveScratch, hodge_triage,
+    wave_step_into,
+};
+
 pub use backend::{DecBackend, select_backend};
 pub use cache::{DecCache, DirtyRegion, affected_vertices, hodge_decompose_cached};
 pub use flow::{DecFlowField, coexact_flow, exact_flow, harmonic_flow};

@@ -937,6 +937,15 @@ pub use frozen_evidence::{
     RecurrenceHealth, DEFAULT_DRIFT_CHAOS, DEFAULT_DRIFT_STUCK,
 };
 
+// PC-ALM dual accumulator + closed-form rate laws (Issue 775, Research 554).
+// The dual half of the interleaved primal-dual pair: ballistic (wave-mode)
+// credit propagation with Jury-certified rates + the exact-adjoint-at-KKT
+// readout. α=0 bit-identical to the incumbent penalty path. The DEC twin
+// (wave-mode interleave on CochainField pairs) is katgpt-dec's
+// `wave_kernel`, behind the same-named flag there. Opt-in.
+#[cfg(feature = "dual_wave")]
+pub mod dual;
+
 // Subspace phase-gate primitives — participation ratio, numerical rank, N≥d
 // phase-transition gate (Wang et al. Thm 4, arXiv:2409.02426), and runtime
 // Jacobian SVD via forward differences (Plan 301, Research 279). Pure numeric,

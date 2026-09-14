@@ -155,3 +155,17 @@ Corollary: any fusion pitch must live in the **wave/dynamics substrate + local-l
 - Training track inherits the paper's own gaps: MLP-only, MNIST-scale, one epoch, attention uncovered. Plan 401 gates on our own A/B, not the paper's numbers.
 - Oscillatory transients are stable only inside the Jury bound — any consumer MUST clamp via the closed-form setters (that is precisely what the laws buy).
 - λ doubles per-entity state for every tracked quantity; at d=8 that is 32 B/NPC — fine at MMORPG scale, stated so nobody rediscovers it.
+
+## Landing (Issue 775, 2026-09-14)
+
+Issue 775 CLOSED — the modelless extraction landed behind the opt-in
+`dual_wave` flag in BOTH crates (`katgpt-core::dual` T1–T4+T8,
+`katgpt-dec::wave_kernel` T5+T9), GOAT ALL PASS ([Bench
+763](../.benchmarks/763_dual_wave_goat.md)). Landing commit:
+`LANDING_HASH` (docs close-out in the follow-up commit). Measured on the
+way: the per-layer-rate blowup (the Jury bound is per singular mode of the
+STACKED operator), the Gershgorin overshrink (~2× on η), the ‖AᵀAv‖-vs-‖AᵀAv‖²
+power-iteration bug, and the finite-T physics (arrival ballistic at 2L;
+settled-readout settling low-mode-limited ~L² — the paper's own limitation,
+made precise). Training-track follow-up unchanged (riir-train Plan 401);
+consumer tracks unchanged (riir-clippy 105, riir-ai 952).
