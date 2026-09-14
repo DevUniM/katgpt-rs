@@ -333,12 +333,16 @@ recurred same-day in the zed fork (4 more specimens, incl. an ungated
 macOS-only Metal example and the issue-021 file's own `KEYCHAIN_SERVICE`) —
 class record + detection shape: riir-clippy `.distill/001` P22 (`61bb0d54`).
 
-## Post-513 develop drift — the 09-12→09-14 touched-rows window audited green on the workstation (2026-09-14, M3 session)
+## Post-riir-train-513 develop drift — the 09-12→09-14 touched-rows window audited green on the workstation (2026-09-14, M3 session)
 
 riir-train Issue 513's T2 sweep measured this repo's 623 rows through its 09-05..09-11 window; the
 row count has since drifted to 710 with develop landings the main-only CI lane never
 audits. T4's own gate (`required_features_touched_gate.py`) run over the defined window
 base `9b8cf60e7` (2026-09-12 00:00 +07) → HEAD, 191 commits → **25 selected rows**
+riir-train Issue 513's T2 sweep measured this repo's 623 rows through its
+09-05..09-11 window; the row count has since drifted to 710 with develop
+landings the main-only CI lane never audits. T4's own gate
+(`required_features_touched_gate.py`) run over the defined window base `9b8cf60e7` (2026-09-12 00:00 +07) → HEAD, 191 commits → **25 selected rows**
 (katgpt-core 13 · katgpt-rs root 7 · katgpt-attn 3 · katgpt-kv 1 · katgpt-backend 1) —
 **25/25 BUILDS at their own EXACT feature set · 0 FAIL · 0 NO-FEAT · 0 UNSEEN** (isolated
 `/tmp/katgpt-rs-rf`, ~11 min wall at load ≈5-7, the transient-build class the 09-13
