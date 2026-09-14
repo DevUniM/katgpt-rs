@@ -4052,10 +4052,23 @@ drive wasm32 lanes over derived unit lists, and the canonical 20-repo figure is
 **four** floors files owed one visit — `platform_dead_code`,
 `subprocess_encoding`, `orphaned_attr`, `wasm32_surface`.
 
-With this the CHECKS-to-sweep and report-to-verdict correspondence is complete:
-every cross-repo class in `scripts/` now has both halves, and the three landed
-today (783, 784, 785) were all the same defect — a rule that existed in one
-place and was re-asserted by nothing.
+With this, every cross-repo class in `scripts/` whose verdict is **walled at a
+small number** has both halves, and the three landed today (783, 784, 785) were
+all the same defect — a rule that existed in one place and was re-asserted by
+nothing.
+
+⚠ **"Every cross-repo class" would be an over-claim, and the exception is
+measured.** `suite_membership_audit.py` is cross-repo and has no verdict half
+**by design, stated in its own header**: its actionable column is LOAD-BEARING
+unpinned test targets, and that column is **1,203 rows across 15 repos**
+(katgpt-rs 442, riir-ai 410, riir-train 223, …, against 3,036 targets). A
+ratchet over a backlog that size is a number nobody acts on — the same argument
+`staged_set_audit.py` records for refusing a pre-commit hook, and
+`highwater_contiguity_audit.py` for staying report-only while its reset verdict
+lives in `numbering_drift_sweep.py`. The distinction that makes 783/784/785
+gateable is that each one's ceiling was already **0** and had been earned.
+`gguf_header_audit.py` is not in this family at all — it is model-file
+introspection, not a class audit.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/785_the_wasm32_surface_standing_figure_is_asserted_by_nothing.md`).
