@@ -197,3 +197,24 @@ arm consumes the same three-arm function.
 
 **Follow-up:** Issue 779 — promote the triad to `katgpt_core::subspace_intervention`
 (feature-flagged) + wire the FUNCATTN-tensor arm + real-bank affinity run.
+
+### Issue 779 delta (2026-09-15, Bench 766)
+
+T1+T2 RESOLVED, T3 deferred (real-model run; sibling lanes). Two findings:
+
+1. **The POC's ridge was not ridge.** The harness's solve collapses
+   algebraically to `W = XᵀY` (formed `G⁺·M`, then divided by `σⱼ²` —
+   `(G⁺)⁻¹·(G⁺·M) = M`): a serviceable nearest-mean probe, which is why
+   every 778 gate passed, but not the intended solve. The promoted
+   `ridge_probe_fit_into` computes the true `Σⱼ vⱼ·(vⱼᵀM)/σⱼ` — verified
+   on a two-class sanity cell (w = ±0.5 exact). The G-numbers in the POC
+   addendum above were measured through the nearest-mean head; the
+   protocol conclusions (affinity recovery, aligned-vs-random contrast,
+   span stability) are unaffected — they never depended on the head being
+   ridge.
+2. **The FUNCATTN spectral arm lands POSITIVE at composition level**
+   (Bench 766): the REAL `calibrate_eigenbasis` path on the
+   SpectralQuant-hypothesis geometry — eigen-aligned 0.802 vs random 0.354
+   at k=2 (matched budget), AND 0.802 > full 0.656 (projecting onto the
+   top-2 eigenspace DENOISES the readout); residual ≈ chance. Whether it
+   holds on real activations is exactly T3's capture.

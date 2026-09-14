@@ -11,6 +11,40 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 779 T1+T2 (2026-09-15, M3 session) resolved — subspace_intervention promoted + the FUNCATTN spectral arm POSITIVE (Bench 766)
+
+`katgpt_core::subspace_intervention` (feature `subspace_intervention =
+["subspace_phase_gate"]`, OPT-IN per the no-default-consumer rule): the
+Issue-778 POC triad promoted to a reusable module — the modelless ridge
+probe, frozen-head eval, basis projection, seeded random control,
+principal-angle `basis_similarity`, `three_arm_eval` / `three_arm_eval_on_basis`
+(caller-supplied aligned basis — the FUNCATTN arm), `affinity_sweep` over a
+packed (layer × sample × dim) bank. Zero new deps; zero-alloc eval paths.
+
+**The promotion caught a real POC bug:** the 778 harness's "ridge"
+collapses to the class-sum readout `W = XᵀY` (it formed `G⁺·M` then divided
+by `σⱼ²` = `(G⁺)⁻¹·G⁺·M = M`) — a serviceable nearest-mean probe, which is
+why every gate passed, but not ridge. The shipped primitive computes the
+true `Σⱼ vⱼ·(vⱼᵀM)/σⱼ` solve (two-class sanity: w = ±0.5 exact). A second
+trap: a parity split with `labels = i%C` at even C aliased the split — the
+probe sat at chance with BOTH triad arms equal, and the projection-identity
+gate held anyway (it cannot catch a broken head — both sides were chance);
+kept as a test note.
+
+**T2 — `spectral_pre_rotate`'s deferred eval (its "Not a GOAT gate" block)
+closed, POSITIVE:** the REAL `calibrate_eigenbasis` path on the
+SpectralQuant-hypothesis geometry — eigen-aligned 0.802 vs random 0.354 at
+k=2 matched budget, and 0.802 > full 0.656 (the projection DENOISES);
+residual ≈ chance. Bench 766; the composition runs as a katgpt-attn test
+(dev-dep feature-forward — the lib surface unchanged). T3 (real-bank
+affinity capture) deferred — cross-repo real-model run, sibling lanes
+active; `affinity_sweep` is the ready instrument.
+
+Gates: 7 module tests (identity/contrast/affinity/similarity/
+orthonormality/sanity/G4-alloc), release+alloc_tracking clean, default
+suite 2060 unchanged (opt-in), clippy -D warnings both crates,
+--all-features clean.
+
 ## Issue 782 (2026-09-15, M3 session) resolved — slt_sweep: the noise-sweep λ̂ estimator (781 T4), GOAT G1–G4 ALL PASS, promoted default-on
 
 `katgpt_core::slt::sweep` (feature `slt_sweep = ["slt"]` → **default-on

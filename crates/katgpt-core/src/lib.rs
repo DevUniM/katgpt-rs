@@ -957,6 +957,13 @@ pub mod dual;
 #[cfg(feature = "subspace_phase_gate")]
 pub mod subspace_phase_gate;
 
+// subspace_intervention — the three-arm subspace-intervention protocol
+// (Issue 779 T1 / Research 557 / arXiv:2607.01987): modelless ridge probe +
+// aligned/random/residual projection triad + task→layer affinity sweep,
+// promoted from the Issue-778 POC harness. OPT-IN (no-default-consumer rule).
+#[cfg(feature = "subspace_intervention")]
+pub mod subspace_intervention;
+
 // Group Invariance Probe — modelless symmetry discovery on a hypothesis Lie
 // group (Plan 356, Research 355 — distilled from LieFlow, arXiv:2512.20043).
 // Generalizes `subspace_phase_gate` from "subspace of R^d" to "subgroup of G":
