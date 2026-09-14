@@ -88,6 +88,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from tracked_walk import tracked_files  # noqa: E402
+
 # ── HALF A: cube kernels that derive dims from `.len()` ────────────────────
 
 CUBE_FN_RE = re.compile(
@@ -147,16 +151,23 @@ def derive_repos(workspace: Path) -> list[Path]:
 
 
 def rs_files(repo: Path):
-    """Tracked-shape walk: .rs files, pruning build/vendor trees up front.
+    """The TRACKED `*.rs` population — `scripts/tracked_walk.py` (Issue 777).
 
-    `rglob` enumerates `target/` before any filter can skip it — the walk,
-    not the parse, is the cost (measured: full timeout on the 4090 box).
+    This docstring used to say "tracked-SHAPE walk", and the shape was the
+    problem: an `os.walk` pruning `("target", ".git", "node_modules")` is a
+    directory-NAME list, and a name list cannot express "not ours". Measured
+    in the sibling percentile audit, which carried the same three names:
+    seal-online-remaster's gitignored `mmorpg/` nested repo (+1404 `.rs`) and
+    riir-train's cargo OUT_DIR sources under `.runs/target-release/` (+48 —
+    the set names `target`, and `target-release` is not `target`) were both
+    inside the population. Nothing here matched them only because this
+    audit's vocabulary is GPU-binding-specific; that is luck, not scope.
+
+    `git ls-files` also answers faster than the walk it replaces, which was
+    the original reason for the up-front prune (measured: full `rglob`
+    timeout on the 4090 box).
     """
-    for dirpath, dirnames, filenames in os.walk(repo):
-        dirnames[:] = [d for d in dirnames if d not in ("target", ".git", "node_modules")]
-        for fn in filenames:
-            if fn.endswith(".rs"):
-                yield Path(dirpath) / fn
+    return tracked_files(repo, "*.rs")[0]
 
 
 def guard_only_uses(body: str, buf: str) -> bool:

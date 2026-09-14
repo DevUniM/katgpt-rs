@@ -3315,3 +3315,79 @@ Issue file removed per the noise-reduction rule; the full record lives
 in git history
 (`git log -- .issues/772_config_audit_inert_knobs.md`).
 
+
+## Issue 777 — an instrument whose population is a FILESYSTEM walk audits code no repo owns: CLOSED (2026-09-14)
+
+Found by running `percentile_drift_sweep.py` from the Windows workstation for
+the first time. It red on two rows and **both reds were artifacts of the
+walk**, not findings — which is the only reason anybody looked.
+
+**The class.** `percentile_index_audit.py` and `len_derived_binding_audit.py`
+walked the filesystem behind a hand-typed directory-name skip set
+(`{"target", ".git", "node_modules", ".venv"}`). A name list cannot express
+"not ours", and it was wrong three independent ways, all measured:
+
+1. **A gitignored NESTED REPOSITORY.** `seal-online-remaster/mmorpg/` is
+   `.gitignore:82 /mmorpg/` and carries its own `.git`. Its 1404 `.rs` files
+   were credited to seal-online-remaster (2015 walked vs 611 tracked), and
+   supplied 19 of the 23 percentile sites attributed to that repo —
+   **including the sweep's only finding**, a TRUNC-VAR at
+   `mmorpg/crates/mmorpg-bot/src/metrics.rs:129`. A correctly-shaped defect at
+   an address where the repair cannot be made is worse than a false positive;
+   it is the failure mode `issue_citation_gate.py` exists for, one axis over.
+2. **Build artifacts under a directory the skip set does not NAME.**
+   riir-train's 48 untracked `.rs` are cargo OUT_DIR sources (`glutin_wgl_sys`,
+   `serde_core`, `thiserror`) under `.runs/target-release/`, `-cuda`,
+   `-v2cpu`, `-bench`. The set names `target`; none of those IS `target`.
+3. **Two floors fabricated by (1) and (2), neither ever edited.**
+   `percentile_drift_floors.txt` pinned riir-train `min_rs_files = 2500`
+   against 1129 tracked (1177 filesystem), and riir-chain `500` against the
+   **460** that repo had on the day the file was created — it has GROWN to
+   482 since, and the floor was above it the whole time. A floor exists to
+   catch an instrument going blind; measured over content the repo does not
+   own, it reds on every box but the one and the hour that produced it.
+
+**The second defect, same file.** `percentile_index_audit.py:820` hard-coded
+`root = "/Users/katopz/git"`, so the no-argument invocation AGENTS.md
+documents as "all contract repos (derived)" was a `FileNotFoundError`
+traceback on every box but one. The only such path in `scripts/`, and
+`skill_repo_set_gate.py:64` already carried the rule in a comment. The sweep
+half never noticed because it imports the module and never calls `main()`.
+
+**The repair.** Tracked-only had been landed TWICE and never generalised —
+Issue 734 for the trap audit ("25 findings in a gitignored vendored drop no
+repo owns") and Issue 738 T3 for the platform/wasm32 pair — so the rule now
+lives in ONE file, `scripts/tracked_walk.py`, with an 8-arm / 11-assertion
+self-test: tracked-vs-untracked in both directions, the gitignored nested
+repo, the alternate target dir *plus a companion assertion that `SKIP_DIRS`
+still does not name it* (an arm whose hazard has been fixed elsewhere
+certifies nothing), `vendor/` exclusion and its COUNT, the no-`.git`
+fallback, the `git -C` walk-up probe, deleted-but-indexed, and the pattern
+parameter on both branches. Consumers: `platform_dead_code_audit.py` (its
+`list_rs_files` is now a seam over the shared call — 24/24 arms still pinned),
+`percentile_index_audit.py`, `len_derived_binding_audit.py`,
+`orphaned_attr_gate.py`.
+
+**Measured after.** Three instruments that walked three different populations
+now report one: **8694 tracked `.rs` over 16 repos** (percentile audit,
+len-derived audit, platform-dead_code sweep — identical). The percentile
+workspace figure moved 11,132 → 8,694 and 110 → 124 sites; the drop is not
+deletion but riir-ai's 252 vendored `wgpu-hal` files, `mmorpg/`'s 1404 and
+riir-train's 48 leaving the population. Floors re-pinned at this file's stated
+~65% rule with the measurement in the row comment (riir-train 2500 → 730,
+riir-chain 500 → 310). The sweep is green on all 16 present repos; the 4
+absent ones red on the partial-clone axis, which is Issue 778's scope.
+`orphaned_attr_gate.py` is unchanged in verdict (2415 files, 7124 sites, 0) —
+katgpt-rs' tracked and filesystem counts are equal, which is exactly why it
+was worth converting: nothing pinned that they would stay equal.
+
+Not repaired, checked and recorded: `restatement_theorem_audit.py` and
+`suite_membership_audit.py` also walk the filesystem, but both are scoped to a
+named subtree (`.proofs/`, `PIN_DIRS`) rather than to a repo root, so neither
+can reach a drop at the root. The `mmorpg` truncation itself is deliberately
+NOT filed anywhere from here — once the walk is tracked-only that site leaves
+this workspace's population, and filing it from katgpt-rs would be the
+wrong-address defect a second time.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/777_filesystem_walk_population.md`).

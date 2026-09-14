@@ -61,11 +61,14 @@ call, like `.docs/10_audits/cfg_gated_silent_zero_pass.md` T3.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from tracked_walk import tracked_files  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -75,11 +78,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTER_CFG = re.compile(r"^\s*#\s*\[\s*cfg(?:_attr)?\s*\(")
 ANY_ATTR = re.compile(r"^\s*#!?\s*\[")
 
-# Pruned during the walk, never filtered afterwards. `rglob("*.rs")` followed by
-# a `"target" in parts` filter still DESCENDS into target/ (117 GB, ~1.3M
+# The population is the TRACKED `*.rs` set (`scripts/tracked_walk.py`, Issue
+# 777), not a filesystem walk behind a directory-NAME prune list. katgpt-rs'
+# tracked and filesystem counts happen to be EQUAL today (2415 both ways), so
+# this is not a repair of a live miscount here — it is the removal of the only
+# way this gate's floors could ever be satisfied by files the repo does not
+# own, which is exactly how the percentile sweep came to pin riir-train's walk
+# floor at 2500 against 1129 tracked files.
+#
+# The prune list it replaces was not wrong about its own hazard, and the
+# fallback branch of `tracked_files` keeps it: `rglob("*.rs")` followed by a
+# `"target" in parts` filter still DESCENDS into target/ (117 GB, ~1.3M
 # entries) — the same trap that made bench_doc_audit.py take 556s, and the
-# `find -not -path` trap one level over.
-PRUNE = {"target", ".git", "node_modules", ".venv", "__pycache__"}
+# `find -not -path` trap one level over. `git ls-files` does not walk at all.
 
 # `max_offenders = 0` is a CEILING, and a ceiling passes over an empty
 # population — a pruning bug, a moved source root or a read failure all print a
@@ -105,30 +116,25 @@ def scan(repo: Path) -> Scan:
     out: list[tuple[str, int, str, str]] = []
     files_seen = 0
     cfg_seen = 0
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if d not in PRUNE]
-        for fn in files:
-            if not fn.endswith(".rs"):
+    for p in tracked_files(repo, "*.rs")[0]:
+        try:
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        files_seen += 1
+        cfg_seen += sum(1 for line in lines if OUTER_CFG.match(line))
+        for i in range(len(lines) - 2):
+            if not OUTER_CFG.match(lines[i]) or lines[i + 1].strip():
                 continue
-            p = Path(root) / fn
-            try:
-                lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-            except OSError:
+            nxt = lines[i + 2]
+            # A following comment or another attribute is not the item, and
+            # a blank-line run means the attribute is dangling further
+            # down; both are reported only when a real item follows.
+            if not nxt.strip() or nxt.lstrip().startswith("//") or ANY_ATTR.match(nxt):
                 continue
-            files_seen += 1
-            cfg_seen += sum(1 for line in lines if OUTER_CFG.match(line))
-            for i in range(len(lines) - 2):
-                if not OUTER_CFG.match(lines[i]) or lines[i + 1].strip():
-                    continue
-                nxt = lines[i + 2]
-                # A following comment or another attribute is not the item, and
-                # a blank-line run means the attribute is dangling further
-                # down; both are reported only when a real item follows.
-                if not nxt.strip() or nxt.lstrip().startswith("//") or ANY_ATTR.match(nxt):
-                    continue
-                out.append(
-                    (str(p.relative_to(repo)), i + 1, lines[i].strip(), nxt.strip()[:60])
-                )
+            out.append(
+                (str(p.relative_to(repo)), i + 1, lines[i].strip(), nxt.strip()[:60])
+            )
     return Scan(sorted(out), files_seen, cfg_seen)
 
 

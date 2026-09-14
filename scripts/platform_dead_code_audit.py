@@ -880,13 +880,23 @@ class RepoResult:
     mod_rows: list = field(default_factory=list)   # `mod` decls — see report()
 
 
-# Build output and package caches only. `vendor` is DELIBERATELY not here:
-# it belongs to `vendored_p`, and listing it in both made the self-test arm
-# inert — the synthetic trees have no `.git`, so they took the rglob path and
-# were filtered by this set no matter what `vendored_p` returned. A canary
-# that passes under its own perturbation is certifying nothing.
-SKIP_DIRS = {"target", ".git", "node_modules", ".venv", "dist"}
-
+# The population walk is ONE implementation, in `scripts/tracked_walk.py`
+# (Issue 777). It moved out of this file because the rule it encodes — a
+# population is what git TRACKS, not what the filesystem holds — had been
+# landed here and in the trap audit and then NOT applied to the percentile and
+# len-derived audits, where it went on to fabricate a floor and file a
+# correctly-shaped finding against the wrong repository.
+#
+# These names are re-exported rather than inlined: this file's self-test
+# perturbs `vendored_p` and asserts SKIP_DIRS' composition, and both arms must
+# keep pointing at the definitions the walk actually uses.
+#
+# `vendor` is DELIBERATELY not in SKIP_DIRS: it belongs to `vendored_p`, and
+# listing it in both made the self-test arm inert — the synthetic trees have no
+# `.git`, so they took the rglob path and were filtered by this set no matter
+# what `vendored_p` returned. A canary that passes under its own perturbation
+# is certifying nothing.
+#
 # Vendored upstream code is not this workspace's to gate — the same rule and
 # the same fork that forced it for the wasm32 surface audit (Issue 738 T3):
 # riir-ai tracks a `wgpu-hal-30.0.0` fork whose gles backend is full of
@@ -894,42 +904,22 @@ SKIP_DIRS = {"target", ".git", "node_modules", ".venv", "dist"}
 # its `-p` list with `grep -v '^vendor/'`. Excluded LOUDLY (the count rides
 # the per-repo line) rather than silently, because a shrinking walk is how a
 # report becomes a confident zero.
-VENDOR_PARTS = ("vendor/", "/vendor/")
-
-
-def vendored_p(rel: str) -> bool:
-    rel = rel.replace("\\", "/")
-    return rel.startswith(VENDOR_PARTS[0]) or VENDOR_PARTS[1] in rel
+from tracked_walk import (  # noqa: E402  (sys.path is set at the top of this file)
+    SKIP_DIRS,
+    VENDOR_PARTS,
+    tracked_files,
+    vendored_p,
+)
 
 
 def list_rs_files(root: Path) -> tuple:
     """(files, vendored_excluded) — tracked `*.rs` where git can answer.
 
-    Tracked-only is the same rule the trap audit landed on: walking the
-    filesystem instead reports findings in gitignored vendored drops no repo
-    owns. An extracted `git archive` tree has no `.git`, so the walk is the
-    fallback rather than an error.
+    A thin seam over `tracked_walk.tracked_files` so this file's own
+    perturbation arms have something to monkey-patch, and so the `.rs`
+    pattern is stated once here rather than at every call site.
     """
-    rels: list = []
-    # `git -C <dir>` walks UP until it finds a repository, so a non-repo
-    # directory inside one would be listed with its PARENT's paths. The
-    # `.git` probe is what keeps the extracted/synthetic trees on the walk.
-    try:
-        if not (root / ".git").exists():
-            raise OSError("not a repository root")
-        out = subprocess.run(["git", "-C", str(root), "ls-files", "-z", "*.rs"],
-                             capture_output=True, check=True)
-        rels = [x for x in out.stdout.decode("utf-8", "replace").split("\0") if x]
-    except (OSError, subprocess.CalledProcessError):
-        pass
-    if not rels:
-        for p in root.rglob("*.rs"):
-            parts = p.relative_to(root).parts
-            if any(part in SKIP_DIRS for part in parts):
-                continue
-            rels.append("/".join(parts))
-    keep = [r for r in rels if not vendored_p(r)]
-    return sorted(root / r for r in keep), len(rels) - len(keep)
+    return tracked_files(root, "*.rs", vendored_p)
 
 
 def audit_repo(repo: Path) -> RepoResult:

@@ -466,6 +466,34 @@ population derived. Verdict half: `scripts/percentile_floor_gate.py` (pins in
 `scripts/percentile_floors.txt`; `min_sites_scanned` is a FLOOR — a tokenizer
 regression takes the population to ~0 and every ceiling passes).
 
+**The POPULATION is what git TRACKS — `scripts/tracked_walk.py`, one copy
+(Issue 777).** A filesystem walk behind a hand-typed directory-name skip set
+is not the same set, and a name list cannot express "not ours". Measured, on
+the run of this sweep that found it: seal-online-remaster's `mmorpg/` is
+gitignored AND its own git repository, so its 1404 `.rs` files were credited
+to the outer repo — and produced this audit's only TRUNC-VAR finding at an
+address where the repair cannot be made. That is worse than a false positive;
+it is a **correctly-shaped defect at the wrong address**, one axis over from
+what `issue_citation_gate.py` exists for. riir-train's cargo OUT_DIR sources
+sit under `.runs/target-release/`, `-cuda`, `-v2cpu`, `-bench`: the skip set
+names `target`, and none of those IS `target`.
+
+Read the second-order damage, because it is the part that lasts: **two
+`percentile_drift_floors.txt` rows were unsatisfiable by any tracked walk of
+their repo** — riir-train `2500` against 1129, and riir-chain `500` against
+the **460** that repo had on the day the file was written. Neither had ever
+been edited. A floor exists to catch an instrument going blind; a floor
+measured over content the repo does not own reds on every box but the one and
+the hour that produced it, and teaches whoever hits it that the sweep is
+noise. Tracked-only was landed twice before (Issue 734 for the trap audit —
+"25 findings in a gitignored vendored drop no repo owns"; Issue 738 T3 for the
+platform/wasm32 pair) and not generalised, which is the whole reason the walk
+now lives in one file with its own 8-arm self-test. `vendor/` exclusions ride
+the per-repo line; the `.git` probe is load-bearing (`git -C` walks UP, so a
+non-repo directory inside a repo would answer with its PARENT's paths); a tree
+with no `.git` — `git archive`, a synthetic self-test fixture — falls back to
+the walk rather than erroring.
+
 ## A Lean theorem can RESTATE its own definition — `scripts/restatement_theorem_audit.py`
 
 `theorem sidecarHeaderSize_eq_sum : sidecarHeaderSize = magicSize + versionSize

@@ -55,12 +55,34 @@
 #
 # Measured 2026-09-06: 16 repos, 11,132 .rs files, 110 sites, 0/0/0/0.
 #
+# ── the rs_files column was measured over a FILESYSTEM walk until Issue 777 ───
+# Re-measured 2026-09-14 over the TRACKED walk (`scripts/tracked_walk.py`):
+# **16 repos, 8,694 .rs files, 124 sites, 0/0/0/0**. The 2,438-file drop is not
+# deletion — it is content no repo owns leaving the population: riir-ai's 252
+# vendored `wgpu-hal` files, seal-online-remaster's gitignored `mmorpg/` nested
+# repository (1404), riir-train's cargo OUT_DIR sources under
+# `.runs/target-release/` and friends (48), and the same shapes on whatever box
+# produced the original pins.
+#
+# TWO rows in this file were UNSATISFIABLE by any tracked walk of their repo,
+# and that is the strongest argument for the column's new source:
+#
+#   riir-train  2500  — the repo has 1129 tracked .rs (1177 filesystem, here).
+#   riir-chain   500  — the repo had **460** tracked .rs on the day this file
+#                       was created and has 482 today. It GREW, and the floor
+#                       was above it the whole time.
+#
+# Neither had ever been edited. A floor whose job is to catch an instrument
+# going blind, set over content the repo does not own, reds on every box but
+# the one and the hour that measured it — which teaches whoever hits it that
+# the sweep is noise, the one outcome a gate cannot survive.
+#
 # repo                  rs_files  sites  deg  deg_a  weak_a  tvar
 katgpt-rs                   1500     30    0      0       0     0
 katgpt-web                     1      0    0      0       0     0
 riir-ai                     1800     15    0      0       0     0
 riir-auth                     10      0    0      0       0     0
-riir-chain                   500     10    0      0       0     0
+riir-chain                   310     10    0      0       0     0  # Issue 777 re-pin: 482 tracked .rs (460 on 2026-09-06 — the 500 pin was never met)
 riir-clippy                  190      0    0      0       0     0
 riir-dao                      14      0    0      0       0     0
 riir-dapps                    50      0    0      0       0     0
@@ -71,7 +93,7 @@ riir-kat                    15      0    0      0       0     0  # observed 2026
 riir-mmorpg-examples          40      0    0      0       0     0
 riir-neuron-db               125      6    0      0       0     0
 riir-shader                 27      0    0      0       0     0  # observed 2026-09-12: 46 .rs, 0 sites
-riir-train                  2500      3    0      0       0     0
+riir-train                   730      3    0      0       0     0  # Issue 777 re-pin: 1129 tracked .rs; the 2500 pin counted .runs/target-*/ OUT_DIR sources
 riir-viewbridge               15      0    0      0       0     0
 seal-game-editor             125      0    0      0       0     0
 seal-online-remaster       335      2    0      0       0     0  # observed 2026-09-12: 611 .rs, 4 sites (all 4 decidable-clean)
