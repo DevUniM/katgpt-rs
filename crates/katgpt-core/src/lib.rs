@@ -925,6 +925,18 @@ pub use slod::{
 #[cfg(feature = "spectral_pruner")]
 pub mod irrep_pruner;
 
+// Frozen-evidence deliberation kernel + step-drift metric (Issue riir-ai 953 /
+// katgpt-rs Research 555, arXiv:2609.06746 CVRR). Convex-mix sigmoid-gated
+// re-read of FROZEN evidence rows within one think cycle + the
+// decorative-recurrence drift detector. Opt-in; think-brain consumers only.
+#[cfg(feature = "frozen_evidence")]
+pub mod frozen_evidence;
+#[cfg(feature = "frozen_evidence")]
+pub use frozen_evidence::{
+    classify_drift, cosine, deliberate, gate_map_into, transition_into, FrozenEvidence,
+    RecurrenceHealth, DEFAULT_DRIFT_CHAOS, DEFAULT_DRIFT_STUCK,
+};
+
 // Subspace phase-gate primitives — participation ratio, numerical rank, N≥d
 // phase-transition gate (Wang et al. Thm 4, arXiv:2409.02426), and runtime
 // Jacobian SVD via forward differences (Plan 301, Research 279). Pure numeric,

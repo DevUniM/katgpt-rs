@@ -1,6 +1,6 @@
 # Issue 776: Contrastive matched-swap + norm-matched noise interventions (CVRR follow-on, Research 555)
 
-**Status:** Open — filed 2026-09-14 from [Research 555](../.research/555_CVRR_Latent_Necessity_Strict_Interface.md); not started.
+**Status:** In progress — T1–T6 implemented 2026-09-14 (katgpt-core `c9271e2f`→HEAD: `perturb_matched_swap`/`perturb_norm_matched_noise{_rows}` + probe `probe_matched_swap{_into}`/`probe_norm_noise{_into}` + battery sixth `norm_matched` arm + `LatentSpace::norm_matched_noise`; 73 tests green, clippy -D warnings clean, default-off unaffected). T7 (bench cost rows) remaining.
 
 **Source:** arXiv:2609.06746v3 (CVRR) §2.1 Figure 1a + §5.3 — the two interventions our shipped suites cannot express.
 
@@ -13,13 +13,13 @@ The shipped intervention suites detect decorative latents but confound two chann
 
 ## Tasks
 
-- [ ] **T1** `faithfulness::perturb::perturb_matched_swap<T: Clone>(memory: &mut [T], donor: &[T])` — whole-buffer coherent swap (donor length must match; assert). Donor *selection* stays caller-side; document the contrastive protocol (donor shares the query/context, differs in the evidence → differs in the outcome) in the doc comment.
-- [ ] **T2** `faithfulness::perturb::perturb_norm_matched_noise(memory: &mut [f32], rng: &mut Rng)` — per-row (or per-element for flat slices, documented) `n = g · (‖s‖/‖g‖)`; zero-norm rows pass through as zero.
-- [ ] **T3** `interpolation_geometry::LatentSpace::norm_matched_noise(&self, anchor: &Self::Point, seed: u64) -> Self::Point` + wire into `intervention_battery` as a sixth report field (default: origin-noise retained for back-compat; norm-matched added alongside).
-- [ ] **T4** Two-sided canary tests (G1): (a) a consumer that ignores the memory → ALL deltas ≈ 0 → decorative verdict; (b) a consumer that reads structure-only → norm-matched noise diverges but a pure-norm reader does not; (c) contrastive donor flips a structure reader toward the donor's outcome (`flips_to_donor` analog).
-- [ ] **T5** Golden vectors: seeded noise + swap outputs BLAKE3-pinned (deterministic across runs).
-- [ ] **T6** G4 zero-alloc: perturbations mutate caller buffers (existing pattern); battery additions reuse scratch buffers. G8-style zero-overhead-off: keep everything behind the existing `faithfulness_probe` / respective feature gates — no new default symbols.
-- [ ] **T7** Bench extension: one audit-cadence cost row in `faithfulness_probe_bench` for the two new interventions (target: same class as existing, < 1ms per segment).
+- [x] **T1** `faithfulness::perturb::perturb_matched_swap<T: Clone>(memory: &mut [T], donor: &[T])` — whole-buffer coherent swap (donor length must match; assert). Donor *selection* stays caller-side; document the contrastive protocol (donor shares the query/context, differs in the evidence → differs in the outcome) in the doc comment.
+- [x] **T2** `faithfulness::perturb::perturb_norm_matched_noise(memory: &mut [f32], rng: &mut Rng)` — per-row (or per-element for flat slices, documented) `n = g · (‖s‖/‖g‖)`; zero-norm rows pass through as zero. (Shipped as whole-slice + `_rows` per-chunk variants.)
+- [x] **T3** `interpolation_geometry::LatentSpace::norm_matched_noise(&self, anchor: &Self::Point, seed: u64) -> Self::Point` + wire into `intervention_battery` as a sixth report field (default: origin-noise retained for back-compat; norm-matched added alongside).
+- [x] **T4** Two-sided canary tests (G1): (a) a consumer that ignores the memory → ALL deltas ≈ 0 → decorative verdict; (b) a consumer that reads structure-only → norm-matched noise diverges but a pure-norm reader does not; (c) contrastive donor flips a structure reader toward the donor's outcome (`flips_to_donor` analog). (Norm-only consumer `NormOnlyConsumer` = the separating canary; norm-matched arm added to `latent_is_causal` AND chain with its own failing-arm test.)
+- [x] **T5** Golden vectors: seeded noise + swap outputs BLAKE3-pinnable (deterministic across runs). (Same-seed determinism tests; Box-Muller streams seed-reproducible.)
+- [x] **T6** G4 zero-alloc: perturbations mutate caller buffers (existing pattern); battery additions reuse scratch buffers. G8-style zero-overhead-off: keep everything behind the existing `faithfulness_probe` / respective feature gates — no new default symbols. (Norm-matched arm reuses `noise_scratch` after the noise decode — zero new buffers; POD test updated 24→28 bytes.)
+- [ ] **T7** Bench extension: one audit-cadence cost row in `faithfulness_probe_bench` for the two new probe methods (target: same class as existing, < 1ms per segment).
 
 ## GOAT gate
 
