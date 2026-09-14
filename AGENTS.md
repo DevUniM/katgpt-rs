@@ -681,6 +681,55 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   boundaries ARE the finding, and they are only testable against cases whose
   answer is known independently.
 
+## An item can be dead on a platform NO lane compiles — `scripts/platform_dead_code_audit.py`
+
+`const NEON_U8: usize = 16;` declared ungated, used only inside an
+`#[cfg(target_arch = "aarch64")]` fn: **dead code everywhere but aarch64**,
+and silent on aarch64. `full_gate` is macOS/aarch64 (the const is alive
+there), `wasm32_gate` compiles wasm32 — so the x86_64-native lane that emits
+the warning is a **workstation** lane and no automatic gate in this workspace
+ever sees it. Five specimens in two days across two repos (riir-clippy intake
+P22), the first being `ea4c2873` here.
+
+```bash
+scripts/platform_dead_code_audit.py             # all contract repos (derived)
+scripts/platform_dead_code_audit.py ../riir-ai  # or one, by path
+scripts/platform_dead_code_audit.py --self-test # the 24 classifier arms
+scripts/platform_dead_code_audit.py --prove-fires ea4c2873
+```
+
+- A **report, not a gate** (exit 0) — except a classifier MISS, which exits
+  **2**: an instrument that cannot classify must not be read as `0 findings`.
+  The self-test runs on every invocation. Population derived (BOUNDARY.md +
+  `.git`), **tracked** `*.rs` only, `vendor/` excluded with its count on the
+  per-repo line (Issue 738 T3's rule — riir-ai's `wgpu-hal` fork supplied 5
+  rows nobody owns).
+- **MOD-REF is a separate bucket and is never folded into the count.** A
+  `mod name;` referenced only from gated code satisfies the rule and is *not*
+  a rustc finding: measured on `katgpt-types::simd::horizontal`, a wasm32
+  `cargo check` is silent because every item inside that module is itself
+  x86_64-gated, so the module is **empty** rather than dead — appending one
+  ungated `fn` reproduces the warning, on the **fn**. rustc reports dead code
+  at the ITEM, which this audit reaches independently.
+- ⛔ Its header claimed "no known direction in which this INVENTS a finding"
+  and that was **false on the first sweep it ever ran**: masking string
+  literals dropped Rust 2021 **inline format args**, so riir-ai's
+  `SWEEP_COUNTS` — `println!("{SWEEP_COUNTS:?}")` ungated in `main`, gated
+  everywhere else — read as a finding. A conservative-by-construction
+  argument is a claim about code somebody else wrote; this one survived until
+  a real corpus contradicted it.
+- ⛔ **An arm is only a canary if its own perturbation REDS it.** Of the three
+  arms added with the buckets, the `vendor/` one red **nothing** under
+  perturbation — the synthetic trees have no `.git`, so they took the
+  filesystem-walk branch where a redundant `"vendor"` in `SKIP_DIRS` was doing
+  the filtering. One exclusion, two code paths, and the arm certified the path
+  it was not aimed at.
+- Standing (2026-09-14, 16 of 20 repos on this box): **0 findings · 1
+  MOD-REF** over 8694 files / 3433 units / 119452 candidate decls. The first
+  sweep's two riir-ai rows were compile-verified and repaired —
+  `note_ane_dispatch` (x86_64, `--features ane_prefill`) and `gen_u64_bytes`
+  (wasm32, `--features chacha20_rng`).
+
 ## Before committing in a shared worktree — `scripts/staged_set_audit.py`
 
 Several agent sessions write into one worktree routinely, and `git add -A`

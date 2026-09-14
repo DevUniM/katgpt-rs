@@ -237,6 +237,79 @@ wiring is synthetic shape-class (FlyWire licensing, riir-ai R379), so the
 experiment would compare random-vs-rewired-random — structurally unable to
 attribute. Full record: `.research/556` §7; issue file removed per the
 noise-reduction rule.
+## The platform-dead_code class got an instrument — `scripts/platform_dead_code_audit.py`, and it was wrong on its first sweep (2026-09-14, 4090 session)
+
+The class below (NEON_U8, `ea4c2873`) was found by a human running clippy on a
+lane no CI owns. This session finished the classifier that answers "how much
+of this is there" without needing that lane: module-scope decls whose EVERY
+identifier occurrence resolves to a narrower platform cfg than the
+declaration's own, with the cfg context composed from item attrs, block
+attrs, blockless-statement attrs, file-leading `#![cfg]`, and `mod foo;` gates
+resolved ACROSS FILES up the directory chain. 2415 files in 6 s for this repo,
+8694 tracked `.rs` over 16 repos in 26 s. Rule, buckets, invocation:
+AGENTS.md §"An item can be dead on a platform NO lane compiles".
+
+Validation is two-sided by construction — `--prove-fires ea4c2873` extracts
+`ea4c2873~1` and `ea4c2873` via `git archive` and requires `NEON_U8` PRESENT
+at the parent and absent at the fix (measured: 1 finding → 0, over 268 files /
+3635 candidates), and 24 self-test arms run on EVERY invocation with a
+classifier MISS exiting **2**, not 1.
+
+**Three things it got wrong before it got anything right**, all recorded in
+the script's own header because the pattern is the lesson:
+
+1. **It INVENTED a finding, in the one direction its header swore it could
+   not.** Masking string literals dropped Rust 2021 inline format args, so
+   riir-ai's `SWEEP_COUNTS` — `println!("Sweep sizes: {SWEEP_COUNTS:?}")`
+   ungated in `main`, `target_os = "macos"` everywhere else — read as dead.
+   A conservative-by-construction argument is a claim about code somebody
+   else wrote, and this one survived review and died on first contact with a
+   real corpus. Two arms pin it now (format arg / plain mention).
+2. **A `mod` row is not a rustc finding, and only a compile says so.**
+   `katgpt-types/src/simd/mod.rs:49`'s `mod horizontal;` is ungated with all
+   15 references `target_arch = "x86_64"` — and `cargo check -p katgpt-types
+   --target wasm32-unknown-unknown` emits NOTHING, because every item inside
+   is itself x86_64-gated and the module is EMPTY there rather than dead.
+   Appending one ungated `fn` to that same file reproduces the warning
+   immediately, on the **fn**. So MOD-REF is its own bucket, never folded
+   into the count, and the katgpt-rs row stands as an observation.
+3. **An arm that passes under its own perturbation certifies nothing.**
+   Neutering `vendored_p` red zero arms: the synthetic trees have no `.git`,
+   took the filesystem-walk branch, and a redundant `"vendor"` in `SKIP_DIRS`
+   was doing the filtering. One exclusion, two code paths, and the canary
+   watched the path it was not aimed at. Removing the duplicate made it
+   two-sided; the other two perturbations (format restore, MOD pooling) each
+   red their arm.
+
+**The two real rows, both compile-verified before repair** (riir-ai
+`develop`): `riir-gpu` `note_ane_dispatch` — ungated at
+`ane_prefill/mod.rs:535` with all three call sites in `exec`/`exec_zc`, both
+`all(target_os = "macos", target_arch = "aarch64")` — reproduced as
+`warning: function note_ane_dispatch is never used` on x86_64 Windows with
+`--features ane_prefill` (the default-feature check is a green ZERO: the
+module is `#[cfg(feature = "ane_prefill")]`). And `riir-games-shared`
+`gen_u64_bytes`, whose only call site is `gen_usize`'s
+`target_pointer_width = "64"` arm — `warning: method gen_u64_bytes is never
+used` on `wasm32-unknown-unknown --features chacha20_rng`, i.e. a 32-bit
+target this workspace actually builds, not a hypothetical one. Both gated to
+mirror their call sites; a third adjacent-class row (`unused_mut` on a `ctx`
+mutated only inside the same macOS block) took a **conditional**
+`cfg_attr(not(...), allow(unused_mut))` so the ANE platform still warns.
+Standing after repair: **0 findings · 1 MOD-REF** over 8694 files / 3433
+units / 119452 candidate decls / 16 repos. The macOS+aarch64 arm of the
+riir-gpu gate is NOT compiled here — the cfg is copied verbatim from the call
+sites' own, so it cannot narrow anything they do not already carry, but that
+is an argument, not a measurement.
+
+⚠ Unrelated measurement worth not over-reading: `docs_gate.sh` ran **17/17**
+on this Windows box for the first time (Python **3.14** on PATH as the
+`python3` shim — the four `tomllib` gates the 3.10 shim permanently broke all
+pass — plus `DOCS_GATE_PARTIAL_CLONE=1`), and printed **1.81s CPU / 14.1s
+wall** against the documented 13.37s CPU at the same 17 checks. Do NOT revise
+the documented figure on it: the mechanism is unmeasured and there are two
+live hypotheses — the interpreter, and the shim wrapping a native Windows
+`.exe` in `sh -c`, which may defeat `times` child-CPU accounting entirely.
+The wall figure is in range; only the CPU one moved.
 
 ## The Windows all-features lane — NEON_U8 platform gate, first specimen of the platform-dead_code class (2026-09-14, 4090 session)
 
