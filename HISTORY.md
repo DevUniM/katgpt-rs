@@ -237,6 +237,127 @@ wiring is synthetic shape-class (FlyWire licensing, riir-ai R379), so the
 experiment would compare random-vs-rewired-random — structurally unable to
 attribute. Full record: `.research/556` §7; issue file removed per the
 noise-reduction rule.
+## Issue 787 — a census reads the DOCUMENT, so an undocumented instrument is invisible to it: CLOSED (2026-09-14)
+
+**The correction first, because this issue exists to make it.** `1a5b6571`
+bounded the Issue 785 close-out from "every cross-repo class in `scripts/` now
+has both halves" to "every cross-repo class **whose verdict is walled at a small
+number** has both halves". That bounded claim was **still false**, by exactly
+one instrument: `len_derived_binding_audit.py` was cross-repo, its joined
+buckets were walled at 0, and it had no verdict half — Issue 786, filed and
+closed the same day. The bounding correction was itself incomplete.
+
+The miss is not the finding. The **mechanism** is. Both censuses — the one that
+produced 783/784/785 and the one that produced the bounding correction —
+enumerated the audits **AGENTS.md documents** against their sweep halves, and
+AGENTS.md did not name that audit at all. A census that reads the document
+cannot see an instrument the document omits, and it reports a confident,
+complete-sounding answer over the subset it can see. That is every blindness
+floor in this repo one level up, with the DOCUMENTATION as the population
+nothing floored.
+
+**The predicate is REACHABLE, not "documented in prose".** Roots are
+`AGENTS.md`, `scripts/docs_gate.sh` and `.github/workflows/*.yml`; the closure
+follows script → script references from there. That is not a convenience — the
+cases demand it. `all_ignored_target_audit.py`, `cfg_row_implication_audit.py`
+and `ci_test_execution_report.py` appear in no document either, yet each is
+invoked by an instrument that IS documented and each runs per-push as a result.
+A bare "must be named in AGENTS.md" rule reds all three and teaches whoever hits
+it to stop reading the gate.
+
+⛔ **`HISTORY.md` is deliberately not a root** — this file. It is the archive,
+its own header says operational rules live in AGENTS.md so agent context stays
+small, and it is not loaded into a session. An instrument findable only from
+here is precisely the instrument that stops being run, which is what 786
+measured. Counting it would have made the gate vacuous on the one case that
+motivated it.
+
+**Measured 2026-09-14, this repo:** 63 tracked `scripts/*.py`, 13 roots, 56
+reachable, **9 unreachable**. Two of the nine were real instruments and both
+were **wired into AGENTS.md rather than exempted** — that is the default:
+
+- `list_unresolved_percentile_sites.py` → the percentile section. It dumps the
+  UNRESOLVED rows the main audit prints only as a tally, which is the one
+  bucket that needs a per-site read.
+- `citation_weight.py` → Numbering Discipline. It decides which of two
+  documents sharing a number keeps it, and the obvious count is measured to be
+  the wrong one: on riir-ai's six duplicates the by-NAME citations are 0-2 per
+  side and TIED in four of six, while the `Plan 175` form carries 35-98 each.
+
+The remaining seven are pinned by MEMBERSHIP with a **reason per row** (a
+reasonless row is refused): five `kimi_ref/` reference-implementation files, a
+manual CoreML generator, and `gguf_header_audit.py`, which `1a5b6571` had
+already placed outside the class-audit family.
+
+**The known-answer validation is free and two-sided.** `--prove-fires 18dbe980`
+extracts the commit and its parent: at the parent, `len_derived_binding_audit.py`
+was named only in HISTORY.md and was the TENTH unreachable script; at the fix it
+is reachable. The gate would have caught 786 before either census missed it.
+
+**`min_roots` is the floor that is easy to leave out**, and it guards the
+direction nobody notices. An empty or unreadable root set makes EVERY script
+unreachable and reds loudly all by itself. But a root set that quietly *widens*
+— a generated file, a directory of YAML that happens to mention every script
+name — makes every script REACHABLE and prints a confident green.
+
+**The first sweep run changed the pin design, and that is the second finding.**
+Workspace-wide the same predicate finds **95 unreachable of 152** tracked
+`scripts/*.py` over 16 repos, and **riir-train is 61 of 61**: its `scripts/` is
+almost entirely plan-scoped one-offs (`plan341_band_pool.py`,
+`plan346_diversity_gate.py`, `t504_harvest.py`) and its AGENTS.md names none of
+them. Read honestly, the predicate **over-captures** there — a plan artifact is
+not an instrument, and "unfindable from AGENTS.md" is the correct state for a
+script whose whole life was one plan task.
+
+So the sweep is a **RATCHET**, uniquely in this family: `max_unreachable`
+pinned at each repo's measured count. Membership with a reason is right for the
+7 rows this repo owns; it is not right for 95 rows whose judgement calls belong
+to 15 other repos. The ratchet constrains the DERIVATIVE — the commit that adds
+ANOTHER unfindable script reds — which is the strongest claim this repo can
+honestly make about somebody else's tree.
+
+⚠ That is deliberately not the Issue 785 rule's target. That rule forbids
+ratcheting a bucket meaning *unanswered*, a backlog with no owner. This bucket
+means *unfindable*, every row has an owner, and the action on a red is immediate
+and local. It is also not the `suite_membership_audit` outcome (1,203 rows,
+report-only, no verdict at all): there, no per-commit action follows from the
+number.
+
+Six repos have 0 tracked `scripts/*.py`, so both floors are 0 and neither
+detects anything there — Issue 783's population shape again. What rescues those
+rows is that the gate's `DOC_ROOTS` handling is a REFUSAL and not a floor: a
+repo whose AGENTS.md the walk cannot see is an instrument failure, not a clean
+zero.
+
+**⛔ The closure is TEXTUAL, and the gate proved it on itself — three times, in
+one sitting.** A basename mentioned anywhere in a tracked script credits
+reachability, string literal and comment alike, and it cannot be narrowed by
+parsing (a genuine invocation IS a string literal, and the primary root is
+prose). On the gate's **first staged run** it red on
+`scripts/kimi_ref/fla_stub.py`: a canary arm named that real exempt script as
+fixture data, the arm's own file is in the population and reachable from
+`docs_gate.sh`, so the subject became reachable and the membership pin's other
+direction fired — correctly. Fixing that surfaced the same mechanism in the
+UNREACHABLE arm, whose injected path was a literal in the same file; assembling
+the basename at runtime fixed it, and then the arm failed AGAIN because the
+comment written to explain the assembly spelled the name out contiguously.
+
+Read the leniency direction honestly: for this class a false *reachable* hides
+exactly the instrument the gate exists to surface, so it is the dangerous one.
+A row that leaves the unreachable set without a wiring commit is suspect — check
+WHAT started naming it.
+
+Canaries: **9 arms on the gate, 8 on the sweep**, both as `--canary` flags
+rather than transcripts. Two more are worth naming — the basename-collision
+refusal (with two `x.py` in a tree, a basename hit cannot say which is meant,
+and guessing credits coverage to the wrong file) and the sweep's `bump()`
+helper, which perturbs a row by FIELD INDEX rather than by a literal string, so
+an arm cannot silently stop perturbing when a pin is re-measured. That is the
+Issue 786 canary failure, designed out.
+
+The gate is the cheapest check in `docs_gate.sh` at **~0.24s** — the closure
+re-reads only files a root or a script actually names. CHECKS: 19 → **20**.
+
 ## Issue 786 — the `.len()`-derived binding audit had no verdict half, and the reason it went unnoticed is the finding: CLOSED (2026-09-14)
 
 `scripts/len_derived_binding_audit.py` — 983 lines, 16 repos, 8,694 tracked

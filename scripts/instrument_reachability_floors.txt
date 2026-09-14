@@ -1,0 +1,85 @@
+# Pins for scripts/instrument_reachability_drift_sweep.py — EVERY contract repo.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_scripts> <min_roots> <max_unreachable>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── max_unreachable is a RATCHET, and ONLY here ─────────────────────────────
+# katgpt-rs's own unreachable set is pinned by MEMBERSHIP, with a REASON per
+# row, in scripts/instrument_unreferenced_expected.txt — that is the per-push
+# gate, over the repo that owns the rows.
+#
+# Workspace-wide the same predicate finds 95 rows over 15 repos, and riir-train
+# is 61 of 61: its scripts/ is almost entirely plan-scoped one-offs
+# (plan341_band_pool.py, plan346_diversity_gate.py, t504_harvest.py) and its
+# AGENTS.md names none of them. In that repo the predicate OVER-CAPTURES — a
+# plan artifact is not an instrument, and "unfindable from AGENTS.md" is the
+# correct state for a script whose whole life was one plan task.
+#
+# So the ceiling here constrains the DERIVATIVE: the commit that adds ANOTHER
+# unfindable script reds, and the existing rows are their own repos' to
+# adjudicate. That is the strongest claim this repo can honestly make about
+# somebody else's tree.
+#
+# ⚠ This is deliberately NOT the Issue 785 rule's target. That rule forbids
+# ratcheting a bucket meaning *unanswered* — a backlog with no owner. This
+# bucket means *unfindable*, every row has an owner, and the action on a red is
+# immediate and local: name it, invoke it from something named, or decide it is
+# ephemeral. It is also not the suite_membership_audit outcome (1,203 rows,
+# report-only, no verdict at all): there no per-commit action follows from the
+# number.
+#
+# ⛔ Do not "fix" a red by raising a ceiling without reading the row. The class
+# this catches is measured: len_derived_binding_audit.py sat unreachable — 983
+# lines, cross-repo, findings walled at 0, named only in HISTORY.md — through
+# TWO censuses that were looking for exactly it (Issues 785, 786).
+#
+# ── the two floors, and where neither bites ────────────────────────────────
+#   min_scripts   moves when the WALK goes blind
+#   min_roots     the PERMISSIVE direction: with fewer roots MORE scripts read
+#                 as unreachable, so a shrinking root set inflates the count
+#                 rather than hiding it — this floor is about the instrument
+#
+# ⚠ SIX repos have 0 tracked scripts/*.py (riir-auth, riir-game-sdk, riir-kat,
+# riir-neuron-db, riir-viewbridge, seal-online-remaster), so both quantities are
+# 0 and neither detects anything there — Issue 783's population shape. What
+# rescues those rows is that the gate's DOC_ROOTS handling is a REFUSAL, not a
+# floor: a repo whose AGENTS.md the walk cannot see is an instrument failure.
+#
+# min_roots cannot be shared either: 1 in riir-shader, 13 in katgpt-rs.
+#
+# katgpt-rs's two floors are NOT free — they must equal
+# instrument_reachability_gate.MIN_SCRIPTS / MIN_ROOTS, and the sweep's selftest
+# ASSERTS that rather than trusting it. Same quantity, two files.
+#
+# Floors are ~60% of measured (the house slack convention); the ratchet is AT
+# the measurement.
+#
+#                       min_scripts  min_roots  max_unreachable
+katgpt-rs                       40          8                7
+riir-ai                          4          2                7
+riir-auth                        0          1                0
+riir-chain                       1          3                3
+riir-clippy                      3          2                4
+riir-dapps                       0          1                1
+riir-game-sdk                    0          2                0
+riir-kat                         0          1                0
+riir-mmorpg-examples             1          1                2
+riir-neuron-db                   0          2                0
+riir-shader                      1          1                2
+riir-train                      36          1               61
+riir-viewbridge                  0          1                0
+seal-game-editor                 1          1                2
+seal-online-remaster             0          1                0
+seal-remake                      3          1                6
+#
+# ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
+# riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).
+# They report DEFERRED under DOCS_GATE_PARTIAL_CLONE=1 and will report
+# UNPINNED on the canonical full workstation — pin them from one full-checkout
+# run, alongside the same four rows owed by platform_dead_code_drift_floors,
+# subprocess_encoding_drift_floors, orphaned_attr_drift_floors,
+# wasm32_surface_drift_floors and len_derived_drift_floors.

@@ -160,6 +160,8 @@ on:
       - 'scripts/platform_dead_code_audit.py'
       - 'scripts/platform_dead_code_floor_gate.py'
       - 'scripts/subprocess_encoding_gate.py'
+      - 'scripts/instrument_reachability_gate.py'
+      - 'scripts/instrument_unreferenced_expected.txt'
       - 'scripts/tracked_walk.py'
       - 'scripts/platform_dead_code_floors.txt'
   pull_request:
@@ -279,6 +281,8 @@ on:
       - 'scripts/platform_dead_code_audit.py'
       - 'scripts/platform_dead_code_floor_gate.py'
       - 'scripts/subprocess_encoding_gate.py'
+      - 'scripts/instrument_reachability_gate.py'
+      - 'scripts/instrument_unreferenced_expected.txt'
       - 'scripts/tracked_walk.py'
       - 'scripts/platform_dead_code_floors.txt'
   workflow_dispatch:

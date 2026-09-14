@@ -179,7 +179,13 @@ none — as a speedup. The set moved again the SAME DAY, to **19** (Issue 778's
 `subprocess` call sites, measured **~0.6s wall**), so the M3 run owes a 19-check
 figure and the 18-check cell will never be measured at all — which is the
 point of writing the CHECKS count next to the number instead of the number
-alone.
+alone. It moved to **20** on 2026-09-14 (Issue 787's
+`instrument_reachability_gate.py`, a 63-script transitive closure over 13
+roots, measured **~0.24s wall** standalone — the cheapest check in the set,
+because the closure re-reads only files a root or a script actually names),
+so the 19-check cell joins 18 in
+never having a POSIX figure — this box has printed `CPU SUPPRESSED` for every
+run since the set left 17.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -259,6 +265,7 @@ develop work. One line per check:
 | `markdown_fence_gate.py` | a fenced code block never closed — everything after it renders as code, and a fence scanner mis-phases on it (Issue 756) |
 | `platform_dead_code_floor_gate.py` | an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775) |
 | `subprocess_encoding_gate.py` | a `subprocess` call that decodes with the SYSTEM locale — silent mojibake, or `stdout = None` with the returncode intact (Issue 778) |
+| `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
 The `CHECKS` count is deliberately not written here — it drifted once, which
@@ -365,6 +372,17 @@ leave-one-out over the derived supplier set every run rather than assuming the
 axis away. It is also the one sweep with **no `min_rs_files` column** —
 three others floor that identical walk over that identical population, and the
 delegation is ASSERTED rather than assumed),
+`instrument_reachability_drift_sweep.py` (every contract repo, on demand — the
+Issue 787 verdict half of `instrument_reachability_gate.py`, and the one sweep
+in the family whose ceiling is a **RATCHET** rather than a wall or a membership
+set. Measured on its first run: **95 unreachable of 152** tracked
+`scripts/*.py` over 16 repos, riir-train **61 of 61** — that repo's `scripts/`
+is almost entirely plan-scoped one-offs, where the predicate OVER-CAPTURES,
+because "unfindable from AGENTS.md" is the correct state for a script whose
+whole life was one plan task. So the per-push gate pins this repo's own 7 rows
+by MEMBERSHIP with a reason each, and the sweep constrains the DERIVATIVE
+everywhere else: the commit that adds ANOTHER unfindable script reds, and the
+existing rows stay their own repos' to adjudicate),
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
 REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73
@@ -603,6 +621,14 @@ from a runtime length no static pass can reach. **UNRESOLVED is not
 population derived. Verdict half: `scripts/percentile_floor_gate.py` (pins in
 `scripts/percentile_floors.txt`; `min_sites_scanned` is a FLOOR — a tokenizer
 regression takes the population to ~0 and every ceiling passes).
+
+The audit prints site rows only for the four severe classes, so the
+UNRESOLVED bucket appears in the tally and nowhere else.
+`scripts/list_unresolved_percentile_sites.py <repo>` dumps those rows for the
+per-site read that resolves each to OK / DEGENERATE / not-a-percentile; the
+2026-09-04
+workspace-wide read (every UNRESOLVED row, all 16 repos) is recorded in its
+own docstring.
 
 **The POPULATION is what git TRACKS — `scripts/tracked_walk.py`, one copy
 (Issue 777).** A filesystem walk behind a hand-typed directory-name skip set
@@ -887,6 +913,57 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   `--manifest-path "$unit/…"` lane read as a bare row). A classifier's bucket
   boundaries ARE the finding, and they are only testable against cases whose
   answer is known independently.
+
+## A census reads the DOCUMENT, so an undocumented instrument is invisible — `scripts/instrument_reachability_gate.py`
+
+Issue 785's close-out claimed every cross-repo class in `scripts/` had both
+halves. `1a5b6571` bounded that to "every cross-repo class **whose verdict is
+walled at a small number**". The bounded claim was **still false** by exactly
+one instrument — `len_derived_binding_audit.py`, cross-repo, findings walled at
+0, no verdict half, closed hours later as Issue 786.
+
+The miss is not the point; the **mechanism** is. Both censuses enumerated the
+audits **AGENTS.md documents** against their sweep halves, and that file did
+not name the audit at all. *A census that reads the document cannot see an
+instrument the document omits*, and it reports a confident, complete-sounding
+answer over the subset it can see — every blindness floor in this repo, one
+level up, with the DOCUMENTATION as the population nothing floored.
+
+```bash
+scripts/instrument_reachability_gate.py                  # the verdict, this repo
+scripts/instrument_reachability_gate.py --canary         # the 9 adversary arms
+scripts/instrument_reachability_gate.py --prove-fires 18dbe980
+scripts/instrument_reachability_drift_sweep.py           # every repo, ratcheted
+```
+
+- The predicate is **REACHABLE**, not "named in AGENTS.md". Roots are
+  `AGENTS.md`, `scripts/docs_gate.sh` and `.github/workflows/*.yml`; the
+  closure then follows script → script references, so a helper invoked by a
+  documented instrument counts. The cases demand it —
+  `all_ignored_target_audit.py`, `cfg_row_implication_audit.py` and
+  `ci_test_execution_report.py` are in no document either, yet each runs
+  per-push via an instrument that IS documented.
+- ⛔ **`HISTORY.md` is deliberately NOT a root.** It is the archive, it is not
+  loaded into a session, and an instrument findable only from it is the
+  instrument that stops being run — counting it would have made the gate
+  vacuous on the one case that motivated it.
+- Pinned by **MEMBERSHIP** with a **REASON per row**
+  (`scripts/instrument_unreferenced_expected.txt`); a reasonless row is
+  refused. Reds in both directions. **The default for a real instrument is to
+  make it findable, not to add a row** — two of the nine measured were wired
+  into AGENTS.md instead (`list_unresolved_percentile_sites.py`,
+  `citation_weight.py`).
+- Two floors. `min_scripts` is the walk. `min_roots` is the **permissive**
+  direction and the one easy to leave out: an empty root set makes everything
+  unreachable and reds loudly, but a root set that quietly *widens* makes
+  everything reachable and prints a green.
+- `--prove-fires 18dbe980` is a known-answer validation: at the parent, the
+  Issue 786 audit was named only in `HISTORY.md`, so it was the **tenth**
+  unreachable script and this gate reds there.
+- Verdict half across the workspace:
+  `scripts/instrument_reachability_drift_sweep.py` — a **ratchet**, and the
+  reason is measured (95 of 152 unreachable, riir-train 61 of 61 where the
+  predicate over-captures). See the sweep family list above.
 
 ## A kernel can derive its SHAPE from a buffer's declared size — `scripts/len_derived_binding_audit.py`
 
@@ -1209,6 +1286,17 @@ the number, and write the new value back. This prevents the number-recycling
 collision documented in `.issues/121`. The same rule applies to `.plans/`,
 `.docs/`, `.benchmarks/`, and `.research/` — never recycle a number that git
 history shows was already allocated.
+
+When two documents already share a number, Issue 724 T2's rule is that the one
+with the most inbound mentions KEEPS it and the other moves — and the obvious
+count is the wrong one. Measured on riir-ai's six duplicates (2026-09-05), the
+by-NAME citations are 0-2 per side and TIED in four of the six pairs, while the
+`Plan 175` form carries 35-98 each: **the weight is entirely in the citations
+that do not say which document they mean.** `scripts/citation_weight.py <repo>
+<dir> <number>` attributes those instead of counting them — a context window
+scored against each candidate's distinctive filename tokens, awarded only on a
+strict margin, with everything else printed as its own UNRESOLVED number and
+never folded into a winner.
 
 ## Branch
 
