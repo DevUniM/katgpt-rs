@@ -130,6 +130,13 @@ pub struct TransformerWeights {
     pub delta_routing_query: Vec<Vec<f32>>, // [n_layer][n_embd] per-layer query vectors
     #[cfg(feature = "delta_routing")]
     pub delta_routing_norm: Vec<Vec<f32>>, // [n_layer][n_embd] per-layer RMSNorm weights (gamma)
+    /// Final RMSNorm gamma between the residual stream and `lm_head`:
+    /// `[n_embd]` f32 (riir-train Issue 538 / Plan 398). The plain forward
+    /// paths of this crate IGNORE it (additive, bit-identical); the DFlash/
+    /// DFlare training lanes apply it — logit scale no longer ∝ residual
+    /// norm (the measured confidence-ceiling mechanism). Ones-init = identity
+    /// gain (the `delta_routing_norm` precedent).
+    pub final_norm_gamma: Vec<f32>,
 }
 
 impl TransformerWeights {
@@ -237,6 +244,9 @@ impl TransformerWeights {
                 }
                 v
             },
+            // Issue 538 (riir-train): ones-init identity gain — the DFlash/
+            // DFlare lanes consume it; every other path ignores it.
+            final_norm_gamma: vec![1.0f32; config.n_embd],
         }
     }
 
