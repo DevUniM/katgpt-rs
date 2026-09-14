@@ -2,7 +2,7 @@
 
 > **Source:** "Understanding Geometric Representations in Self-Supervised Vision Transformers via Subspace Intervention", Zhou et al., [arXiv:2607.01987](https://arxiv.org/abs/2607.01987) (ECCV 2026 oral), 2026-07-02
 > **Date:** 2026-09-14
-> **Status:** Active — Gain verdict, POC filed as Issue 778
+> **Status:** Done — Gain verdict; POC executed (Issue 778, resolved) — see §"PoC Addendum"
 > **Related Research:** 501 (SVCCA — closest cousin, subspace similarity tool), 039 (SpectralQuant — the low-rank-signal law), 393 (BSF — concepts as low-dim subspaces), 287 (probe/steering evidence ladder), 267 (detection vs prediction → FutureBehaviorProbe), 475 (ICA lens — direction mining), 388 (Jacobian lens — refuted pre-filter)
 > **Related Plans:** none yet — gated on Issue 778 POC outcome
 > **Classification:** Public
@@ -135,3 +135,65 @@ oracle-labeled fixture banks → `thin_svd_into` → three-arm intervention →
 affinity curves + rank-recovery + seed-stability split. Negative-result
 outcome (flat affinity curve, or aligned ≯ random at matched k) is a
 legitimate close — the protocol's value is that it can refute.
+
+---
+
+## PoC Addendum (2026-09-14, Issue 778 executed)
+
+Harness: `katgpt-rs/crates/katgpt-core/tests/bench_778_subspace_intervention_poc.rs`
+(default features, auto-discovered; runs in `cargo test` debug ~6 s / release ~0.3 s).
+Protocol exactly as specified above, on a planted-ground-truth synthetic tiered
+bank (D=64, 12 layers, 8 classes; shared 3-dim task subspace T carrying the
+class means + 6-dim idiosyncratic blocks at 0.3 scale + 13-dim label-independent
+nuisance; Gaussian layer-gain peaks planted at L=3 (classes 0–3) and L=8
+(classes 4–7); amplitude decay 1.0→0.6; σ_noise=0.35; 512 train / 256 test).
+Bank BLAKE3 `858d08…`, bit-reproducible (G0).
+
+**G2 — layer affinity: 8/8 within ±1.** Aggregate accuracy per layer is
+bimodal exactly as planted (0.271 → 0.547 @L3 → 0.430 @L6 → 0.594 @L9 →
+0.292 @L11); every class's argmax layer lands on its planted peak or ±1.
+The affinity sweep WORKS on this bank — the protocol detects task→layer
+structure.
+
+**G1 — three-arm intervention @ best layer (L9, full=0.594, chance=0.125):**
+
+| k | aligned | random | residual |
+|---|---------|--------|----------|
+| 1 | 0.180 | 0.161 | 0.609 |
+| 2 | 0.279 | 0.229 | 0.508 |
+| 4 | 0.464 | 0.237 | 0.388 |
+| 6 | 0.570 | 0.268 | 0.182 |
+| 8 | 0.594 | 0.266 | 0.021 |
+
+(a) projection identity exact (aligned@k=rank == full); (b) k=6 recovers
+96% of full (compression curve 0.30→0.47→0.78→0.96→1.00); (c) residual
+collapses to 0.021 — the signal IS in the aligned subspace; (d) the deferred
+eval's contrast: **aligned@4 = 1.96× random@4** at matched budget.
+
+**Two honest physics findings the paper does not state:**
+1. **random does NOT collapse at k=rank** (0.266 vs chance 0.125): a random
+   k-subspace of R^D retains ≈k/D of BOTH signal and noise — an
+   SNR-preserving cut. The paper's random-collapse regime is k≪rank with a
+   steep spectrum; the durable discriminator is the aligned-vs-random
+   CONTRAST, not random≈chance.
+2. **G3 inverted: no stable single-direction core** (similarity 0.31@k=1 →
+   0.54@k=8, opposite the paper's core/tail split). In the weak-signal +
+   flat-spectrum regime, top directions ROTATE WITHIN the task span across
+   (bootstrap, λ) refits while the full-rank span converges. Freeze-policy
+   implication: commit SPANS (projectors), not individual direction vectors.
+
+**Fixture lessons (recorded for future probe-bank work):** `i % C` label
+assignment + even/odd split = train/test see DISJOINT class sets (the
+0.000-accuracy signature); and per-sample zero-mean coefficients carry NO
+linear signal — a linear probe reads class-conditional MEAN SHIFTS, so any
+planted "signal" must move the mean.
+
+**Scope boundary:** synthetic bank validates the PROTOCOL (machinery can
+detect planted affinity + separate aligned from random + refute). Real-model
+claims (which layer a real FutureBehaviorProbe should read) need a real
+(layer, activation, label) bank — follow-up filed. The spectral_pre_rotate
+deferred eval closes at PROTOCOL level (readout space); its FUNCATTN-tensor
+arm consumes the same three-arm function.
+
+**Follow-up:** Issue 779 — promote the triad to `katgpt_core::subspace_intervention`
+(feature-flagged) + wire the FUNCATTN-tensor arm + real-bank affinity run.
