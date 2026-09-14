@@ -31,6 +31,21 @@ in the per-repo guard deliberately STAYS file-granular — the ledger is
 surface-granular, and collapsing the two would lose the file:line precision
 Check E needs.
 
+**Partial-clone boxes** (riir-ai Issue 939, the katgpt-rs Issue 765 idiom
+one repo over): C0d (a path dep whose target sibling is absent) and C0e (a
+`../<repo>` routing reference that does not resolve) both decide by asking
+whether a DIRECTORY exists under the workspace root, so a box carrying a
+subset of the workspace reds on every edge and route into an un-cloned
+sibling. Export `BOUNDARY_PARTIAL_CLONE=1` there and those two ABSENT-TARGET
+verdicts report as loud instrument-alive DEFERRALS instead; the rest of the
+gate runs at full strength and the exit code is untouched. Never
+auto-detected and never set in CI — from the walk alone a genuinely DELETED
+sibling is set-identical to an un-cloned one. Deliberately narrow: a target
+that IS present and merely routed wrong (C0a's missing contract, a C0e route
+into `obsolete/`) stays a hard finding in every posture. `--self-test` pins
+both postures plus that narrowing (10 arms); it is two-sided, so jamming the
+marker on or off reds it.
+
 **Drift-ledger semantics** (scripts consume this): Disposition ∈ `fixable` |
 `owner-call` | `by-design`. `fixable`/`owner-call` rows REQUIRE an open issue;
 `by-design` rows cite a decision record instead. Issue closes → row removed in
