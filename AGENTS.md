@@ -367,7 +367,11 @@ such a row's own text: it reaches that bucket only when the Issue-754 oracle
 found **no** local allocation *and* the author wrote a different repo's name
 directly on the citation. **CROSS is unfollowable; this is followable, to the
 wrong place** — its own class (`MISATTRIBUTED-IN-RANGE`), walled at 0
-globally rather than ratcheted per repo, because it has no backlog.
+globally rather than ratcheted per repo, because it has no backlog. The
+leniency was never a COUNT (`gate_says()` already asserts the sweep partitions
+the gate's finding set); it was the **label plus the per-repo
+`max_in_local_range` ratchet**, which tolerates a wrong address in the 15 repos
+the per-push gate never runs in.
 ⛔ The boundary is **measured, and it is not the obvious one.** The same
 predicate one branch up — at the `n in mine` short-circuit, where the number
 *is* locally allocated — is **19 rows workspace-wide and 19 of them are

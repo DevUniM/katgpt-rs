@@ -3605,11 +3605,17 @@ exemption is a measurement instead of an oversight. ⚠ Read the other column
 honestly too — it is **n = 1**, so "0 false positives" is one row's worth of
 evidence, not a rate.
 
-**T2 resolved as a NO-OP, and that is the second finding.** The per-push
-`issue_citation_gate.py` has **no IN-RANGE bucket at all** — it skips only the
-*allocated* set and reds on everything else unqualified — so the sweep that
-cross-checks the gate was the **more lenient** of the two instruments. The
-divergence, not the gate, was the defect.
+**T2 resolved as a NO-OP, and that is the second finding — but state it
+precisely.** The per-push `issue_citation_gate.py` has **no IN-RANGE bucket at
+all**: it skips only the *allocated* set and reds on everything else
+unqualified. For katgpt-rs the two instruments cannot disagree on the COUNT and
+already assert it — `gate_says()` pins `gate findings == CROSS + IN_RANGE +
+ORPHAN`, a partition. The leniency is in the **labelling plus the per-repo
+ceiling**, and it bites in the 15 repos the gate never runs in: a wrong address
+bucketed as "undecided" sits under a non-zero `max_in_local_range` ratchet and
+is tolerated, which is exactly what happened to riir-neuron-db. So the defect
+was the divergence in *what the row is called*, not a number the cross-check
+could ever have caught.
 
 Ceiling design: a **global wall** (`max_misattributed_in_range = 0`), not a 5th
 per-repo ratchet field — the class has no backlog anywhere, so per-repo pins
