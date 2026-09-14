@@ -48,6 +48,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sweep_population import population_verdict  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
 FLOORS_FILE = Path(__file__).resolve().parent / "docs_drift_floors.txt"
@@ -131,12 +134,20 @@ def main() -> int:
     failures: list[str] = []
     notes: list[str] = []
 
-    # A repo in the committed vocabulary that the walk cannot see is a coverage
-    # hole, not a pass. Never let a shrinking population read as clean.
-    for name in sorted(set(floors) - present):
+    # The population axis, shared (Issue 782 T3). This sweep still carried the
+    # copy-pasted "pinned but absent" loop Issue 779 replaced in eight others;
+    # it only LOOKED exempt because all eight label-bearing repos happen to be
+    # checked out here. Three verdicts, never interchangeable: UNREGISTERED
+    # reds in every posture, UNSEEN reds without the marker, the same set
+    # DEFERS loudly with it.
+    pop_lines, deferred, pop_fail = population_verdict(floors, present)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         failures.append(
-            f"{name}: in {FLOORS_FILE.name} but not in the derived population — "
-            f"the sweep did NOT cover it (repo missing, or BOUNDARY.md/.git gone)")
+            f"{pop_fail} contract repo(s) in {FLOORS_FILE.name} or "
+            f"repo_set.txt could not be measured — see the population rows "
+            f"above; the sweep did NOT cover them")
 
     header = f"{'repo':<24}{'labels':>8}{'mism':>6}{'comments':>10}{'mism':>6}   floor"
     print(header)
@@ -189,8 +200,10 @@ def main() -> int:
             print(f"    - {f}")
         return 1
     covered = sum(1 for r in repos if r.name in floors)
+    # A deferral rides the FINAL line in both directions.
+    scope = "" if not deferred else "; " + "; ".join(deferred)
     print(f"\n✓ docs-drift sweep PASSED — {len(repos)} repos, 0 mismatches, "
-          f"{covered}/{len(floors)} floor-bearing repos covered")
+          f"{covered}/{len(floors)} floor-bearing repos covered{scope}")
     return 0
 
 

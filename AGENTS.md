@@ -293,6 +293,25 @@ directions, because a deferral printed only on failure is one nobody reads on
 the run that passes). Never auto-detected: a genuine removal whose row update
 was forgotten is set-identical to a partial clone from the walk alone.
 
+⛔ **"Every sweep" was a claim about eight of eleven, and the three left out
+were not exempt — they were quieter (Issue 782).** Two of them
+(`docs_drift_sweep`, `restatement_drift_sweep`) still carried the copy-pasted
+loop and only LOOKED clean because their *pinned subsets* happen to be checked
+out on this box; the third, `cfg_row_implication_drift_sweep`, had **no absence
+check at all** — it iterates the DERIVED repos, so it caught walk→pins
+(UNREGISTERED) and was blind to pins→walk, and printed
+`PASSED — every repo within its pins` over **16 of 20** with four pinned rows
+evaluated by nothing. **That silent green is the worse direction:** a sweep
+that hard-reds is impossible to misread, and this one survived the 779 census
+*because* it was quieter, not because it was correct. All eleven share the
+verdict now. ⚠ A **subset**-population sweep has TWO populations and they are
+not interchangeable: hand `population_verdict` the **contract walk**, never the
+subset — the restatement sweep, handed its own `.proofs` set, reported **16
+phantom absences** and failed. The hole the shared verdict cannot see is
+therefore local to each subset sweep and needs its own check: a repo pinned and
+checked out that has **dropped out** of the subset (`DROPPED`), whose ceiling
+can no longer fail.
+
 Workstation-only cross-repo sweep family — `docs_drift_sweep.py`,
 `numbering_drift_sweep.py`, `required_features_drift_sweep.py`,
 `percentile_drift_sweep.py`, `cfg_gated_drift_sweep.py`,

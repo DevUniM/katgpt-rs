@@ -61,6 +61,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import restatement_theorem_audit as audit  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 FLOORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       "restatement_drift_floors.txt")
@@ -155,13 +156,34 @@ def main():
     print("=== restatement-theorem drift sweep (every repo with .proofs) ===\n")
 
     fail = 0
-    # A repo in the floors file that is not on disk is UNSEEN, never a pass:
-    # the sweep would otherwise silently shrink to whatever is checked out.
-    missing = sorted(set(floors) - set(present))
-    if missing:
-        print(f"⛔ UNSEEN (pinned but absent — never a pass): "
-              f"{', '.join(missing)}")
-        fail += len(missing)
+    # The population axis, shared (Issue 782 T3). This sweep still carried the
+    # copy-pasted UNSEEN loop that Issue 779 replaced in eight others — on a
+    # partial clone it hard-red with no marker support, and it only LOOKED
+    # exempt because its four pinned repos all happen to be checked out here.
+    #
+    # ⛔ The shared verdict takes the CONTRACT walk, not this sweep's derived
+    # subset. Handing it `present` (repos with `.proofs`) makes every contract
+    # repo WITHOUT proofs read as absent — measured: 16 phantom rows, and the
+    # run failed. A subset-population sweep has TWO populations and they are
+    # not interchangeable.
+    contract = [d for d in os.listdir(root)
+                if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
+                and os.path.isdir(os.path.join(root, d, ".git"))]
+    pop_lines, deferred, pop_fail = population_verdict(floors, contract)
+    for _line in pop_lines:
+        print(_line)
+    fail += pop_fail
+    # The hole the shared verdict CANNOT see, because it asks about the
+    # contract walk: a pinned repo that is checked out but has dropped out of
+    # THIS sweep's subset (its `.proofs` directory is gone). The loop below
+    # would skip it in silence, and a floors row nothing measures is a ceiling
+    # that cannot fail.
+    dropped = sorted((set(floors) & set(contract)) - set(present))
+    if dropped:
+        print(f"⛔ DROPPED (pinned and checked out, but no longer carries "
+              f"`.proofs` — its ceiling can no longer fail): "
+              f"{', '.join(dropped)}")
+        fail += len(dropped)
     unpinned = sorted(set(present) - set(floors))
     if unpinned:
         print(f"⛔ UNPINNED (a repo joined the population): "
@@ -208,8 +230,11 @@ def main():
               "maintained definitions, it should be reading CROSS-DEF —"
               " check which side is inline.")
         return 1
+    # A deferral rides the FINAL line in both directions — one printed only
+    # on failure is one nobody reads on the run that passes.
+    scope = "all pinned" if not deferred else "all pinned; " + "; ".join(deferred)
     print(f"✓ restatement drift sweep PASSED — {len(present)} repo(s) "
-          f"(derived: BOUNDARY.md + .git + .proofs), all pinned")
+          f"(derived: BOUNDARY.md + .git + .proofs), {scope}")
     return 0
 
 

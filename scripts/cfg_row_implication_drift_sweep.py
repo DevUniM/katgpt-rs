@@ -74,6 +74,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # DRY: the classification is the report's, so the sweep, the per-push gate and
 # the report can never disagree about what EMPTY-AT-ROW means.
 import cfg_row_implication_audit as cria  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 from cfg_gated_target_audit import derive_repos  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -199,6 +200,20 @@ def main(argv: list[str]) -> int:
             fails.append(f"pin desync: katgpt-rs min_with_cfg {mine['min_with_cfg']} here "
                          f"vs {local_cfg} in {LOCAL_PINS.name}")
 
+    # The population axis, shared (Issue 782, the Issue 779 verdict). The loop
+    # above walks the DERIVED repos, so it catches walk->pins (UNREGISTERED)
+    # and is blind to pins->walk: a pinned repo the walk never found is never
+    # iterated, and this sweep used to print "every repo within its pins" over
+    # 16 of 20. That silent green is the WORSE direction — the seven sweeps 779
+    # repaired failed LOUDLY, which is impossible to misread.
+    pop_lines, deferred, pop_fail = population_verdict(
+        pins, {r.name for r in repos})
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
+        fails.append(f"{pop_fail} contract repo(s) could not be measured — see "
+                     f"the population rows above")
+
     print(f"\n{len(repos)} repos · {tot['rows']} rows · {tot['with_cfg']} with a leading "
           f"#![cfg] · {tot['empty']} EMPTY-AT-ROW · {tot['unresolved']} UNRESOLVED")
     if empties:
@@ -212,7 +227,12 @@ def main(argv: list[str]) -> int:
         for f in fails:
             print(f"    {f}")
         return 1
-    print("\n✓ cfg-row-implication drift sweep PASSED — every repo within its pins")
+    # "every repo" is a claim about the POPULATION, so it survives only when
+    # nothing was deferred; a deferral rides the final line in BOTH directions
+    # (one printed only on failure is one nobody reads on the run that passes).
+    scope = ("every repo within its pins" if not deferred
+             else "every MEASURED repo within its pins; " + "; ".join(deferred))
+    print(f"\n✓ cfg-row-implication drift sweep PASSED — {scope}")
     return 0
 
 

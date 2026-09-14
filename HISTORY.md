@@ -3745,3 +3745,78 @@ substitute for either named axis: `target_os = "macos"` and
 wasm32 arm. A platform is part of the claim, exactly as the profile is; this
 run adds one cell, it does not close the matrix. The profile axis is also
 untouched: this is dev, so `debug_assertions` was ON throughout.
+
+## Issue 782 — a pinned repo absent from the walk is never visited: CLOSED (2026-09-14)
+
+Issue 779 gave the sweep family one shared partial-clone verdict
+(`scripts/sweep_population.py`) because **seven** sweeps carried a copy-pasted
+"pinned but ABSENT from the derived walk" loop and hard-red on a known
+16-of-20 box. Three were left alone for not carrying that loop. **All three
+were non-exempt** — the census had selected on *symptom*, not on predicate.
+
+| sweep | what it actually had | why it looked clean |
+|---|---|---|
+| `cfg_row_implication_drift_sweep` | **no absence check at all** | printed a confident green over 16 of 20 |
+| `docs_drift_sweep` | the copy-pasted loop | its 8 label-bearing repos are all checked out here |
+| `restatement_drift_sweep` | the copy-pasted loop | its 4 `.proofs` repos are all checked out here |
+
+The first is the live defect and the worse direction of the two. It iterates
+the **derived** repos and asks `pins.get(repo.name)`, so walk→pins reds
+(UNREGISTERED) and **pins→walk is unchecked**: a pinned repo the walk never
+found is never iterated and nothing says so. `katgpt-web`, `riir-dao`,
+`riir-deployer` and `riir-esp32` each carry a row in
+`cfg_row_implication_drift_floors.txt` and were evaluated by nothing, under the
+line `✓ … PASSED — every repo within its pins`. A sweep that hard-reds is
+annoying and impossible to misread; this one reports a green over a subset,
+which is the green-zero shape the whole family exists to refuse — **and it
+survived the 779 census precisely because it was quieter.**
+
+All eleven share the verdict now, and both postures are verified on this box
+for each repair: with the marker, a pass carrying a **named** DEFERRED line for
+the four; without it, a red naming them UNSEEN and no "every repo" claim
+surviving on the final line.
+
+⚠ **A subset-population sweep has TWO populations and they are not
+interchangeable.** `population_verdict(pins, present)` wants the **contract
+walk** for `present`; handed `restatement_drift_sweep`'s own derived set
+(repos carrying `.proofs`), every contract repo *without* proofs read as
+absent — measured at **16 phantom rows**, and the run failed. Fixed by passing
+the contract walk and keeping the subset for the measurement loop.
+
+That split leaves a hole the shared verdict structurally cannot see, because it
+asks only about the contract walk: a repo **pinned and checked out** that has
+dropped out of the sweep's own subset — its `.proofs` directory removed — is
+skipped in silence by `for repo in present: if repo not in floors: continue`,
+and a floors row nothing measures is a ceiling that cannot fail. That is a
+per-subset-sweep check (`⛔ DROPPED`), not a shared one, and it is now in the
+restatement sweep alongside the shared verdict.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/782_a_pinned_repo_absent_from_the_walk_is_never_visited.md`).
+
+## The executed-test gate on x86_64-pc-windows-msvc: exact floors, all three rows (2026-09-14)
+
+`scripts/test_gate.sh`'s own header says its floored counts are *expected* to
+be platform-invariant — katgpt-core has zero `#[cfg(target_os)]` attributes and
+the root lib's are all behind opt-in features — and that "the first scheduled
+run is the measurement: if deltas surface, that is the rot check finding real
+debt, not a reason to widen silently." The weekly schedule has been suspended
+since 2026-09-09 (Actions spending limit), so the claim had been asserted on
+one platform only.
+
+Measured here, second platform, pinned toolchain 1.98.1:
+
+```
+katgpt-rs   --lib (default)      passed=203  floor=203
+katgpt-core --lib (default)      passed=2041 floor=2041
+katgpt-dec  --lib (pca_global)   passed=249  floor=249
+test_gate: PASS
+```
+
+**Exact on every row — no deltas, no slack.** Platform invariance is now a
+measurement on `x86_64-pc-windows-msvc` as well as the lane it was written
+for, and it is EXECUTION rather than compilation: the axis AGENTS.md calls out
+as the one where an uninvoked assertion is *unknown*, not passing. Scope
+unchanged otherwise — default features, dev profile, the scoped core only; the
+477 integration-test and 176 bench targets remain executed by nothing
+automatic.
