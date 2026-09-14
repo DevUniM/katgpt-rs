@@ -921,6 +921,73 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   boundaries ARE the finding, and they are only testable against cases whose
   answer is known independently.
 
+## An arm that exists and RUNS may still reach nothing — `scripts/arm_reach_audit.py`
+
+Issue 790. `check_validation_gate.py` (below) asserts that every CHECK invokes
+an arm, and had to state the limit in its own docstring: *"arm QUALITY is not
+statically decidable and is not claimed here."* The first clause is true and
+the second is too strong — quality is not **statically** decidable, but
+**reach** is measurable by EXECUTION, and Issue 789 measured it 53 times by
+hand, finding **seven** arms that certified nothing until they were re-aimed.
+A census done by hand is a census that stops being done.
+
+```bash
+scripts/arm_reach_audit.py                    # the report, the CHECKS population
+scripts/arm_reach_audit.py --self-test        # 27 arms over its own buckets
+scripts/arm_reach_audit.py skill_repo_set     # one module, by substring
+scripts/arm_reach_audit.py --include-all      # every scripts/*.py DEFINING an arm
+```
+
+Mutate a module's source **outside its own arm bodies**, re-exec, run its arm,
+ask whether the arm noticed. Standing (2026-09-14): **21 modules · 436
+mutants · ~81s · 99 KILLED · 105 SURVIVED (live) · 111 survived in exempt
+functions · 88 CRASHED · 33 in 4 NO-ARM modules · 6 UNREACHED**.
+
+- A **report, not a gate** (exit 0), except a blindness floor or a failing
+  self-test (exit 2) — a harness that generates no mutants, or whose runner
+  always says KILLED, prints a *perfect* score, which is the same output as
+  perfection. Two floors: `MIN_MODULES` the walk, `MIN_MUTANTS` the operators.
+- **`NO-ARM` carries the real finding and pooling it either way destroys it.**
+  Four CHECKS have no arm of their own — `percentile_floor_gate`,
+  `cfg_row_implication_gate`, `trap_sentinel_gate`, `markdown_fence_gate` —
+  because they **delegate** to the classifier they import. 789 credits that,
+  correctly. But a classifier's self-test **cannot reach its consumer's pin
+  arithmetic**, which is Issue 775's exact sentence: 789's predicate asked
+  whether an arm runs, never whether it can SEE the gate it guards.
+- **`UNREACHED` is its own marker** and it exists because the first version of
+  this report printed `✓` for it. `orphaned_attr_gate` scored 0 killed / 5
+  crashed / 7 exempt — every mutant died at import or landed in `main`, so the
+  arm distinguished *nothing*, and the row read as the cleanest in the set.
+- ⛔ **OPERATOR SCOPE is narrow and the whole report must be read through it.**
+  Only control flow is mutated (comparison flips, `and`↔`or`, dropped `not`,
+  bool constants). **Regex and string literals are NOT touched** — and that is
+  where most of this repo's decision logic lives. Measured:
+  `docs_gate_checks_sync` has 20 hand-verified arms that red under regex
+  perturbation and scores **0 killed** here. A low kill count is not evidence
+  an arm is weak.
+- ⚠ **Reach is per MODULE, so a rule asserted by a DIFFERENT module's arm reads
+  SURVIVED** — check this class FIRST on any survivor. Measured:
+  `skill_repo_set_gate.derive_repos` survives here and is covered by
+  `population_sync_gate`'s synthetic-workspace canary. This repo shares rules
+  across modules deliberately (Issue 755), so the audit is blind in exactly the
+  direction the architecture points.
+- ⚠ **EQUIVALENT mutants are the other false-positive class** (a `>=` whose
+  operands can never be equal; a `< 0` sentinel test flipped to `<= 0`). So
+  SURVIVED is arm reach per function, never a defect count.
+- `prove_fires` bodies are excluded from mutation but the arm is **not run**:
+  it is a known-answer validation against a FROZEN commit, so no mutation of
+  the working source can change its verdict, and running it per mutant was 436
+  `git archive` calls — measured at **80.2s vs 4.4s**, with the children's
+  output escaping `redirect_stdout` (a subprocess writes to fd 1) and littering
+  the report. Output is suppressed at the **file-descriptor** level for the
+  same reason.
+- Validated by sampling: of the first five survivors read one by one, **three
+  were real and closable, one was cross-module-covered, one was EQUIVALENT** —
+  and closing the three took `skill_repo_set_gate` from 18 to 22 killed with
+  its survivors from 7 to 3, leaving exactly the two EQUIVALENT rows and the
+  one cross-module row. The remaining ~100 rows are an unread backlog (Issue
+  790 T3); **do not quote the SURVIVED total as a defect count.**
+
 ## A gate whose own failure path is asserted by nothing — `scripts/check_validation_gate.py`
 
 Issue 775 landed six canary arms over a gate's **own pin arithmetic, which the

@@ -311,6 +311,14 @@ def selftest() -> list[str]:
     eq("body lines", [b[2] for b in body_arms], [["a", "b"]])
     eq("preceding line", [b[3] for b in body_arms], ["lead"])
     eq("preceding line at file start", [b[3] for b in fenced_blocks("```\na\n```")], [""])
+    # ⚑ The UNTERMINATED branch has its own copy of the `start >= 2` guard, and
+    # nothing reached it: `arm_reach_audit` (Issue 790) reported `>= -> >`
+    # surviving there, which silently returns "" as the preceding line for a
+    # fence opening on line 2. Both branches now have an arm.
+    eq("preceding line of an UNTERMINATED fence opening on line 2",
+       [b[3] for b in fenced_blocks("lead\n```\na")], ["lead"])
+    eq("preceding line of an UNTERMINATED fence at file start",
+       [b[3] for b in fenced_blocks("```\na")], [""])
 
     # ── the detector: scan()'s own verdict arithmetic ─────────────────────
     vocab = ["katgpt-rs", "riir-ai", "riir-chain", "seal-online-remaster"]
@@ -370,12 +378,26 @@ def selftest() -> list[str]:
     try:
         with tempfile.TemporaryDirectory() as td:
             SNAPSHOT = Path(td) / "repo_set.txt"
-            SNAPSHOT.write_text("katgpt-rs\nriir-ai\nriir-chain\n", encoding="utf-8")
+            # ⚑ The comment and the blank line are load-bearing FIXTURE data,
+            # not decoration: the snapshot reader filters both, and
+            # `arm_reach_audit` (Issue 790) reported `l.strip() and not
+            # l.startswith("#")` surviving an `and -> or` flip because no
+            # fixture had either. `"a\nb\n".splitlines()` yields no empty
+            # element, so a trailing newline does NOT exercise the filter.
+            SNAPSHOT.write_text("# a comment\nkatgpt-rs\n\nriir-ai\nriir-chain\n",
+                                encoding="utf-8")
 
             os.environ.pop(PARTIAL_MARKER, None)
-            eq("snapshot matches the walk",
+            eq("snapshot matches the walk (comments and blanks filtered)",
                partial_clone_state(["katgpt-rs", "riir-ai", "riir-chain"]),
                (False, [], []))
+            # ⚑ `load_vocabulary` on a MATCHING snapshot had no arm at all, so
+            # the `len(derived) > 1 and snap != derived` guard survived an
+            # `and -> or` flip: with `or`, a matching snapshot falls into the
+            # mismatch branch and returns an error over zero absent repos.
+            eq("a matching snapshot yields the vocabulary and no error",
+               load_vocabulary(["katgpt-rs", "riir-ai", "riir-chain"]),
+               (["katgpt-rs", "riir-ai", "riir-chain"], None, None))
             eq("a repo the snapshot does not know is UNREGISTERED, unmarked",
                partial_clone_state(["katgpt-rs", "riir-ai", "riir-chain", "riir-dao"]),
                (False, [], ["riir-dao"]))
