@@ -81,6 +81,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # feature names are enableable.
 from required_features_build_audit import parse_rows, static_invalid  # noqa: E402
 from cfg_gated_target_audit import derive_repos, manifests  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -306,10 +307,15 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - seen):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, seen)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(repos)} contract repo(s) · {tot_manifests} manifest(s) "
           f"({tot_unparseable} unparseable) · {tot_rows} required-features row(s) "
@@ -323,8 +329,13 @@ def main() -> int:
           "(riir-train .issues/513 T2/T3, ~1,070 grouped cargo invocations).")
     if bad:
         print("✗ required-features sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         return 1
-    print("✓ required-features sweep PASSED — 0 invalid rows, both floors held")
+    _line = "✓ required-features sweep PASSED — 0 invalid rows, both floors held"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

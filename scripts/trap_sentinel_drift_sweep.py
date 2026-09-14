@@ -97,6 +97,7 @@ sys.path.insert(0, str(HERE))
 # about what EXPOSED means.
 import trap_exit_launder_audit as tela  # noqa: E402
 import trap_sentinel_gate as tsg  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -343,10 +344,15 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - set(names)):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, names)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(names)} contract repo(s) · {tot['n_scripts']} tracked *.sh · "
           f"{tot['n_pop']} in population ({tot['errexit']} with errexit) · "
@@ -370,10 +376,15 @@ def main() -> int:
 
     if bad:
         print("✗ trap sentinel sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         print("    A gate that ABORTS mid-run reports exit 0. The repair is a "
               "completion sentinel; see scripts/full_gate.sh (full_gate_cleanup).")
         return 1
-    print("✓ trap sentinel sweep PASSED — every repo at or under its pins")
+    _line = "✓ trap sentinel sweep PASSED — every repo at or under its pins"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

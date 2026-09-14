@@ -104,6 +104,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
 import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -383,10 +384,15 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - seen):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, seen)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(repos)} contract repo(s) · {tot_dup} tracked duplicate(s) · "
           f"{tot_above} stale allocator(s) · {tot_mal} malformed allocator(s) · "
@@ -410,8 +416,13 @@ def main() -> int:
           f"about {family}.")
     if bad:
         print("✗ numbering sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         return 1
-    print("✓ numbering sweep PASSED — nothing above its pinned ratchet")
+    _line = "✓ numbering sweep PASSED — nothing above its pinned ratchet"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

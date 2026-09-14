@@ -64,6 +64,7 @@ sys.path.insert(0, str(HERE))
 # DRY: the scanner, the classifier and the selftest are the report's, so the
 # sweep and the per-push gate can never disagree about what is load-bearing.
 import cfg_gated_target_audit as cga  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -294,10 +295,15 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - seen):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, seen)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(repos)} contract repo(s) · {tot['n_targets']} target(s) · "
           f"{tot['n_gated']} #![cfg]-gated · {tot['silent_now']} SILENT-NOW · "
@@ -311,12 +317,17 @@ def main() -> int:
           "claim of zero.")
     if bad:
         print("✗ cfg-gated sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         print("    The fix is a `required-features` row: the #![cfg] protects")
         print("    the COUNT, required-features protects the READER. Adding one")
         print("    cannot red an existing CI — cargo SKIPS a target whose")
         print("    features are unmet; it only stops the green zero.")
         return 1
-    print("✓ cfg-gated sweep PASSED — nothing above its pinned ratchet")
+    _line = "✓ cfg-gated sweep PASSED — nothing above its pinned ratchet"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

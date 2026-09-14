@@ -100,6 +100,7 @@ sys.path.insert(0, str(HERE))
 # second thing to get wrong).
 import markdown_fence_gate as mfg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -294,10 +295,15 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - set(names)):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, names)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(names)} contract repo(s) · {tot_files} tracked+untracked .md · "
           f"{tot_found} unterminated fence(s) · {tot_swallowed} line(s) rendering "
@@ -309,12 +315,17 @@ def main() -> int:
 
     if bad:
         print("✗ markdown fence sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         print("    The reported line is the DANGLING fence, not necessarily the "
               "defect: read the first non-blank body line — code means a closer "
               "is missing, prose means the fence is an orphan, and a nested "
               "same-length fence needs the OUTER pair widened to ````.")
         return 1
-    print("✓ markdown fence sweep PASSED — every repo at or under its pins")
+    _line = "✓ markdown fence sweep PASSED — every repo at or under its pins"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

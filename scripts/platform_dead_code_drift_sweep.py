@@ -66,7 +66,7 @@ import platform_dead_code_floor_gate as gate      # noqa: E402
 # are one definition shared by population_sync_gate and issue_citation_gate too
 # (Issue 765). A second copy would be a second thing to get wrong, and this one
 # decides whether a short population is a partial clone or a stale file.
-from skill_repo_set_gate import PARTIAL_MARKER, partial_clone_state  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = HERE.parent
 # Overridable for testing — the skill_repo_set_gate precedent (Issue 765's
@@ -165,31 +165,11 @@ def main() -> int:
     # box, so a sweep that just walks and prints a green certifies 16 repos
     # while reading like 20 — the confident-green-over-a-subset failure this
     # whole family exists to refuse.
-    marker_on, snap_absent, unregistered = partial_clone_state(sorted(present))
-    if unregistered:
-        # A repo ON DISK that repo_set.txt does not know: genuine staleness in
-        # every posture, marker or not.
-        print(f"⛔ UNREGISTERED (on this box, absent from repo_set.txt — "
-              f"regenerate it on the canonical workstation and commit): "
-              f"{', '.join(unregistered)}")
-        fail += len(unregistered)
-
-    absent = sorted((set(floors) | set(snap_absent)) - set(present))
-    if absent:
-        if marker_on:
-            # Issue 765's idiom: an EXPLICIT marker, never auto-detected. A
-            # genuine removal whose floors/snapshot update was forgotten is
-            # set-identical to a partial clone from the walk alone, so
-            # inferring this would ship a stale file as a green.
-            deferred.append(f"{len(absent)} contract repo(s) not on this box "
-                            f"({', '.join(absent)}) — DEFERRED by "
-                            f"{PARTIAL_MARKER}=1, NOT measured by this run")
-        else:
-            print(f"⛔ UNSEEN (a contract repo this run could not measure — never "
-                  f"a pass; set {PARTIAL_MARKER}=1 on a box you KNOW carries a "
-                  f"subset, or remove the row if the repo is genuinely gone): "
-                  f"{', '.join(absent)}")
-            fail += len(absent)
+    pop_lines, pop_deferred, pop_fail = population_verdict(floors, present)
+    for _line in pop_lines:
+        print(_line)
+    deferred += pop_deferred
+    fail += pop_fail
 
     # UNPINNED is a red under the marker too: a repo that is ON DISK and has no
     # row is a repo joining the population, which no amount of partial checkout

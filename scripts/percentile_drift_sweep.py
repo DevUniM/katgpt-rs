@@ -76,6 +76,7 @@ sys.path.insert(0, str(HERE))
 # the sweep, the per-push gate and the report can never disagree about what a
 # DEGENERATE site is.
 import percentile_index_audit as pia  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -320,10 +321,15 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - set(names)):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, names)
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(names)} contract repo(s) · {tot['n_rs']} .rs file(s) · "
           f"{tot['n_sites']} percentile site(s) · {tot['degenerate']} degenerate "
@@ -337,11 +343,16 @@ def main() -> int:
           "gates the four DECIDABLE classes only.")
     if bad:
         print("✗ percentile sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         print("    A 'p99' whose index is n-1 IS the max. Use nearest rank")
         print("    (ceil(p*n)-1) and report tail support, or drop the column")
         print("    when the sample count cannot support the quantile at all.")
         return 1
-    print("✓ percentile sweep PASSED — 0 in all four classes, both floors held")
+    _line = "✓ percentile sweep PASSED — 0 in all four classes, both floors held"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

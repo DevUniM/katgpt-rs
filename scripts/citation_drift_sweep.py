@@ -241,6 +241,7 @@ sys.path.insert(0, str(HERE))
 # document list are the GATE's, so the sweep and the per-push gate can never
 # disagree about what a citation IS.
 import issue_citation_gate as icg  # noqa: E402
+from sweep_population import population_verdict  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -430,7 +431,18 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
 
 def gate_says() -> tuple[int, int, int]:
     """Run the per-push gate and READ its numbers. The sweep re-states a
-    quantity the gate owns; asserting beats trusting. -> (rc, scanned, findings)"""
+    quantity the gate owns; asserting beats trusting. -> (rc, scanned, findings)
+
+    `scanned` is **-2** when the gate DEFERRED its cross-repo adjudication
+    (Issue 779 T3). Under `DOCS_GATE_PARTIAL_CLONE=1` the gate prints
+    `partial: N citations scanned in …` rather than `scanned N citations`, and
+    a regex that knows only the second shape returns -1 — which this sweep
+    reads as "the instrument is untrustworthy" and exits 2. That is a correct
+    refusal reached for the wrong reason: the gate is fine and said so. -2 is
+    a THIRD state, not folded into either neighbour, because "the gate could
+    not be read" and "the gate declined to adjudicate" call for opposite
+    responses.
+    """
     # Both halves of Issue 778: `encoding=` pins OUR decode (text=True would
     # use the system locale and hand back mojibake, or None with rc intact),
     # and PYTHONIOENCODING pins the gate's own stdout encoder so its `✓`
@@ -440,6 +452,9 @@ def gate_says() -> tuple[int, int, int]:
                        env={**os.environ, "PYTHONIOENCODING": "utf-8"},)
     scanned = re.search(r"scanned (\d+) citations", r.stdout)
     failed = re.search(r"FAILED — (\d+) unqualified", r.stdout)
+    deferred = re.search(r"partial-clone scope \(DOCS_GATE_PARTIAL_CLONE", r.stdout)
+    if scanned is None and deferred:
+        return (r.returncode, -2, 0)
     return (r.returncode,
             int(scanned.group(1)) if scanned else -1,
             int(failed.group(1)) if failed else (0 if r.returncode == 0 else -1))
@@ -783,28 +798,43 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - {r.name for r in repos}):
+    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, {r.name for r in repos})
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     # ── T4, second half: the katgpt-rs row must EQUAL the gate's own run ─────
     rc, scanned, findings = gate_says()
-    if rc == 2 or scanned < 0:
+    if scanned == -2:
+        # The gate DEFERRED its cross-repo adjudication on this box. Its own
+        # numbers are not an adjudication, so there is nothing to cross-check
+        # against — recorded as a deferral, never as an agreement and never as
+        # a broken instrument.
+        deferred.append(f"the {GATE.name} cross-check — the gate DEFERRED its "
+                        "cross-repo adjudication on this partial clone, so "
+                        "there is no number to assert this sweep's row against")
+    elif rc == 2 or scanned < 0:
         print(f"✗ INSTRUMENT: {GATE.name} itself reported untrustworthy (rc={rc}) "
               f"— its numbers cannot cross-check this sweep's")
         return 2
-    mine_total = sum(len(mine_row[c]) for c in (CROSS, IN_RANGE, ORPHAN))
-    if (scanned, findings) != (mine_row["n_cites"], mine_total):
-        bad = True
-        print(f"✗ CROSS-CHECK: {GATE.name} scanned {scanned} / found {findings}; "
-              f"this sweep's {REPO_ROOT.name} row is {mine_row['n_cites']} / "
-              f"{mine_total}. Same documents, same regex — they cannot disagree. "
-              f"(The sweep PARTITIONS the gate's finding set into "
-              f"{CROSS}/{IN_RANGE}/{ORPHAN}; the total must match.)")
     else:
-        print(f"\n  cross-check vs {GATE.name}: {scanned} citations / {findings} "
-              f"finding(s) — AGREE (asserted, not assumed)")
+        mine_total = sum(len(mine_row[c]) for c in (CROSS, IN_RANGE, ORPHAN))
+        if (scanned, findings) != (mine_row["n_cites"], mine_total):
+            bad = True
+            print(f"✗ CROSS-CHECK: {GATE.name} scanned {scanned} / found "
+                  f"{findings}; this sweep's {REPO_ROOT.name} row is "
+                  f"{mine_row['n_cites']} / {mine_total}. Same documents, same "
+                  f"regex — they cannot disagree. (The sweep PARTITIONS the "
+                  f"gate's finding set into {CROSS}/{IN_RANGE}/{ORPHAN}; the "
+                  f"total must match.)")
+        else:
+            print(f"\n  cross-check vs {GATE.name}: {scanned} citations / "
+                  f"{findings} finding(s) — AGREE (asserted, not assumed)")
 
     print(f"{len(repos)} contract repo(s) · {tot['docs']} document(s) · "
           f"{tot['cites']} citation(s) · {tot[CROSS]} CROSS over "
@@ -857,10 +887,15 @@ def main() -> int:
 
     if bad:
         print("✗ citation sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         print("    Fix: name the owning repo in the prose — `riir-ai Issue 750`, "
               "`riir-train Issue 513`. The number alone is not an address.")
         return 1
-    print("✓ citation sweep PASSED — every repo at or under its pinned ratchet")
+    _line = "✓ citation sweep PASSED — every repo at or under its pinned ratchet"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 
