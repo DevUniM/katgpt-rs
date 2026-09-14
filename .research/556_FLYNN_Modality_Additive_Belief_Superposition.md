@@ -2,7 +2,7 @@
 
 > **Source:** [FLYNN: Robust Neural Network for Robot Navigation using Fly Brain Topology](https://arxiv.org/abs/2607.00025) — Benquan Wang & Jingdao Chen, Mississippi State Univ., arXiv:2607.00025v2 (2026-07-13). Code: github.com/ben-gitdev/fly-gym.
 > **Date:** 2026-09-14
-> **Status:** Active — Issue 777 filed (measurement bench first, additive variant gated on it)
+> **Status:** Done — Issue 777 executed same-day: T1–T4 COMPLETE, GOAT ALL PASS, `modality_additive` PROMOTED to katgpt-sense default (§7 addendum)
 > **Related Research:** riir-ai 379 (fly-connectome wave survey → `lif_graph`), katgpt-rs 242 (recurrent-belief kernel taxonomy), 435 (temporal derivative kernel), 448 (latent error diffusion — negative), riir-neuron-db 304 (Hopfield super-GOAT + the AttractorKernel G2.1 blocker), 553 (flybody locomotion)
 > **Related Plans:** none yet — Issue 777 gates any plan
 > **Classification:** Public
@@ -107,5 +107,55 @@ Not all 4 → **not Super-GOAT**. No guide doc, no riir-ai plan yet — Issue 77
 
 ## 6. Next
 
-- **Issue 777** (`.issues/777_modality_additive_belief_superposition.md`): T1 measure P1 on shipped kernels (prediction: divisive normalization fails); T2 `modality_additive` feature variant in katgpt-sense; T3 blinded-belief quality bench; T4 GOAT gate / promote-demote; T5 stretch — `maslov_sneppen` wiring control on the cosine.
-- riir-ai multi-modal think-brain guide: only if 777's gate lands GOAT.
+- ~~Issue 777~~ RESOLVED 2026-09-14 (see §7).
+- riir-ai multi-modal think-brain guide: only on demonstrated consumer need; file there when picked up.
+
+## 7. T1–T4 measurement addendum (2026-09-14, same-session PoC)
+
+**Landed in commit `7e2a2638`** (+ the docs commit carrying this addendum);
+HISTORY.md entry: “Issue 777 … resolved in `7e2a2638`”.
+
+The defend-wrong PoC ran in the same session (bench `modality_superposition_bench` +
+`katgpt-sense/tests/modality_additive_superposition.rs`). It **defended the core
+claim and refuted two of this note's own predictions** — recorded here per the
+§3.6 discipline (raw numbers, both axes):
+
+| kernel | cos(Δ_full, ΣΔ_single) | ratio |Σ|/|full| | worst-pair | T3 predictability |
+|---|---|---|---|---|
+| sense `evolve_belief` (divisive) | 0.9737 | **5.17** | 0.9256 | **3.03** |
+| `LeakyIntegrator` (divisive) | 1.0000 | **3.00** | 1.0000 | — |
+| `AttractorKernel` ×3 seeds | 0.9999–1.0 | 1.004–1.018 | ≥0.9999 | — |
+| **`evolve_belief_additive` (T2)** | **1.0000** | **1.0000** | **1.0000** | **0.000000** |
+
+**Correction 1 — the failure is magnitude-flavored.** §2.2 predicted "cosine
+far from 1" / the issue predicted "≈ −1": measured cos is 0.97–1.00 — the
+`−0.5·total` centering keeps directions roughly aligned while stacking 6× in
+Σ-singles, so the RATIO (5.17 ≈ N_KINDS·0.86) is the load-bearing failure
+metric. **A cosine-only gate false-passes both divisive kernels.** P1's
+instrument definition is amended: cosine AND magnitude ratio, both.
+
+**Correction 2 — `AttractorKernel` PASSES P1** (ratio 1.004–1.018) in the
+near-linear regime (σ≈linear at origin, `W_x·x` linear pre-activation).
+The §2.3 fusion-1 claim "P1 would have caught R304's 569-flip failure" is
+**REFUTED** — additivity and stability are different axes; R304's flip problem
+would not show in this protocol. P1 is a necessary-but-not-sufficient kernel
+gate; it pairs WITH the existing G2.1 flip-stability bench, never replaces it.
+
+**T2 outcome** — `evolve_belief_additive` (per-kind drive `2σ(η·k)−1`, 6 sigmoid
+calls + KIND_MAP gather; per-kind retention `belief_retention`, default 0.9;
+`additive_drive_scale` η = 4.0): EXACT superposition (max|Δdim| = 0.0000),
+silent kinds decay as α^t (gradual forget), argmax stable 0/31, predictability
+err 0. **GOAT ALL PASS**: G1 exact additivity; G2 26.8 ns/tick @ D=8 ≤ 50 ns
+budget (comparative number reported, not gated — the first draft's 2×
+comparative gate was ill-posed for a COEXISTING method and re-scoped per the
+Issue-777 record); G3 default path byte-identical (pinned test + suite green
+at default / no-default / all-features / core re-export); G4 alloc-free by
+construction. **PROMOTED to katgpt-sense `default`** (modelless gain; README /
+examples feature counts synced 599→601 / 200→201; docs gate 17/17).
+
+Measurement-hygiene notes that cost two bench iterations: (a) LLVM
+ dead-code-eliminates an unsink'd timing loop (measured 0.0 ns/tick —
+ `black_box` sink required); (b) single-run Instant on a ~20 ns kernel flips
+ run-to-run under load (best-of-5 min stabilized it); (c) T must be
+ pre-saturation for the divisive kernels or everything clamps to ±1 and the
+ measurement goes degenerate.

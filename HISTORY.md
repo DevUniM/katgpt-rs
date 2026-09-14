@@ -11,6 +11,33 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 777 (2026-09-14, M3 session) resolved in `7e2a2638` — modality_additive belief kernel: FLYNN's linear-sensory-integration property distilled, measured, GOAT-passed, promoted same-day
+
+Research 556 (FLYNN, arXiv:2607.00025) predicted the shipped belief fusion
+(`leaky_step`: divisive `1/total` gain + `−0.5·total` centering) breaks
+modality superposition. The same-session PoC (bench `modality_superposition_bench`)
+CONFIRMED the failure — but refuted two predictions on the way (both recorded in
+the note's §7): the failure is RATIO-flavored (|Σ singles|/|full| = 5.17 — cosine
+alone false-passes at 0.97), and `AttractorKernel` PASSES the superposition
+protocol in the near-linear regime, so P1 is a necessary-but-not-sufficient
+kernel gate (additivity ≠ R304's stability axis — it pairs WITH G2.1, never
+replaces it). The T2 primitive `evolve_belief_additive` (per-kind drive
+`2σ(η·k)−1`, per-kind retention α, NO cross-modality terms) measures EXACT
+superposition (cos/ratio/worst-pair 1.0, max|Δdim| 0.0, predictability err 0)
+at 26.8 ns/tick — GOAT G1–G4 ALL PASS, promoted to katgpt-sense `default`.
+Measurement-hygiene lessons that cost two bench iterations: an unsink'd timing
+loop DCEs to 0.0 ns (black_box required); single-run Instant on ~20 ns kernels
+flips run-to-run (best-of-5 min); the divisive kernels saturate to ±1 at large
+T making the protocol degenerate (T=16 pre-saturation). G2 shape lesson: a
+2× comparative latency gate is ill-posed for a COEXISTING method — gate the
+absolute budget (≤50 ns D=8 class), report the comparative number. README /
+examples feature counts synced 599→601 / 200→201 (docs gate 17/17). T5
+(connectome-vs-rewire dissociation on lif_graph) deferred data-blocked: our
+wiring is synthetic shape-class (FlyWire licensing, riir-ai R379), so the
+experiment would compare random-vs-rewired-random — structurally unable to
+attribute. Full record: `.research/556` §7; issue file removed per the
+noise-reduction rule.
+
 ## The Windows all-features lane — NEON_U8 platform gate, first specimen of the platform-dead_code class (2026-09-14, 4090 session)
 
 Found by the idle Protocol B sweep (`cargo clippy --workspace --all-targets
