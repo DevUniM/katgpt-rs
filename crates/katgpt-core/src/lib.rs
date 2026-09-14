@@ -3163,6 +3163,16 @@ pub mod slice_tca;
 #[cfg(feature = "bmr")]
 pub mod bmr;
 
+// slt — singular learning theory selection math (Issue 781 / Research 558,
+// Watanabe's SLT program): rlct_reduced_rank (the Aoyagi–Watanabe rank-r
+// closed form — LoRA structure exactly), wbic, free_energy, bayes_gap (the
+// BAYES-predictive gap law), sigmoid_wbic_weight pairwise mixture weights,
+// bic_overpenalty_nats. Closed-form f64 arithmetic, zero deps, zero allocs.
+// λ is a freeze/consolidation-seam scalar — never a per-tick signal (R558
+// §5 game-context reframe).
+#[cfg(feature = "slt")]
+pub mod slt;
+
 // Test-only `#[global_allocator]` so `alloc::tests::*` pass when running
 // `cargo test -p katgpt-core --lib`. Downstream consumers (katgpt-rs root,
 // riir-engine, etc.) install their OWN `#[global_allocator]`; this static is

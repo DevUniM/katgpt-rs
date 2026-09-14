@@ -66,7 +66,9 @@
 # default-list change). katgpt-core raised 1974→2041 2026-09-13 (4090 box,
 # Windows, HEAD 662783dc — the +67 are committed test additions since
 # 09-04; platform-invariant per the landing analysis, zero target_os cfg
-# at default features). Raising a floor is a
+# at default features). katgpt-core raised 2041→2053 2026-09-15 (Issue 781
+# / Bench 764 — the slt module promoted default-on, +12 tests; same box,
+# measured). Raising a floor is a
 # measured act; lowering one needs a note in the commit that does it.
 #
 # --test-threads=2 is deliberate (the riir-train 507 precedent): a weekly
@@ -83,7 +85,7 @@ set -u
 
 ROWS="
 katgpt-rs:203
-katgpt-core:2041
+katgpt-core:2053
 katgpt-dec:249:pca_global
 "
 
