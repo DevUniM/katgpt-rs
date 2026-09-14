@@ -11,6 +11,49 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 782 (2026-09-15, M3 session) resolved — slt_sweep: the noise-sweep λ̂ estimator (781 T4), GOAT G1–G4 ALL PASS, promoted default-on
+
+`katgpt_core::slt::sweep` (feature `slt_sweep = ["slt"]` → **default-on
+since landing**; Bench 765): the measurement half of the slt module — a
+frozen-weight λ̂ instrument. Deterministic Gaussian direction stream
+(xorshift64* + Box–Muller, the module-canonical stream promoted to shipped
+surface) + a per-scale-independently-streamed ladder + median aggregation;
+caller-owned `NoiseSweepScratch` keeps the estimate path zero-alloc;
+`1 + K·m` loss evals per estimate (6145 at default m=1024/K=6) — a
+freeze/consolidation-seam instrument, never per-tick.
+
+**The v1 → v2 estimator-form lesson (kept in the module doc as the design
+record):** the windowed mirrored-Hill on the smallest-k deficits is exactly
+unbiased for exact power laws — but NO polynomial-loss family has one under
+the GAUSSIAN probe measure (only the Lebesgue sublevel volume is exact; the
+Gaussian radial tail is the cutoff). v1 measured −28…−37% systematic on
+the bowl/quartic/RRR anchors. The shipped v2 fits the log-log CDF slope
+over an order-statistic ladder (counts ~ m/512 … m/16) — the
+**shell-cancelling volume-codimension form** (Murfet et al. 2020 eq. 4.3):
+the Gaussian shell factor multiplies both thresholds and divides out of the
+slope (closed-form check on χ²₄: ~2% where v1 sat at −17%).
+
+**The geometry-class finding:** TUBE/CONE sublevel sets — singular points
+with flat directions (RRR's fiber −1.1%; the ReLU toy's dead-unit cones) —
+are near-unbiased because the along-tube Gaussian factor is s-independent;
+ISOLATED regular minima (star bodies: bowl, quartic) carry −18…−19% at
+d ≥ 4 (+1…+3% at d ≤ 2), monotone in d — within-family ranking preserved.
+Sample wall: the near-zero window is Γ(d/2)-starved for λ ≳ 3 — the
+feasible domain is the SINGULAR regime λ ≪ d/2, exactly what the module
+prices; large-λ recovery stays riir-train Plan 404 (SGLD).
+
+**The ReLU toy boundary (the honest headline):** the paper's cell (H=5,
+m=3, K a fixed 32² midpoint sum — the paper's own empirical-L_n shape)
+measures LOCAL tangent-cone λ̂ ≈ 2.77, stable at 2.7710 under 9× denser
+quadrature and 2.91 at 16× draws — decisively ≪ d/2 = 10.5 (the
+singularity IS seen) but NOT the tempered-global SGLD value 0.526: a
+local isotropic probe resolves the cone mixture's dominant slope, not the
+posterior-weighted global RLCT. Recorded as the instrument boundary in
+Bench 765; 0.526 is not a local-probe target. G3: bit-identical under
+seed (to_bits); G4: 0 allocs release-verified (Issue-741 predicate);
+default suite 2053 → 2060 (floor bumped, measured); clippy -D warnings
+clean; --all-features clean; docs_gate 17/17 after the 604/203 count bumps.
+
 ## Issue 781 (2026-09-15, M3 session) resolved in `580bda30` — slt: the RLCT λ + WBIC selection primitive, GOAT G1–G4 + floor ALL PASS, promoted default-on
 
 `katgpt_core::slt` (feature `slt = []` → **default-on since landing**; Bench 764):
