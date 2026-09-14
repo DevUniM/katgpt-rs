@@ -296,6 +296,75 @@ def heading_allocated(repo: Path, subdir: str,
     return out
 
 
+# Issue 781: the SAME shape, without the style anchor. Used only to MEASURE
+# what `_SELF_HEADING` rejects — never to allocate. Widening the oracle to this
+# is unsound and `citation_drift_sweep.selftest()` arm 2 proves it: it pins
+# `## Issue 043 follow-up (2026-01-01)` as a measured negative, and
+# `043 follow-up (…)` and `097 resolved — … (…)` are the same shape. No
+# punctuation rule separates commentary from allocation; the distinction is
+# semantic. So the cost is printed instead of guessed at.
+_HEADING_SHAPED = re.compile(
+    r"^#{2,}\s+(?:\*\*)?(%s)\s+0*(\d{2,4})\b(.*)$" % "|".join(KINDS))
+
+
+def heading_style_blind(repo: Path, subdir: str,
+                        repo_names: list[str] | None = None) -> tuple[int, int]:
+    """(accepted, heading_shaped) self-allocation records in this repo's docs.
+
+    A triage quantity with the standing of AMBIGUOUS and the width-bound
+    complement — NEVER a verdict, never folded into a finding count. It answers
+    one question: how much of this repo's own allocation record does
+    `heading_allocated()` decline to read, **on style alone**?
+
+    The foreign-repo filter is applied to BOTH sides, over the whole heading,
+    so a row rejected for naming a sibling is not counted as a style loss. The
+    gap is therefore exactly the style gap.
+
+    Measured 2026-09-14 over 16 repos x AGENTS.md+HISTORY.md (the
+    foreign-filtered population this function counts): **64 of 152 read, 88
+    unread**, and the split is by HOUSE STYLE rather than correctness —
+    riir-mmorpg-examples 43/43 (`## Issue NNN (date) — title`); riir-ai 0/25,
+    riir-clippy 0/25 and riir-train 0/13 (`## Issue NNN resolved — title
+    (date)`); seal-remake 14/15; katgpt-rs mixed at 7/29, its own newest closes
+    in the form its own instrument cannot read. A dated measurement RECORD, not
+    a claim — the live figures are printed by `citation_drift_sweep.py` on
+    every run, per repo and in total.
+
+    Why it matters in the direction that is currently 0: an incomplete OWNERS
+    set turns a correctly-qualified citation into a FALSE ⛔MISATTRIBUTED —
+    Issue 754's exact failure, inherited by Issue 780's MISATTRIBUTED-IN-RANGE.
+    Latent, so it is printed rather than remembered.
+    """
+    kind = _SUBDIR_KIND.get(subdir)
+    if kind is None:
+        return (0, 0)
+    global _NAMES_CACHE
+    if repo_names is None:
+        if _NAMES_CACHE is None:
+            _NAMES_CACHE = [p.name for p in contract_repos(WORKSPACE)]
+        repo_names = _NAMES_CACHE
+    foreign = [n for n in repo_names if n != repo.name]
+    accepted = shaped = 0
+    for doc in _self_docs():
+        p = repo / doc
+        if not p.is_file():
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
+        fenced, _ = fenced_lines(text)
+        for i, line in enumerate(text.splitlines()):
+            if i in fenced:
+                continue
+            m = _HEADING_SHAPED.match(line)
+            if not m or m.group(1) != kind:
+                continue
+            if any(_NAME[n].search(m.group(3)) for n in foreign):
+                continue          # rejected for NAMING a sibling, not on style
+            shaped += 1
+            if _SELF_HEADING.match(line):
+                accepted += 1
+    return (accepted, shaped)
+
+
 def allocated(repo: Path, subdir: str,
               repo_names: list[str] | None = None) -> set[int]:
     """Every number EVER allocated under `repo/subdir` — worktree AND history.

@@ -355,9 +355,9 @@ census is exhaustive over ROWS, not over the ORACLE it checks them against** —
 so never quote an error rate without naming the instrument the sample was
 adjudicated against.
 
-⛔ **And `katgpt-rs Issue 513` — the wrong address the paragraph above names as
-a worked example — was still standing in the workspace when Issue 780 went
-looking for it** (riir-neuron-db `AGENTS.md:82`, repaired to `riir-train Issue
+⛔ **And the wrong address the paragraph above names as a worked example —
+riir-train Issue 513 written up as `katgpt-rs Issue 513` — was still standing
+in the workspace when Issue 780 went looking for it** (riir-neuron-db `AGENTS.md:82`, repaired to `riir-train Issue
 513 T6`). Not because `is_qualified` missed it: because the `⛔MISATTRIBUTED`
 tag was computed **only in the CROSS bucket**, and the three-way bucketing runs
 first. A citation whose number also falls under the *citing* repo's own ceiling
@@ -380,6 +380,36 @@ other column honestly too: it is **n = 1**, so "0 false positives" there is one
 row's worth of evidence, not a rate. The per-push gate needed **no** change and
 that is itself the finding — it has no IN-RANGE bucket at all, so the sweep
 that cross-checks it was the **more lenient** of the two.
+
+⚠ **`allocated()` is not a complete record, and the gap is a house STYLE**
+(Issue 781). `heading_allocated()` — the Issue-754 path that recovers a number
+whose file was created and removed without an intervening commit — anchors the
+parenthetical immediately after the number, so `## Issue NNN (date) — title`
+reads and `## Issue NNN resolved — title (date)` does not. Measured over 16
+repos, **under half** the self-allocation records are read — and the split is
+by convention, not by correctness: one repo scores 100%, **three score zero**,
+and katgpt-rs is mixed, its own newest closes in the form its own instrument
+cannot read. The figures are printed by the sweep every run and the dated
+snapshot lives in `heading_style_blind`'s docstring; a magnitude here, because
+an exact count in prose about documents five-plus sessions edit daily is drift
+waiting to happen. Widening the pattern is **unsound and the sweep's
+own self-test proves it**: arm 2 pins `## Issue NNN follow-up (date)` as a
+measured negative — commentary on a number is not an allocation of it — and
+`NNN follow-up (…)` is the same SHAPE as `NNN resolved — … (…)`. No
+punctuation rule separates them. So the cost is **printed every run** rather
+than guessed at, with the standing of AMBIGUOUS: on the local side it lands as
+UNDECIDED noise (riir-clippy's 10 undecided rows are its own four numbers),
+and on the owners side as a **false** `⛔MISATTRIBUTED` — Issue 754's exact
+failure, inherited by Issue 780's in-range class. 0 live instances today, which
+is the reason to print it rather than remember it.
+
+⚠ **A document that discusses a misattribution has to reproduce it**, and the
+instrument cannot tell a quoted specimen from a live one: the Issue-780
+write-up above introduced **4 rows of the very class it documents**. The repair
+is not a pin — it is to name the true owner inside the citation's own 3-line
+window ("riir-train Issue 513, written up as `katgpt-rs Issue 513`"), which
+clears the row *and* makes the sentence followable. Reach for that before
+ratcheting a ceiling for prose about prose.
 
 Each sweep carries **two floors, not one**: a ceiling is green over whatever
 the instrument can SEE, so the finding count needs the *population* that

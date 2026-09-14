@@ -701,6 +701,18 @@ def selftest() -> list[str]:
             "# Issue 045 (2026-01-01) — H1, a document title\n"
             "## Plan 046 (2026-01-01) — a different KIND\n")
         names = ["riir-headrepo", "riir-fakesib"]
+        # Issue 781 T2: the style blind spot is a PROBE, and a probe wired to
+        # nothing reports 0 exactly like a clean tree (Issue 753). Both
+        # directions over the SAME fixture: 042 is the style the oracle reads,
+        # 043 is the style it rejects, and 044 is rejected for NAMING a
+        # sibling — which must NOT be counted as a style loss, or the quantity
+        # stops meaning what its label says.
+        acc, shp = icg.heading_style_blind(hd, ".issues", names)
+        if (acc, shp) != (1, 2):
+            fails.append(f"heading style blind spot: got {(acc, shp)}, expected "
+                         f"(1, 2) — 042 reads, 043 is the style loss, 044 is a "
+                         f"FOREIGN-name rejection and is excluded from both")
+
         got_h = icg.heading_allocated(hd, ".issues", names)
         if got_h != {42}:
             fails.append(f"heading allocation: got {sorted(got_h)}, expected [42] "
@@ -832,6 +844,22 @@ def main() -> int:
                 for c in crates}
     alloc = {r.name: {k: icg.allocated(r, d) for k, d in icg.KINDS.items()}
              for r in repos}
+    # Issue 781: how much of each repo's own allocation record the heading
+    # oracle declines to read, ON STYLE ALONE. Summed over kinds; a triage
+    # quantity with the standing of AMBIGUOUS, never a verdict and never
+    # folded into a finding count. Printed because the direction that HURTS is
+    # currently 0 (an incomplete OWNERS set manufactures a FALSE
+    # ⛔MISATTRIBUTED — Issue 754's failure, inherited by Issue 780's
+    # in-range class), and a latent cost that is only remembered is one that
+    # gets forgotten.
+    blind = {}
+    for r in repos:
+        acc = shp = 0
+        for d in icg.KINDS.values():
+            a, t = icg.heading_style_blind(r, d, [q.name for q in repos])
+            acc += a
+            shp += t
+        blind[r.name] = (acc, shp)
 
     bad = False
     tot = {"docs": 0, "cites": 0, "amb": 0, "mis": 0, "misat": 0,
@@ -892,10 +920,13 @@ def main() -> int:
         # riir-viewbridge's 17 rows are FOUR decisions. Same standing as tail
         # support in the percentile audit — it ORDERS the work, it is not a
         # second verdict, and neither number is the finding count on its own.
+        acc, shp = blind[repo.name]
+        style = f" heading_unread={shp - acc}/{shp}" if shp else ""
         print(f"{status} {repo.name:22s} docs={got['n_docs']} cites={got['n_cites']:<5d} "
               f"cross={len(got[CROSS]):<4d} over {units:<3d} num "
               f"in_local_range={len(got[IN_RANGE]):<3d} "
-              f"orphan={len(got[ORPHAN])} ambiguous={len(got['ambiguous'])}")
+              f"orphan={len(got[ORPHAN])} ambiguous={len(got['ambiguous'])}"
+              f"{style}")
         # 12 rows keeps the whole-workspace run readable; `--full` is for the
         # one job the truncated view cannot do — writing the OWNING repo's
         # issue, which needs every row it is being asked to repair.
@@ -963,6 +994,18 @@ def main() -> int:
           f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}"
           f"  ·  ⛔MISATTRIBUTED-IN-RANGE (Issue 780 — FOLLOWABLE to the wrong "
           f"repo, walled at {glob_wall}): {tot[MISATTR_IN_RANGE]}")
+    b_acc = sum(a for a, _ in blind.values())
+    b_shp = sum(t for _, t in blind.values())
+    print(f"  heading oracle (Issue 781): {b_acc}/{b_shp} self-allocation "
+          f"records read, {b_shp - b_acc} UNREAD **on style alone** — a "
+          f"triage quantity, never a verdict. `heading_allocated()` anchors "
+          f"the parenthetical right after the number, so `## Issue 042 (date) "
+          f"— title` reads and `## Issue 097 resolved — title (date)` does "
+          f"not, and the split is by HOUSE STYLE rather than correctness. "
+          f"Widening is UNSOUND and selftest arm 2 proves it: `## Issue 043 "
+          f"follow-up (date)` is a pinned negative and is the SAME shape. The "
+          f"cost lands as UNDECIDED noise on the local side and as a FALSE "
+          f"⛔MISATTRIBUTED on the owners side.")
     print(f"  of the {tot[CROSS]} CROSS: {tot['rep']} carry the REPEAT label — "
           f"the same document already attributes that number elsewhere, so the "
           f"repair is mechanical (copy it), not a lookup. The labels are "

@@ -3570,11 +3570,11 @@ inside the IN_RANGE bucket for the `max_in_local_range` ceiling (the undecided
 *population* did not change) and printed ahead of it, never truncated.
 
 **The one row it was hiding was the example this repo's own AGENTS.md names.**
-`katgpt-rs Issue 513` is written into `is_qualified`'s docstring and into the
-§citation paragraph as a worked instance of a wrong address — and it was still
-standing in the workspace: riir-neuron-db `AGENTS.md:82`,
-`# Workstation-only pre-push layer (katgpt-rs Issue 513 T6)`. katgpt-rs has
-never allocated 513 (`git log --all -- '.issues/513*'` empty, `.highwater` 779);
+riir-train Issue 513, written up as `katgpt-rs Issue 513`, sits in
+`is_qualified`'s docstring and in the §citation paragraph as a worked instance
+of a wrong address — and it was still standing in the workspace: riir-neuron-db
+`AGENTS.md:82`, a `# Workstation-only pre-push layer` comment citing
+riir-train Issue 513 as katgpt-rs's. katgpt-rs has never allocated 513 (`git log --all -- '.issues/513*'` empty, `.highwater` 779);
 **riir-train** owns it (`513_required_features_rows_are_unverified.md`, filed
 `389a0a6b`, closed + removed `5a4265df`), and that issue's own T6 is the
 paragraph's subject by name — *"BLOCKED ON OWNER CALL (Actions spend) …
@@ -3594,9 +3594,9 @@ the number *is* locally allocated. Measured over 16 repos × AGENTS.md+HISTORY.m
 | `n in mine` (locally allocated) | **19** | **0 true, 19 false** |
 
 The 19 are one shape: the prose is *contrasting* a local number with a remote
-one and the 40-char lead catches the neighbour's address — ``riir-ai Issue 853
-/ this repo's Issue 093``, ``riir-ai Issues 574/589/537/672 + local Issue
-059``, ``in `riir-neuron-db/src/local_kv.rs` (Issue 043``, ``at
+one and the 40-char lead catches the neighbour's address — riir-chain's
+``riir-ai Issue 853 / this repo's Issue 093``, riir-mmorpg-examples' ``riir-ai
+Issues 574/589/537/672 + local Issue 059``, ``in `riir-neuron-db/src/local_kv.rs` (Issue 043``, ``at
 `riir-game-sdk/crates/riir-games-cluster/`. Plan 010``. That asymmetry is
 mechanism rather than luck: a locally-allocated number **has** a local referent
 for the prose to contrast against, and a never-allocated one does not. So the
@@ -3633,3 +3633,109 @@ that survived reported a *different* failure than the one that was disabled.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/780_misattributed_is_computed_only_in_the_cross_bucket.md`).
+
+## Issue 781 — the heading oracle matches one house STYLE: CLOSED as a measured, printed blind spot (2026-09-14)
+
+`heading_allocated()` (Issue 754) is the path that recovers a number whose file
+was created and removed without an intervening commit — the repo's own heading
+is then the whole allocation record. Its pattern anchors the parenthetical
+**immediately** after the number, so `## Issue NNN (date) — title` reads and
+`## Issue NNN resolved — title (date)` does not. Measured over 16 repos ×
+AGENTS.md+HISTORY.md: **64 of 152 read, 88 unread**, and the split is by
+**house style**, not by correctness —
+
+| repo | shaped | read | unread |
+|---|---|---|---|
+| riir-mmorpg-examples | 43 | **43** | 0 |
+| seal-remake | 15 | 14 | 1 |
+| katgpt-rs | 29 | 7 | **22** |
+| riir-ai | 25 | **0** | 25 |
+| riir-clippy | 25 | **0** | 25 |
+| riir-train | 13 | **0** | 13 |
+| riir-game-sdk | 2 | 0 | 2 |
+
+katgpt-rs's own newest closes — Issues 777–781 included — are in the form its
+own instrument cannot read.
+
+**Closed as a REPORT, not a repair, and the reason is the instrument's own
+self-test.** Arm 2 pins `## Issue NNN follow-up (date)` as a measured
+NEGATIVE: a heading that *comments* on a number is not an allocation of it, and
+crediting it would absolve a wrong address. `NNN follow-up (…)` and
+`NNN resolved — … (…)` are the **same shape**; no punctuation rule separates
+commentary from allocation, the distinction is semantic. A widened pattern was
+run end to end against the live workspace and fails that arm — which is the arm
+doing its job. This is also the only path in the instrument that can
+**suppress** a finding, so a speculative widening trades a reported blind spot
+for an unreported one.
+
+So the cost is **measured every run and printed**, with the standing of
+AMBIGUOUS and the width-bound complement (`heading_unread=N/M` per repo, plus a
+workspace line). The foreign-repo filter is applied to both sides over the whole
+heading, so a row rejected for *naming a sibling* is not miscounted as a style
+loss — the gap printed is exactly the style gap. Both directions pinned by a
+self-test arm (042 reads · 043 is the style loss · 044 is a foreign-name
+rejection excluded from both), canaried by making the probe blind. AGENTS.md
+carries the magnitude only; the dated snapshot lives in the function's own
+docstring, where it is a measurement record rather than a claim.
+
+Consequence, both directions: an incomplete **local** set lands as UNDECIDED
+noise — riir-clippy's 10 undecided rows are its own four numbers, every one
+recorded in its own HISTORY.md in the unread style. An incomplete **owners**
+set manufactures a **false** `⛔MISATTRIBUTED` — Issue 754's exact failure,
+inherited by Issue 780's `MISATTRIBUTED-IN-RANGE`. 0 live instances today,
+which is precisely why it is printed rather than remembered.
+
+⛔ **The write-up of Issue 780 introduced four rows of the class it
+documents**, and that is the lasting lesson here: a document that discusses a
+misattribution has to reproduce it, and the instrument cannot tell a quoted
+specimen from a live one. Three were riir-train Issue 513 quoted under
+katgpt-rs's name; one was a quoted false positive of riir-chain's
+(``riir-ai Issue 853 / this repo's Issue 093``).
+The repair is **not** a pin — it is to name the true owner inside the
+citation's own 3-line window ("riir-train Issue 513, written up as `katgpt-rs
+Issue 513`", "riir-chain's ``…``"), which clears the row *and* makes the
+sentence followable; where the number is incidental to the example, write
+`NNN`. Reach for those before ratcheting a ceiling for prose about prose.
+
+This section was written under the same constraint, and the new class caught it
+**in the act**: the first draft of the paragraph above produced one
+`⛔MISATTRIBUTED-IN-RANGE` and one UNDECIDED row of its own. Repaired by naming
+the owners ("riir-train Issue 513 quoted under katgpt-rs's name", "a quoted
+false positive of riir-chain's") — a live two-directional proof worth more than
+the synthetic arms.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/781_the_heading_oracle_matches_one_house_style.md`).
+
+## The x86_64-pc-windows-msvc axis, measured: clean at all-features/all-targets (2026-09-14)
+
+AGENTS.md §full gate names two platform axes — macOS (where
+`not(target_os = "macos")` backends compile to nothing) and wasm32 (gated
+twice, by triple and by `simd128`). There is a third, and until this run
+nothing had ever compiled it: **`x86_64-pc-windows-msvc`**. It is the lane
+`platform_dead_code_audit.py` describes as "a workstation lane no automatic
+gate in this workspace ever sees" — `full_gate.yml` is macOS/aarch64,
+`wasm32_gate.yml` is the wasm32 triple, and neither emits an
+x86_64-native dead-code warning.
+
+Measured on the pinned toolchain (rustc 1.98.1, host
+`x86_64-pc-windows-msvc`, `rust-toolchain.toml` channel, no override):
+
+```
+cargo clippy --workspace --all-targets --all-features --keep-going -- <the AGENTS.md -D list>
+→ exit 0, 32 packages, 8m17s, ZERO code findings
+```
+
+All 1,034 warning lines are one message — `hard linking files in the
+incremental compilation cache failed, copying files instead` — an NTFS
+artifact of the `target/` directory, not a lint.
+
+**Read the scope, not the headline.** This compiles the
+`not(target_os = "macos")` half that a macOS run drops — which is the inverse
+blind spot `scripts/check_platform_gated_modules.sh` exists to *typecheck*
+from the M3, here compiled and linted for real — but it is **not** a
+substitute for either named axis: `target_os = "macos"` and
+`target_os = "linux"` code both compiled to nothing here, and so did every
+wasm32 arm. A platform is part of the claim, exactly as the profile is; this
+run adds one cell, it does not close the matrix. The profile axis is also
+untouched: this is dev, so `debug_assertions` was ON throughout.
