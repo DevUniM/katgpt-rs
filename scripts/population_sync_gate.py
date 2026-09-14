@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""GATE: the SEVEN independent "which repos are contract repos" predicates must agree.
+"""GATE: the TEN independent "which repos are contract repos" predicates must agree.
 
 Every cross-repo instrument in this workspace derives its own population — a
-root `BOUNDARY.md` **and** a `.git` DIRECTORY — and seven of them do it with
-seven separate implementations:
+root `BOUNDARY.md` **and** a `.git` DIRECTORY — and ten of them do it with ten
+separate implementations:
 
     cfg_gated_target_audit.derive_repos      (also used by the required-features
                                               audit and the cfg-gated sweep)
@@ -13,16 +13,42 @@ seven separate implementations:
     skill_repo_set_gate.derive_repos
     suite_membership_audit.derive_repos
     trap_exit_launder_audit.repos            (Issue 734; joined 2026-09-07)
+    len_derived_binding_audit.derive_repos   (Issue 788; joined 2026-09-14)
+    docs_drift_sweep.derive_population       (Issue 788)
+    wasm32_surface_audit.derive_population   (Issue 788)
 
-They all agree today (measured 2026-09-07: 17 repos, identical, and equal to
-`scripts/repo_set.txt`). Nothing asserted that, and the failure is silent in
-the worst way: if ONE predicate drifts, that one instrument quietly audits a
+plus ONE subset predicate, `restatement_theorem_audit.repos`, which adds a
+`.proofs` test and is asserted to be a strict subset rather than an equal.
+
+They all agree today. Nothing asserted that, and the failure is silent in the
+worst way: if ONE predicate drifts, that one instrument quietly audits a
 different set of repos and still prints a confident green over it. The
 workspace has already paid for this once — three instruments were found
 covering 7, 12 and 15 of 18 repos, each reporting cleanly on its own slice.
 
 This is `docs_gate_paths_sync.py` one axis over: a hand-duplicated *value*
 drifts, and so does a hand-duplicated *predicate*.
+
+## The registry asserts its own COMPLETENESS, and Issue 788 is why
+
+The tuple below is DATA, and its comment always said adding an instrument was
+"a one-line change here rather than an eighth silent divergence". The one-line
+change is the part nobody makes: the registry sat at SEVEN while TEN existed,
+and the gate printed "7 predicates agree" the whole time.
+
+⛔ Read the numbers in order, because they are the argument for mechanising
+this rather than reading carefully: the census that filed Issue 788 counted
+NINE and registered the eighth. The completeness check then found the ninth and
+tenth — `docs_drift_sweep` and `wasm32_surface_audit` — which that census had
+missed. A careful reading missed two of ten. Both were also UNPARAMETERISED,
+hard-coding their root from `__file__`, so the synthetic-workspace half of this
+gate could not have tested them even if somebody had registered them; they take
+an optional `root` now.
+
+The eighth also turned out to be WRONG on registration — `len_derived_binding_
+audit.derive_repos` tested `(d / ".git").exists()`, admitting a worktree-shaped
+directory and double-counting a repo already in the walk. Latent (no such
+directory in this workspace), and caught on the first run after registering it.
 
 ## Why this can run in CI, when none of the sweeps can
 
@@ -39,7 +65,7 @@ a temp dir, containing every case the real one distinguishes:
 The last one is not hypothetical and is why the `.git` test must be a
 DIRECTORY test: a throwaway worktree's `.git` is a FILE, and a worktree of a
 repo already in the walk would otherwise be counted twice. That trap is
-documented in `scripts/repo_set.txt`'s own derivation and in three of the seven
+documented in `scripts/repo_set.txt`'s own derivation and in three of the ten
 docstrings — which is exactly the kind of invariant that survives in comments
 and dies in code.
 
@@ -59,6 +85,7 @@ Exit 0 clean · 1 on disagreement · 2 if the gate cannot import a predicate.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -88,7 +115,46 @@ PREDICATES = (
     # and its derivation was unchecked against the other six until its sweep
     # landed.
     ("trap_exit_launder_audit.repos", "trap_exit_launder_audit", "repos"),
+    # Issue 788: the eighth, and it had been unregistered since the audit was
+    # written. Its own sweep asserts it agrees with skill_repo_set_gate — but
+    # only on the runs somebody invokes that sweep, and this gate runs per-push.
+    ("len_derived_binding_audit.derive_repos", "len_derived_binding_audit",
+     "derive_repos"),
+    # Issue 788 again, and these two are why the registry needed a
+    # completeness check rather than a careful reading: they were found by the
+    # check, not by the census that filed the issue, which had enumerated seven
+    # against nine and still missed that the real count was TEN. Both were also
+    # UNPARAMETERISED — they hard-coded WORKSPACE from `__file__`, so the
+    # synthetic-workspace half of this gate (the half that works in CI) could
+    # not have tested them even if somebody had registered them.
+    ("docs_drift_sweep.derive_population", "docs_drift_sweep",
+     "derive_population"),
+    ("wasm32_surface_audit.derive_population", "wasm32_surface_audit",
+     "derive_population"),
 )
+
+# SUBSET predicates: BOUNDARY.md + `.git` AND something more. Registering one in
+# PREDICATES would red every run by construction, so they get their own tuple —
+# and their own, weaker assertion (a strict subset of the agreed answer), because
+# "not registered" and "deliberately not registered" must not be the same state.
+# That distinction was recorded NOWHERE before Issue 788: the next reader either
+# re-derives it or registers the predicate and breaks the gate.
+#
+# The subset assertion is not a formality. A `.proofs` walk that silently starts
+# matching something else shows up as a repo outside the agreed population, and
+# nothing else in this workspace would notice.
+SUBSET_PREDICATES = (
+    ("restatement_theorem_audit.repos", "restatement_theorem_audit", "repos",
+     "adds a `.proofs` directory test — 4 of 16 repos carry Lean proofs"),
+)
+
+# The registry above is hand-maintained, and Issue 788 is what that cost: TEN
+# predicates existed, seven were registered, and the gate had been printing
+# "7 predicates agree" the whole time. So the
+# registry asserts its own COMPLETENESS — see `unregistered_predicates()`.
+# A source file may opt a helper out with this marker on the `def` line, which
+# is deliberately noisy to type and greppable to review.
+OPT_OUT_MARKER = "population-predicate: not a contract-repo walk"
 
 
 def load() -> list[tuple[str, object]]:
@@ -117,6 +183,63 @@ def call(fn, root: Path) -> list[str]:
     except TypeError:
         got = fn(str(root))
     return sorted(p.name if isinstance(p, Path) else str(p) for p in got)
+
+
+def unregistered_predicates(repo: Path) -> list[tuple[str, str]]:  # population-predicate: not a contract-repo walk (it NAMES the walk tokens it searches for)
+    """(module, function) pairs that walk for BOUNDARY.md + `.git` and are in
+    neither registry.
+
+    ⛔ The first version of this asked only for a `def` whose body mentions both
+    `BOUNDARY.md` and `.git`, and its docstring asserted — before the thing had
+    ever been run — that this "measures exactly the nine real predicates". It
+    reported **23**, almost all of them `main()` and `selftest()` bodies that
+    merely name the two strings, plus this gate's own `build_synthetic()`, which
+    WRITES those files rather than walking for them. A classifier's bucket
+    boundary is the finding, and a boundary argued from the armchair is a claim
+    about code somebody else wrote.
+
+    The discriminating term is the **directory iteration**: a predicate walks
+    (`iterdir()` / `os.listdir(` / `scandir(`), a `main()` that mentions the
+    contract does not, and a fixture builder writes into a path it already
+    holds. Measured after the correction: exactly the nine, over 66 files —
+    and the nine are enumerable by hand, which is why this number is worth
+    stating.
+
+    `ast` is not used on purpose: the gate must classify a file it cannot
+    import (a syntax error in a sibling instrument is somebody else's finding,
+    not a reason for this gate to go blind), and a textual `def` scan reads a
+    broken file fine.
+    """
+    import re
+
+    out: list[tuple[str, str]] = []
+    known = {(m, a) for _l, m, a in PREDICATES}
+    known |= {(m, a) for _l, m, a, _w in SUBSET_PREDICATES}
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "scripts/"],
+        capture_output=True, encoding="utf-8", errors="replace")
+    for rel in listed.stdout.splitlines():
+        if not rel.endswith(".py"):
+            continue
+        mod = Path(rel).stem
+        try:
+            body = (repo / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = body.splitlines()
+        starts = [i for i, l in enumerate(lines) if re.match(r"^def\s+\w+", l)]
+        for n, i in enumerate(starts):
+            end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+            chunk = "\n".join(lines[i:end])
+            if OPT_OUT_MARKER in lines[i]:
+                continue
+            walks = any(t in chunk for t in ("iterdir()", "os.listdir(",
+                                             "listdir(", "scandir("))
+            if walks and "BOUNDARY.md" in chunk and ".git" in chunk:
+                fn = re.match(r"^def\s+(\w+)", lines[i]).group(1)
+                if (mod, fn) not in known:
+                    out.append((mod, fn))
+    return sorted(out)
 
 
 def build_synthetic(ws: Path) -> list[str]:
@@ -176,6 +299,28 @@ def main() -> int:
             for miss in sorted(set(expected) - set(got)):
                 print(f"        - {miss}: REJECTED a valid contract repo")
 
+    # ── half 1b: the REGISTRY's own completeness (Issue 788). Runs everywhere:
+    #    it is a source scan, not a walk, so a single-checkout CI box tests it
+    #    at full strength. This is the half that was missing — TEN predicates
+    #    existed and seven were registered, so the gate reported agreement over
+    #    a set it had not enumerated. Two of the three it was short were found
+    #    by THIS check and not by the census that filed the issue.
+    stray = unregistered_predicates(REPO_ROOT)
+    if stray:
+        bad = True
+        print(f"▸ registry completeness: ✗ {len(stray)} unregistered "
+              f"predicate(s)")
+        for mod, fn in stray:
+            print(f"    ✗ {mod}.{fn} walks for BOUNDARY.md + .git and is in "
+                  f"neither PREDICATES nor SUBSET_PREDICATES. Add it to "
+                  f"PREDICATES (a full contract-repo walk), to "
+                  f"SUBSET_PREDICATES with its extra test (a narrower one), or "
+                  f"mark the `def` line with `{OPT_OUT_MARKER}` if it is "
+                  f"neither.")
+    else:
+        print(f"▸ registry completeness: ✓ {len(PREDICATES)} registered + "
+              f"{len(SUBSET_PREDICATES)} subset, nothing unregistered")
+
     # ── half 2: the real workspace. Workstation-only, and SAID so. ──
     real = {label: call(fn, WORKSPACE) for label, fn in preds}
     sizes = {len(v) for v in real.values()}
@@ -189,15 +334,41 @@ def main() -> int:
     else:
         print(f"▸ real-workspace cross-check — {n} repo(s) under {WORKSPACE}:")
         base_label, base = next(iter(real.items()))
+        # A LOCAL flag, not the run-wide `bad` (Issue 788): this half had been
+        # reporting its verdict only when nothing ELSE had failed, so an
+        # unrelated red suppressed a passing line and a reader could not tell
+        # "they disagree" from "we did not say".
+        agree = True
         for label, got in real.items():
             if got == base:
                 continue
             bad = True
+            agree = False
             print(f"    ✗ {label} differs from {base_label}: "
                   f"only-here={sorted(set(got) - set(base))} "
                   f"missing={sorted(set(base) - set(got))}")
-        if not bad:
+        if agree:
             print(f"    ✓ all {len(real)} predicates agree")
+        # Subset predicates get a WEAKER assertion, not none (Issue 788): a
+        # strict subset of the agreed answer. That is a real claim — a `.proofs`
+        # walk which silently starts matching something else shows up as a repo
+        # outside the agreed population, and nothing else here would notice.
+        for label, mod, attr, why in SUBSET_PREDICATES:
+            import importlib
+            try:
+                fn = getattr(importlib.import_module(mod), attr)
+            except Exception as e:  # noqa: BLE001
+                bad = True
+                print(f"    ✗ {label}: cannot load ({e!r})")
+                continue
+            got = call(fn, WORKSPACE)
+            extra = sorted(set(got) - set(base))
+            if extra:
+                bad = True
+                print(f"    ✗ {label} is NOT a subset — {extra} sit outside the "
+                      f"agreed population ({why})")
+            else:
+                print(f"    ✓ {label} ⊆ agreed ({len(got)} of {len(base)}; {why})")
         # The committed vocabulary must match the derived population.
         if REPO_SET.is_file():
             committed = sorted(
@@ -249,5 +420,108 @@ def main() -> int:
     return 0
 
 
+def canary() -> int:  # population-predicate: not a contract-repo walk (its FIXTURES embed predicate source as data)
+    """`--canary`: prove the Issue 788 additions FIRE, both directions.
+
+    The pre-788 gate already had a two-sided synthetic workspace for the
+    predicate half. What it had no adversary for is the registry itself, which
+    is exactly the half that was silently wrong for four instruments.
+    """
+    import re
+    import textwrap
+
+    results = []
+
+    def arm(name, ok, detail=""):
+        print(f"  {'✓' if ok else '✗'} {name}" + (f"  — {detail}" if not ok else ""))
+        results.append(ok)
+
+    with tempfile.TemporaryDirectory() as td:
+        fake = Path(td)
+        (fake / "scripts").mkdir()
+
+        def w(rel, body):
+            (fake / rel).write_text(textwrap.dedent(body), encoding="utf-8")
+
+        # 1. an UNREGISTERED walk must be reported.
+        w("scripts/rogue.py", '''
+            def derive_repos(root):
+                return [d for d in root.iterdir()
+                        if (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()]
+            ''')
+        # 2. a `main()` that merely MENTIONS the contract must NOT be — the
+        #    false-positive class that made the first version report 23.
+        w("scripts/mentions.py", '''
+            def main():
+                print("population: a root BOUNDARY.md and a .git directory")
+            ''')
+        # 3. ... and neither must a fixture BUILDER, which writes those files
+        #    instead of walking for them.
+        w("scripts/builder.py", '''
+            def build(ws):
+                (ws / "BOUNDARY.md").write_text("x")
+                (ws / ".git").mkdir()
+            ''')
+        # 4. the OPT-OUT marker must suppress a genuine walk, and only on the
+        #    def line where somebody typed it.
+        w("scripts/opted.py", f'''
+            def derive_repos(root):  # {OPT_OUT_MARKER}
+                return [d for d in root.iterdir()
+                        if (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()]
+            ''')
+        subprocess.run(["git", "init", "-q", str(fake)], capture_output=True)
+        subprocess.run(["git", "-C", str(fake), "add", "-A"], capture_output=True)
+
+        got = unregistered_predicates(fake)
+        arm("unregistered walk reported", ("rogue", "derive_repos") in got, str(got))
+        arm("a mentioning main() is NOT reported",
+            ("mentions", "main") not in got, str(got))
+        arm("a fixture builder is NOT reported",
+            ("builder", "build") not in got, str(got))
+        arm("the opt-out marker suppresses",
+            ("opted", "derive_repos") not in got, str(got))
+
+    # 5. every registered predicate must actually be importable and callable —
+    #    `load()` exits 2 otherwise, which is the arm, and it runs on every
+    #    invocation already. What is NOT otherwise proven: the synthetic
+    #    expectation is non-trivial. A predicate that returns everything must
+    #    FAIL it, or the ✓ rows above certify nothing.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        expected = build_synthetic(ws)
+        everything = sorted(d.name for d in ws.iterdir() if d.is_dir())
+        arm("the synthetic expectation is non-trivial",
+            everything != expected, f"{everything} == {expected}")
+
+    # 6. the SUBSET assertion must red on a predicate that is not one.
+    base = ["a", "b"]
+    outside = sorted(set(["a", "zz"]) - set(base))
+    arm("the subset check rejects a non-subset", outside == ["zz"], str(outside))
+
+    # 7. the registry's own labels must match the (module, attribute) they
+    #    name — a label is what a reader greps for, and a stale one sends them
+    #    to a function that is not the one being tested.
+    mismatched = [l for l, m, a in PREDICATES if l != f"{m}.{a}"]
+    mismatched += [l for l, m, a, _w in SUBSET_PREDICATES if l != f"{m}.{a}"]
+    arm("registry labels match their targets", not mismatched, str(mismatched))
+
+    # 8. the docstring's headline count must match the tuple. It is the number
+    #    a reader trusts without running anything, and it is exactly what went
+    #    stale for four instruments.
+    head = (__doc__ or "").splitlines()[0]
+    words = {"SEVEN": 7, "EIGHT": 8, "NINE": 9, "TEN": 10, "ELEVEN": 11,
+             "TWELVE": 12}
+    claimed = next((v for k, v in words.items() if re.search(rf"\b{k}\b", head)),
+                   None)
+    arm("docstring headline count matches the tuple",
+        claimed == len(PREDICATES), f"headline says {claimed}, tuple has "
+                                    f"{len(PREDICATES)}")
+
+    print(f"\n{sum(results)}/{len(results)} canary arm(s) PASSED")
+    return 0 if all(results) else 2
+
+
 if __name__ == "__main__":
+    if "--canary" in sys.argv[1:]:
+        sys.exit(canary())
     sys.exit(main())

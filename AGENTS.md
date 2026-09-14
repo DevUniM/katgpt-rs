@@ -259,7 +259,7 @@ develop work. One line per check:
 | `docs_gate_paths_sync.py` | docs_gate.yml's two hand-duplicated trigger `paths:` lists stay identical |
 | `required_features_static_gate.py` | a required-features row naming a feature its package cannot enable (riir-train Issue 513) |
 | `cfg_row_implication_gate.py` | a required-features row that BUILDS and compiles its target to NOTHING (riir-train Issue 513) |
-| `population_sync_gate.py` | the seven independent contract-repo predicates must agree |
+| `population_sync_gate.py` | the ten independent contract-repo predicates must agree, and the registry that lists them must be COMPLETE (Issue 788) |
 | `trap_sentinel_gate.py` | a shell gate whose abort would report exit 0 — this repo's own two, by MEMBERSHIP (Issue 734) |
 | `issue_citation_gate.py` | a cross-repo `Issue N` citation naming no repo — it rebinds to the WRONG document once that number is allocated locally (Issue 749). In CI the cross-repo axis is DEFERRED to the workstation run — the `DOCS_GATE_CI` marker's instrument-alive verdict, because the sibling workspace is absent in a single checkout |
 | `markdown_fence_gate.py` | a fenced code block never closed — everything after it renders as code, and a fence scanner mis-phases on it (Issue 756) |

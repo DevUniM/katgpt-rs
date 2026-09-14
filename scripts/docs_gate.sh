@@ -109,7 +109,7 @@ CHECKS=(
     "scripts/docs_gate_paths_sync.py:docs_gate.yml's two hand-duplicated trigger paths lists stay identical (Issue 724 T4b)"
     "scripts/required_features_static_gate.py:a required-features row naming a feature its package cannot enable (Issue 513)"
     "scripts/cfg_row_implication_gate.py:a required-features row that BUILDS and compiles its target to NOTHING (Issue 513)"
-    "scripts/population_sync_gate.py:the seven independent contract-repo predicates must agree (else an instrument audits a different set and still prints green)"
+    "scripts/population_sync_gate.py:the ten independent contract-repo predicates must agree, and the registry that lists them must be COMPLETE (else an instrument audits a different set and still prints green)"
     "scripts/trap_sentinel_gate.py:a shell gate whose set -u abort would report exit 0 — this repo's own two, by membership (Issue 734)"
     "scripts/issue_citation_gate.py:a cross-repo Issue/Plan/Bench citation naming no repo — it rebinds to the WRONG doc once the number is allocated locally (Issue 749)"
     "scripts/markdown_fence_gate.py:a fenced code block never closed — everything after it renders as code, and a fence scanner mis-phases on it (Issue 756)"

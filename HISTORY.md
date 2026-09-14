@@ -237,6 +237,81 @@ wiring is synthetic shape-class (FlyWire licensing, riir-ai R379), so the
 experiment would compare random-vs-rewired-random — structurally unable to
 attribute. Full record: `.research/556` §7; issue file removed per the
 noise-reduction rule.
+## Issue 788 — the population-predicate registry was hand-maintained, and a careful reading missed two of ten: CLOSED (2026-09-14)
+
+`population_sync_gate.py` exists because a hand-duplicated **predicate** drifts
+exactly as a hand-typed count does: if one instrument's "which repos are
+contract repos" answer diverges, that instrument quietly audits a different set
+and still prints green. Its `PREDICATES` tuple is DATA, and its comment always
+said adding an instrument was *"a one-line change here rather than an eighth
+silent divergence."*
+
+The one-line change is the part nobody makes. **The registry sat at seven while
+ten existed**, and the gate printed "7 predicates agree" the whole time.
+
+**Read the numbers in order — they are the argument for mechanising this rather
+than reading carefully.** The census that filed the issue counted NINE and
+registered the eighth. Then the completeness check found the **ninth and
+tenth** — `docs_drift_sweep.derive_population` and
+`wasm32_surface_audit.derive_population` — which that census had missed,
+because its shape test was "defines `derive_repos`/`repos`/`contract_repos`"
+and these two are named `derive_population`. A careful reading missed two of
+ten, on the same day, in the issue about a registry being hand-maintained.
+
+**Three real defects fell out, none of which was the one being looked for.**
+
+1. **The eighth was WRONG.** `len_derived_binding_audit.derive_repos` tested
+   `(d / ".git").exists()`, not `.is_dir()`, so it admitted a worktree-shaped
+   directory and would double-count a repo already in the walk. It had done so
+   since the audit was written; it was caught on the **first run after
+   registering it**, by the synthetic-workspace arm that has had a
+   `worktree-shaped` case all along. Latent, not active — no such directory in
+   this workspace — so Issue 786's measurements are unchanged.
+2. **Two of the ten were UNPARAMETERISED**, hard-coding their root from
+   `__file__`. The synthetic-workspace half of this gate — the half that works
+   in CI, where there is no workspace to walk — could not have tested them even
+   if somebody had registered them. Both take an optional `root` now.
+3. **The real-workspace verdict was coupled to unrelated failures.** `if not
+   bad:` guarded the "all N predicates agree" line, so any other red suppressed
+   it and a reader could not distinguish *they disagree* from *we did not say*.
+   A local flag now.
+
+**`SUBSET_PREDICATES` is its own tuple, because "not registered" and
+"deliberately not registered" were the same state.**
+`restatement_theorem_audit.repos` adds a `.proofs` test (4 of 16) and would red
+every run if registered as an equal. That exclusion was recorded **nowhere**:
+the next reader either re-derives it or registers it and breaks the gate.
+Subset predicates get a weaker but real assertion — a strict subset of the
+agreed answer — which catches a `.proofs` walk that has silently started
+matching something else, and nothing else in this workspace would.
+
+**The detector's own boundary was wrong first, and its docstring asserted the
+result before anything had been run.** The first version asked only for a `def`
+whose body mentions `BOUNDARY.md` and `.git`, with a docstring claiming it
+"measures exactly the nine real predicates". It reported **23** — mostly
+`main()` and `selftest()` bodies that merely name the two strings, plus this
+gate's own `build_synthetic()`, which *writes* those files rather than walking
+for them. The discriminating term is the **directory iteration**. Same lesson
+as `platform_dead_code_audit.py`'s first sweep: a conservative-by-construction
+argument is a claim about code somebody else wrote, and it does not survive a
+real corpus.
+
+`ast` is deliberately not used: the gate must classify a file it cannot import,
+because a syntax error in a sibling instrument is somebody else's finding and
+not a reason for this gate to go blind.
+
+**The escape hatch is explicit and it got used twice, correctly.** A `def` line
+may carry `population-predicate: not a contract-repo walk` — noisy to type,
+greppable to review. `restatement_drift_sweep.main` (it *calls* the registered
+subset predicate) and this gate's own `canary()` (its fixtures embed predicate
+source as data, which no textual detector can tell from the real thing — the
+same limitation Issue 787 records for its closure) carry it.
+
+8 canary arms, both directions, including one that pins the docstring's
+headline count against the tuple — the number a reader trusts without running
+anything, and exactly what went stale for four instruments. CHECKS stays at 20;
+the row's quantity words moved from *seven* to *ten*.
+
 ## Issue 787 — a census reads the DOCUMENT, so an undocumented instrument is invisible to it: CLOSED (2026-09-14)
 
 **The correction first, because this issue exists to make it.** `1a5b6571`

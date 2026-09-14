@@ -101,16 +101,22 @@ def git(repo: Path, *args: str) -> str:
     return r.stdout if r.returncode == 0 else ""
 
 
-def derive_population() -> list[Path]:
+def derive_population(root: Path | None = None) -> list[Path]:
     """Every sibling carrying a BOUNDARY.md contract. Derived, never typed.
 
     `.git` must be a DIRECTORY: a throwaway worktree's `.git` is a file, and
     counting one would double-count a repo already in the walk.
+
+    `root` is optional and defaults to WORKSPACE (Issue 788): a predicate that
+    hard-codes its root cannot be run against the synthetic workspace
+    `population_sync_gate.py` uses, which is the half of that gate that works
+    in CI. Two of the ten were unparameterised and therefore untestable there.
     """
+    ws = WORKSPACE if root is None else Path(root)
     return sorted(
         (
             d
-            for d in WORKSPACE.iterdir()
+            for d in ws.iterdir()
             if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
         ),
         key=lambda p: p.name,

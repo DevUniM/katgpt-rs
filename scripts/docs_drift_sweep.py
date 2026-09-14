@@ -63,10 +63,17 @@ AUDITORS = [
 AUDITING_RE = re.compile(r"^=== Auditing (.+?) ===")
 
 
-def derive_population() -> list[Path]:
-    """Every sibling carrying a BOUNDARY.md contract. Derived, never typed."""
+def derive_population(root: Path | None = None) -> list[Path]:
+    """Every sibling carrying a BOUNDARY.md contract. Derived, never typed.
+
+    `root` is optional and defaults to WORKSPACE (Issue 788): a predicate that
+    hard-codes its root cannot be run against the synthetic workspace
+    `population_sync_gate.py` uses, which is the half of that gate that works
+    in CI. Two of the ten were unparameterised and therefore untestable there.
+    """
+    ws = WORKSPACE if root is None else Path(root)
     return sorted(
-        (d for d in WORKSPACE.iterdir()
+        (d for d in ws.iterdir()
          if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()),
         key=lambda p: p.name,
     )

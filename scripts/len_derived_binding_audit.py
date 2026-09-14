@@ -142,11 +142,22 @@ class Report:
 
 
 def derive_repos(workspace: Path) -> list[Path]:
-    """A root BOUNDARY.md AND a `.git` dir — never a typed list."""
+    """A root BOUNDARY.md AND a `.git` DIRECTORY — never a typed list.
+
+    ⛔ The `.git` test must be `is_dir()`, not `exists()`. A `git worktree`'s
+    `.git` is a FILE (`gitdir: …`), so `exists()` admits a throwaway worktree of
+    a repo ALREADY in the walk and double-counts it. This function had
+    `exists()` from the day it was written and nothing noticed, because it was
+    the one contract-repo predicate `population_sync_gate.py` did not know about
+    — Issue 788, which is the whole argument for that gate asserting its own
+    registry completeness. The derived set on the boxes that have run it is
+    unchanged (no worktree-shaped directory in this workspace); the defect was
+    latent, not active.
+    """
     return sorted(
         d
         for d in workspace.iterdir()
-        if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").exists()
+        if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
     )
 
 

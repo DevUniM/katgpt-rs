@@ -144,7 +144,7 @@ def prove_fires(root, present):
     return 0
 
 
-def main():
+def main():  # population-predicate: not a contract-repo walk (it CALLS restatement_theorem_audit.repos, the registered subset predicate)
     audit.selftest()
     audit.selftest_scoping()
 
