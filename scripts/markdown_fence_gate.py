@@ -44,7 +44,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from skill_repo_set_gate import fenced_blocks  # noqa: E402 — reused, not re-derived
+from skill_repo_set_gate import fenced_blocks, selftest  # noqa: E402 — reused, not re-derived
 
 REPO_ROOT = HERE.parent
 
@@ -86,6 +86,21 @@ def unterminated(repo: Path) -> tuple[list[tuple[str, int, int]], int]:
 
 
 def main() -> int:
+    # The parser's canary, before any verdict. A mis-phasing scanner reports
+    # clean in BOTH directions (prose read as code and code read as prose), so
+    # its failure is not a finding — it means no verdict is possible. Issue 789:
+    # this gate ran for two days over 1517 files on a parser whose own first
+    # canary had been destroyed by the very bug it guards and never replaced,
+    # and which could not see a `~~~` fence at all.
+    arm_failures = selftest()
+    if arm_failures:
+        print("✗ INSTRUMENT: the shared fence parser's selftest does not pass — "
+              "a mis-phasing scanner reports clean either way, so the verdict "
+              "below would mean nothing:")
+        for f in arm_failures:
+            print(f)
+        return 2
+
     findings, walked = unterminated(REPO_ROOT)
 
     if walked < MIN_FILES:
