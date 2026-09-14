@@ -389,6 +389,42 @@ silently unrunnable on half the workstations since it was written. **It was
 found by a harness looking for something else**, which is the argument for
 running `--include-all` at all.
 
+### ⛔ Finding 5 — a mutant that never RETURNS, and the hang is the mild half
+
+The `--include-all` run this task exists to take was still burning 98% of a
+core at **two hours**, against a 13-minute prediction. It was not slow. One
+mutant of `restatement_theorem_audit` — `+ -> -` at `parse_def`'s
+`name = toks[kw + 1]` — feeds a downstream loop that then never exits, and
+`run_arm` had **no bound of any kind**.
+
+⛔ **Interrupting it without a bucket is strictly worse than the hang.** A
+watchdog raises `KeyboardInterrupt`; `except BaseException` in the arm phase
+reads that as *the arm noticed*; the non-terminating mutant is credited
+**KILLED**. That is the fourth distinct way this instrument has produced a
+false-perfect, and the only one where the fix would have introduced it.
+
+`TIMEOUT` is its own verdict with CRASHED's standing, the flag is checked
+before the kill, and the rows are named individually so a reader can go look.
+The deadline is **derived** — 10x the module's own baseline arm, floored at
+30s — because one typed constant cannot mean the same thing to a 0.03s gate
+and an 8.3s workspace sweep. Measured: 127 mutants, previously unbounded, now
+**33s with exactly 1 TIMEOUT**.
+
+⚠ The watchdog is a `threading.Timer` + `_thread.interrupt_main()`, not
+`SIGALRM`, which is POSIX-only while this workstation is Windows. It reaches a
+pure-Python loop and **not** a blocking C call, and there is a narrow race
+where a timer fires just after the arm returns — `audit_module` catches that
+too, so the worst outcome is one adjacent mutant mislabelled TIMEOUT, never a
+false KILL and never a hang. A subprocess per mutant would be airtight at
+~2400 interpreter starts; naming the 10% the cheap version misses is the
+point of writing it down.
+
+⚠ And the cost prediction that started T6 was **invalidated by the defect it
+found**: the per-module arm timing measured the seven dataclass modules at
+0.000s/arm *because they crashed*, so the 765s figure was computed over a
+population a third of which was not running at all. Read it as the lower bound
+it turned out to be.
+
 ### ⛔ Finding 4 — the gate caught the commit that changed it
 
 The `if r.get("baseline", …) != A.BASE_OK:` branch added to `measure()` read

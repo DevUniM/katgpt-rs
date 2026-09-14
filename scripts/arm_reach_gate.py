@@ -339,7 +339,7 @@ def new_acc() -> dict:
     """The accumulator `fold` writes into. One place, so an arm builds the
     same shape `measure` does — two literals is two things to get wrong."""
     return {"mutants": 0, "killed": 0, "no_arm": [], "baseline_bad": [],
-            "unreached": [], "survivors": []}
+            "unreached": [], "survivors": [], "timeouts": []}
 
 
 def fold(name: str, row: dict, src: list[str], acc: dict) -> None:
@@ -374,6 +374,19 @@ def fold(name: str, row: dict, src: list[str], acc: dict) -> None:
             continue
         text = src[ln - 1].strip() if 0 < ln <= len(src) else ""
         acc["survivors"].append((name, func, desc, text))
+    # ⛔ A TIMEOUT row is an UNMEASURED decision line, so it goes in the same
+    # pinned set. It is neither killed nor survived, and the gate being silent
+    # about it is precisely the hole this whole issue is about: a mutant that
+    # never returns was credited KILLED until T6, and dropping it from the
+    # finding set instead would trade a false kill for a quiet omission. The
+    # REASON on the pin row carries the distinction; the count is printed
+    # separately so it is never read as arm reach.
+    for func, ln, desc in row.get("timeout", []):
+        if func in A.EXEMPT_FUNCTIONS:
+            continue
+        text = src[ln - 1].strip() if 0 < ln <= len(src) else ""
+        acc["survivors"].append((name, func, desc, text))
+        acc["timeouts"].append(f"{name}::{func}")
 
 
 def measure(only: list[str] | None = None) -> dict:
@@ -405,7 +418,7 @@ def measure(only: list[str] | None = None) -> dict:
     return {
         "modules": len(rows), "mutants": acc["mutants"], "killed": acc["killed"],
         "unreached": acc["unreached"], "no_arm": acc["no_arm"],
-        "baseline_bad": acc["baseline_bad"],
+        "baseline_bad": acc["baseline_bad"], "timeouts": acc["timeouts"],
         "errored": [n for n, r in rows.items() if r.get("error")],
         "observed": build_keys(acc["survivors"]),
     }
@@ -629,6 +642,19 @@ def gate_selftest() -> list[str]:
     if acc["baseline_bad"] != ["b.py BASELINE-RED"] or acc["killed"]:
         f.append(f"fold: a BASELINE-RED row routed to {acc}")
 
+    # a TIMEOUT row joins the PINNED set — never dropped, never a kill.
+    acc = new_acc()
+    fold("t.py", {**ok_row, "timeout": [("rule", 1, "> -> >="),
+                                        ("main", 1, "> -> >=")]},
+         ["  if n > f:"], acc)
+    if len(acc["survivors"]) != 1 or acc["timeouts"] != ["t.py::rule"]:
+        f.append(f"fold: TIMEOUT rows routed to {acc['survivors']} / "
+                 f"{acc['timeouts']} — they must be PINNED (an unmeasured "
+                 "line the gate is silent about is the hole this issue is "
+                 "about) and EXEMPT-filtered like any other row")
+    if acc["killed"] != ok_row["killed"]:
+        f.append("fold: a TIMEOUT row changed the killed count")
+
     acc = new_acc()
     fold("u.py", {**ok_row, "killed": 0}, [], acc)
     if acc["unreached"] != ["u.py"]:
@@ -762,7 +788,8 @@ def main(argv: list[str]) -> int:
 
     print(f"▸ arm-reach VERDICT over {m['modules']} module(s), "
           f"{m['mutants']} mutant(s), {m['killed']} killed, "
-          f"{len(m['observed'])} live survivor(s), {wall:.1f}s")
+          f"{len(m['observed'])} live survivor(s) incl. "
+          f"{len(m['timeouts'])} TIMEOUT, {wall:.1f}s")
 
     if m["errored"]:
         print(f"✗ {len(m['errored'])} module(s) do not parse: "
@@ -793,8 +820,9 @@ def main(argv: list[str]) -> int:
               "EQUIVALENT mutant survives correctly.")
         return 1
 
-    print(f"✓ arm-reach gate: {len(m['observed'])} live survivor(s), all "
-          f"pinned with a reason; 0 UNREACHED, 0 NO-ARM")
+    print(f"✓ arm-reach gate: {len(m['observed'])} unmeasured line(s) "
+          f"({len(m['timeouts'])} of them TIMEOUT, never arm reach), all "
+          f"pinned with a reason; 0 UNREACHED, 0 NO-ARM, 0 BASELINE")
     return 0
 
 

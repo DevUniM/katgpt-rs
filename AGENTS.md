@@ -986,6 +986,24 @@ blaming the gates for its own boundary.
   runs the real workspace needs the same markers the gates get
   (`DOCS_GATE_PARTIAL_CLONE=1` on a known-subset box), and two of them read RED
   without it.
+- ⛔ **A mutant can never RETURN, and without a bucket the hang is the MILD
+  failure** (T6). Flipping a conjunct out of a loop condition produces a module
+  that computes forever, and the harness had no bound at all: a
+  `--include-all` run predicted at 13 minutes was still burning 98% of a core
+  at **two hours**, wedged on one mutant of `restatement_theorem_audit`. The
+  worse half is what happens when you interrupt it — the watchdog raises
+  `KeyboardInterrupt`, `except BaseException` reads that as *the arm noticed*,
+  and a non-terminating mutant is credited **KILLED**. `TIMEOUT` is its own
+  verdict with CRASHED's standing (*evidence of nothing*), the rows are named
+  individually, and the flag is checked BEFORE the kill. The deadline is
+  **derived from the module's own baseline** run (10x, floored at 30s) rather
+  than typed — one constant cannot mean the same thing to a 0.03s gate and an
+  8.3s workspace sweep. Measured: the module that never terminated now finishes
+  in **33s with 1 TIMEOUT**. ⚠ The watchdog is a thread + `interrupt_main`,
+  because `SIGALRM` is POSIX-only and the workstation is Windows; it reaches a
+  pure-Python loop and NOT a blocking C call. A subprocess per mutant would be
+  airtight at ~2400 interpreter starts — naming the 10% it misses is the point
+  of writing it down.
 - ⛔ **The exec namespace is a registered module, and the bare dict was the
   harness's THIRD bucket-boundary defect** — invisible in the default
   population, which is why T1–T4 never saw it. `dataclasses` resolves a class's

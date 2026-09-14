@@ -127,7 +127,25 @@ EXEMPT_FUNCTIONS = {
 MIN_MODULES = 15
 MIN_MUTANTS = 200
 
-KILLED, SURVIVED, CRASHED = "KILLED", "SURVIVED", "CRASHED"
+KILLED, SURVIVED, CRASHED, TIMEOUT = "KILLED", "SURVIVED", "CRASHED", "TIMEOUT"
+
+# A mutant that never RETURNS. Flipping `<` to `<=` or `and` to `or` in a loop
+# condition produces a module that computes forever, and the harness had no
+# bound at all: measured 2026-09-15, a `--include-all` run predicted at 13
+# minutes was still burning 98% of a core at TWO HOURS, wedged on one mutant of
+# `restatement_theorem_audit`.
+#
+# ⛔ The hang is the MILD failure. Interrupting it without a bucket is worse:
+# the watchdog raises `KeyboardInterrupt`, `except BaseException` reads that as
+# the arm noticing, and a non-terminating mutant is credited **KILLED** — the
+# false-perfect this instrument has now produced four different ways.
+# TIMEOUT is its own verdict, standing of CRASHED: evidence of nothing.
+#
+# The deadline is DERIVED from the module's own baseline run rather than typed:
+# a mutant taking 10x the unmutated arm has not got slower, it has diverged.
+# The floor keeps a sub-second arm from timing out on ordinary scheduler noise.
+TIMEOUT_FLOOR_S = 30.0
+TIMEOUT_FACTOR = 10.0
 
 # The BASELINE verdict — a module-level bucket, never a mutant-level one.
 # `BASE_RED` is the dangerous direction: an arm that fails on its own
@@ -374,7 +392,51 @@ def dataclass_premise() -> bool:
     return False
 
 
-def run_arm(code, path: Path, arms: set[str]) -> str:
+_timed_out = False
+
+
+@contextlib.contextmanager
+def _deadline(seconds: float | None):
+    """Interrupt the main thread if the body outlives `seconds`.
+
+    `signal.setitimer`/`SIGALRM` is POSIX-only and this repo's workstation is
+    Windows, so the watchdog is a `threading.Timer` calling
+    `_thread.interrupt_main()`. That reaches a pure-Python loop — which is the
+    measured failure — and does NOT reach a blocking C call. A subprocess per
+    mutant would be airtight and costs ~2400 interpreter starts; the in-process
+    watchdog is the affordable 90%, and saying which 10% it misses is the point
+    of writing that down.
+
+    ⚠ There is a narrow RACE: the timer can fire between the arm returning and
+    `cancel()`, leaving a `KeyboardInterrupt` to land in the next mutant. The
+    flag survives the window and `audit_module` also catches it, so the worst
+    outcome is one mutant labelled TIMEOUT that merely finished at the
+    deadline — never a false KILL, and never a hang.
+    """
+    global _timed_out
+    _timed_out = False
+    if seconds is None:
+        yield
+        return
+    import _thread
+    import threading
+
+    def _fire():
+        global _timed_out
+        _timed_out = True
+        _thread.interrupt_main()
+
+    timer = threading.Timer(seconds, _fire)
+    timer.daemon = True
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
+
+
+def run_arm(code, path: Path, arms: set[str],
+            timeout: float | None = None) -> str:
     """KILLED if any arm in this module reports a failure, else SURVIVED.
 
     An arm is EITHER a `-> list[str]` shape (failures returned) or an
@@ -389,12 +451,12 @@ def run_arm(code, path: Path, arms: set[str]) -> str:
     # `required_features_static_gate.selftest` returns None and raises
     # SystemExit(2) on failure, so under the first version every mutant it
     # caught was filed as CRASHED and the module could never show a KILL at all.
-    with _exec_namespace(path) as ns:
+    with _exec_namespace(path) as ns, _deadline(timeout):
         try:
             with _silence():
                 exec(code, ns)
         except BaseException:
-            return CRASHED
+            return TIMEOUT if _timed_out else CRASHED
         try:
             with _silence():
                 for name in sorted(arms & RUN_ARMS):
@@ -412,7 +474,12 @@ def run_arm(code, path: Path, arms: set[str]) -> str:
                     if isinstance(result, int) and result != 0:
                         return KILLED
         except BaseException:
-            return KILLED
+            # ⛔ The flag is checked FIRST and that ordering is the finding: a
+            # watchdog interrupt arrives as `KeyboardInterrupt`, which this
+            # clause would otherwise read as "the arm noticed" and credit as a
+            # KILL. A mutant that never returns has been distinguished by
+            # nothing.
+            return TIMEOUT if _timed_out else KILLED
     return SURVIVED
 
 
@@ -423,7 +490,7 @@ def audit_module(path: Path) -> dict:
     except SyntaxError as e:
         return {"error": f"does not parse ({e.msg} line {e.lineno})"}
     arms = arm_names_in(tree)
-    row = {"arms": sorted(arms), "killed": 0, "crashed": 0,
+    row = {"arms": sorted(arms), "killed": 0, "crashed": 0, "timeout": [],
            "survived": [], "total": 0, "error": None, "baseline": BASE_OK}
     # NO-ARM is about arms that can be RUN. A module whose only arm is
     # `prove_fires` has nothing that could notice a mutation of its own source.
@@ -445,18 +512,43 @@ def audit_module(path: Path) -> dict:
     # Neither is folded into KILLED or SURVIVED, and the mutants are counted
     # but not RUN: running them buys a column of identical vacuous verdicts at
     # full price (the seven dataclass modules were 796 of them).
+    t0 = time.time()
     base = run_arm(compile(src, str(path), "exec"), path, arms)
+    # The deadline every mutant of this module is held to, derived from the arm
+    # that just ran unmutated. Never typed: 10x a module's own arm is the same
+    # statement about a 0.03s gate and an 8.3s workspace sweep, and one constant
+    # cannot be both.
+    deadline = max(TIMEOUT_FLOOR_S, TIMEOUT_FACTOR * (time.time() - t0))
     if base != SURVIVED:
         row["baseline"] = BASE_RED if base == KILLED else BASE_CRASH
         row["total"] = sum(1 for _ in mutants(src, arms))
         return row
     for desc, func, ln, code in mutants(src, arms):
         row["total"] += 1
-        verdict = run_arm(code, path, arms)
+        try:
+            verdict = run_arm(code, path, arms, timeout=deadline)
+            if verdict == TIMEOUT:
+                # ⛔ RETRY ONCE, wider. The deadline is derived from a baseline
+                # measured at the START of the run, so a box that gets busy
+                # mid-run turns slow-but-TERMINATING mutants into TIMEOUT rows
+                # — and a TIMEOUT row is a required pin. Measured: a CHECKS-set
+                # mutant read TIMEOUT while a `--include-all` run was competing
+                # for the box, and KILLED on a quiet one. A pin file that reds
+                # on load noise is a pin file people delete, which is this
+                # gate's own argument for a line-free key. A genuine hang pays
+                # 4x the deadline; there was exactly one in the workspace.
+                verdict = run_arm(code, path, arms, timeout=deadline * 3)
+        except KeyboardInterrupt:
+            # The narrow race in `_deadline`: the watchdog fired just after the
+            # arm returned. Attributing it here mislabels at most one adjacent
+            # mutant — never a false KILL, never a hang.
+            verdict = TIMEOUT
         if verdict == KILLED:
             row["killed"] += 1
         elif verdict == CRASHED:
             row["crashed"] += 1
+        elif verdict == TIMEOUT:
+            row["timeout"].append((func, ln, desc))
         else:
             row["survived"].append((func, ln, desc))
     return row
@@ -675,6 +767,42 @@ def selftest() -> list[str]:
         eq("a module that will not EXEC unmutated is BASELINE-CRASH",
            (r["baseline"], r["killed"]), (BASE_CRASH, 0))
 
+        # ── the TIMEOUT boundary: a mutant that never RETURNS ─────────────
+        # ⛔ Two-sided, and the second side is the one that matters. A
+        # non-terminating mutant reaches `except BaseException` as a
+        # KeyboardInterrupt, which without this bucket reads as "the arm
+        # noticed" and is credited KILLED. The fixture's `<` flips to `<=` in
+        # a loop whose body decrements to the bound, so the `<=` arm never
+        # exits — a real mutation of this harness's own operator set, not a
+        # `while True` nobody would write.
+        spin = d / "spin.py"
+        spin.write_text(
+            "def rule(n):\n"
+            "    i, guard = n, 1\n"
+            "    while 0 < i and 0 < guard:\n"
+            "        i -= 1\n"
+            "    return i\n"
+            "def selftest():\n"
+            "    return [] if rule(3) == 0 else ['x']\n",
+            encoding="utf-8")
+        src_spin = spin.read_text(encoding="utf-8")
+        # ⚠ `and -> or`, not a comparison flip, and that is a MEASURED choice:
+        # `0 < i` → `0 <= i` still exits (at i = -1), as does `> ` → `>=`. A
+        # comparison flip on a decrementing loop almost never removes the exit.
+        # Dropping the conjunct does, because `guard` never changes.
+        hung = [c for desc, _f, _l, c in mutants(src_spin, {"selftest"})
+                if desc == "and -> or"]
+        eq("the conjunct-drop is a mutant this operator set PRODUCES",
+           len(hung), 1)
+        eq("a mutant that never returns is TIMEOUT, NEVER killed",
+           run_arm(hung[0], spin, {"selftest"}, timeout=1.0), TIMEOUT)
+        eq("…and the same module unmutated is not timed out by the watchdog",
+           run_arm(compile(src_spin, str(spin), "exec"), spin, {"selftest"},
+                   timeout=1.0), SURVIVED)
+        eq("the deadline is OPT-IN — None means no watchdog at all",
+           run_arm(compile(src_spin, str(spin), "exec"), spin, {"selftest"}),
+           SURVIVED)
+
         healthy = d / "healthy.py"
         healthy.write_text(
             "def rule(n):\n    return n >= 10\n"
@@ -824,11 +952,21 @@ def main(argv: list[str]) -> int:
         else:
             mark = "✓" if not live else "✗"
         print(f"  {mark} {name:40s} {r['killed']:3d} killed  {r['crashed']:3d} crashed  "
+              f"{len(r.get('timeout', [])):3d} timeout  "
               f"{len(live):3d} survived (+{len(r['survived']) - len(live)} exempt) "
               f"of {r['total']:3d}"
               + ("   UNREACHED: this arm killed nothing" if mark == "⛔" else ""))
 
+    timed = [(n, f, l, d) for n in sorted(rows)
+              for f, l, d in rows[n].get("timeout", [])]
     print()
+    if timed:
+        print(f"  ⛔ TIMEOUT — these mutants never RETURNED ({len(timed)} row(s)). "
+              f"Evidence of NOTHING, never a kill: a flipped loop condition "
+              f"computes forever and the arm distinguished nothing:")
+        for name, func, ln, desc in timed:
+            print(f"    {name}:{ln}  {func}()  {desc}")
+        print()
     if survived_live:
         print(f"  SURVIVED — no arm distinguishes these lines' behaviour "
               f"({len(survived_live)} row(s)):")
@@ -839,6 +977,7 @@ def main(argv: list[str]) -> int:
           f"{len(survived_live)} survived (live) · {survived_exempt} survived in "
           f"exempt functions · "
           f"{sum(r['crashed'] for r in rows.values() if not r.get('error'))} crashed · "
+          f"{len(timed)} timeout · "
           f"{sum(r['total'] for r in no_arm.values())} in {len(no_arm)} NO-ARM "
           f"module(s) · {sum(r['total'] for r in baseline_bad.values())} in "
           f"{len(baseline_bad)} BASELINE-bad module(s) · {len(errored)} unparsed")
