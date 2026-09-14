@@ -52,6 +52,15 @@ are NOT comparable** to the default run: a sweep script's arm is written to
 cover its *classifier*, and its `main()` is a much larger I/O shell than a
 gate's. Two populations, two baselines.
 
+⛔ **And it is a different COST class, not merely more modules.** The CHECKS
+population is 22 modules / 552 mutants / **158s** (measured twice, 2026-09-15).
+`--include-all` pulls in the eleven cross-repo drift sweeps, whose arms are
+WORKSPACE-WIDE WALKS, so every mutant pays a 16-repo walk: a run was
+**abandoned at 7.5 minutes without completing** — a LOWER BOUND, not a
+measurement of the whole run, and quoted as one. Budget it as a deliberate
+investigation, never as "the same report with a flag". The verdict half
+(`arm_reach_gate.py`) deliberately does NOT use this population.
+
 Exit 0 = the report ran (findings or not).
 Exit 2 = the instrument went blind (a floor breached, or its own self-test
 failed — a mutation harness that generates no mutants reports a perfect score).
