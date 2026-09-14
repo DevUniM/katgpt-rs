@@ -455,6 +455,31 @@ Issue 755's shape exactly: **a rule expressed twice is a rule that will be
 expressed differently.** One predicate now, `has_runnable_arm`, armed on the
 `prove_fires`-only case in both directions.
 
+### ⛔ Finding 8 — the blocking-C-call wedge has a MECHANISM, and it is the box
+
+The TIMEOUT watchdog's documented blind spot — "reaches a pure-Python loop and
+NOT a blocking C call" — stopped being hypothetical the same day. Two runs
+wedged at **~3.5% CPU with no direct children** and the watchdog thread alive
+with an undeliverable interrupt: one at 36 minutes, one at 2 hours.
+
+The mechanism is not in this instrument. The workstation carries **167 live
+`git.exe` processes, ten of them 117 hours old**, all at ~0 CPU. They hold the
+write end of pipes a Python parent is still reading, so `subprocess` blocks
+forever — and it looks like "slow", not "wedged", because there is no child
+left to point at.
+
+Two consequences, and the first is the one to carry forward:
+
+1. **Drive any workspace-wide Python run module by module under an EXTERNAL
+   `timeout`.** In-process watchdogs cannot see this class at all. The
+   per-module walk covered 53 of 55 modules in ~35 minutes and lost exactly one
+   module when a wedge was killed, against two abandoned whole-run attempts
+   that produced nothing.
+2. `len_derived_drift_sweep` and `platform_dead_code_audit` are the **2 of 55**
+   this box could not measure. They are reported UNMEASURED rather than folded
+   into any bucket — a report whose population shrank silently is the blindness
+   this whole family of instruments exists to refuse.
+
 ### ⛔ Finding 4 — the gate caught the commit that changed it
 
 The `if r.get("baseline", …) != A.BASE_OK:` branch added to `measure()` read
