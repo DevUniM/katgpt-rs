@@ -890,15 +890,30 @@ fn caller() {
     assert not guard_only_uses(alias_arith, "x"), "arithmetic alias read as guard"
 
 
-def main() -> int:
-    selftest()
-    here = Path(__file__).resolve().parent
-    workspace = here.parent.parent
-    repos = derive_repos(workspace)
-    if not repos:
-        print("✗ no contract repos derived — refusing to print a confident zero")
-        return 1
+# The two global blindness floors, lifted out of `main()` (Issue 786 T1) so the
+# sweep half can assert against them instead of restating them. They are
+# WORKSPACE totals and stay deliberately loose: a partial checkout carries
+# fewer repos, and a floor that reds on a 14-of-20 box is a floor nobody runs.
+# The TIGHT, per-repo floors live in `scripts/len_derived_drift_floors.txt`,
+# where the partial-clone axis is handled by `population_verdict()` instead of
+# by slack. 52 kernels measured 2026-09-13 after the brace-matched body fix
+# (the fixed 6000-char window's bleed had counted 74 — 22 host-side false
+# positives); floor 45 means a regression that loses 7+ kernels REDS.
+FLOOR_RS_FILES = 1500
+FLOOR_KERNELS = 45
 
+
+def classify_workspace(repos: list[Path]) -> Report:
+    """HALF A + HALF B + HALF C + the guard-only re-verdict, over a repo list.
+
+    Extracted from `main()` by Issue 786 T1 and shared with
+    `scripts/len_derived_drift_sweep.py`. The four passes are the instrument:
+    HALF C in particular resolves a wrapper parameter's provenance through
+    *every* repo in `repos`, so the list handed in is part of the verdict and
+    not merely a filter — which is why the sweep MEASURES that sensitivity
+    (leave-one-out) rather than assuming it away. A second copy of a classifier
+    this layered is a second thing to get wrong (Issue 755).
+    """
     rep = Report()
     for repo in repos:
         half_a(repo, rep)
@@ -919,6 +934,19 @@ def main() -> int:
         if b.verdict in ("PERSISTENT", "PERSISTENT-UPSTREAM") and rep.guard_only.get(b.kernel):
             b.verdict = "GUARD-ONLY"
             b.reason = "guard-only len-use (capacity-tolerant); " + b.reason
+    return rep
+
+
+def main() -> int:
+    selftest()
+    here = Path(__file__).resolve().parent
+    workspace = here.parent.parent
+    repos = derive_repos(workspace)
+    if not repos:
+        print("✗ no contract repos derived — refusing to print a confident zero")
+        return 1
+
+    rep = classify_workspace(repos)
 
     # Kernel names are crate-unique enough for the join; report per kernel.
     by_kernel: dict[str, list[BindSite]] = {}
@@ -962,10 +990,9 @@ def main() -> int:
             print(f"  {k.repo}/{k.file}  {k.name}  (derives from {sorted(k.len_params)})")
         print()
 
-    # Floors: 52 kernels measured 2026-09-13 after the brace-matched body fix
-    # (the fixed 6000-char window's bleed had counted 74 — 22 host-side
-    # false positives). Floor 45: a regression that loses 7+ kernels REDS.
-    floors = {"min_rs_files": 1500, "min_kernels": 45}
+    # Module constants since Issue 786 T1 — see FLOOR_RS_FILES for why they
+    # are loose, and len_derived_drift_floors.txt for the tight per-repo half.
+    floors = {"min_rs_files": FLOOR_RS_FILES, "min_kernels": FLOOR_KERNELS}
     problems = []
     if rep.files_scanned < floors["min_rs_files"]:
         problems.append(f"files_scanned {rep.files_scanned} < {floors['min_rs_files']}")

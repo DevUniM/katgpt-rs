@@ -350,6 +350,21 @@ meaning is *unanswered* is a backlog), UNCOVERED is pinned by **NAME** in
 `scripts/wasm32_uncovered_expected.txt` and reds in BOTH directions, and the
 walk floor is the ONLY blindness detector here — vacuous in 7 of 16 repos,
 which is why a reserved `TOTALS` row floors the population globally),
+`len_derived_drift_sweep.py` (every contract repo, on demand — the Issue 786
+verdict half of `len_derived_binding_audit.py`, and the **ninth** instance of
+this shape. The QUIETEST one: unlike 784 and 785 it had no hand-typed standing
+figure to go stale, so there was nothing to catch being wrong — an instrument
+nobody is told about does not drift into error in public, it just stops being
+run, which is why these are found by census and not by symptom. It is the one
+sweep in the family whose classifier is **cross-repo by construction** (HALF C
+resolves provenance through workspace callers), so a partial clone can corrupt
+a PRESENT repo's verdict and `DEFERRED` does not cover that; measured, both
+directions, 7 of 251 cited caller refs are cross-repo and leave-one-out over
+all 16 repos produces **0 verdict flips**, so the sweep runs a TARGETED
+leave-one-out over the derived supplier set every run rather than assuming the
+axis away. It is also the one sweep with **no `min_rs_files` column** —
+three others floor that identical walk over that identical population, and the
+delegation is ASSERTED rather than assumed),
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
 REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73
@@ -872,6 +887,64 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   `--manifest-path "$unit/…"` lane read as a bare row). A classifier's bucket
   boundaries ARE the finding, and they are only testable against cases whose
   answer is known independently.
+
+## A kernel can derive its SHAPE from a buffer's declared size — `scripts/len_derived_binding_audit.py`
+
+`let n_positions = kv.len() / 2 / kv_stride;` inside a CubeCL kernel computes
+that dimension from the bound buffer's **declared size**, not from the length
+metadata handed to `BufferArg::from_raw_parts`. Bind a buffer whose declared
+size exceeds the live range and the kernel silently derives the WRONG shape —
+reads never-written memory, writes a measured identically-zero result. No
+panic, no NaN, no wrong-looking output (riir-ai `3e00c93e0`, riir-train
+Issue 511).
+
+The defect is a **JOIN** of two facts in two files, and a report over either
+half alone is noise: HALF A is the in-kernel `.len()` derivation, HALF B is a
+bind site whose declared size can exceed the live range (a persistent
+struct-field handle, a capacity-sized `client.empty()`, a reused scratch
+slice). HALF C (Issue 766) resolves a wrapper parameter's provenance through
+**workspace** callers — which is why this instrument's verdicts are cross-repo
+by construction, the only ones in the family that are.
+
+```bash
+scripts/len_derived_binding_audit.py        # the report, all contract repos (derived)
+scripts/len_derived_drift_sweep.py          # the verdict, every repo, pinned
+scripts/len_derived_drift_sweep.py --no-stability   # skip the leave-one-out arm
+scripts/len_derived_drift_sweep.py --canary         # the 12 adversary arms
+```
+
+- The report is a **report, not a gate** (exit 0), except a WALK REGRESSION —
+  it carries two loose global floors (`FLOOR_RS_FILES`, `FLOOR_KERNELS`) and
+  refuses a confident zero below them. Population derived (BOUNDARY.md +
+  `.git`), **tracked** `*.rs` only (Issue 777 — it was one of the three
+  instruments walking a gitignored nested repository).
+- **UNRESOLVED is not clean** and is never folded into a neighbour: it is 118
+  of 164 bind sites, and a ratchet on a bucket meaning *unanswered* is a
+  backlog (Issue 785's rule). It is reported, unpinned, with the reason printed
+  where it is READ.
+- **PERSISTENT-UPSTREAM is the EYES LIST, not the finding list** — some caller
+  binds a struct FIELD, so the declared size is whatever that field was created
+  as. Pinned by MEMBERSHIP in `scripts/len_derived_eyes_expected.txt`, keyed
+  line-free on `(repo, file, kernel, handle)` **plus a count within that
+  address**, because the key is not unique in general.
+- The verdict half walls the joined buckets (CAPACITY, CAPACITY-UPSTREAM,
+  PERSISTENT) at 0 and floors `min_kernels` / `min_binds` per repo. ⚠ Those
+  floors are **vacuous in 14 of 16 repos** (riir-ai 43/143, riir-train 9/21,
+  everyone else 0/0) — Issue 783's population shape, not Issue 784's.
+- ⛔ **`DEFERRED` is not enough here, and that is the axis no other sweep has.**
+  A partial clone can corrupt the verdict of a row in a repo that IS present,
+  which is a row measured WRONG rather than a row not measured. Measured both
+  directions (2026-09-14): **7 of 251** cited caller references are cross-repo,
+  and **leave-one-out over all 16 repos produces 0 verdict flips** — so
+  per-repo pins are sound TODAY, and the sweep re-measures a TARGETED
+  leave-one-out (the supplier set derived from the run) every time rather than
+  carrying that measurement forward as a claim.
+- It carries **no `min_rs_files` column** on purpose: `orphaned_attr`,
+  `platform_dead_code` and `percentile` already floor that identical
+  `tracked_files(repo, "*.rs")` call over the identical population, and they
+  already disagree with each other about the number. The delegation is
+  **asserted** — the sweep reds if any repo it pins loses its non-zero row
+  there.
 
 ## An item can be dead on a platform NO lane compiles — `scripts/platform_dead_code_audit.py`
 

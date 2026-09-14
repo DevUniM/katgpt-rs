@@ -1,0 +1,92 @@
+# Pins for scripts/len_derived_drift_sweep.py — EVERY contract repo.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_kernels> <min_binds> <max_findings>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── max_findings is a WALL, not a ratchet ───────────────────────────────────
+# It counts CAPACITY + CAPACITY-UPSTREAM + PERSISTENT — the JOINED defect:
+# HALF A (a cube kernel deriving a structural dimension from a bound buffer's
+# `.len()`) met by HALF B (a bind site whose DECLARED buffer size can exceed
+# the live range). All three buckets are 0 in all 16 repos today.
+#
+# ⛔ Do not "fix" a red by raising a ceiling. The failure mode of this class is
+# that there is NO failure signal: the kernel derives the wrong shape, reads
+# never-written memory and writes a measured identically-zero result — no
+# panic, no NaN, no wrong-looking output (riir-ai `3e00c93e0`, riir-train
+# `.issues/511`). A raised ceiling here buys silence, not time.
+#
+# PERSISTENT-UPSTREAM is NOT in this count. It is the EYES LIST and is pinned
+# by MEMBERSHIP in scripts/len_derived_eyes_expected.txt — a count goes green
+# the day one row is adjudicated and another regresses.
+#
+# ── the two floors are VACUOUS in 14 of 16 repos, and that is MEASURED ──────
+# A ceiling is green over whatever the classifier can SEE, so the 0 above needs
+# a population underneath it. Two quantities sit there:
+#
+#   min_kernels   moves when HALF A breaks on an unchanged tree
+#   min_binds     moves when HALF B stops finding launch sites for kernels
+#                 HALF A still reports
+#
+# Measured 2026-09-14: riir-ai 43 kernels / 143 bind sites, riir-train 9 / 21,
+# and the OTHER FOURTEEN repos 0 / 0. So in 14 of 16 rows these floors detect
+# nothing whatsoever. This is Issue 783's population shape (`min_calls` is 0 in
+# 10 of 16 there), NOT Issue 784's (where both floors bite everywhere). Do not
+# carry one repo set's warrant onto another.
+#
+# min_kernels has a REAL failure to its name: before the brace-matched body fix
+# (2026-09-13) the classifier's fixed 6000-char window bled past the kernel
+# body and counted 74 kernels, 22 of them host-side false positives.
+#
+# ── there is deliberately NO `min_rs_files` column ──────────────────────────
+# Three sweeps already floor that quantity per repo over the IDENTICAL
+# `tracked_walk.tracked_files(repo, "*.rs")` call and the identical population
+# (orphaned_attr, platform_dead_code, percentile). A fourth copy adds zero
+# detection power — and the three already DISAGREE (katgpt-rs 1500/1400/1500,
+# riir-ai 1500/1500/1800, against 2415 and 2626 measured), which is harmless
+# for independently chosen slack floors but is not a shape worth extending.
+#
+# ⚠ The delegation is ASSERTED, not assumed: the sweep reds if any repo pinned
+# here lacks a non-zero `min_rs_files` row in orphaned_attr_drift_floors.txt.
+#
+# ── and there is deliberately NO reserved TOTALS row ────────────────────────
+# wasm32_surface_drift_floors.txt needs one because its per-repo floors are 0
+# in 7 of 16 and nothing else floors that population. Here the two non-zero
+# rows already catch a classifier that breaks workspace-wide, and a GLOBAL
+# kernel floor would red on a partial-clone box the moment riir-ai or
+# riir-train were absent — the case population_verdict() exists to DEFER.
+#
+# Floors are ~55% of measured: SLACK against churn (extracting a kernel to a
+# sibling crate legitimately shrinks a count, and a floor that ratcheted to the
+# last measurement would red that refactor and teach whoever hit it that the
+# sweep is noise), TIGHT against blindness (a classifier regression drops these
+# to 0, not by 45%).
+#
+#                       min_kernels  min_binds  max_findings
+katgpt-rs                        0          0             0
+riir-ai                         23         78             0
+riir-auth                        0          0             0
+riir-chain                       0          0             0
+riir-clippy                      0          0             0
+riir-dapps                       0          0             0
+riir-game-sdk                    0          0             0
+riir-kat                         0          0             0
+riir-mmorpg-examples             0          0             0
+riir-neuron-db                   0          0             0
+riir-shader                      0          0             0
+riir-train                       5         11             0
+riir-viewbridge                  0          0             0
+seal-game-editor                 0          0             0
+seal-online-remaster             0          0             0
+seal-remake                      0          0             0
+#
+# ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
+# riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).
+# They report DEFERRED under DOCS_GATE_PARTIAL_CLONE=1 and will report
+# UNPINNED on the canonical full workstation — pin them from one full-checkout
+# run, alongside the same four rows owed by platform_dead_code_drift_floors,
+# subprocess_encoding_drift_floors, orphaned_attr_drift_floors and
+# wasm32_surface_drift_floors.

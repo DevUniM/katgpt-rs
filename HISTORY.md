@@ -237,6 +237,114 @@ wiring is synthetic shape-class (FlyWire licensing, riir-ai R379), so the
 experiment would compare random-vs-rewired-random — structurally unable to
 attribute. Full record: `.research/556` §7; issue file removed per the
 noise-reduction rule.
+## Issue 786 — the `.len()`-derived binding audit had no verdict half, and the reason it went unnoticed is the finding: CLOSED (2026-09-14)
+
+`scripts/len_derived_binding_audit.py` — 983 lines, 16 repos, 8,694 tracked
+`.rs`, 52 `.len()`-deriving cube kernels, 164 bind sites, nine verdict buckets
+— had no gate, no sweep, and **no `AGENTS.md` entry at all**. Its only mentions
+in this repo were three incidental `HISTORY.md` lines. It was the last
+cross-repo instrument in `scripts/` in that position, after `1a5b6571` bounded
+the two documented exceptions (`suite_membership_audit.py`, 1,203 load-bearing
+unpinned rows; `gguf_header_audit.py`, model-file introspection).
+
+**Ninth instance of one shape** (Issues 777, 778, 779, 782, 783, 784, 785), and
+the QUIETEST. 784 and 785 were found because a hand-typed cross-repo figure had
+gone stale in public — 46% stale in 784's case. This one had no such figure to
+go wrong. An instrument nobody is told about does not drift into error; it
+simply stops being run, and there is no symptom to select on. That is the
+argument for the census: enumerate the instruments against their verdict
+halves, rather than waiting for one of them to say something false.
+
+It had also **already gone blind once** without its output betraying it. Issue
+777 found it walking the filesystem behind a hand-typed skip set, crediting
+seal-online-remaster's gitignored nested `mmorpg/` repository and riir-train's
+cargo `OUT_DIR` sources to their enclosing repos, and migrated it to
+`tracked_walk` in that commit. A floored sweep would have made the population
+shift (11,132 → 8,694 `.rs`) an assertion instead of a paragraph.
+
+**Three measurements decided the pin design, and each one contradicted a shape
+that could have been copied from the previous sweep.**
+
+1. **The population is bimodal.** riir-ai 43 kernels / 143 bind sites,
+   riir-train 9 / 21, **the other 14 repos 0 / 0**. So `min_kernels` and
+   `min_binds` are vacuous in 14 of 16 — Issue 783's shape, not Issue 784's
+   (where both floors bite everywhere). There is deliberately **no reserved
+   `TOTALS` row**, unlike `wasm32_surface_drift_floors.txt`: a global kernel
+   floor reds on a partial-clone box the moment riir-ai or riir-train is
+   absent, which is exactly the case `population_verdict()` exists to DEFER,
+   and the two non-zero per-repo rows already catch a workspace-wide
+   classifier break.
+2. **The verdicts are cross-repo by construction, and `DEFERRED` does not cover
+   that.** HALF C resolves a wrapper parameter's provenance through WORKSPACE
+   callers, so a partial clone can corrupt the verdict of a row in a repo that
+   IS present — a row measured WRONG, not a row not measured. No other sweep in
+   the family can do this; they all classify per repo. Measured both
+   directions: **7 of 251** cited caller references are cross-repo (riir-ai
+   rows resolved through riir-train callers), and **leave-one-out over all 16
+   repos produces 0 verdict flips** — every one of those 7 edges is an
+   additional caller on a row a same-repo caller already decided. So per-repo
+   pins are sound TODAY, and rather than carry that measurement forward as a
+   claim the sweep re-runs a TARGETED leave-one-out every time, over a supplier
+   set derived from the run (today riir-ai + riir-train, ~8s each). A new
+   cross-repo edge joins the check by existing.
+3. **UNRESOLVED is 118 of 164 and stays unpinned.** Issue 785's rule: a ratchet
+   on a bucket meaning *unanswered* is a backlog. wasm32 could wall its
+   UNRESOLVED at 0 only because Issue 738 T1 drove it there by ANSWERING the
+   rows; here the bucket is "provenance one level up, caller not a path-form
+   associated fn", which HALF C cannot reach at all. Reported, reason printed
+   where it is READ, never folded into a pass or a fail — the
+   `suite_membership_audit` precedent.
+
+**The one sweep in the family with no `min_rs_files` column.** Three others
+floor that quantity per repo over the identical `tracked_files(repo, "*.rs")`
+call and the identical population, so a fourth copy adds zero detection power.
+They also already DISAGREE — katgpt-rs pinned 1500 / 1400 / 1500 and riir-ai
+1500 / 1500 / 1800 across `orphaned_attr`, `platform_dead_code` and
+`percentile`, against 2415 and 2626 measured. Harmless (each is an
+independently chosen slack floor, not an equality) and not a shape worth
+extending. ⚠ "Somebody else covers it" is an assumption unless checked, so the
+sweep ASSERTS the delegation: every repo it pins must still carry a non-zero
+`min_rs_files` row in `orphaned_attr_drift_floors.txt`, and the reader that
+parses that file REFUSES a shape it cannot read rather than returning `{}` —
+an empty dict would turn the whole assertion into a no-op, which is the failure
+it exists to prevent.
+
+**T1 was the enabling work, as it was in 785.** The classification lived inline
+in `main()`, so a sweep could only reuse it by copying HALF A + HALF B + HALF C
++ the guard-only re-verdict pass — a copy of the whole instrument. Extracted as
+`classify_workspace(repos)`, with the two global floors lifted to
+`FLOOR_RS_FILES` / `FLOOR_KERNELS`; the report's output is byte-identical
+before and after.
+
+**Canaries: 12 arms, all measured, embedded as `--canary`, and one of them
+failed first.** They are a flag on the sweep rather than a one-off transcript,
+because a pin nobody has watched fail certifies nothing — opt-in rather than
+default (contrast `platform_dead_code_drift_sweep`'s `--prove-fires`) since the
+arms re-enter `main()` and a verdict that runs its own adversary on every
+invocation is one more thing between a reader and the answer. Baseline
+green · both parse floors · UNPINNED · the `max_findings` wall (a real bind
+relabelled `CAPACITY` through the shared classifier, the only honest way to
+plant the joined defect without writing Rust into a sibling) · the EYES
+membership pin in both directions · the EYES count WITHIN one address · the
+delegation break · the unreadable-delegation refusal (exit 2) · the empty-pins
+refusal (exit 2) · the cross-repo flip. The arm that failed was the UNPINNED
+one, and it failed because **its own anchor string was wrong** — it matched on
+`11\n` where the pinned row ends `11             0`, so it perturbed nothing
+and the green it got was real. That is the canary failure mode this repo keeps
+recording (Issue 775's `vendor/` arm certified the code path it was not aimed
+at): an arm that does not perturb certifies nothing, and only the fact that it
+was EXPECTED to red made it visible.
+
+Population direction verified both ways as well: marker-on DEFERS the four
+absent repos by name on the PASS line, marker-off reds with UNSEEN over the
+same four.
+
+Standing at close (2026-09-14, 16 of 20 repos): **0 joined findings · 4 EYES
+addresses · 118 UNRESOLVED** over 8,694 tracked `.rs` / 52 kernels / 164 bind
+sites. The EYES rows and the UNRESOLVED rows are riir-ai's and riir-train's to
+adjudicate — this repo is upstream of both, and what 786 delivers is that the
+set stops being unasserted.
+
 ## The platform-dead_code class got an instrument — `scripts/platform_dead_code_audit.py`, and it was wrong on its first sweep (2026-09-14, 4090 session)
 
 The class below (NEON_U8, `ea4c2873`) was found by a human running clippy on a
