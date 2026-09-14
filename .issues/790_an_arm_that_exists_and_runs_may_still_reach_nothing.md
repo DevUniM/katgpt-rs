@@ -1,6 +1,6 @@
 # Issue 790 — an arm that exists and runs may still reach nothing
 
-**Filed:** 2026-09-14 · **Status:** OPEN (T1–T4 + T6 landed; **T5, the sweep half, BLOCKED on a sandbox story**) · **Branch:** develop
+**Filed:** 2026-09-14 · **Status:** RESOLVED (T1–T4 + T6 landed; **T5 DECLINED on a measurement** — see below) · **Branch:** develop
 
 ## Progress
 
@@ -444,18 +444,55 @@ over 18 arm-bearing sibling scripts is therefore not a sweep-shaped thing at
 all: it cannot run on demand next to the other eleven, and a "sweep" nobody can
 afford to run is the failure mode this repo has now recorded a dozen times.
 
-So T5's honest next step is **not** "write the sweep". It is to decide between:
+So T5's honest next step was **not** "write the sweep" but to run the
+admission classifier over the sibling population first, and decide between a
+per-repo on-demand tool and a sweep over the ADMITTED subset.
 
-- a **per-repo, on-demand** `arm_reach_audit.py <repo>` (the report already
-  takes a population; the archive + admission check is the new part), leaving
-  each repo's rows to its own owner — which is what
-  `instrument_reachability_drift_sweep`'s ratchet measurement already implies;
-  or
-- a **sweep over the ADMITTED subset only**, if the admission check turns out
-  to exclude the expensive workspace-walkers anyway. That is a measurement
-  nobody has taken: run the admission classifier over the 18 first.
+### The measurement (2026-09-15) — the subset sweep is REFUTED
 
-Take that measurement before writing either one.
+A static screen over every tracked, arm-bearing `scripts/*.py` in the
+workspace, flagging what a `git archive` scratch tree cannot supply — absolute
+paths, `..` traversal out of the tree, `subprocess` spawns, `cargo`-class
+children, file writes:
+
+| repo | arm-bearing | mutants | flag-FREE |
+|---|---|---|---|
+| riir-train | 14 (all `planNNN_*`) | 577 | 1 |
+| riir-clippy | 1 | 148 | 0 |
+| riir-ai | 2 | 56 | 1 |
+| **sibling total** | **17** | **781** | **2** |
+
+⛔ **Two of seventeen are admissible.** A sweep restricted to the admitted
+subset would derive a population of **2** and print a confident green over it
+— which is the population-of-ONE argument Issue 789 T4 used to decline its own
+sweep, and the reason `ci_gate_coverage.py` is kept out of the CHECKS set. The
+subset option is refuted, not deferred.
+
+⚠ The screen OVER-captures by construction and is quoted as a screen, not a
+verdict: `ABS` fires on any string starting with `/` and `HEAVY` on any string
+containing `cargo`, comments included. The load-bearing columns are **WRITE
+(8 of 17)** and **SPAWN (3)**, which no amount of tightening removes.
+
+⚠ The population itself is **17 today, not the 18** T5 measured a day earlier
+(riir-ai 2, not 3) — a reminder that the sibling count is a claim and not a
+checksum.
+
+And the remaining option is weakened by the same table: **577 of the 781
+sibling mutants are in riir-train `planNNN_*` scripts**, which
+`instrument_reachability_drift_sweep` already measured as plan-SCOPED one-offs
+where this class of predicate over-captures. So the sweep would spend ~74% of
+its budget on scripts whose whole life was one plan task.
+
+### Resolution: T5 is DECLINED, on a measurement, not blocked
+
+No sweep half. What the measurement supports instead is the modest thing: the
+report should accept a repo path so an owner can run it on their own tree, on
+demand, in the repo where the arms and their fixtures actually live. That is
+**not** landed here — executing another repo's code needs the archive and the
+admission bucket, and neither earns its keep for a 2-module admitted set.
+
+**Do not add a sweep here by symmetry with the other eleven** — the same
+sentence Issue 789 T4 had to write, for the same reason, one instrument over.
 
 ## Tasks
 
@@ -484,6 +521,10 @@ Take that measurement before writing either one.
   RATCHET — `instrument_reachability_drift_sweep` found riir-train's
   `scripts/` is almost entirely plan-scoped one-offs, where the predicate
   over-captures, and the same is likely true of arm reach.
+
+  ⚠ **RESOLVED — see "T5, re-examined after T6" above: DECLINED on a
+  measurement (2 of 17 sibling scripts admissible), not blocked.** The
+  original analysis follows.
 
   ⚠ **Both were measured before building anything, and both answers moved.**
 

@@ -941,12 +941,13 @@ scripts/arm_reach_gate.py --canary            # 16 arm groups over its own arith
 ```
 
 Mutate a module's source **outside its own arm bodies**, re-exec, run its arm,
-ask whether the arm noticed. Standing (2026-09-15, after T2): **22 modules ·
-552 mutants · 360 KILLED · 31 SURVIVED (live) · 0 CRASHED · 0 NO-ARM ·
-0 UNREACHED**, every live survivor pinned with a reason. The 22nd module is
-the gate itself. ⚠ The T3/T4 figure was **21 modules · 519 mutants · 317
-KILLED · 47 SURVIVED**; T2 closed 16 of those 47 as real gaps, so read the
-drop as arms being written, not as the population shrinking.
+ask whether the arm noticed. Standing (2026-09-15, after T6): **22 modules ·
+559 mutants · 372 KILLED · 26 SURVIVED (live) · 0 CRASHED · 0 NO-ARM ·
+0 UNREACHED · 0 BASELINE**, every live survivor pinned with a reason. The 22nd
+module is the gate itself. ⚠ The intermediate figures were **21 modules · 519
+mutants · 317 KILLED · 47 SURVIVED** (T3/T4) and **552 · 360 · 31** (T2); T2
+closed 16 of the 47 as real gaps and T6 closed 5 more, so read each drop as
+arms being written, not as the population shrinking.
 
 ⚠ **The wall clock moved from ~73s to ~370s over T3 and that is the arms
 working, not a regression.** The repairs gave several gates fixture-repo arms
