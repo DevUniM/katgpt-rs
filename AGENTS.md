@@ -166,6 +166,16 @@ predicts, and the 3.3% spread across the first two is **wider than the
 and still the right one to cite, but it is tight-ish, not exact, and a
 difference this size is not evidence a check got slower. Only compare CPU
 within a fixed CHECKS set, and only as a range.
+⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
+same 17 checks / 1517-file fence floor, on a box carrying the g50 training
+precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
+CPU** — 2.7–3.4× the 13.37s figure, with a **20%** run-to-run spread where
+the quiet-box spread was 1.4%. The verdicts were unaffected (17/17 both
+runs); only the timing figure moved. So the invariance claim is
+**quiet-box-scoped**: under sustained multi-tenant load even CPU-seconds
+inflate and destabilize (mechanism unmeasured — E-core placement is the
+suspect, not the finding). Cite CPU *with the load class it was measured
+under*, or the number carries a quiet-box premise onto a busy box.
 ⛔ A discredited fourth figure is why this paragraph is worded so insistently:
 an earlier version called 11.7s wall a *quiet-box baseline*, and it was taken
 at load 5-7 — the 15.0s run (2026-09-11) is the first one actually measured on
