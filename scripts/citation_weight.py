@@ -212,7 +212,120 @@ def selftest() -> list[str]:
         fails.append(f"stem tokens: {stem_tokens('313_swir_real_model_validation')}")
     if "313" in stem_tokens("313_swir_real_model_validation"):
         fails.append("stem tokens: kept the ambiguous number")
+    fails += attribute_arms()
     return fails
+
+
+def attribute_arms() -> list[str]:
+    """Pin `attribute()` — the SCORING rule, which had no arm at all.
+
+    ⛔ Found by `arm_reach_audit` (Issue 790 T6): this module scored **3 killed
+    of 41**, the weakest arm reach in the workspace, and 16 of its 23 live
+    survivors were in this one function. The arm above covers the dialect table
+    and the tokenizer — the two inputs — and asserted nothing whatever about
+    the decision they feed. That is the shape T2 named: a plain function over
+    plain data, armable with no fixture repo, wearing an "I/O shell" label
+    because the module around it shells out to git.
+
+    Every rule below is one this file's own prose already CLAIMS, which is the
+    point: an undertested claim and an untrue one read identically from here.
+    """
+    f: list[str] = []
+    cands = ["229_daynight_gm_tool", "229_shader_cache_warm"]
+    tokens = {c: stem_tokens(c) for c in cands}
+
+    def run(blobs, margin=1, path_affinity=False, window=240):
+        return attribute(blobs, cands, tokens, "Plan", "229", window, margin,
+                         path_affinity)
+
+    # ── 1. a clear winner is AWARDED, and the loser scores nothing ─────────
+    by_name, won, unres, sites, detail, undecided, _ph = run(
+        {"a.md": "the shader cache warm path, see Plan 229"})
+    if (sites, won["229_shader_cache_warm"], unres) != (1, 1, 0):
+        f.append(f"attribute: a clear winner was not awarded "
+                 f"(sites={sites}, won={won}, unresolved={unres})")
+    if won["229_daynight_gm_tool"]:
+        f.append("attribute: the loser was awarded a site")
+    if detail["229_shader_cache_warm"] != ["a.md:1"]:
+        f.append(f"attribute: detail line is not 1-BASED: "
+                 f"{detail['229_shader_cache_warm']}")
+
+    # ── 2. a TIE is UNRESOLVED, never a winner. The rule this tool exists
+    #      for: "awarded only on a strict margin, everything else printed as
+    #      its own UNRESOLVED number and never folded into a winner."
+    _b, won, unres, sites, _d, undecided, _ph = run(
+        {"a.md": "shader cache daynight tool both, Plan 229"})
+    if (unres, sum(won.values())) != (1, 0):
+        f.append(f"attribute: a TIE was resolved (won={won}, unres={unres})")
+    if undecided != ["a.md:1"]:
+        f.append(f"attribute: undecided row not recorded 1-based: {undecided}")
+
+    # ── 3. a top score of ZERO is never a winner, margin or not ────────────
+    _b, won, unres, sites, *_ = run({"a.md": "nothing distinctive here, Plan 229"})
+    if (sites, unres, sum(won.values())) != (1, 1, 0):
+        f.append(f"attribute: a zero-score top won (won={won}, unres={unres})")
+
+    # ── 4. MARGIN is honoured: lead 1 wins at margin 1 and not at margin 2 ──
+    blob = {"a.md": "shader daynight tool Plan 229"}
+    _b, w1, u1, *_ = run(blob, margin=1)
+    _b, w2, u2, *_ = run(blob, margin=2)
+    if sum(w1.values()) != 1 or u1 != 0:
+        f.append(f"attribute: margin 1 did not award a 1-token lead ({w1})")
+    if sum(w2.values()) != 0 or u2 != 1:
+        f.append(f"attribute: margin 2 awarded a 1-token lead ({w2})")
+
+    # ── 5. SEPARATOR-INSENSITIVE, the `.plans/229` measurement this module
+    #      documents: sites spell it `day/night` and `gm-tool`, the stem is
+    #      `daynight` and `gm_tool`. A plain substring test scored it ZERO and
+    #      printed "nothing cites it, safe to rename".
+    _b, won, unres, *_ = run({"a.md": "the day/night gm-tool, Plan 229"})
+    if won["229_daynight_gm_tool"] != 1:
+        f.append("attribute: separator-insensitive matching lost — the exact "
+                 "false green this module was written to avoid")
+
+    # ── 6. SELF-reference is not inbound, in BOTH counters ─────────────────
+    by_name, won, _u, sites, *_ = run(
+        {"229_shader_cache_warm.md": "shader cache warm, Plan 229"})
+    if sites or sum(won.values()):
+        f.append(f"attribute: a doc citing ITSELF counted as a site ({sites})")
+    if by_name["229_shader_cache_warm"]:
+        f.append("attribute: a doc's own name counted as an inbound mention")
+
+    # ── 7. PATH affinity is OFF by default, additive when on, and reported
+    #      APART — a corpus whose paths do not discriminate must degrade to
+    #      the context score, not invent a verdict out of directory names.
+    blobs = {"shader/cache/warm/x.md": "Plan 229"}
+    _b, won_off, unres_off, _s, _d, _u, ph_off = run(blobs)
+    _b, won_on, unres_on, _s, _d, _u, ph_on = run(blobs, path_affinity=True)
+    if (sum(won_off.values()), unres_off) != (0, 1) or any(ph_off.values()):
+        f.append(f"attribute: path affinity leaked while OFF "
+                 f"(won={won_off}, path_hits={ph_off})")
+    if won_on["229_shader_cache_warm"] != 1 or ph_on["229_shader_cache_warm"] < 1:
+        f.append(f"attribute: path affinity did not score while ON "
+                 f"(won={won_on}, path_hits={ph_on})")
+
+    # ── 8. every site is accounted for: won + unresolved == sites ──────────
+    _b, won, unres, sites, *_ = run({
+        "a.md": "shader cache warm Plan 229",
+        "b.md": "Plan 229",
+        "c.md": "daynight gm tool Plan 229 and Plan 229 again",
+    })
+    if sum(won.values()) + unres != sites:
+        f.append(f"attribute: {sum(won.values())} won + {unres} unresolved "
+                 f"!= {sites} sites — a site fell out of the accounting")
+    if sites != 4:
+        f.append(f"attribute: expected 4 citation sites, saw {sites}")
+
+    # ── 9. the WINDOW bounds the context actually read ─────────────────────
+    far = {"a.md": "shader cache warm" + " ." * 400 + " Plan 229"}
+    _b, won_wide, _u, _s, *_ = run(far, window=2000)
+    _b, won_narrow, unres_narrow, _s, *_ = run(far, window=10)
+    if won_wide["229_shader_cache_warm"] != 1:
+        f.append("attribute: a wide window did not reach the tokens")
+    if sum(won_narrow.values()) or unres_narrow != 1:
+        f.append(f"attribute: a narrow window still scored ({won_narrow}) — "
+                 f"the window is not bounding what is read")
+    return f
 
 
 def main() -> int:

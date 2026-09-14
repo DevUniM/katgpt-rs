@@ -480,6 +480,31 @@ Two consequences, and the first is the one to carry forward:
    into any bucket — a report whose population shrank silently is the blindness
    this whole family of instruments exists to refuse.
 
+### ⚠ Finding 9 — a starved box makes a gate report FINDINGS, not an error
+
+Landing T6 left the workstation resource-starved (see Finding 8), and the docs
+gate then failed **2 of 21** on a tree that had just passed. Both were
+environmental and both passed on re-run in isolation, but they failed
+*differently* and only one of them was honest:
+
+- `cfg_gated_floor_gate` died with `OSError [WinError 1450] Insufficient system
+  resources` out of `os.path.realpath`. Unmistakable.
+- `bench_doc_audit` printed **`checked 97 labels, 56 mismatches`** — a
+  well-formed verdict, a plausible number, and completely wrong. On re-run:
+  **97 labels, 0 mismatches.**
+
+⚠ The MECHANISM is inferred, not measured, and is recorded as such: the audit
+compares doc labels against the Cargo default closure, so manifest reads that
+fail would empty the closure and make every `on by default` label mismatch —
+the loud direction. **The quiet direction is the one to worry about**: had the
+*docs* side failed to read instead, it would have checked 0 labels and printed
+a confident green, and `checked 97 labels` is the only thing in the output that
+would have shown it. The audit does print that population; nothing gates it.
+
+Candidate repair, NOT landed here because the mechanism is unverified: a label
+FLOOR, the same blindness detector every sweep in this family carries. Worth
+one measurement before writing.
+
 ### ⛔ Finding 4 — the gate caught the commit that changed it
 
 The `if r.get("baseline", …) != A.BASE_OK:` branch added to `measure()` read

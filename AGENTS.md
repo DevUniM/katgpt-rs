@@ -993,14 +993,27 @@ blaming the gates for its own boundary.
   happened twice on the day it was written (a two-hour non-terminating mutant,
   then a *blocking C call* the watchdog provably cannot reach — 3.5% CPU, no
   children, interrupt pending). The per-module walk took ~35 minutes, named
-  both stragglers, and lost nothing when one was killed. Standing over the
-  **53 of 55** modules it reached: **2059 mutants · 984 KILLED · 545 live
-  SURVIVED · 526 exempt · 1 CRASHED · 3 TIMEOUT · 1 NO-ARM**. ⚠ Read that
-  against the CHECKS population and **not** as a comparable number: these arms
-  cover a *classifier*, and the weakest are `feature_isolation_gate` (4 killed
-  of 62), `ci_gate_coverage` (4 of 74) and `citation_weight` (3 of 41) — an
-  unread backlog, exactly the shape Issue 785 forbids ratcheting, and
-  deliberately NOT in the gate's population.
+  both stragglers, and lost nothing when one was killed. Standing over **55 of
+  55** modules: **2376 mutants · 1182 KILLED · 652 live SURVIVED · 535 exempt ·
+  1 CRASHED · 6 TIMEOUT · 1 NO-ARM (19 more mutants)**. ⚠ Read that against the
+  CHECKS population and **not** as a comparable number: these arms cover a
+  *classifier*, and the whole 652 is an unread backlog — exactly the shape
+  Issue 785 forbids ratcheting, and deliberately NOT in the gate's population.
+- ⚠ **Two of the three weakest were armed on the measurement, and the third is
+  the standing worst.** `feature_isolation_gate` went **4 killed of 62 → 24**
+  and `citation_weight` **3 of 41 → 12**; each needed an EXTRACTION first,
+  which is T4's finding yet again — `parse_changed_flags` was welded to its
+  `git diff` call, and `attribute()`, the scoring function § Numbering
+  Discipline sends you to, had **no arm at all** while its module's arm covered
+  only the two INPUTS that feed it. Both are pure over plain data and neither
+  needed a fixture repo. `ci_gate_coverage` (**4 killed of 74**, 5% reach) is
+  now the weakest instrument in the workspace and is untouched.
+- ⚠ **Expensive is not wedged, and the report cannot tell you which.**
+  `platform_dead_code_audit` (393s, 132/269) and `len_derived_drift_sweep`
+  (1039s, 37/48) both blew a 300s budget and both completed cleanly when given
+  one; `len_derived_drift_sweep` has the BEST reach in the extra population
+  (2 live of 48) and would have been written off as a hang. An external
+  timeout is a scheduling bound, never a verdict.
 - ⛔ **A mutant can never RETURN, and without a bucket the hang is the MILD
   failure** (T6). Flipping a conjunct out of a loop condition produces a module
   that computes forever, and the harness had no bound at all: a
