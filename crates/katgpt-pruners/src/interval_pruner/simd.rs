@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 /// NEON processes 16 × u8 per cycle.
+#[cfg(target_arch = "aarch64")]
 const NEON_U8: usize = 16;
 /// AVX2 processes 32 × u8 per cycle.
 #[cfg(target_arch = "x86_64")]
