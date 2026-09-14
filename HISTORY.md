@@ -11,6 +11,43 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## riir-train Issue 549 fixed in `490b662e` (2026-09-15, M3 + 4090 session) — avx2_exp_sum_inplace: the one exp kernel missing the n-clamp
+
+The fused exp+sum SIMD kernel behind every `softmax` call was the ONLY exp
+kernel without the n-clamp to [−126, 127] before the `(n+127) << 23` 2^n
+bit-trick — `avx2_exp_inplace`, every NEON/wasm variant, and
+`cephes_exp_scalar` all carry it. Below −87.3 nats the unclamped shift
+WRAPS the f32 exponent field: **exp(−300) = 6.9e23** (4090 negative
+control); above +88.7 it wraps negative-tiny. Any softmax whose input
+spread exceeds ~87 nats then garbles weights and NaNs the loss — AVX2
+machines only (aarch64 NEON clamps; wasm clamps; scalar guards).
+
+Surfaced as riir-train Issue 511's census finding "Windows seed-1000
+full-training collapse": seed 1000 game 0's attention score spread crossed
+the boundary mid-training, loss → NaN, Δfull read 0.0000 through the old
+`.max(1e-9)` clamp, and the retention gate compared two garbage ratios.
+Post-fix on the 4090: game 0 Δfull 6.7941 vs M3's 6.7940 — the platforms
+agree to the third decimal once the wrap is gone (the residual NEON/AVX2
+rounding difference is benign).
+
+Why nothing caught it: the truth-referenced sweeps deliberately "stay
+clear of the n-clamp boundary (|x| > ~88)" — the boundary was known, and
+the fused kernel's out-of-range behavior was never asserted. The new
+regression test `simd_exp_sum_extreme_inputs_underflow_not_wrap` pins the
+contract across all three code paths (32-wide main loop, 8-wide remainder,
+scalar tail), asserting underflow-to-~0 on the low side, positive
+saturation on the high side (inf from the scalar early-exit OR finite
+~2^127 from clamped vector lanes), fused/unfused parity, and the softmax
+denominator invariant. Verified on both platforms: 105/105 aarch64,
+105/105 AVX2 (4090), plus the pre-fix RED on real silicon as the negative
+control. Perf: the clamp is two integer ALU ops per 8-lane step, hidden
+under the polynomial's FP dependency chain.
+
+Blast radius: `katgpt-types::math::softmax`/`softmax_scaled` and every
+direct `simd_exp_sum_inplace` consumer on AVX2 — rare at inference
+logit spreads, routine during early training and any diverged-activation
+state. Fixed in the shared upstream; all consumers inherit.
+
 ## Issue 779 T1+T2 (2026-09-15, M3 session) resolved — subspace_intervention promoted + the FUNCATTN spectral arm POSITIVE (Bench 766)
 
 `katgpt_core::subspace_intervention` (feature `subspace_intervention =
