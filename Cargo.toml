@@ -304,6 +304,7 @@ fft = ["bandit", "sr2am_configurator", "katgpt-pruners/fft"]     # FFT Tactics A
 stepcode = ["bandit", "katgpt-pruners/stepcode"]  # ⚠️ Plan 054 — NO GAIN proven. Infrastructure only. Off by default, not in `full`.
 skill_lifecycle = ["bandit", "katgpt-pruners/skill_lifecycle"]  # Inference-Time Skill Evolution — per-pruner memory + test-gated registration + progressive disclosure catalog (Plan 192, Research 172)
 sense_composition = ["katgpt-core/sense_composition", "bandit"]  # KG Latent Octree Sense Composition (Plan 221)
+modality_additive = ["katgpt-core/modality_additive"]  # Modality-additive belief kernel (Issue 777, Research 556 / FLYNN arXiv:2607.00025): forward to katgpt-sense `evolve_belief_additive` — per-dim first-order filter, no cross-modality normalization; belief transitions superpose exactly per SenseKind. DEFAULT-ON via katgpt-sense's default since Issue 777 T4 (GOAT ALL PASS in bench modality_superposition_bench: exact superposition vs the divisive default's ratio 5.17); default evolve_belief path byte-identical.
 schema_centroid = ["katgpt-core/schema_centroid", "sense_composition"]  # Schema-Centroid Informed KG Embedding Initialization (Plan 237, GOAT 7/7, default-ON)
 slod = ["katgpt-core/slod", "spectral_hierarchy"]  # SLoD Spectral Level-of-Detail Pruner (Plan 235, GOAT G1-G6 all pass, default-ON). Not in `default` directly; transitively enabled via `sense_lod` (Issue 181).
 spectral_threat = ["katgpt-core/spectral_threat", "sense_composition"]  # LinOSS Modal Threat Prediction (Plan 241, GOAT PASS 46.9%)
@@ -955,6 +956,18 @@ harness = false
 name = "latent_thought_flow_scorer_bench"
 path = "benches/latent_thought_flow_scorer_bench.rs"
 required-features = ["self_advantage_gate", "micro_belief"]
+harness = false
+
+# Issue 777 T1–T4 — Modality-ablation superposition measurement + GOAT gate
+# (Research 556 / FLYNN arXiv:2607.00025). Measures cos(Δ_full, Σ_m Δ_single)
+# AND the magnitude ratio (the load-bearing half — T1 showed the divisive
+# kernels false-pass cosine alone) on the shipped belief kernels + the
+# `modality_additive` variant, plus T3 argmax-stability / predictability and
+# the T4 gate table. std::time::Instant + harness=false convention.
+[[bench]]
+name = "modality_superposition_bench"
+path = "benches/modality_superposition_bench.rs"
+required-features = ["sense_composition", "micro_belief", "modality_additive"]
 harness = false
 
 

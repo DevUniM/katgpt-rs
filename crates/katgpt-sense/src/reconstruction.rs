@@ -121,6 +121,22 @@ pub struct ReconstructionConfig {
     /// tuning from the LLM-logit benchmark because the dynamic range differs.
     #[cfg(feature = "self_advantage_gate")]
     pub advantage_margin_threshold: f32,
+    /// Retention α per SenseKind for the modality-additive belief kernel
+    /// (Issue 777 T2, Research 556 / FLYNN arXiv:2607.00025). Default 0.9.
+    ///
+    /// Per-kind time constant of the first-order filter
+    /// `h_{t+1,i} = α_{m[i]}·h_{t,i} + (1−α_{m[i]})·(2σ(η·k_{m[i]})−1)`: a silent
+    /// kind's belief dims decay toward 0 as α^t (gradual forget — the FLYNN
+    /// per-neuron-class leak-rate analog, one α per SenseKind).
+    #[cfg(feature = "modality_additive")]
+    pub belief_retention: [f32; 6],
+    /// Drive scale η for the modality-additive belief kernel (default: 4.0).
+    ///
+    /// Sigmoid gain on the per-kind activation: `drive = 2σ(η·k)−1` saturates
+    /// toward ±1 for strong stimulus, stays near-linear for weak. Sigmoid,
+    /// never softmax (AGENTS.md constraint).
+    #[cfg(feature = "modality_additive")]
+    pub additive_drive_scale: f32,
 }
 
 impl Default for ReconstructionConfig {
@@ -140,6 +156,10 @@ impl Default for ReconstructionConfig {
             // disable the 4th early-stop criterion (byte-identical to baseline).
             #[cfg(feature = "self_advantage_gate")]
             advantage_margin_threshold: 0.01,
+            #[cfg(feature = "modality_additive")]
+            belief_retention: [0.9; 6],
+            #[cfg(feature = "modality_additive")]
+            additive_drive_scale: 4.0,
         }
     }
 }
@@ -915,6 +935,60 @@ impl ReconstructionState {
         // converge and the derivative decays to zero on a stationary belief.
         #[cfg(feature = "temporal_deriv")]
         self.observe_surprise_inner();
+    }
+
+    /// Modality-additive belief evolution (Issue 777 T2, Research 556 / FLYNN
+    /// arXiv:2607.00025). DEFAULT-ON since Issue 777 T4 (GOAT gate ALL PASS;
+    /// `modality_additive` feature, in katgpt-sense's default list).
+    ///
+    /// Per-dim first-order filter, one per belief dim driven ONLY by its own
+    /// SenseKind channel (via [`TripleEvidence::KIND_MAP`]):
+    ///
+    /// ```text
+    /// h_{t+1,i} = α_{m[i]}·h_{t,i} + (1−α_{m[i]})·(2σ(η·k_{m[i]})−1)
+    /// ```
+    ///
+    /// No divisive normalization, no subtractive centering over the modality
+    /// sum — the two cross-modality coupling terms that make the default
+    /// [`evolve_belief`](Self::evolve_belief) non-additive (measured: ratio
+    /// |Σ singles| / |full| = 5.17 at 6 kinds, `modality_superposition_bench`).
+    /// Consequences, by construction:
+    ///
+    /// - **Superposition**: each dim's trajectory depends only on its own kind's
+    ///   activation, so the belief transition under a stimulus subset is exactly
+    ///   the sum of the single-kind transitions (FLYNN's linear sensory
+    ///   integration, cos 0.9998, distilled to a design constraint).
+    /// - **Graceful ablation**: a silenced kind's dims decay toward 0 as α^t
+    ///   (gradual forget — never deleted, matching the two-brain
+    ///   `GenericSpatialBelief` confidence-decay philosophy).
+    ///
+    /// Unlike `evolve_belief`, this takes the per-tick activations directly
+    /// (ablated kinds → 0) and does NOT read the accumulated `evidence` —
+    /// FLYNN's `x_t` is per-timestep sensory input, not an integral; the
+    /// divisive kernel's accumulation is only well-behaved because of its
+    /// `1/total` self-scaling, which is exactly the coupling this kernel
+    /// removes. Zero-allocation, deterministic, sigmoid (never softmax).
+    /// No surprise-kernel hook in v1 (post-GOAT wiring decides, Plan 277 F1).
+    #[cfg(feature = "modality_additive")]
+    pub fn evolve_belief_additive(&mut self, activations: &[f32; 6]) {
+        let eta = self.config.additive_drive_scale;
+        // Per-KIND drive + retention (6 sigmoid calls), then gather to 8 dims —
+        // kinds 0/1 wrap to dims 6/7 via KIND_MAP, so this saves 2 of 8 calls
+        // per tick (~25% of the kernel's cost) with identical math.
+        let mut drive = [0.0f32; 6];
+        let mut alpha = [0.0f32; 6];
+        for m in 0..6 {
+            // Positivity guard mirrors `accumulate`: ablated/silent kinds
+            // contribute exactly 0.
+            let k = activations[m].max(0.0);
+            drive[m] = 2.0 * katgpt_types::simd::fast_sigmoid(eta * k) - 1.0;
+            alpha[m] = self.config.belief_retention[m];
+        }
+        for i in 0..8 {
+            let m = TripleEvidence::KIND_MAP[i];
+            self.belief[i] =
+                (alpha[m] * self.belief[i] + (1.0 - alpha[m]) * drive[m]).clamp(-1.0, 1.0);
+        }
     }
 
     /// SIMD-optimized belief evolution.

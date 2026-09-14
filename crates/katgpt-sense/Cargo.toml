@@ -22,7 +22,12 @@ papaya = { version = "0.2", optional = true }
 # katgpt-sense compiles its core substrate (bake, octree, reconstruction,
 # serialize) unconditionally. The features below mirror the katgpt-core gates
 # so the re-export shim can forward them.
-default = []
+# DEFAULT-ON since Issue 777 T4 (2026-09-14): GOAT gate ALL PASS — exact
+# superposition (cos 1.0, ratio 1.0, worst-pair 1.0, predictability err 0) at
+# 37.7 ns/tick vs the divisive tick's 23.4 ns, alloc-free, default
+# `evolve_belief` byte-identical (bench modality_superposition_bench). The
+# forward chain (root → core → here) stays for --no-default-features paths.
+default = ["modality_additive"]
 
 # Parent sense-composition flag (Plan 221). In katgpt-core this gated the
 # whole `sense` module + implied plasma_path/domain_latent. In katgpt-sense
@@ -37,6 +42,18 @@ sense_composition = []
 # surprise fields/methods in ReconstructionConfig/ReconstructionState so
 # the struct layout matches katgpt-core's feature-gated layout bit-for-bit.
 temporal_deriv = []
+
+# Modality-additive belief kernel (Issue 777 T2, Research 556 / FLYNN
+# arXiv:2607.00025). DEFAULT-ON since Issue 777 T4 (2026-09-14) — GOAT gate
+# ALL PASS: exact per-kind superposition (cos 1.0 / ratio 1.0 / predictability
+# 0 vs the divisive default's ratio 5.17 / predictability 3.03), 37.7 ns/tick,
+# alloc-free, zero change to the default `evolve_belief` path (separate method;
+# pinned byte-identical by evolve_belief_is_byte_identical_to_inline_reference).
+# Gates `evolve_belief_additive` + the `belief_retention` / `additive_drive_scale`
+# config fields: a per-dim first-order filter with NO cross-modality
+# normalization, so belief-state transitions superpose exactly per SenseKind
+# (FLYNN's linear sensory integration, distilled).
+modality_additive = []
 
 # Spectral NPC Perception Compression (Plan 240) — LOD routing for sense
 # modules. Gates the `lod` submodule + its SenseLodLevel/SenseLodMask/
@@ -71,3 +88,12 @@ bake_precision = ["dep:papaya"]
 # advantage-margin early-stop in reconstruction.rs (dead-compute detector).
 # Empty tracking flag: the code is self-contained (no extra deps).
 self_advantage_gate = []
+
+# Issue 777 T2 — modality-additive kernel gates. required-features per the
+# cfg-gated-target discipline: without the feature the file is an empty binary
+# that would print a green `0 passed`; this row makes the skip VISIBLE to the
+# reader (cargo: "target ... requires the features").
+[[test]]
+name = "modality_additive_superposition"
+path = "tests/modality_additive_superposition.rs"
+required-features = ["modality_additive"]
