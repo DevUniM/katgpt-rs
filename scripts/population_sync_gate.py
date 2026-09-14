@@ -84,6 +84,8 @@ Exit 0 clean · 1 on disagreement · 2 if the gate cannot import a predicate.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -263,6 +265,24 @@ def build_synthetic(ws: Path) -> list[str]:
 
 
 def main() -> int:
+    # ⛔ Issue 789: these arms used to run ONLY under `--canary`, and
+    # docs_gate.sh invokes every check as `"$PY" "$script"` — with NO
+    # arguments. So the 8 adversary arms landed by Issue 788 the day before
+    # never ran per-push at all: decoration, on the gate whose whole subject is
+    # a registry that was silently wrong for four instruments. 0.17s measured,
+    # so there was never a cost argument for the flag either.
+    #
+    # Output is swallowed on success: a passing check that prints 8 extra lines
+    # is one whose real verdict scrolls away. `--canary` stays as the verbose
+    # standalone mode.
+    _sink = io.StringIO()
+    with contextlib.redirect_stdout(_sink):
+        _rc = canary()
+    if _rc != 0:
+        print("✗ INSTRUMENT: population_sync_gate's own canary does not pass, so "
+              "the registry agreement below would be unreadable:")
+        print(_sink.getvalue().rstrip())
+        return 2
     # Prints carry glyphs the Windows locale codecs cannot encode (checked
     # 2026-09-06 on cp874: check/cross/middot/arrow FAIL, em-dash OK); keep the
     # locale encoding and degrade only the fatal chars to escapes -- the

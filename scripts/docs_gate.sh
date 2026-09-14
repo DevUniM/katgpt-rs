@@ -116,6 +116,7 @@ CHECKS=(
     "scripts/platform_dead_code_floor_gate.py:an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775)"
     "scripts/subprocess_encoding_gate.py:a subprocess call that decodes with the SYSTEM locale — silent mojibake, or stdout=None with the returncode intact (Issue 778)"
     "scripts/instrument_reachability_gate.py:a tracked scripts/*.py no root and no documented instrument names — invisible to the census that would find it (Issue 787)"
+    "scripts/check_validation_gate.py:a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789)"
     "scripts/docs_gate_checks_sync.py:this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750)"
 )
 

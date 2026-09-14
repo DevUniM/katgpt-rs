@@ -162,6 +162,8 @@ on:
       - 'scripts/subprocess_encoding_gate.py'
       - 'scripts/instrument_reachability_gate.py'
       - 'scripts/instrument_unreferenced_expected.txt'
+      - 'scripts/check_validation_gate.py'
+      - 'scripts/check_validation_expected.txt'
       - 'scripts/tracked_walk.py'
       - 'scripts/platform_dead_code_floors.txt'
   pull_request:
@@ -283,6 +285,8 @@ on:
       - 'scripts/subprocess_encoding_gate.py'
       - 'scripts/instrument_reachability_gate.py'
       - 'scripts/instrument_unreferenced_expected.txt'
+      - 'scripts/check_validation_gate.py'
+      - 'scripts/check_validation_expected.txt'
       - 'scripts/tracked_walk.py'
       - 'scripts/platform_dead_code_floors.txt'
   workflow_dispatch:

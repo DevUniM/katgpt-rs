@@ -1,0 +1,13 @@
+# Issue 789. docs_gate.sh CHECKS entries exempt from the "must invoke a
+# validation arm" rule, one per line as `script.py: reason`.
+#
+# DELIBERATELY EMPTY. Every one of the twenty CHECKS invokes an arm, so there
+# is no exemption to justify — and a row reading "not written yet" would be a
+# backlog wearing a pin, which Issue 785's rule forbids (a ratchet on a bucket
+# meaning *unanswered* is a backlog). If you are about to add a row here,
+# the default is to write the arm instead: two of the nine instruments Issue
+# 787 measured were wired into AGENTS.md rather than exempted, for the same
+# reason.
+#
+# A reasonless row is REFUSED (exit 2), and the gate reds on a row whose check
+# has since grown an arm — a stale exemption hides the next regression in it.

@@ -185,7 +185,13 @@ roots, measured **~0.24s wall** standalone — the cheapest check in the set,
 because the closure re-reads only files a root or a script actually names),
 so the 19-check cell joins 18 in
 never having a POSIX figure — this box has printed `CPU SUPPRESSED` for every
-run since the set left 17.
+run since the set left 17. It moved to **21** the same day (Issue 789's
+`check_validation_gate.py`, an AST pass over the CHECKS array's own 21 scripts,
+measured **~0.11s wall** standalone — cheaper still than 787's, because it
+parses each check once and reads no tree at all), so 18, 19 **and** 20 are now
+cells no POSIX run will ever measure. Four consecutive same-day CHECKS moves is
+the argument for the convention, not an embarrassment to it: a bare number in
+this paragraph would have been wrong four times in one day.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -266,6 +272,7 @@ develop work. One line per check:
 | `platform_dead_code_floor_gate.py` | an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775) |
 | `subprocess_encoding_gate.py` | a `subprocess` call that decodes with the SYSTEM locale — silent mojibake, or `stdout = None` with the returncode intact (Issue 778) |
 | `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
+| `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
 The `CHECKS` count is deliberately not written here — it drifted once, which
@@ -913,6 +920,63 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   `--manifest-path "$unit/…"` lane read as a bare row). A classifier's bucket
   boundaries ARE the finding, and they are only testable against cases whose
   answer is known independently.
+
+## A gate whose own failure path is asserted by nothing — `scripts/check_validation_gate.py`
+
+Issue 775 landed six canary arms over a gate's **own pin arithmetic, which the
+classifier's self-test cannot reach**. The sentence above is in this file, it is
+correct, and it names a rule. The rule landed in **one** gate and was never
+generalised — the sixth recorded instance of that shape (Issues 777, 778, 779,
+782, 783). Measured 2026-09-14: **six of twenty** CHECKS invoked no arm at all,
+own or delegated, carrying **2,050 lines** of per-push logic whose failure path
+no test had ever executed.
+
+```bash
+scripts/check_validation_gate.py                    # the verdict, per push
+scripts/check_validation_gate.py --canary           # 11 arms over its own arithmetic
+scripts/check_validation_gate.py --prove-fires 6804d983
+```
+
+- The predicate is **invokes an arm UNCONDITIONALLY**, not "has an arm".
+  `docs_gate.sh` runs each check as `"$PY" "$script"` — **no arguments** — so an
+  arm behind `'--canary' in sys.argv` never fires on a push. Not hypothetical:
+  `population_sync_gate.py`'s eight adversary arms, landed by Issue 788 the
+  **day before**, were flag-gated and ran on no push at all. They cost 0.17s,
+  so there was never a cost argument for the flag either.
+- **Delegation is credited, and must be.** Four checks reach their arm through
+  the classifier they import (`percentile_floor_gate` →
+  `percentile_index_audit.selftest`, plus `cfg_row_implication_gate`,
+  `trap_sentinel_gate`, `platform_dead_code_floor_gate`). That is Issue 755's
+  DRY answer; refusing it pushes every gate toward a second copy of a rule it
+  does not own.
+- ⛔ **The first census of this was wrong in the OVER-reporting direction.** It
+  grepped the CLI flag strings `--canary` / `--prove-fires` / `--self-test`,
+  credited none of those four, and claimed nine bare checks where there were
+  six. A census over one representation is blind to whatever that
+  representation omits — Issue 787's lesson, reproduced within ten minutes of
+  going looking for a new instance of it.
+- **`ARM_NAMES` is the permissive direction** and the floor alone does not
+  guard it: an empty set reds every check and is impossible to miss, while a
+  set that quietly widens (add `main`) greens every check silently. Two floors
+  (`MIN_CHECKS` the array parse, `MIN_ARMED` the AST resolution — a walk that
+  finds every check and credits none looks exactly like nobody having written
+  any arms), plus a canary arm asserting `main` is not in the vocabulary.
+- Exemptions are pinned by **membership with a reason per row**
+  (`scripts/check_validation_expected.txt`); a reasonless row is refused and a
+  row whose check has since grown an arm reds. The file is **deliberately
+  empty** — a row reading "not written yet" is a backlog wearing a pin, which
+  Issue 785's rule forbids.
+- ⚠ **What it does NOT assert:** that an arm which exists and runs is any
+  *good*. An arm whose perturbation reds nothing certifies nothing, and Issue
+  789 found **seven** such arms while writing the ones this gate counts — one
+  whose anchor string was wrong, one whose fixture had no terminated fence for
+  the fail-safe to discard, one aimed at the wrong side of a lookbehind, one
+  whose input order already matched sorted order. Arm quality is not statically
+  decidable and is not claimed. Read the verdict as the weaker thing it is.
+- `--prove-fires 6804d983` (the commit that FILED 789) is two-sided against an
+  independently known answer: seven checks unarmed there, six bare and one
+  flag-gated, named individually. ~0.3s, opt-in on the
+  `platform_dead_code_floor_gate` precedent — only `scripts/` is extracted.
 
 ## A census reads the DOCUMENT, so an undocumented instrument is invisible — `scripts/instrument_reachability_gate.py`
 
