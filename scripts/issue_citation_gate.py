@@ -537,6 +537,202 @@ def citations(text: str) -> list[tuple[int, str, int, str]]:
     return out
 
 
+def selftest() -> list[str]:
+    """Known-answer arms over every rule that decides a citation's bucket.
+
+    Issue 789. This was the largest of the six docs_gate CHECKS running with no
+    test of its own arithmetic — and the one with the worst record, because
+    AGENTS.md documents it having been WRONG twice in the direction that
+    absolves: Issue 752's `named != {}` predicate ("is a repo named?", never
+    "does that repo own it?") read 45 rows as clean, and Issue 754 then refuted
+    the census that found them, because every read asked the same blind
+    `allocated()` the same question.
+
+    So the arms are aimed at the SUPPRESSING paths first: `is_qualified`'s
+    owner-consistency and its ORPHAN branch, `heading_allocated`'s two filters
+    (the only path here that can make a finding disappear), and the
+    lead-only/window split that decides what counts as an address at all. Each
+    ⚑ arm reproduces a measured historical defect by name.
+
+    Pure functions plus one temp repo — runs unconditionally at the top of
+    `main`, before any pin is read.
+    """
+    import tempfile
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    # ── citations(): a plural kind word may head a LIST ───────────────────
+    def cites(text: str):
+        return [(k, n) for _ln, k, n, _lead in citations(text)]
+
+    eq("a singular citation", cites("see Issue 749 for the rule"), [("Issue", 749)])
+    eq("⚑ a comma list is expanded (Issues 724, 725)",
+       cites("a number allocated twice (Issues 724, 725)"),
+       [("Issue", 724), ("Issue", 725)])
+    eq("⚑ a slash list is expanded (Issues 490/493)",
+       cites("orchard drift (Issues 490/493)"),
+       [("Issue", 490), ("Issue", 493)])
+    eq("an 'and' list is expanded",
+       cites("Plans 596 and 597"), [("Plan", 596), ("Plan", 597)])
+    eq("a SINGULAR kind word never heads a list",
+       cites("Issue 724, 725 rows"), [("Issue", 724)])
+    # Every number here is >= 2 digits on purpose: "Issue 1" is outside the
+    # width bound and its absence would read as a missing KIND word.
+    eq("every kind word is read", sorted({k for k, _ in cites(
+        "Issue 11 Plan 22 Research 333 Bench 4444 Proposal 55")}),
+       ["Bench", "Issue", "Plan", "Proposal", "Research"])
+    eq("a leading zero is not a separate number",
+       cites("Issue 059 is closed"), [("Issue", 59)])
+    # The width bound is load-bearing (Issue 753), not a blind spot to widen.
+    eq("a single-digit citation is outside the width bound", cites("Issue 7"), [])
+    eq("unseen_by_width counts what the bound cannot see",
+       unseen_by_width("Issue 7 and Issues 12, 3"), (1, 1))
+
+    # ── aliases(): a short form is only offered when it is unambiguous ────
+    eq("the full name is always a form", aliases("katgpt-rs"), ["katgpt-rs"])
+    eq("a >=4-char stem earns an alias",
+       aliases("riir-chain"), ["riir-chain", "chain"])
+    eq("⚑ a 2-char stem does not ('ai' collides with prose)",
+       aliases("riir-ai"), ["riir-ai"])
+    eq("a 3-char stem does not", aliases("riir-dao"), ["riir-dao"])
+    eq("a non-riir name has no stem", aliases("seal-remake"), ["seal-remake"])
+
+    # ── _NAME: a repo name is only a name when nothing extends it ─────────
+    eq("⚑ seal-remake-unity does not name seal-remake",
+       bool(_NAME["seal-remake"].search("riir-viewbridge names seal-remake-unity")),
+       False)
+    eq("⚑ riir-games-mmorpg does not name riir-game-sdk",
+       bool(_NAME["riir-game-sdk"].search("in riir-games-mmorpg")), False)
+    eq("a possessive still names the repo",
+       bool(_NAME["riir-ai"].search("riir-ai's scripts")), True)
+    eq("a path component still names the repo",
+       bool(_NAME["riir-ai"].search("../riir-ai/scripts/x.py")), True)
+
+    # ── qualifiers(): window vs adjacent, and the alias's one direction ───
+    sibs = [Path("/w/riir-ai"), Path("/w/riir-chain"), Path("/w/riir-train")]
+
+    def quals(lines, ln, lead):
+        w, a = qualifiers(lines, ln, lead, sibs)
+        return sorted(w), sorted(a)
+
+    eq("a full name ON the citation is both window and adjacent",
+       quals(["riir-ai Issue 750"], 1, "riir-ai "),
+       (["riir-ai"], ["riir-ai"]))
+    eq("a full name in the 3-line window is window-only",
+       quals(["riir-ai owns this area", "", "see Issue 750"], 3, "see "),
+       (["riir-ai"], []))
+    eq("the window reaches exactly 3 lines back, not 4",
+       quals(["riir-ai owns this", "", "", "see Issue 750"], 4, "see "),
+       ([], []))
+    eq("⚑ an alias is accepted ON the citation",
+       quals(["chain Issue 27"], 1, "chain "),
+       (["riir-chain"], ["riir-chain"]))
+    eq("⚑ an alias in the WINDOW qualifies nothing ('train' is ordinary prose)",
+       quals(["we train the model", "", "see Issue 750"], 3, "see "),
+       ([], []))
+
+    # ── alias_trail_owners(): lead-only, measured not assumed ─────────────
+    eq("a trailing alias is REPORTED, not accepted",
+       sorted(alias_trail_owners("see Issue 27 in the chain repo", "Issue", 27, sibs)),
+       ["riir-chain"])
+    eq("no trailing alias is an empty set",
+       alias_trail_owners("see Issue 27 for details", "Issue", 27, sibs), set())
+    eq("a citation the line does not carry reports nothing",
+       alias_trail_owners("see Issue 27 in chain", "Issue", 99, sibs), set())
+
+    # ── is_qualified(): OWNER-consistency, the Issue 752 repair ───────────
+    eq("a named owner qualifies", is_qualified({"riir-train"}, ["riir-train"]), True)
+    eq("⚑ a named NON-owner does not (the 45-row class)",
+       is_qualified({"katgpt-rs"}, ["riir-train"]), False)
+    eq("no name at all does not qualify", is_qualified(set(), ["riir-train"]), False)
+    # ORPHAN: with no owner anywhere there is nothing to be consistent with.
+    eq("an unowned number accepts any named repo",
+       is_qualified({"katgpt-rs"}, []), True)
+    eq("an unowned number with no name is still unqualified",
+       is_qualified(set(), []), False)
+
+    # ── fenced_lines(): FAIL-SAFE on an unterminated fence ────────────────
+    inside, open_at = fenced_lines("a\n```\nb\n```\nc")
+    eq("fenced body lines are excluded", sorted(inside), [1, 2, 3])
+    eq("a terminated file reports no open fence", open_at, None)
+    # ⚑ The fixture needs a TERMINATED block BEFORE the unterminated one, or
+    # the arm cannot see the fail-safe at all: with no closed block there is
+    # nothing in `inside` for the discard to discard, and the arm reads INERT
+    # under the very perturbation it is aimed at (measured).
+    inside, open_at = fenced_lines("a\n```\nb\n```\nc\n```\nd")
+    eq("⚑ an unterminated fence discards the WHOLE exclusion set (fail-safe)",
+       inside, set())
+    eq("an unterminated fence reports where it opened", open_at, 5)
+
+    # ── parse_pins(): `documents` is a list, everything else an int ───────
+    with tempfile.TemporaryDirectory() as td:
+        pins_path = Path(td) / "pins.txt"
+        pins_path.write_text(
+            "# a comment\n"
+            "documents = AGENTS.md HISTORY.md\n"
+            "min_repos = 16   # trailing comment\n"
+            "\n", encoding="utf-8")
+        eq("pins parse, comments and blanks dropped",
+           parse_pins(pins_path), {"documents": ["AGENTS.md", "HISTORY.md"],
+                                   "min_repos": 16})
+
+    # ── heading_allocated(): the ONLY path that can suppress a finding ────
+    # Its two filters are measured here rather than assumed, per its docstring.
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "katgpt-rs"
+        repo.mkdir()
+        docs = _self_docs()
+        body = "\n".join([
+            # accepted: the number is IMMEDIATELY followed by a parenthetical
+            "## Issue 059 (2026-08-14) — Demonstration-teachable pets",
+            # ⚑ Issue 781's style gap: a parenthetical that is not adjacent
+            "## Issue 097 resolved — some title (2026-01-01)",
+            # ⚑ Issue 781 arm 2's measured NEGATIVE: commentary on a number is
+            #    not an allocation of it, and no punctuation rule separates
+            #    `043 follow-up (…)` from `097 resolved — … (…)`.
+            "## Issue 043 follow-up (2026-01-01)",
+            # the foreign-repo filter: this repo is not recording its OWN
+            "## Issue 511 (riir-train) — not ours to allocate",
+            # the kind filter
+            "## Plan 222 (2026-01-01) — a plan, not an issue",
+            # the fence filter
+            "```",
+            "## Issue 888 (2026-01-01) — inside a fenced block",
+            "```",
+        ])
+        # ONE pinned document, not all of them: `heading_allocated` unions a
+        # SET (so duplicates are invisible) but `heading_style_blind` COUNTS,
+        # so writing the same body to every pinned doc multiplies its two
+        # numbers by len(docs) and the arm stops being readable.
+        eq("there is at least one pinned document to write to", bool(docs), True)
+        p = repo / docs[0]
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(body, encoding="utf-8")
+        got = heading_allocated(repo, ".issues", ["katgpt-rs", "riir-train"])
+        eq("a self-allocating heading is read", 59 in got, True)
+        eq("⚑ `NNN resolved — … (date)` is NOT read (the style gap, Issue 781)",
+           97 in got, False)
+        eq("⚑ `NNN follow-up (date)` is NOT an allocation (arm 2's negative)",
+           43 in got, False)
+        eq("⚑ a heading naming a FOREIGN repo does not allocate here",
+           511 in got, False)
+        eq("a heading of another kind does not allocate", 222 in got, False)
+        eq("a heading inside a fence does not allocate", 888 in got, False)
+        eq("nothing else was read", sorted(got), [59])
+        # The style-blind triage quantity: 1 accepted of 3 heading-shaped rows
+        # that survive the foreign filter (059, 097, 043 — 511 is foreign, 222
+        # is another kind, 888 is fenced).
+        eq("heading_style_blind measures the gap, both sides filtered",
+           heading_style_blind(repo, ".issues", ["katgpt-rs", "riir-train"]),
+           (1, 3))
+
+    return fails
+
+
 def ci_deferred(pins: dict, docs: list, n_repos: int, posture: str = "CI") -> int:
     """The marked-deferred verdict: instrument ALIVE, cross-repo
     adjudication DEFERRED.
@@ -590,6 +786,20 @@ def ci_deferred(pins: dict, docs: list, n_repos: int, posture: str = "CI") -> in
 
 
 def main() -> int:
+    # The canary runs BEFORE the deferral branches, not after. This gate's
+    # loudest posture on a partial clone and in CI is an instrument-ALIVE
+    # deferral — a line that asserts the classifier works and the adjudication
+    # is owed elsewhere. A deferral printed on top of a broken classifier is
+    # the one output here that must not be possible, so the arms gate it too.
+    arm_failures = selftest()
+    if arm_failures:
+        print("✗ INSTRUMENT: issue_citation_gate's own selftest does not pass. Every "
+              "path below — verdict AND deferral — would be unreadable; this gate's "
+              "suppressing rules have been measured wrong twice (Issues 752, 754):")
+        for f in arm_failures:
+            print(f)
+        return 2
+
     pins = parse_pins(FLOORS)
     docs = pins["documents"]
     assert isinstance(docs, list)
