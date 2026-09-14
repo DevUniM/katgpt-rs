@@ -618,12 +618,17 @@ scripts/wasm32_surface_audit.py            # all contract repos (derived)
 scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
 ```
 
-- A **report, not a gate** (exit 0). Three buckets: **NAMED** (a row selects
-  it by `-p` or a literal `--manifest-path`), **UNRESOLVED** (a `--workspace`
-  or *derived* row exists — whether it reaches this package is the
-  separate-workspace axis, undecidable statically), **UNCOVERED** (no row
-  could reach it). **UNRESOLVED is not clean** and is never folded into
-  either neighbour.
+- A **report, not a gate** (exit 0). Four buckets: **NAMED** (a row selects
+  it by `-p` or a literal `--manifest-path`), **BY-DEP** (Issue 774: no row
+  names it, but a named/derived package reaches it through non-optional
+  in-repo path-dep edges — reachability, never folded into NAMED, because
+  that coverage dies by a dep-graph edit in someone else's manifest),
+  **UNRESOLVED** (a `--workspace` or *derived* row exists — whether it reaches
+  this package is the separate-workspace axis, undecidable statically),
+  **UNCOVERED** (no row could reach it). **UNRESOLVED is not clean** and is
+  never folded into either neighbour. `--self-test` proves the by-dep
+  detectors fire in BOTH directions (five canary verdicts: named / by-dep /
+  uncovered / optional-not-credited / workspace-table-resolved).
 - The predicate is the **positive** cfg: `not(target_arch = "wasm32")` is an
   ordinary native-only guard and counting it inflates everything (riir-ai
   `.issues/892` T4). **Comment lines are excluded** — prose explaining a cfg
@@ -642,6 +647,21 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   a variable row reads as derived and would have kept the bucket). Standing:
   **23 NAMED · 0 UNRESOLVED · 0 UNCOVERED** over 191 files / 23 packages
   (measured 2026-09-08).
+- The DEPENDENCY EDGE (Issue 774, 2026-09-14): the row predicate is
+  dep-blind — `-p riir-shader-showcase --target wasm32` compiles the
+  showcase's in-repo path deps too, so riir-shader's core+effects read
+  UNCOVERED while every bundle build compiles them (compile-verified:
+  `cargo check -p riir-shader-effects --target wasm32-unknown-unknown`
+  exits 0). The `✓ by-dep` verdict credits exactly those edges —
+  non-optional, plain + wasm32-target tables, `workspace = true` resolved
+  through the root table, in-repo targets only; dev/build, optional,
+  native-target, and cross-repo edges credit nothing. `seal-poc-submodule`
+  is the standing negative control — deliberately excluded from its repo's
+  CI and depended on by nothing, it stays UNCOVERED (that repo is read-only
+  here; arm-vs-row is its owner's call). Standing (measured 2026-09-14,
+  post-774): **26 NAMED · 2 BY-DEP · 0 UNRESOLVED · 1 UNCOVERED** over
+  216 files / 29 packages / 20 repos — the growth vs 2026-09-08 is
+  sibling-added wasm32 surface, not audit drift.
 - ⛔ It produced three confident wrong answers before it produced a right one,
   all in the classifier: a walk of **0 files** (a Python `\s` handed to
   `git grep -E`, which is POSIX ERE — caught only because the walk size prints
