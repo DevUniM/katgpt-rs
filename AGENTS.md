@@ -166,6 +166,16 @@ predicts, and the 3.3% spread across the first two is **wider than the
 and still the right one to cite, but it is tight-ish, not exact, and a
 difference this size is not evidence a check got slower. Only compare CPU
 within a fixed CHECKS set, and only as a range.
+⚠ The set moved to **18** on 2026-09-14 (Issue 775's
+`platform_dead_code_floor_gate.py`, a 2415-file Rust-source walk measured at
+**~6.2s wall** standalone), and the CPU figure at 18 checks is **UNMEASURED,
+not unchanged**: the landing run was on the Windows workstation, where this
+gate's own `times`-based total reads **1.26s CPU against a 19.7s wall** —
+which is not a measurement of the same quantity as the series above (the
+interpreter is resolved through a shim, and children CPU is evidently not
+being accounted; the gate's ⛔ guard only fires at ~0). Take the 18-check CPU
+figure from the next M3 run; do NOT read 13.37s forward across a CHECKS
+change, and do not read 1.26s as a speedup.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -227,6 +237,7 @@ develop work. One line per check:
 | `trap_sentinel_gate.py` | a shell gate whose abort would report exit 0 — this repo's own two, by MEMBERSHIP (Issue 734) |
 | `issue_citation_gate.py` | a cross-repo `Issue N` citation naming no repo — it rebinds to the WRONG document once that number is allocated locally (Issue 749). In CI the cross-repo axis is DEFERRED to the workstation run — the `DOCS_GATE_CI` marker's instrument-alive verdict, because the sibling workspace is absent in a single checkout |
 | `markdown_fence_gate.py` | a fenced code block never closed — everything after it renders as code, and a fence scanner mis-phases on it (Issue 756) |
+| `platform_dead_code_floor_gate.py` | an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
 The `CHECKS` count is deliberately not written here — it drifted once, which
@@ -253,8 +264,14 @@ Workstation-only cross-repo sweep family — `docs_drift_sweep.py`,
 `cfg_row_implication_drift_sweep.py`, `trap_sentinel_drift_sweep.py`,
 `citation_drift_sweep.py`, `restatement_drift_sweep.py` (every contract repo,
 on demand), `markdown_fence_drift_sweep.py` (every contract repo, on demand —
-the Issue 756 unterminated-fence verdict workspace-wide; its first run caught
-the then-new `seal-online-remaster`), (feat: markdown_fence_drift_sweep.py — the Issue 756 unterminated-fence verdict over every contract repo (workstation, two-axis pins: min_md_files walk floor + max_unterminated=0 wall); its FIRST workspace run caught seal-online-remaster .plans/005:600 (14 swallowed lines — the repo joined the contract set at Issue 760 after the landing measurement; repaired seal-online-remaster 99064c5, floored at 50); AGENTS.md sweep-family row)
+the Issue 756 unterminated-fence verdict workspace-wide, two-axis pins
+(`min_md_files` walk floor + `max_unterminated = 0` wall); its FIRST workspace
+run caught the then-new `seal-online-remaster`'s `.plans/005:600`, 14 swallowed
+lines, repaired there at `99064c5`),
+`platform_dead_code_drift_sweep.py` (every contract repo, on demand — the
+Issue 775 verdict half of `platform_dead_code_audit.py`, and the one sweep
+whose `--prove-fires` runs by DEFAULT: the per-push gate cannot afford the
+`git archive` of the known-answer tree, this can),
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
 REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73
@@ -729,6 +746,19 @@ scripts/platform_dead_code_audit.py --prove-fires ea4c2873
   sweep's two riir-ai rows were compile-verified and repaired —
   `note_ane_dispatch` (x86_64, `--features ane_prefill`) and `gen_u64_bytes`
   (wasm32, `--features chacha20_rng`).
+- Verdict halves (Issue 775, 2026-09-14):
+  `scripts/platform_dead_code_floor_gate.py` per-push in the docs gate
+  (katgpt-rs scope, pins in `scripts/platform_dead_code_floors.txt` — two
+  blindness floors, the MOD-REF row by **membership**, plus six canary arms
+  over the gate's own pin arithmetic, which the classifier's self-test cannot
+  reach) and `scripts/platform_dead_code_drift_sweep.py` on the workstation
+  (every contract repo, pins in `scripts/platform_dead_code_drift_floors.txt`;
+  population taken from `repo_set.txt` as well as the walk, so a partial box
+  DEFERS loudly instead of greening over 16 of 20). `--prove-fires ea4c2873`
+  runs by DEFAULT in the sweep and is opt-in on the gate: ~5.6s of `git
+  archive` to re-prove a fact about a frozen commit is worth a workstation run
+  and not a per-push one (the gate is ~6.2s against a ~13s whole-docs-gate
+  budget).
 
 ## Before committing in a shared worktree — `scripts/staged_set_audit.py`
 

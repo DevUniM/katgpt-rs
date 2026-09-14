@@ -1,0 +1,61 @@
+# Pins for scripts/platform_dead_code_floor_gate.py — katgpt-rs scope only.
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message. A pin that drifts behind reality is a pin
+# nobody trusts.
+#
+# ── the CEILING is a WALL, not a ratchet ─────────────────────────────────────
+# max_findings = 0 is the verdict: an item declared ungated whose EVERY use
+# sits behind a platform cfg the declaration lacks is dead code on every other
+# platform, and no automatic lane in this workspace compiles the one that says
+# so — full_gate is macOS/aarch64, wasm32_gate is wasm32, and the x86_64-native
+# lane that emits the warning is a workstation lane. That is the whole reason
+# the class survived: `ea4c2873` (NEON_U8, declared ungated, used only inside
+# an `#[cfg(target_arch = "aarch64")]` fn) was found by a human reading a
+# Windows all-features build, not by a gate.
+#
+# ⛔ Do not "fix" a red by raising this ceiling. The repair is one attribute —
+# give the declaration the same cfg its uses already carry.
+#
+# ── the two FLOORS, and the second is the one that bites ─────────────────────
+# A ceiling of 0 is green over whatever the classifier can SEE, and this one
+# has two independent ways to go blind:
+#
+#   min_rs_files          the WALK. `list_rs_files` shells out to
+#                         `git ls-files`; a regression there takes the
+#                         population to 0 and the ceiling passes,
+#                         indistinguishable from a clean repo.
+#   min_candidate_decls   the PARSE. The walk is unchanged and the token pass
+#                         yields nothing — measured three times while the
+#                         classifier was being built (an `any(...)` recursion,
+#                         a swallowed closing paren, an unhandled `'`), each of
+#                         which produced a confident `0 findings` over a full
+#                         2415-file walk. ONLY this floor moves when that
+#                         happens.
+#
+# Both are ~55-60% of measured (2415 files · 29819 candidate decls,
+# 2026-09-14): SLACK against churn (deleting a crate legitimately shrinks
+# both), TIGHT against blindness (a walk or token regression drops them by an
+# order of magnitude, not by a third).
+max_findings = 0
+min_rs_files = 1400
+min_candidate_decls = 17000
+
+# ── MOD-REF: pinned by MEMBERSHIP, because a count is not a checksum ─────────
+# A `mod foo;` referenced only from platform-gated code satisfies the rule and
+# is NOT a rustc finding: measured on `katgpt-types::simd::horizontal`, a
+# wasm32 `cargo check` is SILENT, because every item inside that module is
+# itself x86_64-gated — the module is EMPTY there rather than dead. (Appending
+# one ungated `fn` reproduces the warning, on the **fn**.) So the audit keeps
+# these in their own bucket and never folds them into the finding count.
+#
+# This one row is a deliberate standing observation. It is pinned by NAME, not
+# by cardinality, for the trap_sentinel_gate reason: a count of 1 stays 1 when
+# this row is repaired and a DIFFERENT, unread module takes its place.
+#
+# The line number is deliberately NOT part of the key — it drifts with any
+# edit above the declaration, and a gate that reds on an unrelated insertion is
+# a gate people route around. Path + name is the identity.
+#
+#        <path>:<mod name>
+modref = crates/katgpt-types/src/simd/mod.rs:horizontal

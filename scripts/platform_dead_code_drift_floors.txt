@@ -1,0 +1,124 @@
+# Pins for scripts/platform_dead_code_drift_sweep.py — EVERY contract repo.
+#
+# Format, 5 whitespace-separated fields:
+#
+#   <repo> <min_rs_files> <min_candidate_decls> <max_findings> <max_modref>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message. A pin that drifts behind reality is a pin
+# nobody trusts.
+#
+# ── the ceilings are a WALL, not a ratchet ────────────────────────────────────
+# max_findings = 0 in every repo, and that zero was EARNED the week this
+# instrument landed: the first sweep it ever ran found two live rows in riir-ai
+# — `note_ane_dispatch` (declared ungated in an `ane_prefill`-gated module, all
+# three call sites `all(target_os = "macos", target_arch = "aarch64")`) and
+# `gen_u64_bytes` (used only from a `target_pointer_width = "64"` arm, and this
+# workspace builds wasm32). BOTH reproduced as rustc warnings before being
+# touched; repaired riir-ai `7b97ab97e`.
+#
+# ⛔ Do not "fix" a red by raising a ceiling. A new row is an item that is dead
+# code on every platform but one, and NO automatic lane in this workspace
+# compiles the platform that would say so — full_gate is macOS/aarch64,
+# wasm32_gate is wasm32, and the x86_64-native lane that emits the warning is a
+# workstation lane. The repair is one attribute: give the declaration the same
+# cfg its uses already carry.
+#
+# max_modref is the second ceiling and is 0 everywhere but katgpt-rs. A MOD-REF
+# row is NOT a rustc finding (a module whose own items are each gated is EMPTY
+# on the other platform, not dead — measured on katgpt-types::simd::horizontal,
+# where a wasm32 `cargo check` is silent and appending one ungated `fn`
+# reproduces the warning on the **fn**). It is still a row somebody should read
+# once, so it is walled rather than ignored.
+#
+# ⚠ katgpt-rs's 1 is a COUNT here and a MEMBERSHIP pin in
+# `platform_dead_code_floors.txt`, which is the file that actually holds it —
+# a count of 1 stays 1 when that row is repaired and a different, unread module
+# takes its place. The sweep ASSERTS the two agree rather than trusting them
+# (the docs_gate_paths_sync idiom: same quantity, two files).
+#
+# ── the two FLOORS, and the second is the one that bites ──────────────────────
+# A ceiling of 0 is green over whatever the classifier can SEE, and this one has
+# two independent ways to go blind:
+#
+#   min_rs_files          the WALK. `list_rs_files` shells out to `git ls-files`
+#                         and falls back to an rglob; a regression takes the
+#                         population to 0 and every ceiling passes,
+#                         indistinguishable from a clean repo.
+#   min_candidate_decls   the PARSE. The walk is intact and the token pass
+#                         yields nothing — measured three times while the
+#                         classifier was being built (an `any(...)` recursion, a
+#                         swallowed closing paren, an unhandled `'`), each of
+#                         which produced a confident `0 findings` over a full
+#                         walk. ONLY this floor moves when that happens.
+#
+# Both sit at ~55-60% of measured: SLACK against churn (removing a crate
+# legitimately shrinks both, and a floor that ratcheted to the last measurement
+# would red that cleanup and teach whoever hit it that the sweep is noise),
+# TIGHT against blindness (a walk or token regression drops these by an order of
+# magnitude, not by a third).
+#
+# ── no MOD-REF membership pin per repo, deliberately ──────────────────────────
+# There is exactly ONE MOD-REF row in the workspace and it lives in katgpt-rs,
+# where the gate pins it by name. Adding a name column here would duplicate that
+# one pin into a second file and leave 15 columns holding nothing.
+#
+#                       min_rs  min_cand  max_find  max_modref
+katgpt-rs                 1400     17000         0           1
+riir-ai                   1500     18000         0           0
+riir-auth                   10       100         0           0
+riir-chain                 280      4300         0           0
+riir-clippy                210      3000         0           0
+riir-dapps                  60      1150         0           0
+riir-game-sdk              150      1850         0           0
+riir-kat                    15       190         0           0
+riir-mmorpg-examples        40       270         0           0
+riir-neuron-db             120      1950         0           0
+riir-shader                 38       640         0           0
+riir-train                 670     10400         0           0
+riir-viewbridge             14       150         0           0
+seal-game-editor           140      3650         0           0
+seal-online-remaster       360      7400         0           0
+seal-remake                 33       270         0           0
+
+# ── FOUR repos have no row, and that is not an oversight ─────────────────────
+# katgpt-web · riir-dao · riir-deployer · riir-esp32 are contract repos that
+# were NOT on the box these pins were measured on (16 of 20, 2026-09-14). They
+# get no row rather than a fabricated one: a floor nobody measured is a floor
+# that certifies nothing, and writing `0 0 0 0` would make four repos read as
+# pinned while asserting only the walls.
+#
+# They are not invisible, either — the sweep takes its population from
+# `repo_set.txt` as well as from this file, so on THIS box they read as UNSEEN
+# and RED unless DOCS_GATE_PARTIAL_CLONE=1 marks the box as a known subset, in
+# which case they are a loud deferral on the final line. Never a silent green
+# over 16 of 20.
+#
+# On the first full-checkout run (the M3 is the canonical one) they arrive as
+# UNPINNED — a red in every posture, marker or not — with their measured
+# numbers printed next to each. Pin them there, in one commit, with the numbers
+# that run measured: the deliberate re-pin this family requires of every row.
+#
+# ── measured 2026-09-14, the landing run (what these floors are ~60% of) ──────
+#   katgpt-rs            2415 .rs · 29819 cand ·  1013 units · 0 find · 1 MOD-REF
+#   riir-ai              2626 .rs · 30566 cand ·  1020 units · 0 find (252 vendored excluded)
+#   riir-auth              18 .rs ·   170 cand ·     6 units · 0 find
+#   riir-chain            482 .rs ·  7199 cand ·   195 units · 0 find
+#   riir-clippy           363 .rs ·  4996 cand ·   120 units · 0 find
+#   riir-dapps            106 .rs ·  1973 cand ·    45 units · 0 find
+#   riir-game-sdk         261 .rs ·  3095 cand ·    96 units · 0 find
+#   riir-kat               26 .rs ·   325 cand ·     1 unit  · 0 find
+#   riir-mmorpg-examples   69 .rs ·   451 cand ·    54 units · 0 find
+#   riir-neuron-db        211 .rs ·  3261 cand ·   107 units · 0 find
+#   riir-shader            64 .rs ·  1076 cand ·    10 units · 0 find
+#   riir-train           1129 .rs · 17349 cand ·   536 units · 0 find
+#   riir-viewbridge        24 .rs ·   260 cand ·    16 units · 0 find
+#   seal-game-editor      233 .rs ·  6124 cand ·   119 units · 0 find
+#   seal-online-remaster  611 .rs · 12336 cand ·    70 units · 0 find
+#   seal-remake            56 .rs ·   452 cand ·    25 units · 0 find
+#
+#   totals: 8694 .rs · 119452 candidate decls · 3433 units · 0 findings · 1 MOD-REF
+#
+# ⚠ Read that block as a MEASUREMENT RECORD, not as a second set of pins. The
+# floors above are the claim; these are what they were derived from, dated so a
+# later reader can tell a real shrink from a re-pin nobody justified.

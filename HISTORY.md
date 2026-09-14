@@ -2036,6 +2036,43 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 
 ## Issue log (resolved)
 
+- **Issue 775 — `platform_dead_code_audit.py` had no VERDICT half, and nothing automatic ran it** RESOLVED + removed
+  (2026-09-14; issue file removed at close, this row + git history are the durable
+  record; filed the same day the report half landed, `a0cbc398`). The report was a
+  snapshot nothing defended — and this class in particular is invisible to every
+  automatic lane the workspace runs (`full_gate` is macOS/aarch64, `wasm32_gate` is
+  wasm32, and the x86_64-native lane that emits the `dead_code` warning is a
+  WORKSTATION lane), so an instrument that closes that hole and is itself run by
+  nothing had moved the hole one level up. Landed, both halves of the family shape:
+  (1) `scripts/platform_dead_code_floor_gate.py`, katgpt-rs-scoped, in `docs_gate.sh`
+  CHECKS (18 now) with its three globs in BOTH hand-duplicated trigger `paths:` lists
+  — pins in `scripts/platform_dead_code_floors.txt`: `max_findings = 0`, two blindness
+  floors (`min_rs_files` = the WALK, `min_candidate_decls` = the PARSE, which is the
+  one that moves when the token pass breaks on an unchanged tree — it did three times
+  during the classifier's construction, each as a confident `0 findings`), and the one
+  MOD-REF row by MEMBERSHIP, path + name, deliberately WITHOUT the line number so an
+  unrelated insertion above it cannot red the gate. (2)
+  `scripts/platform_dead_code_drift_sweep.py`, workstation, every contract repo,
+  pinned in `scripts/platform_dead_code_drift_floors.txt` (16 measured rows; katgpt-web
+  / riir-dao / riir-deployer / riir-esp32 deliberately have NO row — a floor nobody
+  measured certifies nothing — and arrive as UNPINNED reds on the first full-checkout
+  run). Three things worth carrying forward: the sweep takes its population from
+  `repo_set.txt` as well as from the walk (via the shared `partial_clone_state()`), so
+  a partial box DEFERS loudly under `DOCS_GATE_PARTIAL_CLONE=1` instead of greening
+  over 16 of 20 — verified in both postures; the sweep cross-asserts its katgpt-rs row
+  against the gate's own pins rather than trusting two files to agree, INCLUDING
+  `max_modref == len(pinned MOD-REF names)`; and the gate canaries its OWN pin
+  arithmetic (6 arms, both directions, including a MOD-REF SWAP whose count stays 1 —
+  the arm a cardinality pin cannot fail), because the classifier's 24-arm self-test
+  pins the classifier and never touches the comparison. `--prove-fires ea4c2873` runs
+  by DEFAULT in the sweep and is opt-in on the gate: ~5.6s of `git archive` to re-prove
+  a fact about a frozen commit is worth a workstation run, not a per-push one.
+  Measured at landing: gate ~6.2s (2415 .rs / 29819 candidate decls, 0 findings, 1
+  MOD-REF), sweep ~30s over 16 repos, docs gate 18/18 green. ⚠ The docs gate's own CPU
+  self-timing read **1.26s against a 19.7s wall** on this Windows box — not comparable
+  to the M3 series (13.37s at 17 checks) and not caught by the gate's ~0 guard; filed
+  as Issue 776 rather than silently re-pinned.
+
 - **Issue 765 — the docs gate's 3 workstation-only instruments red with a MISLEADING remedy on a partial clone (the 4090 box class)** RESOLVED + removed
   (2026-09-13; the `DOCS_GATE_PARTIAL_CLONE=1` marker axis; issue file removed at close,
   this row + git history are the durable record; filed by the 4090 session while

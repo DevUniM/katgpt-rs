@@ -153,6 +153,13 @@ on:
       - 'scripts/issue_citation_floors.txt'
       - 'scripts/docs_gate_checks_sync.py'
       - 'scripts/markdown_fence_gate.py'
+      # Issue 775: the platform-dead_code floor gate's inputs are ALL Rust
+      # source (globbed above), its report half — imported, never re-derived —
+      # and its pins. Without these three the gate could not fire on the one
+      # push it exists for: the push that changes the classifier or the pins.
+      - 'scripts/platform_dead_code_audit.py'
+      - 'scripts/platform_dead_code_floor_gate.py'
+      - 'scripts/platform_dead_code_floors.txt'
   pull_request:
     # Same branch scope as push: PRs targeting main only — a PR against
     # develop is develop work, which this gate no longer covers.
@@ -263,6 +270,13 @@ on:
       - 'scripts/issue_citation_floors.txt'
       - 'scripts/docs_gate_checks_sync.py'
       - 'scripts/markdown_fence_gate.py'
+      # Issue 775: the platform-dead_code floor gate's inputs are ALL Rust
+      # source (globbed above), its report half — imported, never re-derived —
+      # and its pins. Without these three the gate could not fire on the one
+      # push it exists for: the push that changes the classifier or the pins.
+      - 'scripts/platform_dead_code_audit.py'
+      - 'scripts/platform_dead_code_floor_gate.py'
+      - 'scripts/platform_dead_code_floors.txt'
   workflow_dispatch:
 
 concurrency:

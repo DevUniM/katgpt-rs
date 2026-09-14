@@ -113,6 +113,7 @@ CHECKS=(
     "scripts/trap_sentinel_gate.py:a shell gate whose set -u abort would report exit 0 — this repo's own two, by membership (Issue 734)"
     "scripts/issue_citation_gate.py:a cross-repo Issue/Plan/Bench citation naming no repo — it rebinds to the WRONG doc once the number is allocated locally (Issue 749)"
     "scripts/markdown_fence_gate.py:a fenced code block never closed — everything after it renders as code, and a fence scanner mis-phases on it (Issue 756)"
+    "scripts/platform_dead_code_floor_gate.py:an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775)"
     "scripts/docs_gate_checks_sync.py:this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750)"
 )
 
