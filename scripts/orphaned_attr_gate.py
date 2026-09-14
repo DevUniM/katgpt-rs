@@ -40,11 +40,29 @@ orphaned**. The site count is the part worth keeping: a zero over 49,624 sites
 is evidence; a zero over a walk that has gone blind is not, which is why the
 PASS line prints the population it saw rather than the one it assumed.
 
-Do not read that as this gate's verdict. It audits **one** repo per
+⛔ **Those three figures were measured over a FILESYSTEM walk, and Issue 777
+retired that population the same day it landed** (`820bf8b6`). Re-measured
+2026-09-14 over the TRACKED walk, same 16 repos: **8,694 `.rs` files, 26,598
+outer-`#[cfg]` sites, 0 orphaned** — 22% and **46%** below the line above. The
+verdict never moved; 23,026 of the sites offered as its warrant were in trees
+no repo owns (seal-online-remaster's gitignored `mmorpg/` nested repository,
+riir-ai's vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR` sources under
+`.runs/target-*`). Both figures are kept, dated, because a reader who cannot
+see that the population DEFINITION changed reads that drop as deleted code.
+
+Do not read either as this gate's verdict. It audits **one** repo per
 invocation, and until 2026-09-04 its PASS line printed "measured 0 across 19
 repos" on every run — a cross-repo claim no run had made, with a count that had
 gone stale two commits earlier, printed two lines below the repo-set gate
 saying 16. It now reports the repo it scanned and the population it saw.
+
+⛔ And removing the claim from the PASS line did not stop it going stale — it
+only stopped it being *printed* stale. The number went on being typed into this
+docstring by hand for eleven days, and nothing re-asserted it until Issue 784
+built the missing half: `scripts/orphaned_attr_drift_sweep.py`, workstation,
+every contract repo, floors in `scripts/orphaned_attr_drift_floors.txt` (which
+asserts `FLOOR_FILES` / `FLOOR_CFG_SITES` below against itself). **Take the
+cross-repo figure from that run, not from this paragraph.**
 
 The broader shape (**any** attribute + blank line + item) is 2,044 sites and is
 NOT gateable: it is dominated by whole-file INNER attributes (`#![cfg(...)]`),

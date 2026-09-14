@@ -334,6 +334,15 @@ floors are not interchangeable and neither is redundant — `min_calls` is **0
 in 10 of 16 repos**, because they have `.py` files and no `subprocess` at all,
 so in exactly those repos `min_py_files` is the only blindness detector there
 is),
+`orphaned_attr_drift_sweep.py` (every contract repo, on demand — the Issue 784
+verdict half of `orphaned_attr_gate.py`, and the **eighth** instance of this
+shape. The one that found **no** new offenders, which is the honest outcome to
+report: 0 orphaned now holds across three measurements and TWO population
+definitions. What it did find is a stale WARRANT — the gate's docstring carried
+`11,132 .rs / 49,624 sites` by hand, and Issue 777's tracked walk put the same
+16 repos at **8,694 / 26,598**, 22% and **46%** lower, because 23k of those
+sites were in trees no repo owns. Both floors bite in all 16 here, unlike 783's
+population — a measured difference, not an assumption),
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
 REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73

@@ -120,6 +120,18 @@ TRUNC-VAR, 0 WEAK-ASSERTED, 30 OK, 38 UNRESOLVED, 42 SAFE**, katgpt-rs still
 **41**. All four gated classes are zero in all sixteen repos, and the workspace
 walk is 11,132 `.rs` files.
 
+⛔ **That last figure is a FILESYSTEM walk and Issue 777 retired it**
+(2026-09-14). The same 16 repos measure **8,694** tracked `.rs`; the sweep
+re-measured **124 sites, 0/0/0/0** at the same time. The 2,438-file drop is not
+deleted code — it is content no repo owns leaving the population
+(seal-online-remaster's gitignored `mmorpg/` nested repository, riir-ai's
+vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR` sources). Both figures
+are kept, dated: read a falling population against its DEFINITION before
+reading it as a shrink, which is the §2 rule one paragraph down applied to the
+instrument instead of to the corpus. `scripts/percentile_drift_floors.txt`
+carries the same pair. (Found by Issue 784, which was chasing the identical
+staleness in `orphaned_attr_gate.py`'s docstring.)
+
 **The 125 → 110 edge was checked before it was pinned, not after.** A falling
 audit population is a REPAIR or a BLINDNESS and the count cannot tell the two
 apart — §2 above is the record of that happening, and the fourth instance of it

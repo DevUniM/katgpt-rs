@@ -3901,3 +3901,86 @@ class, grep the whole family and land the repair as one shared mechanism.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/783_the_subprocess_encoding_gate_is_katgpt_rs_only.md`).
+
+## Issue 784 — the orphaned-attr gate's cross-repo claim was hand-run: CLOSED (2026-09-14)
+
+`scripts/orphaned_attr_gate.py` was the LAST row in `docs_gate.sh`'s CHECKS
+whose class is cross-repo (Rust source, in every repo) and which had no
+workstation sweep half. Issue 783 closed the same gap for `subprocess_encoding`
+earlier the same day; this is the one it left, and it is the **eighth** instance
+of the shape.
+
+**It is the first of the eight that found no new offenders — and that is the
+honest headline.** `max_offenders` has now held at 0 across three independent
+measurements and TWO population definitions, which is a stronger statement than
+any single count. What it found instead was a stale **warrant**.
+
+The gate's docstring carries the workspace figure as the argument for why the
+class can be gated at all — *"a zero over 49,624 sites is evidence; a zero over
+a walk that has gone blind is not"* — and somebody had been typing that total in
+by hand since 2026-09-03. Issue 777 migrated the gate to the TRACKED walk the
+same day (`820bf8b6`), and the hand-typed warrant did not follow:
+
+| quantity | docstring (2026-09-06, filesystem walk) | measured (tracked walk) | drop |
+|---|---|---|---|
+| `.rs` files | 11,132 | **8,694** | 22% |
+| outer-`#[cfg]` sites | 49,624 | **26,598** | **46%** |
+| orphaned | 0 | **0** | — |
+
+The verdict never moved. **23,026 of the sites offered as its warrant were in
+trees no repo owns** — seal-online-remaster's gitignored `mmorpg/` nested
+repository, riir-ai's vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR`
+sources under `.runs/target-*`.
+
+**This is Issue 777's second-order damage one class over.** 777 repaired the two
+`percentile_drift_floors.txt` rows it measured and that file's own prose, and
+left every OTHER prose restatement of the same walk standing. A `grep` for the
+figure found exactly two live copies — `orphaned_attr_gate.py:38` and
+`.docs/10_audits/percentile_index_tail_support.md:121` — and a widened hunt over
+`.docs/`, `.agents/`, `scripts/` and AGENTS.md for any other four-or-five-digit
+`.rs`/`.py`/`.md` population figure found no third. Both repaired in the
+`percentile_drift_floors.txt` style that 777 got right: **the pre-777 number
+kept as a dated record, the tracked-walk number next to it, and the mechanism
+named** — a reader who cannot see that the population DEFINITION changed reads a
+46% drop as deleted code.
+
+**Correcting two numbers is not the repair.** The reason the figure went stale
+is structural: the gate audits one repo per invocation and nothing re-asserted
+the total. The gate's own docstring already warned about this exact shape (until
+2026-09-04 its PASS line printed "measured 0 across 19 repos" on every run, a
+cross-repo claim no run had made). The fix applied then was to stop the PASS
+line making the claim — which stopped it being *printed* stale, and the number
+went on being hand-typed for eleven more days. `orphaned_attr_drift_sweep.py`
+makes the claim MEASURED.
+
+**Both floors, and this population's warrant is the opposite of Issue 783's.**
+There `min_calls` is 0 in 10 of 16 repos and detects nothing across most of the
+population, so `min_py_files` carries it alone. Here both quantities are
+non-zero in all 16 — the smallest, riir-viewbridge, has 24 tracked `.rs` and 20
+outer-`#[cfg]` sites — so both floors are live everywhere. Same two-floor shape,
+different warrant, stated as a measurement in both pin files so neither carries
+the other's argument.
+
+The narrowing is imported, never restated: `OUTER_CFG` vs `ANY_ATTR` is the
+whole classifier, and it is what takes the broad shape's **2,044** sites to 0 —
+inner `#![cfg(...)]` binds to the enclosing module and is conventionally
+followed by a blank line. Selftest arm 3 pins that directly; if it ever passes a
+finding the sweep reports thousands.
+
+Canaries, all measured: a planted orphan in riir-shader's `camera.rs` reds the
+run and names both the attribute and the item it re-bound to; marker-off reds
+with UNSEEN over the same four repos marker-on DEFERS by name; perturbing
+katgpt-rs's `min_cfg_sites` by 1 trips the shared-floor assertion against
+`orphaned_attr_gate.FLOOR_CFG_SITES`. Seven self-test arms, the walk-boundary
+one on a `git add`-ed temp repo on purpose — an unstaged one exercises
+`tracked_walk`'s rglob FALLBACK and certifies the branch the arm is not aimed
+at (the Issue-775 vendor-arm failure).
+
+Four repos deliberately unpinned (katgpt-web, riir-dao, riir-deployer,
+riir-esp32) — not on this box, DEFERRED, UNPINNED-red on the first full
+checkout. That is now THREE floors files owed the same one-commit repair:
+`platform_dead_code_drift_floors.txt`, `subprocess_encoding_drift_floors.txt`,
+`orphaned_attr_drift_floors.txt`.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/784_the_orphaned_attr_cross_repo_claim_is_hand_run_and_stale.md`).
