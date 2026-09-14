@@ -425,6 +425,36 @@ found**: the per-module arm timing measured the seven dataclass modules at
 population a third of which was not running at all. Read it as the lower bound
 it turned out to be.
 
+### ⛔ Finding 6 — two more Windows-unrunnable instruments, one of them PRODUCTION
+
+`required_features_build_audit` read **BASELINE-RED**: its `selftest` raised
+`AttributeError: module 'os' has no attribute 'statvfs'`. That is not an arm
+defect — `free_gib` is production code, so **the entire module was unimportable
+on Windows**, and with it `disk_headroom_ok`, the REFUSE that keeps the report
+from filling a disk. Repaired with `shutil.disk_usage(...).free`, the same
+quantity `f_bavail * f_frsize` computes and cross-platform. It now measures
+**55 killed / 58 live of 117** where it previously measured nothing at all.
+
+Generalised rather than fixed in place, per this repo's own standing lesson: a
+workspace-wide sweep for POSIX-only Python (`os.statvfs`, `os.getuid`,
+`os.fork`, `signal.SIGALRM`, `fcntl`, `termios`, `pwd`, `grp`, `os.uname`) over
+every tracked `*.py` in all 16 repos found **no other live call site** — only
+the comments explaining these two. The class is closed, and the sweep is the
+evidence rather than the assumption.
+
+### ⛔ Finding 7 — NO-ARM vs UNREACHED, decided twice and differently
+
+`restatement_drift_sweep` defines exactly one arm, `prove_fires`, which is
+never invoked. `audit_module` handled that correctly. The REPORT did not: it
+asked `if not r["arms"]`, which is False for a module whose only arm is
+`prove_fires`, so the row rendered as **UNREACHED** — *"this arm killed
+nothing", remedy: widen the arm* — when the truth is **NO-ARM** — *there is no
+arm, remedy: write one*. The gate's `classify` had it right the whole time.
+
+Issue 755's shape exactly: **a rule expressed twice is a rule that will be
+expressed differently.** One predicate now, `has_runnable_arm`, armed on the
+`prove_fires`-only case in both directions.
+
 ### ⛔ Finding 4 — the gate caught the commit that changed it
 
 The `if r.get("baseline", …) != A.BASE_OK:` branch added to `measure()` read

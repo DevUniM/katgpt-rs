@@ -53,12 +53,23 @@ cover its *classifier*, and its `main()` is a much larger I/O shell than a
 gate's. Two populations, two baselines.
 
 ⛔ **And it is a different COST class, not merely more modules.** The CHECKS
-population is 22 modules / 552 mutants / **158s** (measured twice, 2026-09-15).
-`--include-all` pulls in the eleven cross-repo drift sweeps, whose arms are
-WORKSPACE-WIDE WALKS, so every mutant pays a 16-repo walk: a run was
-**abandoned at 7.5 minutes without completing** — a LOWER BOUND, not a
-measurement of the whole run, and quoted as one. Budget it as a deliberate
-investigation, never as "the same report with a flag". The verdict half
+population is 22 modules / 561 mutants / **~130s**. `--include-all` is 55
+modules / ~2400 mutants, and the eleven cross-repo drift sweeps in it have arms
+that are WORKSPACE-WIDE WALKS, so every mutant pays a 16-repo walk.
+
+⚠ **Run it MODULE BY MODULE with a wall timeout, not as one invocation.** One
+run is unbounded in the worst case and not resumable, and the worst case was
+measured twice on the day this was written: a non-terminating mutant burned 98%
+of a core for TWO HOURS (fixed — see TIMEOUT below), and then a *blocking C
+call* left the process at 3.5% CPU with the watchdog's interrupt pending and
+undeliverable. The per-module walk found the same population in ~35 minutes,
+named both stragglers, and lost nothing when one of them was killed.
+
+⛔ Two earlier figures in this paragraph were wrong and both were quoted as if
+measured: "abandoned at 7.5 minutes" was a lower bound read as a run length,
+and a 765s prediction from per-module arm timings was computed over a
+population a THIRD of which was silently crashing at import (see
+`_exec_namespace`). Budget this as a deliberate investigation. The verdict half
 (`arm_reach_gate.py`) deliberately does NOT use this population.
 
 Exit 0 = the report ran (findings or not).
@@ -483,6 +494,21 @@ def run_arm(code, path: Path, arms: set[str],
     return SURVIVED
 
 
+def has_runnable_arm(row: dict) -> bool:
+    """Does this row's module have an arm the harness can RUN?
+
+    ⛔ One predicate, one place, because the two copies disagreed. `main` asked
+    `if not r["arms"]`, which is False for a module whose ONLY arm is
+    `prove_fires` — an arm that is never invoked — so `restatement_drift_sweep`
+    was rendered **UNREACHED** ("this arm killed nothing", remedy: widen the
+    arm) when it is **NO-ARM** ("there is no arm", remedy: write one). The
+    gate's `classify` had it right the whole time, which is precisely Issue
+    755's shape: a rule expressed twice is a rule that will be expressed
+    differently.
+    """
+    return bool(set(row.get("arms", ())) & RUN_ARMS)
+
+
 def audit_module(path: Path) -> dict:
     src = path.read_text(encoding="utf-8")
     try:
@@ -743,6 +769,22 @@ def selftest() -> list[str]:
         eq("an unparseable module is an ERROR, never a clean row",
            "does not parse" in (audit_module(unparsed).get("error") or ""), True)
 
+        # ── NO-ARM vs UNREACHED: one predicate, because two disagreed ─────
+        pf_only = d / "pf_only.py"
+        pf_only.write_text(
+            "def rule(n):\n"
+            "    return n >= 10\n"
+            "def prove_fires():\n"
+            "    return []\n", encoding="utf-8")
+        r = audit_module(pf_only)
+        eq("a module whose ONLY arm is prove_fires has no RUNNABLE arm",
+           has_runnable_arm(r), False)
+        eq("…and its mutants are COUNTED but never run (a vacuous SURVIVED for "
+           "every one is not a measurement)",
+           (r["total"] > 0, r["killed"], r["survived"]), (True, 0, []))
+        eq("a module with a real arm DOES have a runnable one",
+           has_runnable_arm({"arms": ["selftest", "prove_fires"]}), True)
+
         # ── the BASELINE boundary, both directions ────────────────────────
         # ⛔ BASELINE-RED is the one that looks like success: without this
         # bucket the module below scores 100% KILLED while distinguishing
@@ -899,7 +941,8 @@ def main(argv: list[str]) -> int:
                   f"with no mutants reports a perfect score")
             return 2
 
-    no_arm = {n: r for n, r in rows.items() if not r.get("error") and not r["arms"]}
+    no_arm = {n: r for n, r in rows.items()
+              if not r.get("error") and not has_runnable_arm(r)}
     errored = {n: r for n, r in rows.items() if r.get("error")}
     baseline_bad = {n: r for n, r in rows.items()
                     if not r.get("error") and r.get("baseline", BASE_OK) != BASE_OK}
@@ -920,7 +963,7 @@ def main(argv: list[str]) -> int:
         if r.get("error"):
             print(f"  ⛔ {name:40s} {r['error']}")
             continue
-        if not r["arms"]:
+        if not has_runnable_arm(r):
             print(f"  ▫ {name:40s} NO-ARM — {r['total']:3d} mutant(s) unwatched by "
                   f"any arm of its own (delegated; a classifier's self-test cannot "
                   f"reach its consumer's arithmetic — Issue 775)")

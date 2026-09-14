@@ -986,6 +986,21 @@ blaming the gates for its own boundary.
   runs the real workspace needs the same markers the gates get
   (`DOCS_GATE_PARTIAL_CLONE=1` on a known-subset box), and two of them read RED
   without it.
+- ⛔ **`--include-all` had NEVER been measured, and T6 measured it** — 55
+  modules, ~2400 mutants, run **module by module with a wall timeout** rather
+  than as one invocation. That is the operating instruction, not a detail: one
+  run is unbounded in the worst case and not resumable, and the worst case
+  happened twice on the day it was written (a two-hour non-terminating mutant,
+  then a *blocking C call* the watchdog provably cannot reach — 3.5% CPU, no
+  children, interrupt pending). The per-module walk took ~35 minutes, named
+  both stragglers, and lost nothing when one was killed. Standing over the
+  **53 of 55** modules it reached: **2059 mutants · 984 KILLED · 545 live
+  SURVIVED · 526 exempt · 1 CRASHED · 3 TIMEOUT · 1 NO-ARM**. ⚠ Read that
+  against the CHECKS population and **not** as a comparable number: these arms
+  cover a *classifier*, and the weakest are `feature_isolation_gate` (4 killed
+  of 62), `ci_gate_coverage` (4 of 74) and `citation_weight` (3 of 41) — an
+  unread backlog, exactly the shape Issue 785 forbids ratcheting, and
+  deliberately NOT in the gate's population.
 - ⛔ **A mutant can never RETURN, and without a bucket the hang is the MILD
   failure** (T6). Flipping a conjunct out of a loop condition produces a module
   that computes forever, and the harness had no bound at all: a

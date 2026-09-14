@@ -612,8 +612,8 @@ def free_gib(path: str | None = None) -> float:
     Walks up to the nearest EXISTING ancestor (Issue 741 follow-up). A target
     dir cargo has not created yet is the normal case for the very workaround
     this file's own docs recommend — `--target-dir` / `CARGO_TARGET_DIR` set to
-    a fresh `/tmp/<name>` when a sibling is building. `os.statvfs` raises
-    `FileNotFoundError` on it, which crashed `disk_headroom_ok` before it could
+    a fresh `/tmp/<name>` when a sibling is building. The free-space call
+    raises `FileNotFoundError` on it, which crashed `disk_headroom_ok` before it could
     answer, so the headroom REFUSE could not fire for the configuration most
     likely to need it. Measured: `CARGO_TARGET_DIR=/tmp/ndb616` with the dir
     absent → traceback out of `required_features_touched_gate.py`.
@@ -630,8 +630,14 @@ def free_gib(path: str | None = None) -> float:
         if parent == probe:  # reached the root and still nothing: give up
             break
         probe = parent
-    st = os.statvfs(probe)
-    return st.f_bavail * st.f_frsize / (1024 ** 3)
+    # ⛔ `shutil.disk_usage`, not `os.statvfs`: the latter does not EXIST on
+    # Windows, so this module — and every path that imports it, including its
+    # own `selftest` — raised `AttributeError` on half the workstations in this
+    # workspace. Found 2026-09-15 by `arm_reach_audit`, which read the whole
+    # module BASELINE-RED (Issue 790 T6). `disk_usage().free` is the same
+    # quantity `f_bavail * f_frsize` computes (bytes available to this user)
+    # and is cross-platform.
+    return shutil.disk_usage(probe).free / (1024 ** 3)
 
 
 def disk_headroom_ok(path: str | None = None) -> bool:
