@@ -230,6 +230,31 @@ def selftest() -> list[str]:
         if reachable(ws, scripts, ["scripts/docs_gate.sh"]) != set():
             fails.append("a root naming no script reached something")
 
+        # 7b. ⚑ SELF-REFERENCE is not reachability, added by Issue 790 T3.
+        #     `orphan.py` names itself and no root names it; a script that
+        #     mentions its own filename — in a usage string, a docstring, an
+        #     `argv[0]` comparison — must stay UNREACHABLE, or the whole
+        #     predicate collapses (every script names itself in its own
+        #     `Usage:` line).
+        #     ⚠ This arm does NOT kill the `path == cur or path in reached`
+        #     mutant that prompted it, and the reason is that the first
+        #     disjunct is REDUNDANT: a script only ever becomes `cur` by having
+        #     been appended to the frontier, which happens in the same
+        #     statement as `reached.add(path)`, so `path == cur` implies
+        #     `path in reached`. The arm is kept because the PROPERTY is real
+        #     and worth pinning; the mutant is EQUIVALENT. (Third instance of
+        #     "a line a canary cannot red is not doing the work you think it
+        #     is" — see `fenced_blocks`' family test.)
+        w("scripts/orphan.py", 'USAGE = "scripts/orphan.py --help"\ny = 2\n')
+        subprocess.run(["git", "-C", str(ws), "add", "-A"], capture_output=True)
+        scripts2, roots2 = collect(ws)
+        if "scripts/orphan.py" in reachable(ws, scripts2, roots2):
+            fails.append("a script that names ITSELF read as reachable — every "
+                         "script names itself in its own usage line, so the "
+                         "predicate would reach everything")
+        w("scripts/orphan.py", "y = 2\n")
+        subprocess.run(["git", "-C", str(ws), "add", "-A"], capture_output=True)
+
         # 8. exemption parser: reason REQUIRED, comments stripped.
         e = ws / "e.txt"
         e.write_text("# c\nscripts/orphan.py a stated reason  # trailing\n",

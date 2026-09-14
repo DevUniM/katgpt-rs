@@ -189,6 +189,25 @@ def selftest() -> None:
         got = scan(root)
         assert len(got.offenders) == 1, f"the real bug's shape was not detected: {got}"
         assert got.offenders[0][0] == "pos.rs"
+        # ⚑ The reported LINE, added by Issue 790 T3. `arm_reach_audit` found
+        # the `i + 1` 0-to-1-indexed conversion surviving an off-by-one flip:
+        # nothing asserted the address, only the count. A finding at the wrong
+        # line sends the reader to the wrong place, and the attribute is on
+        # line 1 of the fixture — the only offset where `i + 1` and `i - 1`
+        # differ visibly from each other AND from a plausible answer.
+        assert got.offenders[0][1] == 1, (
+            f"the orphaned attribute is on line 1 and was reported at "
+            f"{got.offenders[0][1]}")
+        assert got.offenders[0][2] == "#[cfg(debug_assertions)]", got.offenders[0][2]
+        assert got.offenders[0][3].startswith("use crate::absorb_compress"), (
+            f"the following ITEM was misreported: {got.offenders[0][3]!r}")
+
+        # …and the line must track the attribute's actual position, not be a
+        # constant that happens to be 1. Same shape, pushed down the file.
+        (root / "pos.rs").write_text("// a leading comment\n\n" + positive)
+        got2 = scan(root)
+        assert len(got2.offenders) == 1 and got2.offenders[0][1] == 3, (
+            f"the reported line does not track the attribute: {got2.offenders}")
         # The population is a separate claim from the verdict and is pinned
         # separately: a walk that counts nothing must not be able to report a
         # clean zero. This is the in-miniature version of FLOOR_* below.

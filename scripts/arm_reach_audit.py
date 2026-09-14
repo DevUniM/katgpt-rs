@@ -173,8 +173,17 @@ def mutants(src: str, arms: set[str]):
     excludes its own self-test fixtures.
     """
     tree = ast.parse(src)
+    # An arm's own helpers are arm code too, by an explicit NAMING convention
+    # (`*_arms`) rather than by call-graph inference. ⛔ The inference version
+    # was written first and was WRONG: "a function called only from an arm" also
+    # describes a pure rule whose only in-module caller happens to be its arm,
+    # and this file's own fixtures caught it excluding the very `rule()` they
+    # were testing. Name-based is narrower, predictable, and says so out loud.
+    excluded = arms | {f.name for f in ast.walk(tree)
+                       if isinstance(f, (ast.FunctionDef, ast.AsyncFunctionDef))
+                       and f.name.endswith("_arms")}
     arm_spans = [(f.lineno, f.end_lineno or f.lineno) for f in ast.walk(tree)
-                 if isinstance(f, ast.FunctionDef) and f.name in arms]
+                 if isinstance(f, ast.FunctionDef) and f.name in excluded]
     # The whole BODY of `if __name__ == "__main__":`, not just its test. It is
     # CLI dispatch — `if "--canary" in sys.argv[1:]` and friends — which is the
     # entry point by another name, and no arm is imported as `__main__` so none
@@ -441,6 +450,20 @@ def selftest() -> list[str]:
     eq("the same line IS mutated when it is not an arm",
        descs("def other():\n    return [] if a == b else ['x']\n", {"selftest"}),
        ["== -> !="])
+    # ⚑ An arm's own HELPER is arm code: mutating a fixture assertion reports a
+    # finding against the ARM rather than the gate (Issue 790 T3, found by
+    # running this audit on a gate it had just improved). The convention is the
+    # NAME — `*_arms` — and not a call-graph inference.
+    eq("a `*_arms` helper is arm code",
+       descs("def _read_pins_arms():\n    return a == b\n"
+             "def selftest():\n    return _read_pins_arms()\n", {"selftest"}), [])
+    # ⛔ An ordinary helper an arm calls stays MUTABLE — it is the rule under
+    # test. The first version of this exclusion inferred "called only from an
+    # arm" and swallowed exactly this case; these fixtures caught it excluding
+    # the very `rule()` they exist to test.
+    eq("an ordinary helper an arm calls stays mutable",
+       descs("def rule():\n    return a == b\n"
+             "def selftest():\n    return rule()\n", {"selftest"}), ["== -> !="])
 
     # ── function attribution: innermost wins ──────────────────────────────
     owners = {f for _d, f, _l, _c in mutants(

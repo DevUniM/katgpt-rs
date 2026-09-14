@@ -61,7 +61,9 @@ pins disarms every ceiling under it).
 
 from __future__ import annotations
 
+import contextlib
 import importlib
+import io
 import sys
 from pathlib import Path
 
@@ -177,6 +179,19 @@ _CANARY_ARMS = (
 )
 
 
+# ⚑ Issue 790 T3: `_CANARY_ARMS` drives each floor to pin MINUS ONE, which a
+# `<` and a `<=` both reject — so `arm_reach_audit` reported both floor
+# comparisons SURVIVING a `< -> <=` flip. A floor is pinned only by the two
+# values either side of it, and the value AT the pin is the one a `<=` gets
+# wrong: it reds the very measurement the pin declares acceptable, which is a
+# gate that cannot be satisfied at all.
+_CANARY_AT_FLOOR = (
+    ("files exactly AT min_rs_files",         {"files": 100}),
+    ("candidates exactly AT min_candidate_decls", {"candidates": 1000}),
+    ("findings exactly AT max_findings",      {"findings": 0}),
+)
+
+
 def gate_selftest() -> list[str]:
     fails = []
     if evaluate(_CANARY_GREEN, _CANARY_PINS):
@@ -185,6 +200,64 @@ def gate_selftest() -> list[str]:
     for label, delta in _CANARY_ARMS:
         if not evaluate({**_CANARY_GREEN, **delta}, _CANARY_PINS):
             fails.append(f"the pin comparison is INERT for: {label}")
+    for label, delta in _CANARY_AT_FLOOR:
+        if evaluate({**_CANARY_GREEN, **delta}, _CANARY_PINS):
+            fails.append(f"a measurement exactly at its pin REDS: {label} — the "
+                         f"comparison is off by one and the pin cannot be met")
+    fails += _read_pins_arms()
+    return fails
+
+
+def _read_pins_arms() -> list[str]:
+    """Arms over the pin READER — the fifth unarmed one this audit found.
+
+    Every floor gate in this repo had one, and the reader is load-bearing in
+    the QUIET direction: a filter that drops a real row, or a completeness
+    check that passes on an incomplete file, hands `evaluate` a dict with a
+    missing key. This reader has two behaviours the others do not — a
+    repeatable `modref` row and a REFUSAL on an unknown pin name — and both
+    were asserted by nothing.
+    """
+    import tempfile
+    fails: list[str] = []
+
+    def refuses(label: str, body: str) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "pins.txt"
+            p.write_text(body, encoding="utf-8")
+            sink = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(sink):
+                    read_pins(p)
+            except SystemExit as e:
+                if e.code != 2 or "INSTRUMENT" not in sink.getvalue():
+                    fails.append(f"{label}: exited {e.code} saying "
+                                 f"{sink.getvalue()!r}; want 2 with a reason")
+                return
+            fails.append(f"{label}: was ACCEPTED")
+
+    numeric = "\n".join(f"{k} = {v}" for k, v in
+                        (("max_findings", 0), ("min_rs_files", 100),
+                         ("min_candidate_decls", 1000)))
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "pins.txt"
+        p.write_text(f"# a comment\n\n{numeric}\n"
+                     f"modref = a/b.rs:m\nmodref = c/d.rs:n   # repeatable\n   \n",
+                     encoding="utf-8")
+        got = read_pins(p)
+        want = {"max_findings": 0, "min_rs_files": 100,
+                "min_candidate_decls": 1000, "modref": {"a/b.rs:m", "c/d.rs:n"}}
+        if got != want:
+            fails.append(f"read_pins parsed {got}, want {want} — comments, blanks "
+                         f"and whitespace-only lines must all be dropped, every "
+                         f"numeric row kept, and `modref` ACCUMULATED not replaced")
+
+    # Both refusals. The unknown-pin one is the interesting direction: a typo'd
+    # name would otherwise sit in the file looking load-bearing while comparing
+    # nothing — the reader's own comment says so, and nothing checked it.
+    refuses("an unknown pin name", f"{numeric}\nmax_findigns = 0\n")
+    refuses("a file missing a required numeric pin",
+            numeric.replace("min_rs_files = 100", ""))
     return fails
 
 

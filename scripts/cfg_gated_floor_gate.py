@@ -332,6 +332,26 @@ def selftest() -> None:
     # report of all zeroes satisfies both ceilings.
     assert check({**ok, "reasonless_targets": 1}, pins), "a reasonless ignore passed"
 
+    # ⚑ …but AT THE BOUNDARY, added by Issue 790 T3. The `blind` fixture below
+    # drives every floor to 0, which a `<` and a `<=` both reject, so
+    # `arm_reach_audit` reported all three floor comparisons SURVIVING a
+    # `< -> <=` flip. A floor is only pinned by the two values either side of
+    # it: exactly AT the pin must pass, one BELOW must fail. Each floor is
+    # driven separately because a copy-paste reading one pin for two checks
+    # passes any test that moves them together.
+    for key, pin_key in (("scanned", "min_targets"),
+                         ("gated", "min_gated"),
+                         ("ignore_scanned", "min_ignore_targets")):
+        at = pins[pin_key]
+        assert check({**ok, key: at}, pins) == [], (
+            f"{key} exactly AT its floor {at} failed — a `<=` comparison reds "
+            f"the very value the pin declares acceptable"
+        )
+        assert check({**ok, key: at - 1}, pins), (
+            f"{key} one BELOW its floor {at} passed — the floor is written the "
+            f"wrong way round, and a shrinking population would read as clean"
+        )
+
     # The PROFILE dimension, both directions and both boundaries. Driven
     # separately because the two pins have DIFFERENT values (0 and 1), so a
     # copy-paste that reads one pin for both checks would still pass a
@@ -375,6 +395,71 @@ def selftest() -> None:
     # A shrunken-but-nonzero population must still red, or the floor is only
     # catching total death and not degradation.
     assert check({**ok, "gated": 399}, pins), "a degraded gate-recogniser passed"
+
+    # ⚑ The SILENT-NOW message carries the OVERSHOOT, and a wrong number there
+    # sends whoever reads it looking for the wrong quantity of new targets.
+    # Nothing asserted it: every arm above only tests whether `check` returned
+    # a non-empty list, so `arm_reach_audit` reported the `sn - pin`
+    # subtraction surviving an off-by-one flip (Issue 790 T3).
+    over = check({**ok, "silent_now": pins["max_silent_now"] + 5}, pins)
+    assert len(over) == 1 and "5 newly-added target(s)" in over[0], (
+        f"the SILENT-NOW overshoot is misreported: {over}"
+    )
+
+    # ── the pin READERS, added by Issue 790 T3 ──────────────────────────
+    # Every floor gate in this repo had an unarmed pin reader; this was the
+    # fifth found by one run of `arm_reach_audit`. The reader is load-bearing
+    # in the QUIET direction: a filter that drops a real row hands `check` a
+    # dict with a missing key, and a `KeyError` is the good case — the bad one
+    # is a REQUIRED_PINS check that passes on an incomplete file.
+    #
+    # ⚠ Note this file's grammar is `key value` (whitespace), NOT `key = value`
+    # like the other four. That difference is why the five readers were NOT
+    # unified: three distinct grammars, and merging them would have meant
+    # rewriting pin files to suit the refactor.
+    import tempfile
+    global PINS_FILE, LB_ALLOW_FILE
+    _pins_file, _lb_file = PINS_FILE, LB_ALLOW_FILE
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            PINS_FILE = Path(td) / "pins.txt"
+            rows = "\n".join(f"{k} {v}" for k, v in pins.items())
+            PINS_FILE.write_text(f"# a comment\n\n{rows}\n   \n", encoding="utf-8")
+            got = read_pins()
+            assert got == pins, (
+                f"read_pins parsed {got}, want {pins} — comments, blanks and "
+                f"whitespace-only lines must all be dropped and every real row kept"
+            )
+            # A file missing ONE required pin must refuse, not return a partial
+            # dict for `check` to KeyError on somewhere less legible.
+            PINS_FILE.write_text(rows.replace("min_targets 700", ""), encoding="utf-8")
+            try:
+                read_pins()
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError("read_pins ACCEPTED a file missing a required pin")
+
+            # read_lb_allow: an EMPTY allowlist is refused rather than read as
+            # a ceiling of zero (its own docstring's rule, unasserted until now).
+            LB_ALLOW_FILE = Path(td) / "lb.txt"
+            LB_ALLOW_FILE.write_text("# only a comment\n\n   \n", encoding="utf-8")
+            try:
+                read_lb_allow()
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError(
+                    "read_lb_allow ACCEPTED an empty allowlist — a deleted pin "
+                    "file would then pass only while the auditor is also broken, "
+                    "and the two failures would cancel"
+                )
+            LB_ALLOW_FILE.write_text("# a comment\n\nalpha\nbeta   # why\n",
+                                     encoding="utf-8")
+            got_lb = read_lb_allow()
+            assert got_lb == {"alpha", "beta"}, got_lb
+    finally:
+        PINS_FILE, LB_ALLOW_FILE = _pins_file, _lb_file
 
 
     # ── the membership check, both directions + the blindness case ──
