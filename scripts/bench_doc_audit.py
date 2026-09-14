@@ -669,6 +669,115 @@ def iter_bench_doc_labels(repo_root: Path):
                     yield (rel, ln, line.strip(), qual, feat, raw, parsed)
 
 
+def audit_repo_arms() -> list[str]:
+    """End-to-end arms over the VERDICT, on fixture repos.
+
+    Issue 790 T3. `selftest()` covers the reachability and closure SEMANTICS —
+    the genuinely hard part, with fixtures taken from real workspace shapes —
+    and `TOKENIZER_CASES` covers the line grammar. Neither reaches
+    `audit_repo`, which is where those two models are joined into a verdict:
+    17 of this module's 44 arm-reach survivors were in this function alone, and
+    it takes a repo path, so the whole thing was armable the entire time.
+
+    The classes below all fail SILENTLY: a wrong skip prints a smaller
+    `checked` count and "0 mismatches", which is byte-identical to clean. That
+    is the exact failure mode this file's own TOKENIZER_CASES comment describes
+    ("riir-chain sat at '26 docs, 0 labels' unnoticed"), one layer up.
+
+    ⚠ Every fixture manifest carries a `[package] name`: `reachable_features`
+    resolves through the package graph and sees NOTHING without it (measured in
+    `cargo_comment_audit._audit_repo_arms`, where three arms failed against
+    correct code before that was understood).
+    """
+    import contextlib
+    import io
+    import tempfile
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    def run(manifests: dict[str, str], doc: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i, (rel, body) in enumerate(manifests.items()):
+                p = root / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                if not body.lstrip().startswith("[package]"):
+                    body = f'[package]\nname = "fixture{i}"\n' + body
+                p.write_text(body, encoding="utf-8")
+            (root / ".benchmarks").mkdir()
+            (root / ".benchmarks" / "b.md").write_text(doc, encoding="utf-8")
+            sink = io.StringIO()
+            with contextlib.redirect_stdout(sink), \
+                 contextlib.redirect_stderr(io.StringIO()):
+                n = audit_repo(root)
+            return n, sink.getvalue()
+
+    one = '[package]\nname = "demo"\n[features]\ndefault = ["alpha"]\nalpha = []\nbeta = []\n'
+
+    # The two core mismatches, one per direction.
+    n, out = run({"Cargo.toml": one}, "**Feature:** `beta` (**DEFAULT-ON**)\n")
+    eq("a DEFAULT label on an opt-in feature is a MISMATCH", n, 1)
+    eq("…and the label was counted as checked", "checked 1 labels" in out, True)
+    n, _ = run({"Cargo.toml": one}, "**Feature:** `alpha` (opt-in)\n")
+    eq("an OPT-IN label on a default-on feature is a MISMATCH", n, 1)
+
+    # Both labels correct, and the population says so.
+    n, out = run({"Cargo.toml": one},
+                 "**Feature:** `alpha` (**DEFAULT-ON**)\n"
+                 "**Feature:** `beta` (opt-in)\n")
+    eq("correct labels are not a mismatch", n, 0)
+    eq("both labels were checked", "checked 2 labels" in out, True)
+
+    # FOREIGN: a `pkg/feat` qualifier that is not a crate here is unauditable,
+    # and the skip must be VISIBLE. A silently dropped label is the failure
+    # this whole script exists to catch (Issue 702).
+    n, out = run({"Cargo.toml": one},
+                 "**Feature:** `some-sibling/alpha` (opt-in)\n")
+    eq("a foreign qualifier is skipped, not judged", n, 0)
+    eq("…and the skip is REPORTED",
+       "1 cross-repo (qualifier not a crate here)" in out, True)
+
+    # A token that is not a defined Cargo feature is not a label at all — the
+    # use-case / paper-artifact false-positive class.
+    n, out = run({"Cargo.toml": one}, "**Feature:** `not_a_feature` (opt-in)\n")
+    eq("an undefined feature name is not checked", (n, "checked 0 labels" in out),
+       (0, True))
+
+    # A line with no Feature header carries no labels, however it is written.
+    n, out = run({"Cargo.toml": one}, "Some prose about `alpha` (opt-in).\n")
+    eq("a non-header line is not scanned", (n, "checked 0 labels" in out),
+       (0, True))
+
+    # SCOPED CLAIM: an explicit per-crate reading is trusted and counted.
+    n, out = run({"Cargo.toml": one},
+                 "**Feature:** `alpha` (opt-in in this crate)\n")
+    eq("a crate-scoped opt-in claim is trusted",
+       (n, "crate-scoped claim" in out), (0, True))
+
+    # FORWARDED-ONLY: a qualified opt-in label whose QUALIFIER ships the flag
+    # off is a defensible per-crate claim, even though another crate defaults
+    # the same name (the Defense-3 layer split, riir-ai 681/905).
+    split = {
+        "Cargo.toml": '[package]\nname = "root"\n[features]\n'
+                      'default = ["sub/alpha"]\nalpha = []\n',
+        "crates/sub/Cargo.toml": '[package]\nname = "sub"\n[features]\n'
+                                 'default = []\nalpha = []\n',
+    }
+    n, out = run(split, "**Feature:** `sub/alpha` (opt-in)\n")
+    eq("a qualified opt-in scoped to a crate that ships it OFF is forwarded-only",
+       (n, "forwarded-only (off in owning crate)" in out), (0, True))
+    # …and the BARE form in the same repo is a DEPLOYED claim, which must still
+    # red: a blanket forwarded-only rule silently excused two live labels here.
+    n, _ = run(split, "**Feature:** `alpha` (opt-in)\n")
+    eq("the BARE form of the same label is still a mismatch", n, 1)
+
+    return fails
+
+
 def audit_repo(repo_root: Path) -> int:
     repo_root = repo_root.resolve()
     print(f"\n=== Auditing {repo_root.name} ===")
@@ -979,6 +1088,14 @@ def selftest() -> None:
                 f"  want:   {(want_qual, want_feat, want_status)}\n  got:    {got}\n"
                 "  A shape this script used to recognise no longer parses. It "
                 "would keep printing '0 mismatches' over fewer labels.")
+    # The VERDICT, end to end (Issue 790 T3). Everything above tests the two
+    # MODELS; this tests the function that joins them, which is where 17 of
+    # this module's arm-reach survivors were.
+    verdict = audit_repo_arms()
+    if verdict:
+        raise SystemExit("✗ audit_repo self-test FAILED — the verdict logic that "
+                         "joins the reachability model to the tokenizer does not "
+                         "behave as documented:\n" + "\n".join(verdict))
 
 
 def main(argv: list[str]) -> int:

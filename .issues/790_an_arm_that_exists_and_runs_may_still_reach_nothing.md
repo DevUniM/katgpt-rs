@@ -1,6 +1,6 @@
 # Issue 790 — an arm that exists and runs may still reach nothing
 
-**Filed:** 2026-09-14 · **Status:** OPEN (T1 + T4 landed; T2 + T3 remain) · **Branch:** develop
+**Filed:** 2026-09-14 · **Status:** OPEN (T1 + T4 landed, T3 substantially done; T2 remains) · **Branch:** develop
 
 ## Progress
 
@@ -72,11 +72,49 @@ gate then compares a measurement against nothing. Both refusal paths are
 pinned now, with their own `✗` output SWALLOWED and merely asserted to have
 been said.
 
-**123 SURVIVED rows remain unread.** That is the rest of T3, and it is NOT the
-claim "those arms are worthless": `docs_gate_checks_sync` has 20 hand-verified
-arms and kills 2 of 10, because its logic lives in regex literals this harness
-does not mutate. Read them in this order, per the report's own caveats:
-cross-module coverage first, then EQUIVALENT, then a real gap.
+### T3, read module by module: 123 -> 47
+
+Final standing: **519 mutants · 317 KILLED · 47 SURVIVED (live) · 155 in exempt
+functions · 0 CRASHED · 0 NO-ARM · 0 UNREACHED**, with **9 of 21 modules at
+zero live survivors**.
+
+**The pattern, in every single module: the CLASSIFIER was well armed and the
+VERDICT was not.** `bench_doc_audit` had fixtures drawn from real workspace
+shapes for its reachability model AND a `TOKENIZER_CASES` table for its line
+grammar — and nothing whatsoever for the function that joins them, where 17 of
+its 44 survivors sat. `cargo_comment_audit` had a 20-arm precedence ladder and
+nothing for the scope choice that consumes it (19 of 21 survivors).
+`issue_citation_gate` had 39 arms and none on `ci_deferred`, the line it prints
+on every partial-clone and CI run (8 of 16). All three take a repo path, so
+every one was armable the entire time.
+
+Six of my own arms were degenerate and were re-aimed, all the same shape — a
+fixture whose values are SYMMETRIC under the mutation it targets:
+
+| the inert arm | what discriminates it |
+|---|---|
+| 1 local + 1 cross-repo citation | 2 and 1 |
+| a single-digit citation HEAD (`1-0 == 1+0`) | the list TAIL form |
+| `f"{n} single-digit"` as a substring | `-1 single-digit` contains it; anchor on `INSTRUMENT: ` |
+| a two-def file for a span computation | THREE defs, walk in the middle |
+| a 3-hop closure for an iteration bound | a pure chain — and then a PROOF that no graph discriminates it |
+| every floor driven to pin MINUS ONE | the value exactly AT the pin |
+
+⚠ Three fixtures also failed against perfectly correct code until a real
+asymmetry was understood: `find_cargo_defaults` (the UNION closure) resolves
+through the package graph and returns an EMPTY set for a manifest with no
+`[package] name`, while the per-manifest closure reads the same file fine. It
+is pinned as its own arm now, in both files that build fixture manifests.
+
+**The 47 that remain are characterised, not unread**, and each is documented at
+the line it lives on. Three classes: provably EQUIVALENT redundant guards (a
+`find() < 0` whose search starts after an earlier match; a set membership test
+`or`-ed with another; a `last < 0` sentinel that is never 0), the
+**git/subprocess I/O shell** an arm cannot enter without spawning the auditor
+it reads, and message-formatting arithmetic. Do NOT read 47 as a defect count.
+
+⚠ Wall clock moved **~73s -> ~370s** across T3, and that is the arms working:
+several gates now build fixture repos per mutant. The price of reach.
 
 ---
 

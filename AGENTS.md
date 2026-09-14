@@ -939,9 +939,16 @@ scripts/arm_reach_audit.py --include-all      # every scripts/*.py DEFINING an a
 ```
 
 Mutate a module's source **outside its own arm bodies**, re-exec, run its arm,
-ask whether the arm noticed. Standing (2026-09-14, post-T3/T4): **21 modules ·
-521 mutants · ~73s · 243 KILLED · 123 SURVIVED (live) · 155 survived in exempt
-functions · 0 CRASHED · 0 NO-ARM · 0 UNREACHED**.
+ask whether the arm noticed. Standing (2026-09-14, after T3/T4): **21 modules ·
+519 mutants · 317 KILLED · 47 SURVIVED (live) · 155 survived in exempt
+functions · 0 CRASHED · 0 NO-ARM · 0 UNREACHED**, with **9 of 21 modules at
+zero live survivors**.
+
+⚠ **The wall clock moved from ~73s to ~370s over T3 and that is the arms
+working, not a regression.** The repairs gave several gates fixture-repo arms
+(temp manifests, temp docs, temp git trees), so each of the 519 mutants now
+buys a great deal more assertion. Read the cost as the price of reach; it is
+still a workstation report and nothing runs it per-push.
 
 ⛔ **An earlier version of this paragraph read `99 KILLED · 88 CRASHED · 33 in
 4 NO-ARM · 6 UNREACHED`, and the CRASHED column was a classification DEFECT in
@@ -1015,10 +1022,24 @@ blaming the gates for its own boundary.
   were real and closable, one was cross-module-covered, one was EQUIVALENT** —
   and closing the three took `skill_repo_set_gate` from 18 to 22 killed with
   its survivors from 7 to 3, leaving exactly the two EQUIVALENT rows and the
-  one cross-module row. The **123 remaining rows are an unread backlog** (Issue
-  790 T3); **do not quote the SURVIVED total as a defect count.** T2 (a verdict
-  half) is deliberately deferred until that read: a ratchet over a backlog is
-  what Issue 785's rule forbids.
+  one cross-module row. T3 then read the rest module by module: **123 → 47**.
+  **Do not quote the SURVIVED total as a defect count** — the 47 that remain
+  are dominated by three classes, each documented at the line it lives on:
+  redundant guards that are provably EQUIVALENT (a `find() < 0` after an
+  earlier match; a set membership test `or`-ed with another; the closure
+  bound whose slack-less form is exactly sufficient), the **git/subprocess I/O
+  shell** an arm cannot enter without spawning the auditor it reads, and
+  message-formatting arithmetic. T2 (a verdict half) is still deferred until
+  those 47 are individually adjudicated: a ratchet over a backlog is what
+  Issue 785's rule forbids, and 47 is not yet a wall.
+- **What T3 found by fixing, and it is the pattern worth carrying forward:**
+  in every module the CLASSIFIER was well armed and the **VERDICT** was not.
+  `bench_doc_audit` had fixtures from real workspace shapes for its
+  reachability model and its tokenizer, and nothing at all for the function
+  that joins them; `cargo_comment_audit` had a 20-arm precedence ladder and
+  nothing for the scope choice that consumes it; `issue_citation_gate` had 39
+  arms and none on the deferral line it prints on every partial-clone run.
+  Both halves take a repo path, so all three were armable the whole time.
 
 ## A gate whose own failure path is asserted by nothing — `scripts/check_validation_gate.py`
 
