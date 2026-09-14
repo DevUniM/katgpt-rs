@@ -1,6 +1,6 @@
 # Issue 776: Contrastive matched-swap + norm-matched noise interventions (CVRR follow-on, Research 555)
 
-**Status:** In progress — T1–T6 implemented 2026-09-14 (katgpt-core `c9271e2f`→HEAD: `perturb_matched_swap`/`perturb_norm_matched_noise{_rows}` + probe `probe_matched_swap{_into}`/`probe_norm_noise{_into}` + battery sixth `norm_matched` arm + `LatentSpace::norm_matched_noise`; 73 tests green, clippy -D warnings clean, default-off unaffected). T7 (bench cost rows) remaining.
+**Status:** DONE (T1–T7) — implemented 2026-09-14 (katgpt-rs `be4ff672` + bench commit: `perturb_matched_swap`/`perturb_norm_matched_noise{_rows}` + probe `probe_matched_swap{_into}`/`probe_norm_noise{_into}` + battery sixth `norm_matched` arm + `LatentSpace::norm_matched_noise` + bench rows; 73 tests green, clippy -D warnings clean, default-off unaffected). Bench (release, audit cadence): matched_swap 0.37µs / norm_noise 46.2µs at n=4096 — both ≪1ms target.
 
 **Source:** arXiv:2609.06746v3 (CVRR) §2.1 Figure 1a + §5.3 — the two interventions our shipped suites cannot express.
 
@@ -19,7 +19,7 @@ The shipped intervention suites detect decorative latents but confound two chann
 - [x] **T4** Two-sided canary tests (G1): (a) a consumer that ignores the memory → ALL deltas ≈ 0 → decorative verdict; (b) a consumer that reads structure-only → norm-matched noise diverges but a pure-norm reader does not; (c) contrastive donor flips a structure reader toward the donor's outcome (`flips_to_donor` analog). (Norm-only consumer `NormOnlyConsumer` = the separating canary; norm-matched arm added to `latent_is_causal` AND chain with its own failing-arm test.)
 - [x] **T5** Golden vectors: seeded noise + swap outputs BLAKE3-pinnable (deterministic across runs). (Same-seed determinism tests; Box-Muller streams seed-reproducible.)
 - [x] **T6** G4 zero-alloc: perturbations mutate caller buffers (existing pattern); battery additions reuse scratch buffers. G8-style zero-overhead-off: keep everything behind the existing `faithfulness_probe` / respective feature gates — no new default symbols. (Norm-matched arm reuses `noise_scratch` after the noise decode — zero new buffers; POD test updated 24→28 bytes.)
-- [ ] **T7** Bench extension: one audit-cadence cost row in `faithfulness_probe_bench` for the two new probe methods (target: same class as existing, < 1ms per segment).
+- [x] **T7** Bench extension: one audit-cadence cost row in `faithfulness_probe_bench` for the two new probe methods (target: same class as existing, < 1ms per segment). (Measured: swap 0.00–0.37µs, norm_noise 0.18–46.2µs across n=16..4096 — 21×–2700× headroom.)
 
 ## GOAT gate
 
