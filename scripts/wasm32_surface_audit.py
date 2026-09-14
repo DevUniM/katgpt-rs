@@ -360,12 +360,12 @@ def manifest_pkg_names(repo: Path) -> dict[str, str]:
     return out
 
 
-def credited_dep_tables(data: dict) -> list[dict]:
+def credited_dep_tables(data: dict[str, object]) -> list[dict[str, object]]:
     """The dependency tables a wasm32 row compiles: plain [dependencies] plus
     [target.'cfg(...wasm32...)'.dependencies]. Native-target tables,
     dev-dependencies and build-dependencies are NOT credited — the first
     doesn't apply to the triple, the latter two build for the host."""
-    tables: list[dict] = []
+    tables: list[dict[str, object]] = []
     deps = data.get("dependencies")
     if isinstance(deps, dict):
         tables.append(deps)
@@ -388,7 +388,7 @@ def dep_graph(repo: Path, names: dict[str, str]) -> dict[str, set[str]]:
     crediting it here would make this repo's verdict depend on another
     repo's manifests. Edge targets are named by their OWN [package] table,
     so renames (`foo = { path = "../bar" }`) land on the real name."""
-    root: dict = {}
+    root: dict[str, object] = {}
     try:
         with (repo / "Cargo.toml").open("rb") as fh:
             root = tomllib.load(fh)
