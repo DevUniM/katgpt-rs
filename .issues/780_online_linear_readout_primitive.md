@@ -1,6 +1,6 @@
 # OnlineLinearReadout — katgpt-core primitive for online-fit calibrated linear probes
 
-**Status:** OPEN (filed from riir-clippy Research 168 — arXiv:2607.05188 distillation; consumer: riir-clippy Issue 107)
+**Status:** OPEN (filed from riir-clippy Research 168 — arXiv:2607.05188 distillation; consumer: riir-clippy Issue 107) — **SEQUENCING NOTE 2026-09-15: consumer premise weakened.** riir-clippy 107 T1 measured the probe lane NOT viable on ring-native features (horizon 1 < 2 on every corpus; the strategy prior is a sufficient statistic there). The lane's revival path is 107 T2's embedding column — a different FEATURE SOURCE, decided before this primitive lands. Do not build this primitive ahead of that verdict: T5's "live consumer" bar is unchanged, and a synthetic-fixture GOAT pass would not speak to the measured-absent live signal.
 
 ## Summary
 
