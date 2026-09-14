@@ -35,7 +35,7 @@ class record + detection shape: riir-clippy `.distill/001` P22 (`61bb0d54`).
 
 ## Post-513 develop drift — the 09-12→09-14 touched-rows window audited green on the workstation (2026-09-14, M3 session)
 
-Issue 513's T2 sweep measured this repo's 623 rows through its 09-05..09-11 window; the
+riir-train Issue 513's T2 sweep measured this repo's 623 rows through its 09-05..09-11 window; the
 row count has since drifted to 710 with develop landings the main-only CI lane never
 audits. T4's own gate (`required_features_touched_gate.py`) run over the defined window
 base `9b8cf60e7` (2026-09-12 00:00 +07) → HEAD, 191 commits → **25 selected rows**
