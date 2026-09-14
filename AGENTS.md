@@ -326,6 +326,14 @@ lines, repaired there at `99064c5`),
 Issue 775 verdict half of `platform_dead_code_audit.py`, and the one sweep
 whose `--prove-fires` runs by DEFAULT: the per-push gate cannot afford the
 `git archive` of the known-answer tree, this can),
+`subprocess_encoding_drift_sweep.py` (every contract repo, on demand — the
+Issue 778 locale-decoding verdict workspace-wide, and the **seventh** time one
+of these was pointed anywhere but here and found something: **29 DECODE + 2
+CHILD-ENCODER over 5 repos**, all repaired at landing, Issue 783. Its two
+floors are not interchangeable and neither is redundant — `min_calls` is **0
+in 10 of 16 repos**, because they have `.py` files and no `subprocess` at all,
+so in exactly those repos `min_py_files` is the only blindness detector there
+is),
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
 REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73
@@ -937,6 +945,19 @@ population (tracked `*.py` AND `subprocess` call sites). Its first real run
 found a 28th site nobody had grepped for —
 `.agents/skills/doc-sync/tools/linkcheck_sweep.py`, outside `scripts/`
 entirely.
+
+⛔ **And it shipped with one half — the gate, no sweep (Issue 783).** Eleven
+other verdict classes here carry both, and the asymmetry was not a judgement
+call that was made; it was a step that was skipped. `scan()` already took a
+repo path, so the question was answerable the whole time, and the answer was
+**29 DECODE + 2 CHILD-ENCODER over 5 of 16 repos** — riir-train 12+1,
+riir-clippy 9+1, riir-ai 6, riir-dapps 1, seal-game-editor 1. Two were not
+latent: `riir-clippy/scripts/gen_dashboard.py:552` reads `git log --pretty=%s`
+across the siblings, and **every commit subject in this workspace uses an
+em-dash**. Read that as the standing failure mode, now recorded five times
+(Issues 777, 778, 779, 782, 783): a rule landed in one instrument and never
+generalised. Before fixing such a class, grep the whole family and land the
+repair as one shared mechanism.
 
 **It scans the AST, and that was not the first design.** A text scanner has to
 be paren-matched rather than line-scoped (`encoding=` sits on a later line than

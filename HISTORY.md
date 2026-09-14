@@ -3820,3 +3820,84 @@ as the one where an uninvoked assertion is *unknown*, not passing. Scope
 unchanged otherwise — default features, dev profile, the scoped core only; the
 477 integration-test and 176 bench targets remain executed by nothing
 automatic.
+
+## Issue 783 — the subprocess-encoding gate is katgpt-rs-only: CLOSED (2026-09-14)
+
+`scripts/subprocess_encoding_gate.py` (Issue 778) shipped as a per-push gate
+with no sweep half. Eleven other verdict classes here carry both, and the
+asymmetry was not a judgement call that was made — it was a step that was
+skipped. `scan()` already took a repo path, so the question was answerable the
+whole time.
+
+**The answer, 2026-09-14, 16 of 20 repos:**
+
+| repo | tracked .py | subprocess calls | DECODE | CHILD-ENCODER |
+|---|---|---|---|---|
+| riir-train | 68 | 15 | **12** | **1** |
+| riir-clippy | 5 | 12 | **9** | **1** |
+| riir-ai | 8 | 8 | **6** | 0 |
+| riir-dapps | 1 | 1 | **1** | 0 |
+| seal-game-editor | 2 | 2 | **1** | 0 |
+| katgpt-rs + 10 others | 79 | 44 | 0 | 0 |
+| **total** | **163** | **82** | **29** | **2** |
+
+Seventh instance of one shape, and the seventh time pointing it anywhere but
+here found something — the precedent list is in
+`markdown_fence_drift_sweep.py`'s docstring.
+
+**Two of the 31 were not latent.** `riir-clippy/scripts/gen_dashboard.py:552`
+reads `git -C <d> log --since=… --pretty=%s` across the sibling repos, and
+every commit subject in this workspace uses an em-dash — on a non-UTF-8 box
+that is silent mojibake at best and `stdout = None` with the returncode intact
+at worst, either way a dashboard section that renders a confident nothing.
+`riir-train/scripts/plan344_phase0_full_bandwidth.py:318` reads a
+`git ls-files '*.md'` list and then opens the paths.
+
+All 31 repaired in the same change — `encoding="utf-8", errors="replace"` on
+29 parent reads, `env={**os.environ, "PYTHONIOENCODING": "utf-8"}` on the two
+`sys.executable` children — and the ceilings pinned at **0/0**, a wall rather
+than a ratchet. A backlog on a class whose repair is two tokens teaches
+whoever reads the pin that the class is tolerated.
+
+**Both floors, and the fence sweep's argument does NOT transfer.**
+`markdown_fence_drift_sweep` gets away with one floor because `min_md_files`
+is non-zero in all 20 repos. Here `min_calls` is **0 in 10 of the 16
+measured** — those repos have `.py` files and no `subprocess` at all — so the
+parse floor cannot detect anything in the majority of the population, and
+`min_py_files` is the only blindness detector there. Both are pinned and
+neither is derived from the other. katgpt-rs's two are asserted equal to
+`subprocess_encoding_gate.FLOOR_PY_FILES` / `FLOOR_CALLS` rather than trusted
+(the `docs_gate_paths_sync.py` pattern), and that assertion was canaried by
+perturbing the pin file.
+
+Canaries, all measured: a planted DECODE in riir-dapps reds the run and names
+the row; the marker-off posture reds with UNSEEN over the same four absent
+repos the marker-on posture DEFERS by name; seven self-test arms cover both
+verdicts firing through `scan()`, both controls, UNPARSED surfacing, the
+tracked-only walk boundary (the temp repo is `git add`-ed on purpose — an
+unstaged one exercises `tracked_walk`'s rglob FALLBACK and certifies the branch
+the arm is not aimed at, the Issue-775 vendor-arm failure), population
+derivation and pin arity.
+
+**Four repos have NO row, deliberately** — katgpt-web, riir-dao,
+riir-deployer, riir-esp32 are not on this box, and a pin nobody measured is a
+number rather than an expectation. They ride the shared population verdict as
+DEFERRED and will report UNPINNED on the first full checkout, which is the
+intended red. Identical posture to `platform_dead_code_drift_floors.txt`'s
+same four rows; pin both files in one commit, from one run, on the box that
+can see them.
+
+Drive-by, found by the sweep's own output rather than by looking: the walk
+emitted a `SyntaxWarning` from `ast.parse` on
+`riir-train/scripts/bonsai_vs_gemma_codegen.py:16` — a backslash-escaped
+backtick in a non-raw docstring, a forward-incompatible escape that becomes a `SyntaxError` in a
+later Python. One instance workspace-wide over 163 files, so it is a repair
+and not a class: no backlog, nothing to gate.
+
+**The standing failure mode, now recorded five times** (Issues 777 tracked-walk,
+778 itself, 779 sweep-population, 782 the three quiet sweeps, 783 this one): a
+rule landed in one instrument and never generalised. Before fixing such a
+class, grep the whole family and land the repair as one shared mechanism.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/783_the_subprocess_encoding_gate_is_katgpt_rs_only.md`).
