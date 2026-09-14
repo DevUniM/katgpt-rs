@@ -54,6 +54,50 @@ REPO_ROOT = HERE.parent
 MIN_FILES = 800
 
 
+def scan_text(rel: str, text: str) -> list[tuple[str, int, int]]:
+    """[(path, opening line, lines swallowed)] for one document.
+
+    Extracted from `unterminated` by Issue 790 T4 so an arm can reach it. The
+    parser's own `selftest` (imported, and invoked in `main`) is the
+    CLASSIFIER's arm — it cannot reach a line of THIS file, which is Issue
+    775's sentence and why `arm_reach_audit` reported all 5 of this module's
+    mutants as NO-ARM. The two decisions here are the `last < 0` sentinel test
+    and the swallowed-line arithmetic, and the second is what a reader acts on.
+    """
+    n_lines = len(text.splitlines())
+    return [(rel, first, n_lines - first)
+            for first, last, _body, _prev in fenced_blocks(text) if last < 0]
+
+
+def gate_selftest() -> list[str]:
+    """Arms over THIS file's own arithmetic, not the shared parser's."""
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    eq("a terminated document yields nothing",
+       scan_text("a.md", "x\n```\ny\n```\nz"), [])
+    # 5 lines, fence opens on 2 => 3 lines render as code to EOF.
+    eq("the swallowed count is lines-from-the-fence-to-EOF",
+       scan_text("a.md", "x\n```\ny\nz\nw"), [("a.md", 2, 3)])
+    eq("a fence on the LAST line swallows nothing but is still reported",
+       scan_text("a.md", "x\n```"), [("a.md", 2, 0)])
+    eq("a fence on the FIRST line swallows the whole file",
+       scan_text("a.md", "```\ny\nz"), [("a.md", 1, 2)])
+    # The tilde family reaches this file too (Issue 789 T1), and the row must
+    # carry the same arithmetic rather than being silently dropped.
+    eq("a tilde fence is reported with the same arithmetic",
+       scan_text("a.md", "x\n~~~\ny\nz\nw"), [("a.md", 2, 3)])
+    # The `last < 0` sentinel test is the only thing separating a finding from
+    # a closed block; a `<=` would be equivalent and a `>` inverts the gate.
+    eq("a terminated block is never reported no matter how long",
+       scan_text("a.md", "```\n" + "y\n" * 50 + "```"), [])
+    eq("the floor is a floor, not a ceiling", MIN_FILES > 0, True)
+    return fails
+
+
 def unterminated(repo: Path) -> tuple[list[tuple[str, int, int]], int]:
     """([(path, opening line, lines swallowed)], files walked)."""
     out: list[tuple[str, int, int]] = []
@@ -77,11 +121,7 @@ def unterminated(repo: Path) -> tuple[list[tuple[str, int, int]], int]:
         if not f.is_file():
             continue
         walked += 1
-        text = f.read_text(encoding="utf-8", errors="replace")
-        n_lines = len(text.splitlines())
-        for first, last, _body, _prev in fenced_blocks(text):
-            if last < 0:
-                out.append((rel, first, n_lines - first))
+        out += scan_text(rel, f.read_text(encoding="utf-8", errors="replace"))
     return out, walked
 
 
@@ -98,6 +138,16 @@ def main() -> int:
               "a mis-phasing scanner reports clean either way, so the verdict "
               "below would mean nothing:")
         for f in arm_failures:
+            print(f)
+        return 2
+
+    # …and THIS file's own arithmetic, which the parser's arm cannot reach
+    # (Issue 775's sentence, Issue 790 T4).
+    gate_failures = gate_selftest()
+    if gate_failures:
+        print("✗ INSTRUMENT: markdown_fence_gate's own arithmetic does not pass its "
+              "arms, so the swallowed-line counts below would be unreadable:")
+        for f in gate_failures:
             print(f)
         return 2
 

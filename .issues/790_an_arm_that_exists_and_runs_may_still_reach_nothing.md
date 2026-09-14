@@ -1,6 +1,64 @@
 # Issue 790 — an arm that exists and runs may still reach nothing
 
-**Filed:** 2026-09-14 · **Status:** OPEN · **Branch:** develop
+**Filed:** 2026-09-14 · **Status:** OPEN (T1 + T4 landed; T2 + T3 remain) · **Branch:** develop
+
+## Progress
+
+**T1 landed** (`ee0961e4`) — `scripts/arm_reach_audit.py`, 27 self-test arms,
+documented in AGENTS.md. **T4 landed** — all four NO-ARM gates now carry a
+`gate_selftest` over their own pin arithmetic, so **NO-ARM is 0**.
+
+Standing after T4 (2026-09-14): **21 modules · 521 mutants · ~73s · 127
+KILLED · 127 SURVIVED (live) · 155 survived in exempt functions · 112
+CRASHED · 0 NO-ARM · 5 UNREACHED**.
+
+Two operator-set changes were forced by the T4 work and both were measured
+rather than guessed:
+
+- `if __name__ == "__main__"` is **skipped**, not exempted. It is the entry
+  point, not a decidable rule; no arm can kill it; and it is in all 61 tracked
+  scripts, so it would have scaled with every arm added. Skipped rather than
+  exempted so it does not inflate the mutant total `MIN_MUTANTS` floors.
+- **Off-by-one** (`+`↔`-`) was added because comparison operators alone left
+  `markdown_fence_gate` reading UNREACHED while its arms asserted real
+  behaviour: its only real decision is `n_lines - first`, and no comparison
+  touches it. This repo's whole percentile section is about an index landing
+  on `n-1`, so this is the operator class that matters most here. A `+` flip
+  on a string concat raises `TypeError` and lands in CRASHED — its own bucket,
+  labelled *evidence of nothing*.
+
+### T4, per gate
+
+| gate | before | after |
+|---|---|---|
+| `percentile_floor_gate` | NO-ARM (8) | 7 killed, **0 live survivors** |
+| `cfg_row_implication_gate` | NO-ARM (12) | 2 killed, **0 live survivors** |
+| `trap_sentinel_gate` | NO-ARM (8) | 6 killed, 1 survivor (an I/O refusal path) |
+| `markdown_fence_gate` | NO-ARM (5) | 1 killed, 3 survivors (1 EQUIVALENT, 2 in the git walk) |
+
+Each needed a small extraction first, which is the finding underneath the
+finding: the verdict arithmetic was **inline in `main()` alongside its own
+error messages**, so it was unreachable by construction. `pin_failures`,
+`verdict_problems` and `scan_text` are pure functions now, and `main` is the
+shell it always should have been.
+
+⚠ `percentile_floor_gate.pin_failures` gained a **refusal** in the process: a
+pin key with neither a `max_` nor a `min_` prefix used to be silently
+unchecked — a pin that asserts nothing, which is worse than a missing one
+because it reads as coverage. Every live key already carries a prefix, so the
+change is behaviour-preserving today.
+
+### T3's backlog, and the 5 UNREACHED
+
+`agents_repo_set_gate`, `bench_doc_audit`, `cfg_gated_floor_gate`,
+`orphaned_attr_gate`, `required_features_static_gate` all have arms that kill
+**zero** mutants under these operators. That is where T3 should start, and it
+is NOT the same claim as "their arms are worthless" — `docs_gate_checks_sync`
+has 20 hand-verified arms and kills 1, because its logic lives in regex
+literals this harness does not mutate.
+
+---
+
 
 ## How this was found
 

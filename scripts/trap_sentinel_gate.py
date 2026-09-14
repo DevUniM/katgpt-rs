@@ -76,30 +76,21 @@ def load_audit():
     return mod
 
 
-def main():
-    audit = load_audit()
+def verdict_problems(found: dict, audit) -> tuple[list[str], list[str]]:
+    """(problems, sentinelled-but-unpinned) for a measured population.
 
-    # ── 1. the canary, before any count is read ───────────────────────────
-    failures = audit.selftest()
-    if failures:
-        print("✗ trap sentinel gate FAILED — the classifier's own selftest does not pass,")
-        print("  so every verdict below is unreadable (an inert detector reports a green zero):")
-        for f in failures:
-            print(f)
-        sys.exit(1)
+    Issue 790 T4. `audit.selftest()` runs first on every invocation and it is
+    the CLASSIFIER's arm — it cannot reach a line of this file, which is Issue
+    775's sentence and why `arm_reach_audit` reported all 8 of this module's
+    mutants as NO-ARM. Every line below decides a verdict from verdicts: the
+    population FLOOR (a shrinking population is not a fixed defect), four
+    bucket filters that must not be pooled, and a membership pin that has to
+    red in the missing direction while merely NOTING the extra one.
 
-    # ── 2/3/4. the population, by membership ──────────────────────────────
-    found = {}
-    for path in audit.walk_sh(REPO):
-        r = audit.analyse(path)
-        if r is not None:
-            # .replace(os.sep, "/"): the membership pins below are committed
-            # forward-slash paths; os.path.relpath emits backslashes on
-            # Windows and every pin compare fails BOTH directions (the
-            # "no longer SENTINELLED" false red) — found running the docs
-            # gate on the 4090 box, 2026-09-12.
-            found[os.path.relpath(path, REPO).replace(os.sep, "/")] = r["verdict"]
-
+    `audit` is passed rather than imported so an arm can hand it a stub: the
+    verdicts are plain strings and the classifier's own selftest already owns
+    the question of whether it produces the right ones.
+    """
     problems = []
     if len(found) < POPULATION_FLOOR:
         problems.append(
@@ -148,6 +139,118 @@ def main():
             "trap went away, which is also worth knowing): " + ", ".join(missing)
         )
     extra = sorted(sentinelled - PINNED_SENTINELLED)
+
+    return problems, extra
+
+
+class _StubVerdicts:
+    """The classifier's verdict vocabulary, as plain strings.
+
+    `verdict_problems` only ever compares `found`'s values against these, so an
+    arm can supply them directly and never build a shell script. Keeping the
+    names identical to `trap_exit_launder_audit`'s is asserted below.
+    """
+    UNPARSED = "UNPARSED"
+    PRECAUTIONARY = "PRECAUTIONARY"
+    EXPOSED = "EXPOSED"
+    LIVE_FORWARD = "LIVE-FORWARD"
+    SENTINELLED = "SENTINELLED"
+
+
+def gate_selftest(audit=None) -> list[str]:
+    """Arms over THIS file's verdict arithmetic, which `audit.selftest` cannot reach."""
+    fails: list[str] = []
+    v = _StubVerdicts
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    # The stub must speak the classifier's actual vocabulary, or every filter
+    # below compares against a string the real population never contains and
+    # all four arms pass over an empty match.
+    if audit is not None:
+        for name in ("UNPARSED", "PRECAUTIONARY", "EXPOSED", "LIVE_FORWARD",
+                     "SENTINELLED"):
+            if getattr(audit, name, object()) != getattr(v, name):
+                fails.append(
+                    f"    the stub's {name} is {getattr(v, name)!r} but the "
+                    f"classifier's is {getattr(audit, name, None)!r} — every "
+                    f"bucket filter would match nothing and pass vacuously")
+
+    clean = {p: v.SENTINELLED for p in PINNED_SENTINELLED}
+    eq("the live shape passes", verdict_problems(clean, v), ([], []))
+
+    # The population FLOOR: a shrinking population is not a fixed defect.
+    one = dict(list(clean.items())[:1])
+    probs, _ = verdict_problems(one, v)
+    eq("a population under the floor is a problem",
+       any("floor" in p for p in probs), True)
+    eq("…and it also reds the missing pin, not only the floor",
+       any("no longer SENTINELLED" in p for p in probs), True)
+
+    # Each bucket, one at a time. None may be pooled: UNPARSED hides exposure
+    # (a runaway body reads as a false SENTINELLED) and PRECAUTIONARY is one
+    # added `-e` from laundering.
+    for verdict, needle in ((v.UNPARSED, "UNPARSED"),
+                            (v.PRECAUTIONARY, "PRECAUTIONARY"),
+                            (v.EXPOSED, "EXPOSED"),
+                            (v.LIVE_FORWARD, "LIVE-FORWARD")):
+        found = {**clean, "scripts/new.sh": verdict}
+        probs, _ = verdict_problems(found, v)
+        eq(f"a {needle} script is a problem",
+           any(needle in p for p in probs), True)
+        eq(f"a {needle} script does not disturb the pins",
+           any("no longer SENTINELLED" in p for p in probs), False)
+
+    # The membership pin, both directions — and they are NOT symmetric.
+    unpinned = {**clean, "scripts/new.sh": v.SENTINELLED}
+    probs, extra = verdict_problems(unpinned, v)
+    eq("a NEW sentinelled script is not a failure", probs, [])
+    eq("…it is NOTED so the pin gets updated", extra, ["scripts/new.sh"])
+    dropped = {**clean}
+    dropped[sorted(PINNED_SENTINELLED)[0]] = v.EXPOSED
+    probs, _ = verdict_problems(dropped, v)
+    eq("a pinned script losing its sentinel IS a failure",
+       any("no longer SENTINELLED" in p for p in probs), True)
+    return fails
+
+
+def main():
+    audit = load_audit()
+
+    # ── 1. the canary, before any count is read ───────────────────────────
+    failures = audit.selftest()
+    if failures:
+        print("✗ trap sentinel gate FAILED — the classifier's own selftest does not pass,")
+        print("  so every verdict below is unreadable (an inert detector reports a green zero):")
+        for f in failures:
+            print(f)
+        sys.exit(1)
+
+    # ── 1b. THIS file's own verdict arithmetic, which the classifier's
+    #        selftest cannot reach (Issue 775's sentence, Issue 790 T4) ─────
+    arm_failures = gate_selftest(audit)
+    if arm_failures:
+        print("✗ trap sentinel gate FAILED — this gate's own verdict arithmetic does")
+        print("  not pass its arms, so the population verdict below is unreadable:")
+        for f in arm_failures:
+            print(f)
+        sys.exit(1)
+
+    # ── 2/3/4. the population, by membership ──────────────────────────────
+    found = {}
+    for path in audit.walk_sh(REPO):
+        r = audit.analyse(path)
+        if r is not None:
+            # .replace(os.sep, "/"): the membership pins below are committed
+            # forward-slash paths; os.path.relpath emits backslashes on
+            # Windows and every pin compare fails BOTH directions (the
+            # "no longer SENTINELLED" false red) — found running the docs
+            # gate on the 4090 box, 2026-09-12.
+            found[os.path.relpath(path, REPO).replace(os.sep, "/")] = r["verdict"]
+
+    problems, extra = verdict_problems(found, audit)
 
     if problems:
         print("✗ trap sentinel gate FAILED")

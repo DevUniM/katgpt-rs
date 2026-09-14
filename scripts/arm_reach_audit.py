@@ -137,6 +137,15 @@ def arm_names_in(tree: ast.AST) -> set[str]:
             if isinstance(f, ast.FunctionDef) and f.name in ARM_NAMES}
 
 
+def _is_main_guard(node: ast.AST) -> bool:
+    """`__name__ == "__main__"` — the entry point, not a decidable rule."""
+    return (isinstance(node, ast.Compare)
+            and isinstance(node.left, ast.Name) and node.left.id == "__name__"
+            and len(node.comparators) == 1
+            and isinstance(node.comparators[0], ast.Constant)
+            and isinstance(node.comparators[0].value, str))
+
+
 def _enclosing_function(tree: ast.AST) -> dict[int, str]:
     """{line: innermost enclosing function name} for every line in a body.
 
@@ -180,6 +189,16 @@ def mutants(src: str, arms: set[str]):
             ln = getattr(node, "lineno", None)
             if ln is None or in_arm(ln):
                 continue
+            if _is_main_guard(node):
+                # `if __name__ == "__main__"` is the ENTRY POINT, not
+                # arithmetic. No arm can kill it — flipping it either does
+                # nothing (the module is exec'd under another name anyway) or
+                # runs `main()` at import and lands in CRASHED. Either way it
+                # is noise, and it is in all 61 tracked scripts, so it would
+                # scale with every arm added. Skipped, not exempted: it must
+                # not inflate the mutant total either, because that total is
+                # what `MIN_MUTANTS` floors.
+                continue
             if (isinstance(node, ast.Compare) and len(node.ops) == 1
                     and type(node.ops[0]) in _CMP_FLIP):
                 op = type(node.ops[0])
@@ -192,6 +211,20 @@ def mutants(src: str, arms: set[str]):
                 out.append((i, "not", "drop `not`", ln))
             elif isinstance(node, ast.Constant) and isinstance(node.value, bool):
                 out.append((i, "const", f"{node.value} -> {not node.value}", ln))
+            elif (isinstance(node, ast.BinOp)
+                  and isinstance(node.op, (ast.Add, ast.Sub))):
+                # OFF-BY-ONE, added by Issue 790 T4 for a measured reason: this
+                # repo's whole percentile section is about an index landing on
+                # n-1, and `markdown_fence_gate.scan_text`'s only real decision
+                # is `n_lines - first`. With comparison operators alone that
+                # module read UNREACHED while its arms asserted real behaviour.
+                #
+                # `+` is also string and list concatenation here, so a flip
+                # often raises TypeError. That lands in CRASHED — its own
+                # bucket, labelled "evidence of nothing" — rather than being
+                # mistaken for a kill.
+                flip = "- -> +" if isinstance(node.op, ast.Sub) else "+ -> -"
+                out.append((i, "arith", flip, ln))
         return out
 
     for idx, kind, desc, ln in candidates(tree):
@@ -207,6 +240,8 @@ def mutants(src: str, arms: set[str]):
             target.operand = ast.UnaryOp(op=ast.Not(), operand=target.operand)
         elif kind == "const":
             target.value = not target.value
+        elif kind == "arith":
+            target.op = ast.Add() if isinstance(target.op, ast.Sub) else ast.Sub()
         ast.fix_missing_locations(fresh)
         try:
             code = compile(fresh, "<mutant>", "exec")
@@ -365,6 +400,14 @@ def selftest() -> list[str]:
     eq("`not` is dropped", descs("x = not a\n"), ["drop `not`"])
     eq("a bool constant flips", descs("x = True\n"), ["True -> False"])
     eq("a chained compare is NOT mutated (ambiguous)", descs("x = a < b < c\n"), [])
+    eq("a subtraction flips (off-by-one)", descs("x = a - b\n"), ["- -> +"])
+    eq("an addition flips", descs("x = a + b\n"), ["+ -> -"])
+    eq("multiplication is not a site (no off-by-one meaning)",
+       descs("x = a * b\n"), [])
+    eq("the __main__ guard is NOT a mutation site",
+       descs('if __name__ == "__main__":\n    main()\n'), [])
+    eq("an ordinary __name__ comparison against a NAME still is",
+       descs("if __name__ == other:\n    main()\n"), ["== -> !="])
     eq("an int constant is not a mutation site", descs("x = 3\n"), [])
 
     # ── the arm-body exclusion: an edited expectation is not a KILL ────────
