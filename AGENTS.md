@@ -279,6 +279,20 @@ inferred green would ship the stale file. Gone-only disagreement WITHOUT the
 marker reds naming both hypotheses; a repo on disk the file does not know
 reds in every posture, marker or not.
 
+**Every sweep below answers the partial-clone question the same way, once
+(Issue 779): `scripts/sweep_population.py`.** Seven of them carried a
+copy-pasted "pinned but ABSENT from the derived walk" loop and hard-red on a
+known 16-of-20 box with `DOCS_GATE_PARTIAL_CLONE=1` already set and every
+content assertion green — and a sweep that always reds is a sweep nobody runs.
+Measured: the percentile sweep's Issue-777 findings, and four live citation
+drift rows, were sitting behind those reds. Three verdicts, never
+interchangeable — **UNREGISTERED** (on disk, absent from `repo_set.txt`: a repo
+JOINING, reds in every posture), **UNSEEN** (absent, no marker: never a pass),
+**DEFERRED** (the same set with the marker, riding the FINAL line in BOTH
+directions, because a deferral printed only on failure is one nobody reads on
+the run that passes). Never auto-detected: a genuine removal whose row update
+was forgotten is set-identical to a partial clone from the walk alone.
+
 Workstation-only cross-repo sweep family — `docs_drift_sweep.py`,
 `numbering_drift_sweep.py`, `required_features_drift_sweep.py`,
 `percentile_drift_sweep.py`, `cfg_gated_drift_sweep.py`,

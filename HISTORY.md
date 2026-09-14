@@ -3475,3 +3475,70 @@ CHECKS count beside the timing rather than the timing alone.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/778_subprocess_text_true_locale.md`).
+
+## Issue 779 — the workstation sweeps' partial-clone verdict, one copy: CLOSED (2026-09-14)
+
+Running the whole sweep family from the Windows box after the Issue 777 walk
+repair: **seven of eight sweeps reported FAILED with every content assertion
+green**, each for exactly four absent-repo rows — on a box that is a known
+16-of-20 partial clone with `DOCS_GATE_PARTIAL_CLONE=1` already set.
+
+Seven carried this loop, byte-identical, copy-pasted:
+
+```python
+    for name in sorted(set(pins) - present):
+        bad = True
+        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
+              f"retired (drop the row in that commit) or the walk went blind")
+```
+
+`platform_dead_code_drift_sweep.py` was the one that did it correctly, because
+it was written after Issue 765 and consumes `partial_clone_state()`. Landed
+once, never generalised — the **third** instance of that exact pattern in two
+days (Issue 777's tracked walk, Issue 778's subprocess encoding), which is why
+this one is a shared mechanism (`scripts/sweep_population.py`) that the
+platform sweep also repoints at, rather than a sweep of call sites leaving two
+copies behind.
+
+**Three verdicts, never pooled.** UNREGISTERED (on disk, absent from
+`repo_set.txt` — a repo JOINING the workspace; reds in EVERY posture, because
+no amount of partial checkout explains a directory that is right there) ·
+UNSEEN (pinned or in the snapshot, absent, no marker — never a pass) · DEFERRED
+(the same set with the marker, riding the sweep's FINAL line in BOTH
+directions, because a deferral printed only on failure is a deferral nobody
+reads on the run that passes). The marker stays an explicit opt-in: a genuine
+removal whose row update was forgotten is set-identical to a partial clone from
+the walk alone. Seven self-test assertions, including **UNREGISTERED reddening
+under the marker** — the arm that proves the marker is not a blanket amnesty.
+
+**T3, the second half.** `citation_drift_sweep.gate_says()` could not read the
+gate's partial-clone output — `issue_citation_gate.py` prints `partial: N
+citations scanned in …` under the marker instead of `scanned N citations`, the
+regex returned -1, and the sweep exited **2** declaring its own instrument
+untrustworthy. A correct refusal reached for the wrong reason. It returns **-2**
+now, a THIRD state never folded into either neighbour, because "the gate could
+not be read" and "the gate declined to adjudicate" call for opposite responses.
+
+**What was behind the reds** — the issue's own argument, measured. With the
+family runnable, the citation sweep surfaced four live Issue-749-class rows
+that no run on this box had ever reached:
+
+| repo | row | owner |
+|---|---|---|
+| katgpt-rs | `HISTORY.md:112` "Issue 513's T2 sweep" | riir-train — fixed `25b7bf6b` |
+| riir-clippy | `HISTORY.md:6161` "Issue 150 removed per the noise rule" | seal-game-editor — fixed `c5c30fee` |
+| riir-train | `HISTORY.md:28` "chunk-size invariance, Issue 671" | riir-ai (`a8c3aec4a`) — fixed `96041bf6` |
+| riir-ai | `HISTORY.md:250` "the Research 453 session" | riir-train — **deliberately untouched** |
+
+The riir-ai row is the interesting one and is left alone on purpose: **HEAD
+already reads `riir-train Research 453`**, and a sibling's UNCOMMITTED worktree
+removed the qualifier. It is a live `staged_set_audit.py` STALE-vs-HEAD case in
+somebody else's editing session, not a defect in the committed tree — and
+committing a repair into a file another agent is editing would overwrite their
+reconciliation with mine. Recorded rather than fixed.
+
+Both postures verified end to end: without the marker the same runs print
+UNSEEN and red; with it, six pass carrying the deferral on the pass line.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/779_sweep_family_partial_clone.md`).
