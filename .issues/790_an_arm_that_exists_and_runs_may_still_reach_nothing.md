@@ -1,6 +1,6 @@
 # Issue 790 — an arm that exists and runs may still reach nothing
 
-**Filed:** 2026-09-14 · **Status:** OPEN (T1–T4 landed; **T5, the sweep half, remains**) · **Branch:** develop
+**Filed:** 2026-09-14 · **Status:** OPEN (T1–T4 + T6 landed; **T5, the sweep half, BLOCKED on a sandbox story**) · **Branch:** develop
 
 ## Progress
 
@@ -285,6 +285,178 @@ printing and exit shell — survives correctly. So the quantity is **arm REACH**
 per function, not a quality score, and the exempt functions are pinned by
 **membership with a reason**, exactly as Issue 789's own exemptions are.
 
+## T6 (2026-09-15) — the BASELINE bucket, and the exec namespace
+
+T5 stayed blocked (sandbox), so T6 went at the item T2 left behind: the
+`--include-all` population, whose arm reach had never been measured because the
+run was abandoned once at 7.5 minutes and written up as "budget hours".
+
+**Measuring the cost first moved the answer twice, in both directions.** A
+static census put `--include-all` at **55 modules / 2382 mutants**, and a
+per-module arm timing (run each arm ONCE, multiply by that module's mutant
+count) predicted **765s serial** — minutes, not hours, so the standing note was
+wrong in the pessimistic direction. That prediction then under-predicted the
+real run, for a reason the same measurement exposed.
+
+### ⛔ Finding 1 — seven classifiers CRASHED on their own unmutated source
+
+The per-module timing printed a verdict per module, and seven of them read
+`CRASHED` at **0.000s/arm**: `platform_dead_code_audit`,
+`len_derived_binding_audit`, `required_features_build_audit`,
+`cfg_gated_target_audit`, `cfg_row_implication_audit`,
+`all_ignored_target_audit`, `suite_membership_audit` — **796 of the 2382
+mutants**, a third of the population, every one of them a vacuous verdict.
+
+Every one failed at the same line, and it was the harness's:
+
+```
+AttributeError: 'NoneType' object has no attribute '__dict__'
+    ns = sys.modules.get(cls.__module__).__dict__     # dataclasses
+```
+
+`run_arm` exec'd into a **bare dict** with `__name__ = "__arm_reach__"`, a name
+nothing has registered, so `@dataclass` cannot resolve its defining namespace.
+The seven are exactly the seven classifiers that model findings as a dataclass.
+This is the **third** bucket-boundary defect in this instrument and the second
+in `run_arm` — after the CRASHED-vs-KILLED phase split — and the pattern is the
+same each time: *the harness reporting a property of itself as a property of the
+code it judges.*
+
+It was invisible to T1–T4 because **no module in the default CHECKS population
+defines a dataclass**. `trap_sentinel_gate` and `platform_dead_code_floor_gate`
+mention one, but they IMPORT it from their classifier through the ordinary
+machinery. A boundary only the wider population crosses is a boundary the
+narrow population cannot report.
+
+`_exec_namespace` builds a real `types.ModuleType`, registers it, and restores
+any prior entry — the audit exec's dozens of modules under one name and a leaked
+entry would hand the next one somebody else's globals.
+
+⚠ **The bare-dict direction is a PREMISE, not an assertion.** CPython ≤3.12
+guards that lookup (`if cls.__module__ in sys.modules: … else: globals = {}`)
+and 3.14 does not. The first arm written for this hard-asserted "the bare dict
+dies", which would have red on the M3 — a premise harness that never varies the
+axis it claims about, which is what `trap_launder_premise_matrix` exists to stop
+doing. The self-test asserts only the positive (a `@dataclass` module EXECs in
+the registered namespace), which is sufficient wherever the defect is live;
+`dataclass_premise()` measures the other side and the report prints which side
+this interpreter is on.
+
+### ⛔ Finding 2 — BASELINE: an arm that already fails scores PERFECT reach
+
+The same census showed three modules returning **KILLED on unmutated source**.
+The harness had never asked. An arm that is already failing kills every mutant,
+so the module reports 100% reach having distinguished nothing — and it does not
+merely escape the gate's `MIN_KILLED` floor, it **inflates** it. The CRASHED
+half is the milder twin: every mutant reads CRASHED and the row says nothing at
+full price (the seven above were 796 such runs).
+
+`audit_module` now measures the baseline FIRST. `BASELINE-RED` and
+`BASELINE-CRASH` are module-level verdicts, the mutants are counted but **not
+run**, and neither is pooled into KILLED, SURVIVED or `UNREACHED`. The last is
+not fussiness: a BASELINE-bad row satisfies UNREACHED's arithmetic by accident
+(`killed == 0`), and the two diagnoses have opposite remedies — UNREACHED says
+*the arm cannot express this* and sends the reader to widen an arm that is not
+the problem. The gate walls both at 0.
+
+The three, adjudicated:
+
+| module | why | verdict |
+|---|---|---|
+| `len_derived_drift_sweep` | its `canary`'s "baseline green" arm runs the REAL workspace and reds on `⛔ UNSEEN` | ENVIRONMENT — passes with `DOCS_GATE_PARTIAL_CLONE=1` |
+| `instrument_reachability_drift_sweep` | same shape, same marker | ENVIRONMENT |
+| `required_features_touched_gate` | **a genuinely broken arm** — see below | REPAIRED |
+
+The first two are the reason the BASELINE message names the environment before
+anything else: a sweep whose canary runs the real workspace makes its own
+arm-reach verdict environment-dependent, and `--include-all` must be run with
+the same markers the gates get.
+
+### ⛔ Finding 3 — `required_features_touched_gate.selftest` was Windows-broken
+
+Not environmental. Three of its eight selection cases (`target-source`,
+`src-on`, `prefix`) were **unsatisfiable on Windows**, so the arm raised
+`SystemExit(2)` every time anyone ran it on this box. `select()` matches with
+`str(f)` and with `os.sep`; the fixture compared POSIX string literals
+(`"/w/a/tests/t_a.rs"`) against a `Path`, which stringifies with backslashes.
+Every fixture path is built through `Path` on **both** sides now, which is
+behaviour-identical on POSIX.
+
+⚠ The PRODUCTION path was never affected — `changed_files` resolves through
+`(repo / ln).resolve()`, so both sides are native there. But an arm that cannot
+run on a developer box is an arm that stops being run, and this one had been
+silently unrunnable on half the workstations since it was written. **It was
+found by a harness looking for something else**, which is the argument for
+running `--include-all` at all.
+
+### ⛔ Finding 4 — the gate caught the commit that changed it
+
+The `if r.get("baseline", …) != A.BASE_OK:` branch added to `measure()` read
+**UNPINNED** on the very next run. That is T4's pattern once more: the bucket
+DECISION sat inline in `measure()` between two calls into the audit, so it was
+unreachable by construction. Extracted to `classify(row) -> str` — pure, armed
+in both the per-bucket direction and the ORDER direction (a `BASELINE-RED` row
+with `killed == 0` must not read UNREACHED; `NO-ARM` must precede BASELINE).
+
+Four pins in `measure()` went stale in the same commit and were removed with it,
+and four NEW survivors appeared — the `if bucket == "…"` dispatch. The tempting
+move was to pin those as I/O shell. They are not: one real
+`measure(only=["markdown_fence_gate"])` costs 0.6s and reaches all four, because
+each flip mis-routes a healthy row into a bucket that shows up in the return
+value. **Pinning a row an arm can reach for 0.6s is a backlog wearing a pin**
+(Issue 785) — the same adjudication T2 had to make about a third of its 47.
+The arm asserts the ROUTING and deliberately not the survivor SET, which
+changes whenever somebody arms a module.
+
+## T5, re-examined after T6 — half the blocker is gone, and the shape changed
+
+T5 was blocked on "a sandbox story", because all eleven existing sweeps are
+STATIC readers and this one would **execute** ~700 mutated copies of another
+repo's gate scripts. Two of the three worries T6 answers directly, and the
+third got worse.
+
+1. **Concurrent writers and stray writes — answered by `git archive`.** The
+   `--prove-fires` idiom already in `platform_dead_code_drift_sweep` and
+   `check_validation_gate` extracts a FROZEN tree into a scratch directory.
+   That gives a snapshot immune to the sibling's in-flight worktree, and
+   relative writes land in scratch.
+2. ⛔ **"Its arms may read metrics blobs" — answered by BASELINE, which did
+   not exist when T5 was written.** A `git archive` tree carries tracked files
+   only, so a script whose arm needs an untracked artifact fails, or fails to
+   import, on its own UNMUTATED source. Before T6 that was the dangerous case:
+   it would have scored **100% KILLED** and reported perfect reach for a repo
+   the sweep could not actually measure. Now it is `BASELINE-RED` /
+   `BASELINE-CRASH` — counted, never pooled, never a pass. **The bucket that
+   makes executing foreign arms safe to INTERPRET is the one T6 landed.**
+3. ⚠ **What is left is an ADMISSION question, and it is static.** A scratch
+   tree does not contain an absolute path, a `..` traversal back into the real
+   workspace, or a `cargo`/network spawn. Those are readable from the AST
+   before anything runs, and the answer is a bucket in this repo's own idiom:
+   `UNSAFE-TO-EXECUTE`, reported, never folded into a pass — the
+   `UNRESOLVED is not clean` rule, one axis over.
+
+⛔ **But the COST measurement moved the design, and it is the open question
+now.** T5 assumed "~700 executions" was the scary number. T6 measured this
+repo's own 55-module `--include-all` at **hour-class** on a quiet 16-core box —
+not because there are many mutants, but because a sweep's arm is a
+workspace-wide 16-repo walk and **every mutant pays one**. A workspace sweep
+over 18 arm-bearing sibling scripts is therefore not a sweep-shaped thing at
+all: it cannot run on demand next to the other eleven, and a "sweep" nobody can
+afford to run is the failure mode this repo has now recorded a dozen times.
+
+So T5's honest next step is **not** "write the sweep". It is to decide between:
+
+- a **per-repo, on-demand** `arm_reach_audit.py <repo>` (the report already
+  takes a population; the archive + admission check is the new part), leaving
+  each repo's rows to its own owner — which is what
+  `instrument_reachability_drift_sweep`'s ratchet measurement already implies;
+  or
+- a **sweep over the ADMITTED subset only**, if the admission check turns out
+  to exclude the expensive workspace-walkers anyway. That is a measurement
+  nobody has taken: run the admission classifier over the 18 first.
+
+Take that measurement before writing either one.
+
 ## Tasks
 
 - **T1** — `scripts/arm_reach_audit.py`: the report (exit 0, except a
@@ -335,6 +507,12 @@ per function, not a quality score, and the exempt functions are pinned by
      `git archive` of the sibling into a scratch tree, the `--prove-fires`
      idiom one axis over?) rather than on effort. **Do not land it by symmetry
      with the other eleven.**
+- **T6** — ✅ **LANDED.** The `--include-all` population, measured. Four
+  findings, three of them defects in things that were already green: the exec
+  namespace (796 mutants reading CRASHED for a harness reason), the missing
+  BASELINE bucket (an already-failing arm scores PERFECT), a Windows-broken arm
+  in `required_features_touched_gate`, and this gate catching its own new
+  branch. See the T6 section above.
 - **T3** — read every SURVIVED row once and classify EQUIVALENT vs a real gap;
   repair the real gaps by widening the arm, and pin the equivalents by
   membership with a reason.

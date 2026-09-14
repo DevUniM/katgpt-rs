@@ -74,6 +74,7 @@ import io
 import os
 import sys
 import time
+import types
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -127,6 +128,11 @@ MIN_MODULES = 15
 MIN_MUTANTS = 200
 
 KILLED, SURVIVED, CRASHED = "KILLED", "SURVIVED", "CRASHED"
+
+# The BASELINE verdict — a module-level bucket, never a mutant-level one.
+# `BASE_RED` is the dangerous direction: an arm that fails on its own
+# unmutated source kills every mutant and reports PERFECT reach.
+BASE_OK, BASE_RED, BASE_CRASH = "OK", "BASELINE-RED", "BASELINE-CRASH"
 
 _CMP_FLIP = {
     ast.Eq: ast.NotEq, ast.NotEq: ast.Eq,
@@ -306,6 +312,68 @@ def _silence():
             os.close(fd)
 
 
+_MOD_NAME = "__arm_reach__"
+
+
+@contextlib.contextmanager
+def _exec_namespace(path: Path):
+    """A REAL module object, registered in `sys.modules`, not a bare dict.
+
+    ⛔ This was the harness's third bucket-boundary defect and it was invisible
+    in the default population: `dataclasses` resolves a class's defining
+    namespace through `sys.modules.get(cls.__module__).__dict__`, so a module
+    exec'd into a plain dict under a name nothing has registered raises
+    `AttributeError: 'NoneType' object has no attribute '__dict__'` at the
+    `@dataclass` line — at IMPORT, which this harness correctly files as
+    CRASHED, *evidence of nothing*.
+
+    Measured 2026-09-15: SEVEN modules died that way, every one of them a
+    classifier that models its findings as a dataclass — `platform_dead_code`,
+    `len_derived_binding`, `required_features_build`, `cfg_gated_target`,
+    `cfg_row_implication`, `all_ignored_target`, `suite_membership` — carrying
+    **796 of `--include-all`'s 2382 mutants**. All seven read CRASHED on their
+    own UNMUTATED source, so the harness was reporting a property of its own
+    exec namespace as a property of their code. The default CHECKS population
+    defines no dataclass and was unaffected, which is exactly why this survived
+    T1–T4: a boundary only the wider population crosses.
+
+    A prior registration is saved and restored — the audit exec's dozens of
+    modules under one name and a leaked entry would hand the next one somebody
+    else's globals.
+    """
+    mod = types.ModuleType(_MOD_NAME)
+    mod.__file__ = str(path)
+    prev = sys.modules.get(_MOD_NAME)
+    sys.modules[_MOD_NAME] = mod
+    try:
+        yield mod.__dict__
+    finally:
+        if prev is None:
+            sys.modules.pop(_MOD_NAME, None)
+        else:
+            sys.modules[_MOD_NAME] = prev
+
+
+def dataclass_premise() -> bool:
+    """Does THIS interpreter need `_exec_namespace`'s registration?
+
+    True when a `@dataclass` fails to build in a bare-dict namespace — i.e.
+    when `dataclasses` resolves the defining module unguarded. Measured rather
+    than assumed because the two live boxes disagree: CPython ≤3.12 guards it
+    (`if cls.__module__ in sys.modules: … else: globals = {}`), 3.14 does not.
+    Reported, never gated: a premise that varies by interpreter belongs in the
+    output next to the verdict, the `trap_launder_premise_matrix` rule.
+    """
+    src = ("from dataclasses import dataclass\n"
+           "@dataclass\nclass _P:\n    n: int\n")
+    try:
+        with _silence():
+            exec(compile(src, "<premise>", "exec"), {"__name__": _MOD_NAME})
+    except BaseException:
+        return True
+    return False
+
+
 def run_arm(code, path: Path, arms: set[str]) -> str:
     """KILLED if any arm in this module reports a failure, else SURVIVED.
 
@@ -314,7 +382,6 @@ def run_arm(code, path: Path, arms: set[str]) -> str:
     being rewritten for the harness's convenience; a shape the harness cannot
     read is CRASHED, never SURVIVED.
     """
-    ns = {"__name__": "__arm_reach__", "__file__": str(path)}
     # ⛔ The two phases are separated DELIBERATELY, and conflating them was this
     # harness's own defect. A mutant that breaks the module at IMPORT noticed
     # nothing (CRASHED, evidence of nothing). An exception raised while the ARM
@@ -322,28 +389,30 @@ def run_arm(code, path: Path, arms: set[str]) -> str:
     # `required_features_static_gate.selftest` returns None and raises
     # SystemExit(2) on failure, so under the first version every mutant it
     # caught was filed as CRASHED and the module could never show a KILL at all.
-    try:
-        with _silence():
-            exec(code, ns)
-    except BaseException:
-        return CRASHED
-    try:
-        with _silence():
-            for name in sorted(arms & RUN_ARMS):
-                fn = ns.get(name)
-                if not callable(fn):
-                    continue
-                result = fn()
-                # Three live arm shapes, none being rewritten for the harness's
-                # convenience: `-> list[str]` (failures returned), `-> int`
-                # (rc, 0 = pass), and `-> None` + raise. The first two are read
-                # here; the third is the `except` below.
-                if isinstance(result, list) and result:
-                    return KILLED
-                if isinstance(result, int) and result != 0:
-                    return KILLED
-    except BaseException:
-        return KILLED
+    with _exec_namespace(path) as ns:
+        try:
+            with _silence():
+                exec(code, ns)
+        except BaseException:
+            return CRASHED
+        try:
+            with _silence():
+                for name in sorted(arms & RUN_ARMS):
+                    fn = ns.get(name)
+                    if not callable(fn):
+                        continue
+                    result = fn()
+                    # Three live arm shapes, none being rewritten for the
+                    # harness's convenience: `-> list[str]` (failures
+                    # returned), `-> int` (rc, 0 = pass), and `-> None` +
+                    # raise. The first two are read here; the third is the
+                    # `except` below.
+                    if isinstance(result, list) and result:
+                        return KILLED
+                    if isinstance(result, int) and result != 0:
+                        return KILLED
+        except BaseException:
+            return KILLED
     return SURVIVED
 
 
@@ -355,7 +424,7 @@ def audit_module(path: Path) -> dict:
         return {"error": f"does not parse ({e.msg} line {e.lineno})"}
     arms = arm_names_in(tree)
     row = {"arms": sorted(arms), "killed": 0, "crashed": 0,
-           "survived": [], "total": 0, "error": None}
+           "survived": [], "total": 0, "error": None, "baseline": BASE_OK}
     # NO-ARM is about arms that can be RUN. A module whose only arm is
     # `prove_fires` has nothing that could notice a mutation of its own source.
     if not (arms & RUN_ARMS):
@@ -363,6 +432,23 @@ def audit_module(path: Path) -> dict:
         # tells a reader how much arithmetic is going unwatched — but they are
         # not run, because the answer would be a vacuous SURVIVED for every one.
         row["total"] = sum(1 for _ in mutants(src, set()))
+        return row
+    # ⛔ THE BASELINE. Ask the arm about the UNMUTATED source first, because
+    # both wrong answers here are silent and one of them looks perfect:
+    #   · arm already FAILS unmutated → every mutant reads KILLED, the module
+    #     scores 100% reach, and it has distinguished nothing. That is the
+    #     "runner that always says KILLED" hazard the gate's MIN_KILLED floor
+    #     names — but MIN_KILLED is global, so one module in this state is
+    #     invisible to it *and inflates it*.
+    #   · module will not EXEC unmutated → every mutant reads CRASHED, which
+    #     is honest per-mutant but pools into a module row saying nothing.
+    # Neither is folded into KILLED or SURVIVED, and the mutants are counted
+    # but not RUN: running them buys a column of identical vacuous verdicts at
+    # full price (the seven dataclass modules were 796 of them).
+    base = run_arm(compile(src, str(path), "exec"), path, arms)
+    if base != SURVIVED:
+        row["baseline"] = BASE_RED if base == KILLED else BASE_CRASH
+        row["total"] = sum(1 for _ in mutants(src, arms))
         return row
     for desc, func, ln, code in mutants(src, arms):
         row["total"] += 1
@@ -565,6 +651,68 @@ def selftest() -> list[str]:
         eq("an unparseable module is an ERROR, never a clean row",
            "does not parse" in (audit_module(unparsed).get("error") or ""), True)
 
+        # ── the BASELINE boundary, both directions ────────────────────────
+        # ⛔ BASELINE-RED is the one that looks like success: without this
+        # bucket the module below scores 100% KILLED while distinguishing
+        # nothing at all, because its arm was already failing.
+        base_red = d / "base_red.py"
+        base_red.write_text(
+            "def rule(n):\n    return n >= 10\n"
+            "def selftest():\n    return ['this arm fails unmutated']\n",
+            encoding="utf-8")
+        r = audit_module(base_red)
+        eq("an arm failing on UNMUTATED source is BASELINE-RED, not 100% killed",
+           (r["baseline"], r["killed"], r["survived"]), (BASE_RED, 0, []))
+        eq("a BASELINE-RED module still COUNTS its mutants (the population "
+           "figure is what says how much went unwatched)", r["total"] > 0, True)
+
+        base_crash = d / "base_crash.py"
+        base_crash.write_text(
+            "raise RuntimeError('unimportable')\n"
+            "def rule(n):\n    return n >= 10\n"
+            "def selftest():\n    return []\n", encoding="utf-8")
+        r = audit_module(base_crash)
+        eq("a module that will not EXEC unmutated is BASELINE-CRASH",
+           (r["baseline"], r["killed"]), (BASE_CRASH, 0))
+
+        healthy = d / "healthy.py"
+        healthy.write_text(
+            "def rule(n):\n    return n >= 10\n"
+            "def selftest():\n    return [] if rule(10) and not rule(9) "
+            "else ['x']\n", encoding="utf-8")
+        eq("a healthy module is BASELINE-OK", audit_module(healthy)["baseline"],
+           BASE_OK)
+
+        # ── the exec NAMESPACE is a real module, and a dataclass proves it ──
+        # Two-sided on purpose: the bare-dict arm is the measured NEGATIVE, so
+        # this arm reds if the registration is removed AND stays honest about
+        # what it is testing. Seven live classifiers read CRASHED under the
+        # bare dict, 796 mutants of them.
+        dc = d / "dc_module.py"
+        dc.write_text(
+            "from dataclasses import dataclass\n"
+            "@dataclass\nclass Finding:\n    n: int\n"
+            "def rule(n):\n    return Finding(n).n >= 10\n"
+            "def selftest():\n    return [] if rule(10) and not rule(9) "
+            "else ['x']\n", encoding="utf-8")
+        src_dc = dc.read_text(encoding="utf-8")
+        eq("a @dataclass module EXECs in a REGISTERED-module namespace",
+           run_arm(compile(src_dc, str(dc), "exec"), dc, {"selftest"}), SURVIVED)
+        eq("sys.modules is left exactly as it was found",
+           _MOD_NAME in sys.modules, False)
+        # ⚠ The bare-dict direction is a PREMISE, not an assertion, and the
+        # distinction is measured: CPython ≤3.12 guards the lookup
+        # (`if cls.__module__ in sys.modules: … else: globals = {}`) and 3.14
+        # does not, so hard-asserting "the bare dict dies" would red on an
+        # interpreter where this defect simply does not exist — a premise
+        # harness that never varies the axis it claims about, which is exactly
+        # what `trap_launder_premise_matrix` was written to stop doing. The
+        # arm above is sufficient WHEREVER the defect is live: remove the
+        # registration on 3.14 and it returns CRASHED. See `dataclass_premise`,
+        # which the report prints so the axis is observed rather than assumed.
+        eq("the premise is reported as a bool, never as a silent assumption",
+           isinstance(dataclass_premise(), bool), True)
+
     # ── the exemption set is the permissive direction ─────────────────────
     eq("every EXEMPT_FUNCTIONS row carries a reason",
        all(bool(v.strip()) for v in EXEMPT_FUNCTIONS.values()), True)
@@ -625,10 +773,15 @@ def main(argv: list[str]) -> int:
 
     no_arm = {n: r for n, r in rows.items() if not r.get("error") and not r["arms"]}
     errored = {n: r for n, r in rows.items() if r.get("error")}
+    baseline_bad = {n: r for n, r in rows.items()
+                    if not r.get("error") and r.get("baseline", BASE_OK) != BASE_OK}
 
     print(f"▸ arm REACH over {len(rows)} module(s), {total_mutants} mutant(s), "
           f"{wall:.1f}s" + ("  [--include-all: NOT comparable to the default "
-                            "population]" if include_all else ""))
+                            "population]" if include_all else "")
+          + f"   [py{sys.version_info.major}.{sys.version_info.minor}; "
+          + ("dataclass namespace premise LIVE" if dataclass_premise()
+             else "dataclass namespace premise inert here") + "]")
     print()
 
     survived_live: list[tuple[str, str, int, str]] = []
@@ -643,6 +796,18 @@ def main(argv: list[str]) -> int:
             print(f"  ▫ {name:40s} NO-ARM — {r['total']:3d} mutant(s) unwatched by "
                   f"any arm of its own (delegated; a classifier's self-test cannot "
                   f"reach its consumer's arithmetic — Issue 775)")
+            continue
+        if r.get("baseline", BASE_OK) != BASE_OK:
+            why = ("its arm FAILS on the unmutated source, so every mutant "
+                   "would read KILLED and the module would score PERFECT "
+                   "reach. Check the ENVIRONMENT first: a sweep whose canary "
+                   "runs the real workspace needs the same markers the gates "
+                   "get (DOCS_GATE_PARTIAL_CLONE=1 on a known-subset box)"
+                   if r["baseline"] == BASE_RED else
+                   "the module does not EXEC unmutated, so every mutant would "
+                   "read CRASHED")
+            print(f"  ⛔ {name:40s} {r['baseline']} — {r['total']:3d} mutant(s) "
+                  f"NOT RUN: {why}")
             continue
         live = [(f, l, d) for f, l, d in r["survived"] if f not in EXEMPT_FUNCTIONS]
         survived_exempt += len(r["survived"]) - len(live)
@@ -675,7 +840,13 @@ def main(argv: list[str]) -> int:
           f"exempt functions · "
           f"{sum(r['crashed'] for r in rows.values() if not r.get('error'))} crashed · "
           f"{sum(r['total'] for r in no_arm.values())} in {len(no_arm)} NO-ARM "
-          f"module(s) · {len(errored)} unparsed")
+          f"module(s) · {sum(r['total'] for r in baseline_bad.values())} in "
+          f"{len(baseline_bad)} BASELINE-bad module(s) · {len(errored)} unparsed")
+    if baseline_bad:
+        print("  ⛔ BASELINE (never pooled into KILLED, and BASELINE-RED is the "
+              "one that would have looked PERFECT): "
+              + ", ".join(f"{n} {r['baseline']}"
+                          for n, r in sorted(baseline_bad.items())))
     print("  ⚠ SURVIVED is arm REACH, not a defect count: an EQUIVALENT mutant "
           "(a `>=` whose operands can never be equal) survives correctly, and so "
           "does any mutation an arm was never meant to reach. Read each row once, "

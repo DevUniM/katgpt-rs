@@ -201,9 +201,23 @@ def selftest() -> None:
             features=feats, path=path, crate_dir=crate,
         )
 
-    a = row("pkg_a", "t_a", "/w/a/tests/t_a.rs", "/w/a", ["f"])
-    b = row("pkg_a", "t_b", "/w/a/tests/t_b.rs", "/w/a", ["f", "g"])
-    c = row("pkg_b", "t_c", "/w/b/tests/t_c.rs", "/w/b", ["h"])
+    # ⚠ Every fixture path is built through `Path`, on BOTH sides of the
+    # comparison, and that is not cosmetic. `select` matches with `str(f)` and
+    # with `os.sep`, so POSIX string literals compared against a `Path` make
+    # three of these cases unsatisfiable on Windows — measured 2026-09-15 by
+    # `arm_reach_audit --include-all`, which read this whole module
+    # BASELINE-RED because its arm was failing before any mutation. The
+    # PRODUCTION path was never affected: `changed_files` resolves through
+    # `(repo / ln).resolve()`, so both sides are native there. An arm that
+    # cannot run on a developer box is an arm that stops being run.
+    W = Path("/w")
+
+    def at(*parts: str) -> str:
+        return str(W.joinpath(*parts))
+
+    a = row("pkg_a", "t_a", at("a", "tests", "t_a.rs"), at("a"), ["f"])
+    b = row("pkg_a", "t_b", at("a", "tests", "t_b.rs"), at("a"), ["f", "g"])
+    c = row("pkg_b", "t_c", at("b", "tests", "t_c.rs"), at("b"), ["h"])
     rows = [a, b, c]
     none: Callable[[Path], list[Row]] = lambda _p: []
     fails: list[str] = []
@@ -214,44 +228,44 @@ def selftest() -> None:
             fails.append(f"{case}: selected {sorted(have)}, want {sorted(exp)}")
 
     # 1. a touched target source selects exactly its own row — not its neighbour.
-    want(select(rows, [Path("/w/a/tests/t_a.rs")], False, none)[0], {"t_a"}, "target-source")
+    want(select(rows, [W / "a" / "tests" / "t_a.rs"], False, none)[0], {"t_a"}, "target-source")
     # 2. a touched manifest selects what the row diff returns, and ONLY that.
     #    Selecting the whole package instead would refuse every manifest edit in
     #    riir-train-gpu (440 rows) — the repo three of the five instances are in.
-    want(select(rows, [Path("/w/a/Cargo.toml")], False, lambda _p: [b])[0], {"t_b"}, "row-changed")
+    want(select(rows, [W / "a" / "Cargo.toml"], False, lambda _p: [b])[0], {"t_b"}, "row-changed")
     # 3. a manifest whose rows did NOT move selects nothing. Without this the
     #    gate degrades to "check the package" and stops being affordable.
-    want(select(rows, [Path("/w/a/Cargo.toml")], False, none)[0], set(), "manifest-nodiff")
+    want(select(rows, [W / "a" / "Cargo.toml"], False, none)[0], set(), "manifest-nodiff")
     # 4. an unrelated file selects nothing. Without this the gate is vacuous in
     #    the common case (most pushes touch no target and no manifest) and a
     #    green would mean "the selector is broken", indistinguishable.
-    want(select(rows, [Path("/w/a/README.md")], False, none)[0], set(), "unrelated")
+    want(select(rows, [W / "a" / "README.md"], False, none)[0], set(), "unrelated")
     # 5. src fanout is OFF by default — the whole cost argument depends on it.
-    want(select(rows, [Path("/w/a/src/lib.rs")], False, none)[0], set(), "src-off")
+    want(select(rows, [W / "a" / "src" / "lib.rs"], False, none)[0], set(), "src-off")
     # 6. ...and ON it selects that package only, never the workspace.
-    want(select(rows, [Path("/w/a/src/lib.rs")], True, none)[0], {"t_a", "t_b"}, "src-on")
+    want(select(rows, [W / "a" / "src" / "lib.rs"], True, none)[0], {"t_a", "t_b"}, "src-on")
     # 7. a path that merely PREFIXES a crate dir is not inside it. `/w/ab/src`
     #    starts with `/w/a` as a string; the separator is what makes it a
     #    directory test. Same shape as the `.git`-is-a-file case in
     #    population_sync_gate.py.
-    d = row("pkg_ab", "t_d", "/w/ab/tests/t_d.rs", "/w/ab", ["f"])
-    want(select(rows + [d], [Path("/w/ab/src/lib.rs")], True, none)[0], {"t_d"}, "prefix")
+    d = row("pkg_ab", "t_d", at("ab", "tests", "t_d.rs"), at("ab"), ["f"])
+    want(select(rows + [d], [W / "ab" / "src" / "lib.rs"], True, none)[0], {"t_d"}, "prefix")
     # 8. dedupe: a push touching a target AND moving its row must not build it
     #    twice, and must not report it twice either.
-    got, wh = select(rows, [Path("/w/a/tests/t_a.rs"), Path("/w/a/Cargo.toml")],
+    got, wh = select(rows, [W / "a" / "tests" / "t_a.rs", W / "a" / "Cargo.toml"],
                      False, lambda _p: [a])
     if len(got) != 1 or len(wh) != 1:
         fails.append(f"dedupe: {len(got)} rows / {len(wh)} reasons, want 1 / 1")
 
     # ── row_key: what counts as "the row moved" ──
-    if row_key(a) == row_key(row("pkg_a", "t_a", a.path, "/w/a", ["f", "g"])):
+    if row_key(a) == row_key(row("pkg_a", "t_a", a.path, at("a"), ["f", "g"])):
         fails.append("row_key: a feature ADDED to a row did not register as a change")
-    if row_key(b) != row_key(row("pkg_a", "t_b", b.path, "/w/a", ["g", "f"])):
+    if row_key(b) != row_key(row("pkg_a", "t_b", b.path, at("a"), ["g", "f"])):
         fails.append("row_key: reordering a feature list registered as a change")
-    if row_key(b) != row_key(row("pkg_a", "t_b", b.path, "/w/a", ["f", "g", "f"])):
+    if row_key(b) != row_key(row("pkg_a", "t_b", b.path, at("a"), ["f", "g", "f"])):
         fails.append("row_key: a duplicated feature registered as a change")
     if row_key(a) == row_key(Row(repo="r", package="pkg_a", kind="bench", name="t_a",
-                                 features=["f"], path=a.path, crate_dir="/w/a")):
+                                 features=["f"], path=a.path, crate_dir=at("a"))):
         fails.append("row_key: [[test]] and [[bench]] of one name collapsed")
 
     if fails:

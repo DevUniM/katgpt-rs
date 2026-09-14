@@ -197,7 +197,8 @@ def parse_expected(path: Path) -> tuple[dict[str, str], dict[str, str]]:
 
 
 def verdict_problems(observed: dict[str, str], pinned: dict[str, str],
-                     unreached: list[str], no_arm: list[str]) -> list[str]:
+                     unreached: list[str], no_arm: list[str],
+                     baseline_bad: list[str] | None = None) -> list[str]:
     """The WALL, as a pure function so an arm can reach it.
 
     Issue 790 T4's finding, applied to this file on the way in: in every
@@ -230,6 +231,15 @@ def verdict_problems(observed: dict[str, str], pinned: dict[str, str],
             f"survives VACUOUSLY. Issue 790 T4 took this bucket to 0 by giving "
             f"all four delegating gates a `gate_selftest`; a classifier's "
             f"self-test cannot reach its consumer's pin arithmetic (Issue 775).")
+    for name in sorted(baseline_bad or []):
+        problems.append(
+            f"BASELINE module: {name} — measured on its own UNMUTATED source. "
+            f"BASELINE-RED means the arm ALREADY FAILS, so every mutant would "
+            f"read KILLED and the module would score PERFECT reach while "
+            f"distinguishing nothing; MIN_KILLED is global and would be "
+            f"INFLATED by it rather than tripped. BASELINE-CRASH means the "
+            f"module will not exec. Neither is a survivor to pin — fix the arm "
+            f"or the import.")
     return problems
 
 
@@ -295,6 +305,77 @@ def floor_problems(n_modules: int, n_mutants: int, n_killed: int,
     return problems
 
 
+def classify(row: dict) -> str:
+    """Which bucket a measured module row belongs to — pure, so an arm reaches it.
+
+    Extracted for the reason Issue 790 T4 records in every module it touched:
+    the decision sat inline in `measure()` between two calls into the audit,
+    and was unreachable by construction. The gate found it on itself, on the
+    commit that added it.
+
+    ⚠ The ORDER is the rule. A BASELINE-bad row satisfies `unreached`'s
+    arithmetic by accident (its mutants were never run, so `killed == 0`), and
+    the two diagnoses have different remedies: UNREACHED says *the arm cannot
+    express this*, BASELINE says *the arm is already failing*. Reporting the
+    first for the second sends the reader to widen an arm that is not the
+    problem.
+
+    `unreached` and `ok` are DELIBERATELY not a short-circuit pair: an
+    unreached module still contributes its survivors, because "this arm killed
+    nothing" and "these lines are unpinned" are both true and both wanted.
+    """
+    if row.get("error"):
+        return "errored"
+    if not (set(row["arms"]) & A.RUN_ARMS):
+        return "no_arm"
+    if row.get("baseline", A.BASE_OK) != A.BASE_OK:
+        return "baseline"
+    if row["killed"] == 0 and row["total"] > 0:
+        return "unreached"
+    return "ok"
+
+
+def new_acc() -> dict:
+    """The accumulator `fold` writes into. One place, so an arm builds the
+    same shape `measure` does — two literals is two things to get wrong."""
+    return {"mutants": 0, "killed": 0, "no_arm": [], "baseline_bad": [],
+            "unreached": [], "survivors": []}
+
+
+def fold(name: str, row: dict, src: list[str], acc: dict) -> None:
+    """Fold ONE measured module row into the accumulator.
+
+    The dispatch on `classify`'s verdict, extracted for the same reason
+    `classify` itself was: it sat inline in `measure()` between a call into the
+    audit and a file read, so no arm could reach it without running the whole
+    audit. It is pure over `(row, src)` and armed in `gate_selftest` over
+    synthetic rows — see the note there about the version that was NOT pure.
+
+    `src` is the module's source lines, already read: a survivor's line number
+    is 1-BASED and the text is what the pin file's `#= ` comment is verified
+    against, so the off-by-one here is the one this repo's whole percentile
+    section is about.
+    """
+    bucket = classify(row)
+    if bucket == "errored":
+        return
+    acc["mutants"] += row["total"]
+    if bucket == "no_arm":
+        acc["no_arm"].append(name)
+        return
+    if bucket == "baseline":
+        acc["baseline_bad"].append(f"{name} {row['baseline']}")
+        return
+    acc["killed"] += row["killed"]
+    if bucket == "unreached":
+        acc["unreached"].append(name)
+    for func, ln, desc in row["survived"]:
+        if func in A.EXEMPT_FUNCTIONS:
+            continue
+        text = src[ln - 1].strip() if 0 < ln <= len(src) else ""
+        acc["survivors"].append((name, func, desc, text))
+
+
 def measure(only: list[str] | None = None) -> dict:
     """Run the audit and reduce it to what the verdict needs.
 
@@ -313,31 +394,20 @@ def measure(only: list[str] | None = None) -> dict:
         paths = list(paths) + [me]
     if only:
         paths = [p for p in paths if any(o in p.name for o in only)]
-    rows, unreached, no_arm, survivors = {}, [], [], []
-    killed = mutants = 0
+    rows = {}
+    acc = new_acc()
     for path in sorted(paths):
         r = A.audit_module(path)
         rows[path.name] = r
-        if r.get("error"):
-            continue
-        mutants += r["total"]
-        if not (set(r["arms"]) & A.RUN_ARMS):
-            no_arm.append(path.name)
-            continue
-        killed += r["killed"]
-        if r["killed"] == 0 and r["total"] > 0:
-            unreached.append(path.name)
-        src = path.read_text(encoding="utf-8").splitlines()
-        for func, ln, desc in r["survived"]:
-            if func in A.EXEMPT_FUNCTIONS:
-                continue
-            text = src[ln - 1].strip() if 0 < ln <= len(src) else ""
-            survivors.append((path.name, func, desc, text))
+        src = (path.read_text(encoding="utf-8").splitlines()
+               if not r.get("error") else [])
+        fold(path.name, r, src, acc)
     return {
-        "modules": len(rows), "mutants": mutants, "killed": killed,
-        "unreached": unreached, "no_arm": no_arm,
+        "modules": len(rows), "mutants": acc["mutants"], "killed": acc["killed"],
+        "unreached": acc["unreached"], "no_arm": acc["no_arm"],
+        "baseline_bad": acc["baseline_bad"],
         "errored": [n for n, r in rows.items() if r.get("error")],
-        "observed": build_keys(survivors),
+        "observed": build_keys(acc["survivors"]),
     }
 
 
@@ -466,6 +536,114 @@ def gate_selftest() -> list[str]:
         f.append("wall: an UNREACHED module passed")
     if not any("NO-ARM" in p for p in verdict_problems({}, {}, [], ["m.py"])):
         f.append("wall: a NO-ARM module passed")
+    # BASELINE is walled SEPARATELY for the reason on the wall itself: a
+    # module whose arm already fails scores 100% KILLED, so it does not merely
+    # escape MIN_KILLED, it INFLATES it.
+    if not any("BASELINE" in p
+               for p in verdict_problems({}, {}, [], [], ["m.py BASELINE-RED"])):
+        f.append("wall: a BASELINE-RED module passed")
+    if any("BASELINE" in p for p in verdict_problems({}, {}, [], [], [])):
+        f.append("wall: BASELINE fired on an empty list")
+    if any("UNREACHED" in p
+           for p in verdict_problems({}, {}, [], [], ["m.py BASELINE-RED"])):
+        f.append("wall: a BASELINE module was ALSO reported UNREACHED — two "
+                 "diagnoses, two remedies, and the wrong one sends the reader "
+                 "to widen an arm that is not the problem")
+
+    # ── 11b. `classify` is the bucket decision, extracted so an arm can reach
+    # it. The gate found this line UNPINNED on the commit that added it, which
+    # is the T4 pattern exactly: the classifier was armed and the VERDICT was
+    # not.
+    ok_row = {"arms": ["selftest"], "killed": 3, "total": 9,
+              "baseline": A.BASE_OK, "error": None, "survived": []}
+    cases = [
+        ({**ok_row, "error": "does not parse"}, "errored"),
+        ({**ok_row, "arms": ["prove_fires"]}, "no_arm"),
+        ({**ok_row, "arms": []}, "no_arm"),
+        ({**ok_row, "baseline": A.BASE_RED}, "baseline"),
+        ({**ok_row, "baseline": A.BASE_CRASH}, "baseline"),
+        ({**ok_row, "killed": 0}, "unreached"),
+        ({**ok_row, "killed": 0, "total": 0}, "ok"),
+        (ok_row, "ok"),
+    ]
+    for row, want in cases:
+        got = classify(row)
+        if got != want:
+            f.append(f"classify: {want} row read {got}")
+    # ⛔ The ORDER, which is the whole reason this is one function: a
+    # BASELINE-bad row has killed == 0 and would fall through to UNREACHED.
+    if classify({**ok_row, "killed": 0, "baseline": A.BASE_RED}) != "baseline":
+        f.append("classify: a BASELINE-RED row with killed==0 read UNREACHED — "
+                 "two diagnoses with different remedies, resolved the wrong way")
+    if classify({**ok_row, "arms": [], "baseline": A.BASE_RED}) != "no_arm":
+        f.append("classify: NO-ARM must precede BASELINE — a module with no "
+                 "runnable arm has no baseline to be red about")
+    # …and a row a mutation could make unreachable: `errored` must win over all.
+    if classify({**ok_row, "arms": [], "error": "x"}) != "errored":
+        f.append("classify: an unparsed row was bucketed by its (absent) arms")
+
+    # ── 11c. …and the DISPATCH on that verdict, which is a separate decision
+    # from the classification itself. Four `if bucket == "…"` lines read
+    # UNPINNED on the commit that extracted `classify`.
+    #
+    # ⛔ The first repair was an arm calling the real `measure(only=[one cheap
+    # module])`. It was WRONG for a reason worth writing down: `gate_selftest`
+    # is itself an arm, so the audit runs it once per mutant of this file, and
+    # a `measure` inside it RE-ENTERS the harness — 33 mutants × a nested
+    # audit that builds git fixture repos under redirected file descriptors.
+    # Measured: the run wedged on a `git ls-files` in a temp fixture, 17
+    # minutes at 0.02s CPU, with git perfectly healthy standalone. An arm that
+    # needs a fixture repo is an arm nobody runs — which is the sentence
+    # `required_features_touched_gate.select` already carries, one instrument
+    # over, about injecting its dependency for exactly this reason.
+    #
+    # So `fold` is the dispatch, extracted and pure, and it is armed here over
+    # synthetic rows in microseconds. The ROUTING is what is asserted; the
+    # survivor SET deliberately is not, because that changes whenever somebody
+    # arms a module and an arm that reds on progress is one people delete.
+    acc = new_acc()
+    fold("ok.py", ok_row, ["if a > b:"] * 40, acc)
+    if not (acc["mutants"] == 9 and acc["killed"] == 3):
+        f.append(f"fold: a healthy row contributed {acc['mutants']} mutants / "
+                 f"{acc['killed']} killed, want 9 / 3")
+    for bucket in ("no_arm", "baseline_bad", "unreached"):
+        if acc[bucket]:
+            f.append(f"fold: a healthy row landed in {bucket}: {acc[bucket]}")
+
+    acc = new_acc()
+    fold("e.py", {**ok_row, "error": "does not parse"}, [], acc)
+    if acc["mutants"] or acc["killed"]:
+        f.append("fold: an unparsed row was counted — the `errored` dispatch "
+                 "is inverted and every module would be folded in")
+
+    acc = new_acc()
+    fold("n.py", {**ok_row, "arms": []}, [], acc)
+    if acc["no_arm"] != ["n.py"] or acc["killed"]:
+        f.append(f"fold: a NO-ARM row routed to {acc}")
+    if acc["mutants"] != 9:
+        f.append("fold: a NO-ARM row's mutants were dropped — the population "
+                 "figure is what says how much went unwatched")
+
+    acc = new_acc()
+    fold("b.py", {**ok_row, "baseline": A.BASE_RED}, [], acc)
+    if acc["baseline_bad"] != ["b.py BASELINE-RED"] or acc["killed"]:
+        f.append(f"fold: a BASELINE-RED row routed to {acc}")
+
+    acc = new_acc()
+    fold("u.py", {**ok_row, "killed": 0}, [], acc)
+    if acc["unreached"] != ["u.py"]:
+        f.append(f"fold: an UNREACHED row routed to {acc}")
+
+    # a survivor in an EXEMPT function is dropped; one outside it is kept, and
+    # the source line is read 1-BASED — the off-by-one this repo gates on.
+    acc = new_acc()
+    fold("s.py", {**ok_row, "survived": [("main", 1, "> -> >="),
+                                         ("rule", 2, "> -> >=")]},
+         ["line one", "  if n > f:"], acc)
+    if [r[1] for r in acc["survivors"]] != ["rule"]:
+        f.append(f"fold: exempt filter kept {[r[1] for r in acc['survivors']]}")
+    if acc["survivors"] and acc["survivors"][0][3] != "if n > f:":
+        f.append(f"fold: line {acc['survivors'][0][3]!r} — 1-based index wrong")
 
     # ── 12. the `#= ` comment is VERIFIED, not decoration.
     if comment_problems({"k": "if a > b:"}, {"k": "if a > b:"}):
@@ -599,7 +777,8 @@ def main(argv: list[str]) -> int:
             m["modules"], m["mutants"], m["killed"],
             set(A.EXEMPT_FUNCTIONS), set(A.ARM_NAMES))
         problems += verdict_problems(
-            m["observed"], pinned, m["unreached"], m["no_arm"])
+            m["observed"], pinned, m["unreached"], m["no_arm"],
+            m["baseline_bad"])
     problems += comment_problems(pinned_texts, m["observed"])
 
     if problems:

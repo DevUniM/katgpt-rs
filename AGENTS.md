@@ -971,6 +971,34 @@ blaming the gates for its own boundary.
   self-test (exit 2) — a harness that generates no mutants, or whose runner
   always says KILLED, prints a *perfect* score, which is the same output as
   perfection. Two floors: `MIN_MODULES` the walk, `MIN_MUTANTS` the operators.
+- ⛔ **`BASELINE` is the bucket that was missing, and one of its two arms looks
+  like a PERFECT score** (T6, 2026-09-15). The harness never asked the arm
+  about the module's own **unmutated** source. An arm that is *already failing*
+  kills every mutant, so the module reports 100% reach having distinguished
+  nothing — and it does not merely escape the gate's `MIN_KILLED` floor, it
+  **inflates** it. `BASELINE-RED` (arm fails unmutated) and `BASELINE-CRASH`
+  (module will not exec unmutated) are their own module-level verdicts, the
+  mutants are counted but **not run**, and neither is pooled into KILLED,
+  SURVIVED or `UNREACHED` — `UNREACHED` says *the arm cannot express this* and
+  sends the reader to widen an arm that is not the problem. The gate walls both
+  at 0. Check the **environment** first on a RED: a drift sweep whose canary
+  runs the real workspace needs the same markers the gates get
+  (`DOCS_GATE_PARTIAL_CLONE=1` on a known-subset box), and two of them read RED
+  without it.
+- ⛔ **The exec namespace is a registered module, and the bare dict was the
+  harness's THIRD bucket-boundary defect** — invisible in the default
+  population, which is why T1–T4 never saw it. `dataclasses` resolves a class's
+  defining namespace through `sys.modules.get(cls.__module__).__dict__`, so a
+  module exec'd into a plain dict dies at its `@dataclass` line. Measured:
+  **seven** classifiers — `platform_dead_code`, `len_derived_binding`,
+  `required_features_build`, `cfg_gated_target`, `cfg_row_implication`,
+  `all_ignored_target`, `suite_membership` — read CRASHED on their own
+  unmutated source, carrying **796 of `--include-all`'s 2382 mutants**. ⚠ The
+  bare-dict direction is a **premise, not an assertion**: CPython ≤3.12 guards
+  that lookup and 3.14 does not, so the self-test asserts only that a
+  `@dataclass` module EXECs in the registered namespace (sufficient wherever
+  the defect is live) and `dataclass_premise()` prints which side this
+  interpreter is on, next to the verdict.
 - **`NO-ARM` carried the finding that motivated T4, and pooling it either way
   destroys it.** Four CHECKS had no arm of their own —
   `percentile_floor_gate`, `cfg_row_implication_gate`, `trap_sentinel_gate`,
