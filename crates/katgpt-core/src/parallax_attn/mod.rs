@@ -116,9 +116,6 @@ pub struct ParallaxConfig {
     /// Scaling factor for the covariance correction. Default 1.0; can be
     /// annealed during training (set to 0.0 to recover pure attention).
     pub gate_scale: f32,
-    /// Whether `W_R` starts zeroed. When `true` and weights are zero, the
-    /// module is a no-op and recovers exact base attention.
-    pub zero_init: bool,
     /// Activation function for attention weight normalization.
     /// Default: Sigmoid (sink-free, higher COR capacity per Plan 161).
     /// Set to Softmax for backward-compatible attention sinks.
@@ -137,7 +134,6 @@ impl Default for ParallaxConfig {
     fn default() -> Self {
         Self {
             gate_scale: 1.0,
-            zero_init: true,
             activation: ParallaxActivation::default(),
             #[cfg(feature = "ssmax_temperature")]
             ssmax: None,
@@ -451,7 +447,8 @@ pub fn tiled_attention_parallax_forward_retaining(
     // Compute ρ = W_R · x (reuse scratch buffer)
     compute_rho(r, x, &mut scratch.rho);
 
-    // If gate_scale is zero, or ρ is all zeros (zero_init with zeroed W_R),
+    // If gate_scale is zero, or ρ is all zeros (zeroed W_R — the documented
+    // zero-init convention for callers constructing W_R),
     // plain softmax attention is sufficient.
     // Perf: skip O(d) linear scan when gate_scale is already zero.
     let rho_is_zero = if parallax_config.gate_scale == 0.0 {
