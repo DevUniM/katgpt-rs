@@ -31,7 +31,7 @@ def repo_set():
 def tracked_md(repo: Path):
     out = subprocess.run(
         ["git", "-C", str(repo), "ls-files", "--", "*.md"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, encoding="utf-8", errors="replace", check=True,
     )
     for rel in out.stdout.splitlines():
         rel = rel.strip()

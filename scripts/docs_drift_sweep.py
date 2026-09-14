@@ -42,6 +42,7 @@ failure message says so, because a gate whose red is ambiguous gets ignored.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -86,7 +87,9 @@ def run_auditor(script: str, pattern: re.Pattern[str], repos: list[Path]) -> dic
     """One invocation over every repo — both auditors accept N paths."""
     proc = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / script), *(str(p) for p in repos)],
-        capture_output=True, text=True,
+        capture_output=True, encoding="utf-8", errors="replace",
+        # Pin the CHILD's encoder as well as our decoder — Issue 778.
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if proc.returncode not in (0, 1):
         # A crash is not a clean sweep. Surface it rather than parsing partial

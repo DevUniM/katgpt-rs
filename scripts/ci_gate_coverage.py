@@ -72,7 +72,7 @@ def derive_repos(root: Path) -> list[str]:
 def _git(root: Path, repo: str, *args: str) -> str:
     import subprocess
     r = subprocess.run(["git", "-C", str(root / repo), *args],
-                       capture_output=True, text=True)
+                       capture_output=True, encoding="utf-8", errors="replace")
     return r.stdout.strip() if r.returncode == 0 else ""
 
 

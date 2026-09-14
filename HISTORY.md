@@ -3391,3 +3391,74 @@ wrong-address defect a second time.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/777_filesystem_walk_population.md`).
+
+## Issue 778 — `subprocess.run(..., text=True)` decodes with the SYSTEM locale: CLOSED (2026-09-14)
+
+Found because `citation_drift_sweep.py` crashed on the Windows workstation with
+`TypeError: expected string or bytes-like object, got 'NoneType'`. The
+traceback was the lucky outcome.
+
+**The defect.** `text=True` decodes the child's pipe with
+`locale.getencoding()`. macOS, `ubuntu-latest` and the M3 are all UTF-8, so
+nothing that could notice it ever ran it; this box is **cp874**, and every
+instrument in `scripts/` prints `✓`, `✗`, `⛔` and em-dashes. Measured against
+this repo's own `git log -3 --format=%s`: the em dash `E2 80 94` comes back as
+`0xe42 0x20ac 0x201d` — three cp874 characters — under `text=True`, and as
+`0x2014` under an explicit `encoding="utf-8"`.
+
+Two failure modes, and the crash is the better one:
+
+1. **Silent mojibake.** rc 0, a plausible string, and a caller matching
+   `re.search(r"FAILED — (\d+)", out)` — em-dash in the pattern, mojibake in
+   the text — matches nothing and reads a confident **zero findings**.
+2. **`stdout = None` with the returncode PRESERVED.** Where a byte is undefined
+   in the locale codec the decode raises inside `subprocess`'s reader THREAD,
+   where the exception dies. `run()` returns normally.
+   `citation_drift_sweep.gate_says()` got `(rc=0, stdout=None)`.
+
+`PYTHONIOENCODING=utf-8` does not fix mode 1 and makes mode 2 more likely: it
+pins the CHILD's encoder, so the child emits correct UTF-8 that the parent then
+decodes as cp874. Both halves are needed.
+
+**Blast radius, and why it survived.** 28 call sites across 16 scripts carried
+bare `text=True` and **zero** passed an explicit encoding — while
+`staged_set_audit.py` had carried the correct form *and a comment naming this
+exact defect, dated 2026-09-04*, since the day it was written. Landed once,
+never generalised: the same shape as Issue 777 two hours earlier, and the
+reason both repairs ended in a single enforced mechanism rather than a sweep.
+
+**The repair.** Every site becomes `encoding="utf-8", errors="replace"` —
+`replace` and not `strict`, because a parser that raises on one odd byte in a
+sibling's commit message is a new failure mode, and U+FFFD in a path is visible
+where mojibake is not. The redundant `text=True` came off (an explicit
+`encoding=` already implies text mode). The three `sys.executable` spawns also
+pin the child: `env={**os.environ, "PYTHONIOENCODING": "utf-8"}`.
+
+**The gate** — `scripts/subprocess_encoding_gate.py`, docs-gate check 19.
+Ceilings of 0 on **two separately pinned classes**: DECODE (`text=True` /
+`universal_newlines=True` with no `encoding=`) and CHILD-ENCODER (a
+`sys.executable` spawn with no `PYTHONIOENCODING` in `env=`) — they are found
+by different halves of the classifier and a shared pin would hide which
+regressed. Floors under both (60 tracked `*.py`, 44 `subprocess` call sites), a
+paren-matched span scanner rather than a line-scoped one (`encoding=` is on a
+later line than `text=True` in every wrapped call here — a line matcher passes
+the one-liner arm and fails the wrapped one), and an 11-assertion self-test
+that runs on every invocation with both directions per class.
+
+It earned its keep on its first run: a **28th** site nobody had grepped for,
+`.agents/skills/doc-sync/tools/linkcheck_sweep.py`, outside `scripts/`
+entirely.
+
+**Verified after.** `citation_drift_sweep.gate_says()` returns `(1, 266, 1)` in
+the normal posture where it previously crashed; docs gate 19/19. The remaining
+partial-clone red in that sweep — the gate prints its DEFERRED line instead of
+`scanned N citations`, so the cross-assert refuses — is a different class and
+is filed as Issue 779.
+
+**Cost of the CHECKS move.** The docs-gate set went 18 → 19 on the same day it
+went 17 → 18, so the 18-check CPU figure will never be measured; AGENTS.md now
+says the M3 run owes a 19-check number. That is the argument for writing the
+CHECKS count beside the timing rather than the timing alone.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/778_subprocess_text_true_locale.md`).

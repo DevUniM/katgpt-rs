@@ -95,7 +95,7 @@ VENDOR_PARTS = ("vendor/", "/vendor/")
 
 def git(repo: Path, *args: str) -> str:
     r = subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True
+        ["git", "-C", str(repo), *args], capture_output=True, encoding="utf-8", errors="replace"
     )
     return r.stdout if r.returncode == 0 else ""
 
@@ -532,7 +532,7 @@ def self_test() -> int:
             ("-c", "user.name=canary", "-c", "user.email=canary@x",
              "commit", "-qm", "canary"),
         ):
-            subprocess.run(["git", "-C", str(tmp), *args], capture_output=True, text=True)
+            subprocess.run(["git", "-C", str(tmp), *args], capture_output=True, encoding="utf-8", errors="replace")
         hits, positive_files, _ = positive_packages(tmp)
         named, _, wildcards, derived, root_only, row_files = lane_coverage(tmp)
         row_texts = []

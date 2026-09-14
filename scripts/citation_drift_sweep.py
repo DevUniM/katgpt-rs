@@ -229,6 +229,7 @@ the commit that changes it.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -288,7 +289,7 @@ def crate_map(repos: list[Path]) -> dict[str, str]:
     out: dict[str, str] = {}
     for r in repos:
         ls = subprocess.run(["git", "-C", str(r), "ls-files", "*Cargo.toml"],
-                            capture_output=True, text=True)
+                            capture_output=True, encoding="utf-8", errors="replace")
         for rel in ls.stdout.split():
             try:
                 text = (r / rel).read_text(encoding="utf-8", errors="replace")
@@ -430,7 +431,13 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
 def gate_says() -> tuple[int, int, int]:
     """Run the per-push gate and READ its numbers. The sweep re-states a
     quantity the gate owns; asserting beats trusting. -> (rc, scanned, findings)"""
-    r = subprocess.run([sys.executable, str(GATE)], capture_output=True, text=True)
+    # Both halves of Issue 778: `encoding=` pins OUR decode (text=True would
+    # use the system locale and hand back mojibake, or None with rc intact),
+    # and PYTHONIOENCODING pins the gate's own stdout encoder so its `✓`
+    # survives the write on a non-UTF-8 box.
+    r = subprocess.run([sys.executable, str(GATE)], capture_output=True,
+                       encoding="utf-8", errors="replace",
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8"},)
     scanned = re.search(r"scanned (\d+) citations", r.stdout)
     failed = re.search(r"FAILED — (\d+) unqualified", r.stdout)
     return (r.returncode,

@@ -316,7 +316,7 @@ def allocated(repo: Path, subdir: str,
                 out.add(int(m.group(1)))
     log = subprocess.run(
         ["git", "-C", str(repo), "log", "--all", "--name-only", "--pretty=format:", "--", f"{subdir}/"],
-        capture_output=True, text=True,
+        capture_output=True, encoding="utf-8", errors="replace",
     )
     prefix = re.compile(re.escape(subdir) + r"/(\d+)_")
     for line in log.stdout.splitlines():

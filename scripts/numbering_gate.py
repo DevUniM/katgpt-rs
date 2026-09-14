@@ -60,7 +60,7 @@ def tracked_paths(repo: Path, dirs: list[str]) -> set[str]:
     try:
         out = subprocess.run(
             ["git", "-C", str(repo), "ls-files", "--", *dirs],
-            capture_output=True, text=True, check=True,
+            capture_output=True, encoding="utf-8", errors="replace", check=True,
         ).stdout
     except (subprocess.CalledProcessError, FileNotFoundError):
         return set()

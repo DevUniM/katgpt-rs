@@ -330,7 +330,7 @@ def check_row(repo: Path, row: Row, target_dir: str | None, timeout: int) -> Res
             cmd,
             cwd=repo,
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             env=env,
             timeout=timeout,
         )
@@ -548,7 +548,7 @@ def check_group(
     t0 = time.monotonic()
     try:
         proc = subprocess.run(
-            cmd, cwd=repo, capture_output=True, text=True, env=env, timeout=timeout
+            cmd, cwd=repo, capture_output=True, encoding="utf-8", errors="replace", env=env, timeout=timeout
         )
     except subprocess.TimeoutExpired:
         el = time.monotonic() - t0
@@ -567,7 +567,7 @@ def check_group(
                 retry,
                 cwd=group.rows[0].crate_dir,
                 capture_output=True,
-                text=True,
+                encoding="utf-8", errors="replace",
                 env=env,
                 timeout=timeout,
             )
@@ -704,7 +704,7 @@ def concurrent_cargo(repo: Path) -> bool:
         out = subprocess.run(
             ["lsof", "-a", "-c", "cargo", "-d", "cwd", "-Fn", "+D", str(repo / "target")],
             capture_output=True,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=20,
         )
     except (OSError, subprocess.TimeoutExpired):

@@ -65,7 +65,7 @@ def commit_subject(repo: Path, h: str) -> str:
     """One-line subject for a commit (lazy: only reset rows need it)."""
     r = subprocess.run(
         ["git", "-C", str(repo), "show", "-s", "--format=%s", h],
-        capture_output=True, text=True,
+        capture_output=True, encoding="utf-8", errors="replace",
     )
     return r.stdout.strip()
 
@@ -98,7 +98,7 @@ def counter_history(repo: Path, subdir: str) -> list[dict]:
     # (1) every (commit, parents) on HEAD
     r = subprocess.run(
         ["git", "-C", str(repo), "rev-list", "--parents", "HEAD"],
-        capture_output=True, text=True,
+        capture_output=True, encoding="utf-8", errors="replace",
     )
     pairs = [tuple(parts) for parts in
              (ln.split() for ln in r.stdout.splitlines()) if parts]
@@ -122,7 +122,7 @@ def counter_history(repo: Path, subdir: str) -> list[dict]:
     batch = subprocess.run(
         ["git", "-C", str(repo), "cat-file", "--batch"],
         input="\n".join(f"{s}:{rel}" for s in want) + "\n",
-        capture_output=True, text=True,
+        capture_output=True, encoding="utf-8", errors="replace",
     )
     it = iter(want)
     lines = batch.stdout.split("\n")
@@ -244,7 +244,7 @@ def selftest() -> list[str]:
         """Merges over a counter both sides touched CONFLICT (exit 1) — that
         is the fixture's point; the resolution that follows is the event."""
         r = subprocess.run(["git", "-C", str(repo), *args],
-                           capture_output=True, text=True)
+                           capture_output=True, encoding="utf-8", errors="replace")
         if r.returncode not in (0, 1):
             raise subprocess.CalledProcessError(r.returncode, r.args, r.stdout,
                                                 r.stderr)

@@ -104,13 +104,13 @@ def first_seen(repo: Path, relpath: str) -> str:
     out = subprocess.run(
         ["git", "-C", str(repo), "log", "--follow", "--diff-filter=A",
          "--format=%ad", "--date=short", "--", relpath],
-        capture_output=True, text=True).stdout.split()
+        capture_output=True, encoding="utf-8", errors="replace").stdout.split()
     return out[-1] if out else "unknown"
 
 
 def corpus(repo: Path) -> dict[str, str]:
     out = subprocess.run(["git", "-C", str(repo), "ls-files"],
-                         capture_output=True, text=True).stdout.split("\n")
+                         capture_output=True, encoding="utf-8", errors="replace").stdout.split("\n")
     blobs = {}
     for rel in out:
         if not rel.endswith(TEXT_SUFFIXES):

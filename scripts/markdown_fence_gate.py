@@ -69,7 +69,7 @@ def unterminated(repo: Path) -> tuple[list[tuple[str, int, int]], int]:
                  ["ls-files", "--others", "--exclude-standard", "*.md"]):
         listing += subprocess.run(
             ["git", "-C", str(repo), *args],
-            capture_output=True, text=True,
+            capture_output=True, encoding="utf-8", errors="replace",
         ).stdout.splitlines()      # NOT .split() — a tracked path may hold a space
     walked = 0
     for rel in listing:

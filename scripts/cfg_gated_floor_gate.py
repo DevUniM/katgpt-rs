@@ -37,6 +37,7 @@ zero. That inheritance is asserted in `selftest()` below, not assumed.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -242,7 +243,11 @@ def run_auditor(script: Path) -> dict:
     proc = subprocess.run(
         [sys.executable, str(script), "--json", str(REPO_ROOT)],
         capture_output=True,
-        text=True,
+        encoding="utf-8", errors="replace",
+        # The CHILD's encoder matters too (Issue 778): this auditor prints
+        # `✓`/`⛔`, and on a non-UTF-8 box its own stdout write raises before
+        # anything reaches the pipe we just pinned.
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if proc.returncode != 0:
         raise SystemExit(

@@ -211,7 +211,7 @@ def parse(tsv):
 def run_local(driver, shell):
     try:
         p = subprocess.run(["/bin/sh", driver, shell],
-                           capture_output=True, text=True, timeout=300)
+                           capture_output=True, encoding="utf-8", errors="replace", timeout=300)
     except (OSError, subprocess.TimeoutExpired) as e:
         return None, f"{e}"
     return parse(p.stdout), None
@@ -222,7 +222,7 @@ def run_docker(driver, image, shell):
     cmd = ["docker", "run", "--rm", "-v", f"{d}:/w", "-w", "/w",
            image, "/bin/sh", f"/w/{os.path.basename(driver)}", shell]
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        p = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=600)
     except (OSError, subprocess.TimeoutExpired) as e:
         return None, f"{e}"
     if p.returncode != 0 and not p.stdout.strip():
@@ -304,7 +304,7 @@ def main():
                       "  not the same as measured-zero. Re-run where a daemon exists.")
         else:
             probe = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"],
-                                   capture_output=True, text=True)
+                                   capture_output=True, encoding="utf-8", errors="replace")
             if probe.returncode != 0:
                 if not args.tsv:
                     print("\n  docker: daemon NOT RUNNING — the non-3.2 half is UNSEEN.")

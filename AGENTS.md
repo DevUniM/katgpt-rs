@@ -174,7 +174,12 @@ does not account for native children at all (Issue 776, measured below) and
 the gate now prints `CPU SUPPRESSED` rather than the 1.26s it used to. Take
 the 18-check CPU figure from the next M3 run; do NOT read 13.37s forward
 across a CHECKS change, and do not read a Windows run's number — there is
-none — as a speedup.
+none — as a speedup. The set moved again the SAME DAY, to **19** (Issue 778's
+`subprocess_encoding_gate.py`, a 60-file tracked-`*.py` walk over 44
+`subprocess` call sites, measured **~0.6s wall**), so the M3 run owes a 19-check
+figure and the 18-check cell will never be measured at all — which is the
+point of writing the CHECKS count next to the number instead of the number
+alone.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -253,6 +258,7 @@ develop work. One line per check:
 | `issue_citation_gate.py` | a cross-repo `Issue N` citation naming no repo — it rebinds to the WRONG document once that number is allocated locally (Issue 749). In CI the cross-repo axis is DEFERRED to the workstation run — the `DOCS_GATE_CI` marker's instrument-alive verdict, because the sibling workspace is absent in a single checkout |
 | `markdown_fence_gate.py` | a fenced code block never closed — everything after it renders as code, and a fence scanner mis-phases on it (Issue 756) |
 | `platform_dead_code_floor_gate.py` | an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775) |
+| `subprocess_encoding_gate.py` | a `subprocess` call that decodes with the SYSTEM locale — silent mojibake, or `stdout = None` with the returncode intact (Issue 778) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
 The `CHECKS` count is deliberately not written here — it drifted once, which
@@ -802,6 +808,43 @@ scripts/platform_dead_code_audit.py --prove-fires ea4c2873
   archive` to re-prove a fact about a frozen commit is worth a workstation run
   and not a per-push one (the gate is ~6.2s against a ~13s whole-docs-gate
   budget).
+
+## `text=True` decodes with the SYSTEM locale — `scripts/subprocess_encoding_gate.py`
+
+`subprocess.run(..., text=True)` decodes the child's pipe with
+`locale.getencoding()`. macOS, `ubuntu-latest` and the M3 are all UTF-8, so
+**nothing that could notice this ever runs it** — and every instrument in
+`scripts/` prints `✓`, `✗`, `⛔` and em-dashes. Measured on the Windows
+workstation (cp874), against this repo's own `git log -3 --format=%s`:
+
+| form | the em dash `E2 80 94` comes back as |
+|---|---|
+| `text=True` | `0xe42 0x20ac 0x201d` — three cp874 chars, silently |
+| `encoding="utf-8"` | `0x2014` |
+
+Two failure modes, and the **crash is the better one**. Silent mojibake: rc 0,
+a plausible string, and a caller matching `re.search(r"FAILED — (\d+)", out)`
+matches nothing and reads a confident **zero findings**. Or the decode raises
+inside `subprocess`'s reader THREAD, where the exception dies — `run()` returns
+normally with the **returncode PRESERVED and `stdout = None`**, which is what
+`citation_drift_sweep.gate_says()` got.
+
+`PYTHONIOENCODING=utf-8` does **not** fix the first mode and makes the second
+MORE likely: it pins the CHILD's encoder, so the child emits correct UTF-8 that
+the parent then decodes as cp874. Both halves are needed, and they are pinned
+as separate classes — **DECODE** (`text=True` with no `encoding=`) and
+**CHILD-ENCODER** (a `sys.executable` spawn with no `PYTHONIOENCODING` in its
+`env=`) — because a shared pin would hide which half regressed.
+
+It is a per-push **gate** and not a sweep-and-done for one reason:
+`staged_set_audit.py` has carried the correct form *and a comment naming this
+exact defect, dated 2026-09-04*, since the day it was written, and 27 more call
+sites were added without it. The ceiling is 0 on both classes over a floored
+population (tracked `*.py` AND `subprocess` call sites); the span matcher is
+paren-matched, not line-scoped, because `encoding=` is written on a later line
+than `text=True` in every wrapped call here. Its first real run found a 28th
+site nobody had grepped for — `.agents/skills/doc-sync/tools/linkcheck_sweep.py`,
+outside `scripts/` entirely.
 
 ## Before committing in a shared worktree — `scripts/staged_set_audit.py`
 

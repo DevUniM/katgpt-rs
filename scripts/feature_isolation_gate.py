@@ -58,7 +58,7 @@ DIFF_FILE_RE = re.compile(r"^\+\+\+ b/(.*)$")
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, **kw)
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", **kw)
 
 
 def rev(ref: str) -> str | None:

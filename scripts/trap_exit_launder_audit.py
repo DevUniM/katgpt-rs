@@ -784,7 +784,7 @@ def main():
 
     print("── premise (re-measured on this box, not quoted from the docstring) ──")
     bash_v = subprocess.run(["bash", "-c", "echo $BASH_VERSION"],
-                            capture_output=True, text=True).stdout.strip()
+                            capture_output=True, encoding="utf-8", errors="replace").stdout.strip()
     print(f"  bash {bash_v}")
     launders = 0
     diverged = 0

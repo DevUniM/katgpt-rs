@@ -87,7 +87,7 @@ def changed_files(repo: Path, base: str, head: str) -> list[Path]:
     proc = subprocess.run(
         ["git", "-C", str(repo), "diff", "--name-only", "--diff-filter=d", base, head],
         capture_output=True,
-        text=True,
+        encoding="utf-8", errors="replace",
         check=False,
     )
     if proc.returncode != 0:
@@ -104,7 +104,7 @@ def show(repo: Path, rev: str, rel: str) -> str | None:
     """
     proc = subprocess.run(
         ["git", "-C", str(repo), "show", f"{rev}:{rel}"],
-        capture_output=True, text=True, check=False,
+        capture_output=True, encoding="utf-8", errors="replace", check=False,
     )
     return proc.stdout if proc.returncode == 0 else None
 
