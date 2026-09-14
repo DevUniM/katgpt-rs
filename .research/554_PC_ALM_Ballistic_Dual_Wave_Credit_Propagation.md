@@ -162,7 +162,7 @@ Issue 775 CLOSED — the modelless extraction landed behind the opt-in
 `dual_wave` flag in BOTH crates (`katgpt-core::dual` T1–T4+T8,
 `katgpt-dec::wave_kernel` T5+T9), GOAT ALL PASS ([Bench
 763](../.benchmarks/763_dual_wave_goat.md)). Landing commit:
-`LANDING_HASH` (docs close-out in the follow-up commit). Measured on the
+`3a59abe1` (docs close-out in the follow-up commit). Measured on the
 way: the per-layer-rate blowup (the Jury bound is per singular mode of the
 STACKED operator), the Gershgorin overshrink (~2× on η), the ‖AᵀAv‖-vs-‖AᵀAv‖²
 power-iteration bug, and the finite-T physics (arrival ballistic at 2L;

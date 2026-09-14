@@ -11,7 +11,7 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
-## Issue 775 (2026-09-14, M3 session) resolved — dual_wave: the PC-ALM dual accumulator + closed-form rate laws (core) + the ballistic DEC wave kernel (dec), GOAT ALL PASS, opt-in
+## Issue 775 (2026-09-14, M3 session) resolved in `3a59abe1` — dual_wave: the PC-ALM dual accumulator + closed-form rate laws (core) + the ballistic DEC wave kernel (dec), GOAT ALL PASS, opt-in
 
 Research 554 (PC-ALM, arXiv:2605.31022) distilled into a two-crate opt-in
 feature (`dual_wave` in BOTH katgpt-core and katgpt-dec, same name). Core
