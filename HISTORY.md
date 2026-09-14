@@ -11,6 +11,28 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## The Windows all-features lane — NEON_U8 platform gate, first specimen of the platform-dead_code class (2026-09-14, 4090 session)
+
+Found by the idle Protocol B sweep (`cargo clippy --workspace --all-targets
+--all-features`, the lane NO CI owns: `full_gate` runs macOS/aarch64 where the
+const is USED, `wasm32_gate` compiles wasm32 — neither ever compiles
+x86_64-native with all features). `NEON_U8` (`katgpt-pruners`
+`interval_pruner/simd.rs:27`) was declared without an arch gate while its only
+use sits inside the aarch64-gated `neon_is_interval_closed` — dead_code on
+every non-aarch64 host whenever `interval_pruner` compiles. Warning vintage
+`432cacf7` (2026-06-12); the `8914b79d` "--all-features backlog 141→0" sweep
+ran on a host where the const is alive, so its zero was host-scoped truth —
+the standing "a platform is part of the claim" lesson with a fresh instance.
+Fixed `ea4c2873` (gate mirrors the adjacent `AVX2_U8` line; interval_pruner
+lib tests 166/166 on x86_64). The same sweep found the instrument lesson
+recorded in riir-clippy's snapshot: a `clippy::`-prefixed JSON grep reads a
+FALSE all-clean — rustc-family codes (`dead_code`, `unused_*`) carry no
+prefix; grep all warning codes, and filter the Windows hard-link
+incremental-cache noise by message content, never by unit tally. The class
+recurred same-day in the zed fork (4 more specimens, incl. an ungated
+macOS-only Metal example and the issue-021 file's own `KEYCHAIN_SERVICE`) —
+class record + detection shape: riir-clippy `.distill/001` P22 (`61bb0d54`).
+
 ## Post-513 develop drift — the 09-12→09-14 touched-rows window audited green on the workstation (2026-09-14, M3 session)
 
 Issue 513's T2 sweep measured this repo's 623 rows through its 09-05..09-11 window; the
