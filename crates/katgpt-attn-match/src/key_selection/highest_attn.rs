@@ -23,6 +23,10 @@ use crate::{
 /// Descending comparator that can never rank NaN into a top-t selection.
 /// Mirrors `katgpt_core::float_order::desc` (the workspace substrate for this
 /// shape) — duplicated locally ONLY because that crate is an optional dep here.
+/// The total_cmp args are REVERSED (key(b) vs key(a)): the f2c305dd sweep
+/// wrote them forward, which made this ASCENDING — top-t selection picked
+/// the LOWEST-attention keys for 9 days (katgpt-rs Issue 729 regression;
+/// caught by the riir-ai all-features lane, Issue 957).
 #[inline]
 fn desc_nan_last(a: &f32, b: &f32) -> core::cmp::Ordering {
     let key = |x: &f32| {
@@ -34,7 +38,7 @@ fn desc_nan_last(a: &f32, b: &f32) -> core::cmp::Ordering {
             *x
         }
     };
-    key(a).total_cmp(&key(b))
+    key(b).total_cmp(&key(a))
 }
 
 /// Select top-t keys by aggregated attention score.
