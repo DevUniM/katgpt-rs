@@ -343,6 +343,13 @@ definitions. What it did find is a stale WARRANT — the gate's docstring carrie
 16 repos at **8,694 / 26,598**, 22% and **46%** lower, because 23k of those
 sites were in trees no repo owns. Both floors bite in all 16 here, unlike 783's
 population — a measured difference, not an assumption),
+`wasm32_surface_drift_sweep.py` (every contract repo, on demand — the Issue 785
+verdict half of `wasm32_surface_audit.py`, which had been a report with no
+verdict at all. `max_unresolved = 0` is a WALL (a ratchet on a bucket whose
+meaning is *unanswered* is a backlog), UNCOVERED is pinned by **NAME** in
+`scripts/wasm32_uncovered_expected.txt` and reds in BOTH directions, and the
+walk floor is the ONLY blindness detector here — vacuous in 7 of 16 repos,
+which is why a reserved `TOTALS` row floors the population globally),
 `highwater_contiguity_audit.py` (report-only, every contract repo: is a
 repo's `.highwater` a contiguous allocation ledger — Issue 768's measured
 REFUTATION of the counter-as-ownership-witness: 438 gaps + 27 resets over 73
@@ -848,6 +855,15 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   post-774): **26 NAMED · 2 BY-DEP · 0 UNRESOLVED · 1 UNCOVERED** over
   216 files / 29 packages / 20 repos — the growth vs 2026-09-08 is
   sibling-added wasm32 surface, not audit drift.
+- ⛔ **That standing sentence was hand-typed and asserted by nothing** until
+  Issue 785 — the shape Issue 784 had just closed one instrument over, where
+  the same kind of cross-repo total went **46%** stale with no run noticing.
+  The verdict half is `scripts/wasm32_surface_drift_sweep.py` now, sharing the
+  report's `classify_repo()` so the 738 resolver and the 774 closure exist in
+  one place. **Take the figure from a run, not from this bullet.** The 16-repo
+  measurement on a partial box is 213 files / 28 packages / 25 NAMED, and
+  `TOTALS` in `scripts/wasm32_surface_drift_floors.txt` is pinned against that
+  — re-pin it, and the four absent per-repo rows, from one full-checkout run.
 - ⛔ It produced three confident wrong answers before it produced a right one,
   all in the classifier: a walk of **0 files** (a Python `\s` handed to
   `git grep -E`, which is POSIX ERE — caught only because the walk size prints

@@ -1,0 +1,30 @@
+# The UNCOVERED set for scripts/wasm32_surface_drift_sweep.py — by NAME.
+#
+# Format: <repo> <package>
+#
+# An UNCOVERED package carries positive `#[cfg(target_arch = "wasm32")]` code
+# that NO lane row in its repo can reach. That is code which compiles nowhere:
+# seal-remake's (`.issues/010` T2, katgpt-rs Issue 738) had been uncompilable
+# since the day it was written — it called a `cfg(not(wasm32))` function — and
+# nothing said so for months.
+#
+# ⛔ Pinned by MEMBERSHIP, never by count. A `max_uncovered = 1` ceiling goes
+# green on the day the row below is repaired and a different package regresses;
+# a count is not a checksum over a set (trap_sentinel_gate.py's rule). The
+# sweep reds in BOTH directions: a package here that is no longer UNCOVERED is
+# a pin that has stopped asserting anything, and must be dropped in the commit
+# that covered it.
+#
+# ⛔ Adding a row is not the repair for a red. The repair is a lane row, or
+# deleting a dead arm. A row belongs here only when a package is UNCOVERED
+# BY DESIGN and somebody has said so.
+#
+#  repo                  package
+seal-online-remaster     seal-poc-submodule
+
+# seal-poc-submodule is the standing NEGATIVE CONTROL, recorded as such in
+# AGENTS.md since 2026-09-14: deliberately excluded from its repo's CI and
+# depended on by nothing, so it must stay UNCOVERED rather than be "fixed". It
+# is also what proves the by-dep credit (Issue 774) did not become a blanket
+# amnesty — that repo is read-only from here, and arm-vs-row is its owner's
+# call.

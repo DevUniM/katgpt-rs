@@ -54,6 +54,7 @@ import sys
 import tempfile
 import tomllib
 from pathlib import Path
+from typing import NamedTuple
 
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
@@ -482,6 +483,82 @@ def verdict_for(
     return "\u2717 UNCOVERED"
 
 
+class RepoSurface(NamedTuple):
+    """One repo's wasm32 surface, bucketed — the verdict AND its population.
+
+    Extracted from `main()` by Issue 785 so the workstation verdict half
+    (`wasm32_surface_drift_sweep.py`) consumes the SAME 738/774 resolution
+    rules the report does. A second copy of those rules would be the
+    two-parsers-disagree trap the required-features family documents, and
+    they are the whole instrument here: the derived-row upgrade (738 T1) and
+    the path-dep closure (774) are what separate 25 NAMED from 17 false
+    UNCOVERED.
+    """
+
+    files_walked: int
+    hits: dict           # package -> positive-cfg site count
+    rows: int
+    wildcards: int
+    derived: int
+    root_only: int
+    named: set
+    resolved: set
+    bydep: set
+    res_notes: list
+    dep_notes: list
+
+    @property
+    def reachable(self) -> bool:
+        """A `--workspace` or derived row exists — the precondition that makes
+        an unclassified package UNRESOLVED rather than UNCOVERED."""
+        return (self.wildcards + self.derived) > 0
+
+    def verdicts(self) -> dict:
+        """package -> verdict string, for every package with positive cfgs."""
+        return {
+            pkg: verdict_for(pkg, self.named, self.resolved, self.bydep,
+                             self.reachable)
+            for pkg in self.hits
+        }
+
+    def bucket(self, mark: str) -> list:
+        return sorted(p for p, v in self.verdicts().items() if v == mark)
+
+
+def classify_repo(repo: Path) -> RepoSurface:
+    """Walk + classify one repo. No printing — the caller decides the shape."""
+    hits, positive_files, files_walked = positive_packages(repo)
+    if not hits:
+        return RepoSurface(files_walked, {}, 0, 0, 0, 0,
+                           set(), set(), set(), [], [])
+    named, rows, wildcards, derived, root_only, row_files = lane_coverage(repo)
+    row_texts = []
+    for rel in row_files:
+        try:
+            row_texts.append((repo / rel).read_text(encoding="utf-8",
+                                                    errors="replace"))
+        except OSError:
+            pass
+    if root_only:
+        root_pkg = package_of(repo, "Cargo.toml")
+        if root_pkg:
+            named.add(root_pkg)
+    # Issue 738 T1: resolve the derived-row question per package, with the
+    # evidence rule recorded per upgrade. UNRESOLVED stays UNRESOLVED for
+    # anything no rule covers — the bucket remains the honest "a human has not
+    # answered this yet", never folded into NAMED.
+    resolved, res_notes = resolve_unresolved(repo, hits, positive_files,
+                                             row_texts, named)
+    # Issue 774: seeds are EVERYTHING a row provably compiles — the
+    # literally-named set plus the derived upgrades — because a derived row's
+    # `-p` list compiles its path-dep closure exactly like a literal one does.
+    seeds = set(named) | set(resolved)
+    graph = dep_graph(repo, manifest_pkg_names(repo))
+    bydep, dep_notes = by_dep_cover(graph, seeds, hits)
+    return RepoSurface(files_walked, hits, rows, wildcards, derived, root_only,
+                       named, resolved, bydep, res_notes, dep_notes)
+
+
 def self_test() -> int:
     """Prove the by-dep detectors fire, BOTH directions (Issue 774 landing).
 
@@ -583,61 +660,38 @@ def main() -> int:
     findings: list[tuple[str, str, int]] = []
     unresolved: list[tuple[str, str, int]] = []
     for repo in repos:
-        hits, positive_files, files_walked = positive_packages(repo)
-        tot_files += files_walked
-        if not hits:
-            if files_walked:
-                print(f"  {repo.name}: {files_walked} file(s) mention wasm32, "
+        # ONE classifier, shared with the workstation verdict half (Issue 785).
+        # The 738 derived-row upgrade and the 774 path-dep closure ARE the
+        # instrument here — they are what separate 25 NAMED from 17 false
+        # UNCOVERED — so the sweep imports them rather than restating them.
+        s = classify_repo(repo)
+        tot_files += s.files_walked
+        if not s.hits:
+            if s.files_walked:
+                print(f"  {repo.name}: {s.files_walked} file(s) mention wasm32, "
                       f"0 with POSITIVE cfgs (all native-only guards) — nothing to compile")
             continue
-        named, rows, wildcards, derived, root_only, row_files = lane_coverage(repo)
-        row_texts = []
-        for rel in row_files:
-            try:
-                row_texts.append((repo / rel).read_text(encoding="utf-8", errors="replace"))
-            except OSError:
-                pass
-        if root_only:
-            root_pkg = package_of(repo, "Cargo.toml")
-            if root_pkg:
-                named.add(root_pkg)
-        # Issue 738 T1: resolve the derived-row question per package, with
-        # the evidence rule recorded per upgrade. UNRESOLVED stays UNRESOLVED
-        # for anything no rule covers — the bucket remains the honest "a
-        # human has not answered this yet", never folded into NAMED.
-        resolved, res_notes = resolve_unresolved(
-            repo, hits, positive_files, row_texts, named
-        )
-        # Issue 774: seeds are EVERYTHING a row provably compiles — the
-        # literally-named set plus the derived upgrades — because a derived
-        # row's `-p` list compiles its path-dep closure exactly like a
-        # literal one does.
-        seeds = set(named) | set(resolved)
-        graph = dep_graph(repo, manifest_pkg_names(repo))
-        bydep, dep_notes = by_dep_cover(graph, seeds, hits)
-        tot_pos_pkgs += len(hits)
-        reachable = wildcards + derived
-        print(f"  {repo.name}: {files_walked} file(s) walked · "
-              f"{len(hits)} package(s) with positive cfgs · "
-              f"{rows} wasm32 row(s) ({wildcards} --workspace, {derived} derived, "
-              f"{root_only} root-only)")
-        for pkg in sorted(hits):
-            mark = verdict_for(pkg, named, resolved, bydep, reachable > 0)
+        tot_pos_pkgs += len(s.hits)
+        print(f"  {repo.name}: {s.files_walked} file(s) walked · "
+              f"{len(s.hits)} package(s) with positive cfgs · "
+              f"{s.rows} wasm32 row(s) ({s.wildcards} --workspace, "
+              f"{s.derived} derived, {s.root_only} root-only)")
+        for pkg, mark in sorted(s.verdicts().items()):
             if mark == "? UNRESOLVED":
                 tot_unres += 1
-                unresolved.append((repo.name, pkg, hits[pkg]))
-            elif mark == "\u2717 UNCOVERED":
+                unresolved.append((repo.name, pkg, s.hits[pkg]))
+            elif mark == "✗ UNCOVERED":
                 tot_uncov += 1
-                findings.append((repo.name, pkg, hits[pkg]))
-            elif mark == "\u2713 by-dep":
+                findings.append((repo.name, pkg, s.hits[pkg]))
+            elif mark == "✓ by-dep":
                 tot_bydep += 1
-            print(f"      {mark:<14} {pkg}  ({hits[pkg]} site(s))")
+            print(f"      {mark:<14} {pkg}  ({s.hits[pkg]} site(s))")
         # sorted: the resolver's note sets iterate in PYTHONHASHSEED order,
         # and an unsorted report is not diffable run-to-run (cosmetic-only
         # churn was masking real verdict flips in the landing diff).
-        for note in sorted(res_notes):
+        for note in sorted(s.res_notes):
             print(f"        · {note}")
-        for note in sorted(dep_notes):
+        for note in sorted(s.dep_notes):
             print(f"        · {note}")
     print()
     print(f"  floors — {tot_files} file(s) walked over {len(repos)} repo(s); "

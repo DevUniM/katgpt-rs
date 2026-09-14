@@ -3984,3 +3984,78 @@ checkout. That is now THREE floors files owed the same one-commit repair:
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/784_the_orphaned_attr_cross_repo_claim_is_hand_run_and_stale.md`).
+
+## Issue 785 — the wasm32 surface audit had no verdict half: CLOSED (2026-09-14)
+
+Issues 783 and 784 closed the last two per-push gates with no cross-repo sweep.
+This is the mirror gap: `scripts/wasm32_surface_audit.py` is already cross-repo
+(it derives its own population) and had **no verdict at all**. Nothing pinned
+its buckets, so a package falling out of coverage was a line in a report
+somebody runs on demand — and the workspace standing lived in AGENTS.md as a
+hand-typed sentence, the exact shape 784 had closed hours earlier after the same
+kind of total went 46% stale.
+
+**Why this class earns a wall.** An UNCOVERED package is code that has never
+compiled and that nothing will ever tell you about, because the arch it is gated
+on is one no lane passes. Measured: seal-remake's positive
+`#[cfg(target_arch = "wasm32")]` block (`.issues/010` T2, katgpt-rs Issue 738)
+was **uncompilable from the day it was written** — it called a
+`cfg(not(wasm32))` function — and nothing said so for months.
+
+**T1 was the real work: one classifier, not two.** The buckets were computed
+inline inside `main()`'s print loop, so the sweep could only reuse them via an
+extraction or a copy — and a copy of the 738 derived-row resolver plus the 774
+path-dep closure is a copy of the entire instrument. Those two rules are what
+separate **25 NAMED from 17 false UNCOVERED**; the audit's own history is three
+confident wrong answers in a row, all of them in exactly this classifier.
+Extracted as `RepoSurface` + `classify_repo()`, with `main()` rewired to consume
+it: verdicts byte-identical before and after (25 NAMED · 2 BY-DEP · 0
+UNRESOLVED · 1 UNCOVERED over 213 files / 28 packages / 16 repos), five-verdict
+`--self-test` still green, and the sweep's own selftest **invokes that canary**
+rather than restating it.
+
+**Three pin shapes, one per bucket, and none of them interchangeable:**
+
+| bucket | pinned as | why not the others |
+|---|---|---|
+| UNRESOLVED | `max_unresolved = 0`, a WALL | the audit refuses to fold it into either neighbour — "a human has not answered it" — and a ratchet on *unanswered* is a backlog. It reached 0 by being answered (738 T1: 15 → 0; 774 kept it there) |
+| UNCOVERED | **membership**, `scripts/wasm32_uncovered_expected.txt` | a `max_uncovered = 1` count goes green the day the pinned row is repaired and a different package regresses. A count is not a checksum over a set |
+| population | per-repo floors **plus a global `TOTALS` row** | `min_files` and `min_packages` are both **0 in 7 of 16** repos (no wasm32 surface at all), and unlike `orphaned_attr_drift_floors.txt` there is no third quantity. So an instrument blind EVERYWHERE passes every per-repo floor |
+
+That last one is not hypothetical. The audit walks via `git grep -E` — POSIX
+ERE — and a Python `\s` in the pattern made its first version report a walk of
+**0 files** with a full bucket breakdown printed over it. It was caught only
+because the walk size prints next to the verdict. `TOTALS` is that observation
+turned into an assertion, and a pins file without that row is **refused**
+(exit 2), not silently skipped.
+
+The membership pin reds in **both** directions. A package that stops being
+UNCOVERED is a pin that has stopped asserting anything, and leaving it makes the
+next real regression at that address read as already-known — so it must be
+dropped in the commit that covered it.
+
+Canaries, all measured: removing the pinned row makes it `⛔ NEW` and reds;
+adding a covered package (`riir-shader-core`) reds in the other direction;
+raising `TOTALS` min_files to 500 reds on the only floor that catches a grep
+regression; deleting the `TOTALS` row exits 2. Restored state re-verified at
+rc=0.
+
+`seal-online-remaster: seal-poc-submodule` is the single pinned row and is a
+deliberate NEGATIVE CONTROL — excluded from its repo's CI, depended on by
+nothing, that repo read-only from here. It is also what proves the Issue-774
+by-dep credit did not become a blanket amnesty.
+
+Four repos deliberately unpinned, as in the two sweeps before it. **TOTALS is
+the row that most needs the full checkout**: riir-dapps and riir-deployer both
+drive wasm32 lanes over derived unit lists, and the canonical 20-repo figure is
+216 files / 29 packages against the 213 / 28 this box can see. That makes
+**four** floors files owed one visit — `platform_dead_code`,
+`subprocess_encoding`, `orphaned_attr`, `wasm32_surface`.
+
+With this the CHECKS-to-sweep and report-to-verdict correspondence is complete:
+every cross-repo class in `scripts/` now has both halves, and the three landed
+today (783, 784, 785) were all the same defect — a rule that existed in one
+place and was re-asserted by nothing.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/785_the_wasm32_surface_standing_figure_is_asserted_by_nothing.md`).
