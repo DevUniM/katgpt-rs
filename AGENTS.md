@@ -939,32 +939,62 @@ scripts/arm_reach_audit.py --include-all      # every scripts/*.py DEFINING an a
 ```
 
 Mutate a module's source **outside its own arm bodies**, re-exec, run its arm,
-ask whether the arm noticed. Standing (2026-09-14): **21 modules · 436
-mutants · ~81s · 99 KILLED · 105 SURVIVED (live) · 111 survived in exempt
-functions · 88 CRASHED · 33 in 4 NO-ARM modules · 6 UNREACHED**.
+ask whether the arm noticed. Standing (2026-09-14, post-T3/T4): **21 modules ·
+521 mutants · ~73s · 243 KILLED · 123 SURVIVED (live) · 155 survived in exempt
+functions · 0 CRASHED · 0 NO-ARM · 0 UNREACHED**.
+
+⛔ **An earlier version of this paragraph read `99 KILLED · 88 CRASHED · 33 in
+4 NO-ARM · 6 UNREACHED`, and the CRASHED column was a classification DEFECT in
+the harness, not a property of the code.** `run_arm` wrapped the module `exec`
+and the arm CALL in one `try`, so an arm that signals by raising — 
+`required_features_static_gate.selftest` returns `None` and raises
+`SystemExit(2)`, and several others do the same — had every mutant it caught
+filed as CRASHED. Those modules could never show a KILL at all. The two phases
+are separate now (import failure → CRASHED, *evidence of nothing*; a raise
+while the arm runs → KILLED, the arm noticing), and the corrected figure is
+**243 killed against 127 previously, with CRASHED at 0**. Read the first
+number as having been wrong in the pessimistic direction; the harness was
+blaming the gates for its own boundary.
 
 - A **report, not a gate** (exit 0), except a blindness floor or a failing
   self-test (exit 2) — a harness that generates no mutants, or whose runner
   always says KILLED, prints a *perfect* score, which is the same output as
   perfection. Two floors: `MIN_MODULES` the walk, `MIN_MUTANTS` the operators.
-- **`NO-ARM` carries the real finding and pooling it either way destroys it.**
-  Four CHECKS have no arm of their own — `percentile_floor_gate`,
-  `cfg_row_implication_gate`, `trap_sentinel_gate`, `markdown_fence_gate` —
-  because they **delegate** to the classifier they import. 789 credits that,
-  correctly. But a classifier's self-test **cannot reach its consumer's pin
-  arithmetic**, which is Issue 775's exact sentence: 789's predicate asked
-  whether an arm runs, never whether it can SEE the gate it guards.
+- **`NO-ARM` carried the finding that motivated T4, and pooling it either way
+  destroys it.** Four CHECKS had no arm of their own —
+  `percentile_floor_gate`, `cfg_row_implication_gate`, `trap_sentinel_gate`,
+  `markdown_fence_gate` — because they **delegate** to the classifier they
+  import. 789 credits that, correctly. But a classifier's self-test **cannot
+  reach its consumer's pin arithmetic**, which is Issue 775's exact sentence:
+  789's predicate asked whether an arm runs, never whether it can SEE the gate
+  it guards. All four carry a `gate_selftest` now and the bucket is **0** —
+  and each needed a small EXTRACTION first, which is the finding underneath:
+  the verdict arithmetic sat inline in `main()` beside its own error messages,
+  so it was unreachable by construction.
 - **`UNREACHED` is its own marker** and it exists because the first version of
-  this report printed `✓` for it. `orphaned_attr_gate` scored 0 killed / 5
-  crashed / 7 exempt — every mutant died at import or landed in `main`, so the
-  arm distinguished *nothing*, and the row read as the cleanest in the set.
+  this report printed `✓` for it: `orphaned_attr_gate` scored 0 killed / 5
+  crashed / 7 exempt, so the arm distinguished *nothing* and the row read as
+  the cleanest in the set. Now **0** — one of the six was a genuine gap
+  (`required_features_static_gate`'s pin READER, whose line filter and
+  REQUIRED_PINS completeness check had no arm) and the other five were the
+  CRASHED misfiling above.
 - ⛔ **OPERATOR SCOPE is narrow and the whole report must be read through it.**
-  Only control flow is mutated (comparison flips, `and`↔`or`, dropped `not`,
-  bool constants). **Regex and string literals are NOT touched** — and that is
-  where most of this repo's decision logic lives. Measured:
-  `docs_gate_checks_sync` has 20 hand-verified arms that red under regex
-  perturbation and scores **0 killed** here. A low kill count is not evidence
-  an arm is weak.
+  Only control flow and off-by-one are mutated (comparison flips, `and`↔`or`,
+  dropped `not`, bool constants, `+`↔`-`). **Regex and string literals are NOT
+  touched** — and that is where most of this repo's decision logic lives.
+  Measured: `docs_gate_checks_sync` has 20 hand-verified arms that red under
+  regex perturbation and scores **2 killed of 10** here. A low kill count is
+  not evidence an arm is weak.
+  - `+`↔`-` was added in T4 for a measured reason: with comparisons alone,
+    `markdown_fence_gate` read UNREACHED while its arms asserted real
+    behaviour, because its only real decision is `n_lines - first` and no
+    comparison touches it. This repo's whole percentile section is about an
+    index landing on `n-1`, so off-by-one is the operator class that matters
+    most here.
+  - `if __name__ == "__main__"` is **skipped**, not exempted: it is the entry
+    point rather than a decidable rule, no arm can kill it, and it is in all
+    61 tracked scripts. Skipped so it cannot inflate the total `MIN_MUTANTS`
+    floors.
 - ⚠ **Reach is per MODULE, so a rule asserted by a DIFFERENT module's arm reads
   SURVIVED** — check this class FIRST on any survivor. Measured:
   `skill_repo_set_gate.derive_repos` survives here and is covered by
@@ -985,8 +1015,10 @@ functions · 88 CRASHED · 33 in 4 NO-ARM modules · 6 UNREACHED**.
   were real and closable, one was cross-module-covered, one was EQUIVALENT** —
   and closing the three took `skill_repo_set_gate` from 18 to 22 killed with
   its survivors from 7 to 3, leaving exactly the two EQUIVALENT rows and the
-  one cross-module row. The remaining ~100 rows are an unread backlog (Issue
-  790 T3); **do not quote the SURVIVED total as a defect count.**
+  one cross-module row. The **123 remaining rows are an unread backlog** (Issue
+  790 T3); **do not quote the SURVIVED total as a defect count.** T2 (a verdict
+  half) is deliberately deferred until that read: a ratchet over a backlog is
+  what Issue 785's rule forbids.
 
 ## A gate whose own failure path is asserted by nothing — `scripts/check_validation_gate.py`
 

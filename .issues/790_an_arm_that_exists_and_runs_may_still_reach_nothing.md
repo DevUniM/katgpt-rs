@@ -8,9 +8,21 @@
 documented in AGENTS.md. **T4 landed** — all four NO-ARM gates now carry a
 `gate_selftest` over their own pin arithmetic, so **NO-ARM is 0**.
 
-Standing after T4 (2026-09-14): **21 modules · 521 mutants · ~73s · 127
-KILLED · 127 SURVIVED (live) · 155 survived in exempt functions · 112
-CRASHED · 0 NO-ARM · 5 UNREACHED**.
+Standing after T3/T4 (2026-09-14): **21 modules · 521 mutants · ~73s · 243
+KILLED · 123 SURVIVED (live) · 155 survived in exempt functions · 0 CRASHED ·
+0 NO-ARM · 0 UNREACHED**.
+
+⛔ **The first post-T4 figure was `127 KILLED · 112 CRASHED · 5 UNREACHED`, and
+the CRASHED column was a DEFECT IN THIS HARNESS rather than a property of the
+gates.** `run_arm` wrapped the module `exec` and the arm CALL in one `try`, so
+an arm that signals by RAISING — `required_features_static_gate.selftest`
+returns `None` and raises `SystemExit(2)`, and others do the same — had every
+mutant it caught filed as CRASHED, and those modules could never show a KILL
+at all. The phases are separate now: an import failure is CRASHED (*evidence of
+nothing*), a raise while the arm runs is KILLED (the arm noticing). 127 → 243
+killed, CRASHED to 0, UNREACHED 5 → 1. **The harness was blaming the gates for
+its own bucket boundary** — the third time in this instrument that a bucket
+boundary WAS the finding.
 
 Two operator-set changes were forced by the T4 work and both were measured
 rather than guessed:
@@ -48,14 +60,23 @@ unchecked — a pin that asserts nothing, which is worse than a missing one
 because it reads as coverage. Every live key already carries a prefix, so the
 change is behaviour-preserving today.
 
-### T3's backlog, and the 5 UNREACHED
+### T3 so far — UNREACHED is 0
 
-`agents_repo_set_gate`, `bench_doc_audit`, `cfg_gated_floor_gate`,
-`orphaned_attr_gate`, `required_features_static_gate` all have arms that kill
-**zero** mutants under these operators. That is where T3 should start, and it
-is NOT the same claim as "their arms are worthless" — `docs_gate_checks_sync`
-has 20 hand-verified arms and kills 1, because its logic lives in regex
-literals this harness does not mutate.
+Of the six modules that read UNREACHED, **five were the CRASHED misfiling
+above** and one was a genuine gap: `required_features_static_gate`'s pin
+READER, whose line filter (`not line or "=" not in line`) and REQUIRED_PINS
+completeness check had no arm at all. The pin reader is load-bearing in the
+quiet direction — a filter that drops a real row, or a completeness check that
+passes on an incomplete file, hands `main` a dict with a missing key and the
+gate then compares a measurement against nothing. Both refusal paths are
+pinned now, with their own `✗` output SWALLOWED and merely asserted to have
+been said.
+
+**123 SURVIVED rows remain unread.** That is the rest of T3, and it is NOT the
+claim "those arms are worthless": `docs_gate_checks_sync` has 20 hand-verified
+arms and kills 2 of 10, because its logic lives in regex literals this harness
+does not mutate. Read them in this order, per the report's own caveats:
+cross-module coverage first, then EQUIVALENT, then a real gap.
 
 ---
 

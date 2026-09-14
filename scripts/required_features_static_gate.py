@@ -82,6 +82,62 @@ def selftest() -> None:
         print(f"SELFTEST FAILED: pins file missing: {PINS}", file=sys.stderr)
         raise SystemExit(2)
 
+    # ── read_pins, added by Issue 790 T3 ─────────────────────────────────
+    # `arm_reach_audit` reported this gate UNREACHED: its arms killed ZERO
+    # mutants, and all four survivors were in `read_pins` — the line-filter
+    # (`not line or "=" not in line`) and the REQUIRED_PINS completeness check.
+    # The pin READER is load-bearing in the quiet direction: a filter that
+    # drops a real row, or a completeness check that passes on an incomplete
+    # file, hands `main` a pins dict with a missing key and the gate then
+    # compares a measurement against nothing.
+    import tempfile
+
+    def _bad(label: str, body: str) -> None:
+        """`read_pins` must REFUSE `body` via SystemExit(2), not return.
+
+        The refusal's own `✗` message is SWALLOWED: both paths print before
+        raising, and a clean run that emits two real-looking failure lines is a
+        gate whose next reader assumes it is broken — the failure
+        `docs_gate.sh`'s own header warns about. The message is asserted to
+        have been said, rather than shown.
+        """
+        import contextlib
+        import io
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "pins.txt"
+            p.write_text(body, encoding="utf-8")
+            sink = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(sink):
+                    read_pins(p)
+            except SystemExit as e:
+                if e.code == 2 and sink.getvalue().strip():
+                    return
+                print(f"SELFTEST FAILED: {label} exited {e.code} saying "
+                      f"{sink.getvalue()!r}; want 2 with a reason",
+                      file=sys.stderr)
+            else:
+                print(f"SELFTEST FAILED: {label} was ACCEPTED", file=sys.stderr)
+            raise SystemExit(2)
+
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "pins.txt"
+        p.write_text("# a comment\n\nprose with no equals sign\n"
+                     "  max_invalid_rows = 0   # trailing\n"
+                     "min_rows_scanned=700\n", encoding="utf-8")
+        got = read_pins(p)
+        want = {"max_invalid_rows": 0, "min_rows_scanned": 700}
+        if got != want:
+            print(f"SELFTEST FAILED: read_pins parsed {got}, want {want} — "
+                  f"comments, blanks and equals-less prose must all be dropped "
+                  f"and every real row kept", file=sys.stderr)
+            raise SystemExit(2)
+
+    # Both refusal paths, which are the ones that must never fall through.
+    _bad("a pins file missing a REQUIRED_PIN", "max_invalid_rows = 0\n")
+    _bad("a pin whose value is not an integer",
+         "max_invalid_rows = none\nmin_rows_scanned = 700\n")
+
 
 def main() -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked

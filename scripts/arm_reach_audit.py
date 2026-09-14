@@ -285,24 +285,35 @@ def run_arm(code, path: Path, arms: set[str]) -> str:
     read is CRASHED, never SURVIVED.
     """
     ns = {"__name__": "__arm_reach__", "__file__": str(path)}
+    # ⛔ The two phases are separated DELIBERATELY, and conflating them was this
+    # harness's own defect. A mutant that breaks the module at IMPORT noticed
+    # nothing (CRASHED, evidence of nothing). An exception raised while the ARM
+    # RUNS is the arm noticing — and several arms here signal exactly that way:
+    # `required_features_static_gate.selftest` returns None and raises
+    # SystemExit(2) on failure, so under the first version every mutant it
+    # caught was filed as CRASHED and the module could never show a KILL at all.
     try:
         with _silence():
             exec(code, ns)
+    except BaseException:
+        return CRASHED
+    try:
+        with _silence():
             for name in sorted(arms & RUN_ARMS):
                 fn = ns.get(name)
                 if not callable(fn):
                     continue
                 result = fn()
+                # Three live arm shapes, none being rewritten for the harness's
+                # convenience: `-> list[str]` (failures returned), `-> int`
+                # (rc, 0 = pass), and `-> None` + raise. The first two are read
+                # here; the third is the `except` below.
                 if isinstance(result, list) and result:
                     return KILLED
                 if isinstance(result, int) and result != 0:
                     return KILLED
-                if not isinstance(result, (list, int)) and result is not None:
-                    return CRASHED
     except BaseException:
-        # SystemExit included, deliberately: a mutant that makes an arm exit is
-        # a mutant the arm noticed, and several arms refuse via SystemExit(2).
-        return CRASHED
+        return KILLED
     return SURVIVED
 
 
@@ -472,9 +483,22 @@ def selftest() -> list[str]:
             "    if not rule(10): sys.exit(2)\n"
             "    return []\n", encoding="utf-8")
         r = audit_module(refusing)
-        eq("an arm that exits on a mutant has NOTICED it (CRASHED, never SURVIVED)",
-           r["survived"], [])
+        eq("an arm that EXITS on a mutant has NOTICED it: KILLED, not CRASHED",
+           (r["survived"], r["killed"] > 0, r["crashed"]), ([], True, 0))
         eq("the refusing fixture ran at all", r["total"] > 0, True)
+
+        # …and the other side of that boundary: a mutant that breaks the
+        # module at IMPORT noticed nothing and must NOT be credited as a kill.
+        import_broken = d / "import_broken.py"
+        import_broken.write_text(
+            "TABLE = {'a': 1}\n"
+            "KEY = 'a' if TABLE['a'] >= 1 else 'missing'\n"
+            "VALUE = TABLE[KEY]\n"
+            "def rule(n):\n    return n >= 10\n"
+            "def selftest():\n    return []\n", encoding="utf-8")
+        r = audit_module(import_broken)
+        eq("a mutant that dies at IMPORT is CRASHED, never KILLED",
+           (r["crashed"] > 0, r["killed"]), (True, 0))
 
         # An `rc`-shaped arm (int, 0 = pass) is read too.
         rc_shaped = d / "rc_shaped.py"
