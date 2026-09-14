@@ -11,6 +11,7 @@
 //! | [`free_energy`] | `nL + λ·log n − (m−1)·loglog n` | the free-energy law (m = singularity multiplicity) |
 //! | [`bayes_gap`] | `λ/n` | the **Bayes-predictive** generalization-gap predictor |
 //! | [`sigmoid_wbic_weight`] | `σ(−ΔWBIC/τ)` | pairwise mixture weight for the shipped `rating`/Elo consumers (sigmoid, never softmax) |
+//! | [`sweep::noise_sweep_lambda`] | log-log CDF slope of loss deficits under seeded Gaussian noise (`slt_sweep`) | the LOCAL tangent-cone λ̂ at a frozen point — the measurement half (tubes/cones near-unbiased; star bodies carry a documented −18% tail bias; local ≠ tempered-global, Bench 765) |
 //!
 //! # Sign conventions + the two load-bearing distinctions
 //!
@@ -112,6 +113,233 @@ pub fn bic_overpenalty_nats(n: u64, a: usize, b: usize, r: usize) -> f64 {
     let lambda = rlct_reduced_rank(a, b, r);
     let half_naive = (r.min(d) as f64) * (d as f64) / 2.0;
     (half_naive - lambda) * (n as f64).ln()
+}
+
+// ── slt_sweep: the noise-sweep λ̂ estimator (Issue 782 / 781 T4) ──────
+//
+// The measurement half of the module: `V(s) = Vol{w near w₀ : K(w) < s} ∝
+// s^λ` sampled by a deterministic Gaussian direction stream on FROZEN
+// weights (R558 §2.3; Murfet et al. 2020 eq. 4.3 — the volume-codimension
+// limit, estimated as a sublevel-volume RATIO so the probe measure
+// cancels). Per noise scale t, the loss deficits uⱼ = K(w₀ + t·εⱼ) − K(w₀)
+// carry the exponent in their near-zero CDF: P(u < s) ≈ V(s)·φ̄ₜ(s),
+// where the mean shell density φ̄ₜ(s) varies with s only through the
+// sublevel set's reach. A log-log slope fit of the EMPIRICAL CDF over an
+// order-statistic ladder (counts ~ m/512 … m/16) cancels φ̄ₜ to first
+// order — both thresholds share the shell — and recovers λ where a
+// windowed Hill fit on the same samples is biased (the χ-family's
+// exponential cutoff sits inside any upper-half window; measured −28…−37%
+// at landing, the v1 failure kept here as the design record).
+//
+// Instrument boundary (measured, Bench 765): the near-zero CDF window is
+// sample-starved for λ ≳ 3 at m ≤ 2048 draws (a χ^d-shaped deficit needs
+// s ≪ t²d and that region holds ~Γ(d/2)-starved mass) — the feasible
+// domain is the SINGULAR regime λ ≪ d/2, which is exactly the regime this
+// module prices. Large-λ recovery stays riir-train Plan 404 (SGLD)
+// territory.
+
+/// The noise-sweep λ̂ estimator surface (Issue 782). Zero-alloc via
+/// caller-owned [`NoiseSweepScratch`]; bit-reproducible from a seed.
+#[cfg(feature = "slt_sweep")]
+pub mod sweep {
+    /// Deterministic xorshift64* + Box–Muller stream (module-canonical —
+    /// identical to the test RNG so shipped and test draws agree).
+    struct SweepRng(u64);
+
+    impl SweepRng {
+        fn new(seed: u64) -> Self {
+            Self(seed | 1)
+        }
+        fn next_u64(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn normal(&mut self) -> f64 {
+            let scale = 1.0 / 9_007_199_254_740_992.0; // 2^-53
+            let u1 = ((self.next_u64() >> 11) as f64 * scale).max(1e-300);
+            let u2 = (self.next_u64() >> 11) as f64 * scale;
+            (-2.0 * u1.ln()).sqrt() * (core::f64::consts::TAU * u2).cos()
+        }
+    }
+
+    /// Fill `dirs` (row-major `draws × dim` Gaussian matrix) from the
+    /// canonical deterministic stream. Same `(seed, len)` ⇒ bit-identical
+    /// bytes — the G3 determinism contract under every estimator call.
+    pub fn fill_gaussian_dirs(dirs: &mut [f64], seed: u64) {
+        let mut rng = SweepRng::new(seed);
+        for d in dirs.iter_mut() {
+            *d = rng.normal();
+        }
+    }
+
+    /// Probe budget + ladder shape for [`noise_sweep_lambda`].
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct NoiseSweepSpec {
+        /// Gaussian draws per scale (m). The CDF ladder spans counts
+        /// ~ m/512 … m/16; ≥ 512 recommended (slope noise ~ 1/√count).
+        pub draws: usize,
+        /// Largest (first) noise scale t₀.
+        pub scale0: f64,
+        /// Geometric ladder ratio ρ ∈ (0, 1): tₖ = t₀ · ρ^k.
+        pub scale_decay: f64,
+        /// Ladder length K ≥ 2. Scales are independently streamed
+        /// (seed mixed per scale) and the ladder aggregates by median —
+        /// a scale hitting the numerical floor drops out, not the estimate.
+        pub scales: usize,
+    }
+
+    impl Default for NoiseSweepSpec {
+        fn default() -> Self {
+            Self {
+                draws: 1024,
+                scale0: 0.5,
+                scale_decay: 0.45,
+                scales: 6,
+            }
+        }
+    }
+
+    /// Pre-allocated scratch for [`noise_sweep_lambda`] — build once per
+    /// (dim, spec), reuse across estimates. The estimate path itself
+    /// performs zero allocations (in-place order selection + in-place
+    /// ladder sort).
+    pub struct NoiseSweepScratch {
+        dirs: Vec<f64>,
+        w: Vec<f64>,
+        deficits: Vec<f64>,
+        ladder: Vec<f64>,
+    }
+
+    impl NoiseSweepScratch {
+        /// Scratch sized for `dim` parameters and `spec`'s draws/scales.
+        #[must_use]
+        pub fn new(dim: usize, spec: &NoiseSweepSpec) -> Self {
+            Self {
+                dirs: vec![0.0; spec.draws * dim],
+                w: vec![0.0; dim],
+                deficits: vec![0.0; spec.draws],
+                ladder: Vec::with_capacity(spec.scales),
+            }
+        }
+    }
+
+    /// The noise-sweep λ̂ estimate: median over the ladder of per-scale
+    /// log-log CDF-slope fits (the shell-cancelling volume-codimension
+    /// estimator — see the module doc for why this form and not a
+    /// windowed Hill fit).
+    ///
+    /// `loss` is evaluated at `1 + scales · draws` points total — a
+    /// freeze/consolidation-seam instrument (R558 §5), never a per-tick
+    /// signal. Scales whose deficits contain a non-positive or non-finite
+    /// entry are skipped (numerical floor / not-a-minimum); if no scale
+    /// yields a valid fit the estimate is NaN — never a silent zero.
+    ///
+    /// Determinism: identical `(spec, w0, seed)` ⇒ bit-identical result
+    /// (fixed per-scale streams, in-place sort, closed-form arithmetic).
+    #[must_use]
+    pub fn noise_sweep_lambda<L>(
+        spec: &NoiseSweepSpec,
+        w0: &[f64],
+        mut loss: L,
+        scratch: &mut NoiseSweepScratch,
+        seed: u64,
+    ) -> f64
+    where
+        L: FnMut(&[f64]) -> f64,
+    {
+        let dim = w0.len();
+        let m = spec.draws.max(64);
+        debug_assert!(scratch.dirs.len() >= m * dim, "scratch sized for a larger dim/draws");
+        debug_assert!(scratch.deficits.len() >= m, "scratch deficits under-sized");
+        let l0 = loss(w0);
+
+        // CDF ladder policy (internal constant, documented): order
+        // statistics at counts i₀ … i₁, geometrically spaced, P = 8 points.
+        // The low end keeps the top quantile where the sublevel set stays
+        // inside the Gaussian shell (φ̄ cancels); the high end keeps every
+        // count ≥ 2 so the binomial noise is bounded.
+        const POINTS: usize = 8;
+        let i0 = 2.max(m / 512);
+        let i1 = ((m / 16).max(8 * i0)).min(m - 1);
+
+        scratch.ladder.clear();
+        for s in 0..spec.scales.max(1) {
+            let t = spec.scale0 * spec.scale_decay.powi(s as i32);
+            // Independent per-scale stream (splitmix-style mixing).
+            fill_gaussian_dirs(
+                &mut scratch.dirs[..m * dim],
+                seed ^ (s as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15),
+            );
+            let mut scale_valid = true;
+            for j in 0..m {
+                let off = j * dim;
+                for (i, wi) in scratch.w[..dim].iter_mut().enumerate() {
+                    *wi = w0[i] + t * scratch.dirs[off + i];
+                }
+                let u = loss(&scratch.w[..dim]) - l0;
+                if u.is_finite() && u > 0.0 {
+                    scratch.deficits[j] = u;
+                } else {
+                    scale_valid = false;
+                    break;
+                }
+            }
+            if !scale_valid {
+                continue;
+            }
+            scratch.deficits[..m].sort_unstable_by(|a, b| {
+                a.partial_cmp(b).expect("deficits pre-checked finite > 0")
+            });
+            // Weighted least squares of ln p̂ on ln s over the ladder;
+            // weights ∝ count (Poisson). Slope = λ̂ (p ∝ s^λ).
+            let mut sw = 0.0;
+            let mut swx = 0.0;
+            let mut swy = 0.0;
+            let mut sxx = 0.0;
+            let mut sxy = 0.0;
+            for p in 0..POINTS {
+                let frac = p as f64 / (POINTS - 1) as f64;
+                let idx = (i0 as f64 * (i1 as f64 / i0 as f64).powf(frac)).round() as usize;
+                let s_l = scratch.deficits[idx - 1].ln();
+                let y_l = ((idx as f64 - 0.5) / m as f64).ln();
+                let w = idx as f64;
+                sw += w;
+                swx += w * s_l;
+                swy += w * y_l;
+            }
+            for p in 0..POINTS {
+                let frac = p as f64 / (POINTS - 1) as f64;
+                let idx = (i0 as f64 * (i1 as f64 / i0 as f64).powf(frac)).round() as usize;
+                let s_l = scratch.deficits[idx - 1].ln();
+                let y_l = ((idx as f64 - 0.5) / m as f64).ln();
+                let w = idx as f64;
+                sxx += w * (s_l - swx / sw) * (s_l - swx / sw);
+                sxy += w * (s_l - swx / sw) * (y_l - swy / sw);
+            }
+            if sxx > 0.0 && sxy.is_finite() {
+                let lam = sxy / sxx;
+                if lam.is_finite() && lam > 0.0 {
+                    scratch.ladder.push(lam);
+                }
+            }
+        }
+        if scratch.ladder.is_empty() {
+            return f64::NAN;
+        }
+        scratch
+            .ladder
+            .sort_unstable_by(|a, b| a.partial_cmp(b).expect("ladder pre-checked finite"));
+        let n = scratch.ladder.len();
+        if n % 2 == 1 {
+            scratch.ladder[n / 2]
+        } else {
+            0.5 * (scratch.ladder[n / 2 - 1] + scratch.ladder[n / 2])
+        }
+    }
 }
 
 // ── Test harness lives below; the shipped surface ends here ───────────
@@ -922,6 +1150,277 @@ mod tests {
             "const_1e-2" => 3,
             "const_1e-1" => 4,
             _ => unreachable!(),
+        }
+    }
+
+    // ── Issue 782: the noise-sweep λ̂ estimator (slt_sweep) ─────────────
+    #[cfg(feature = "slt_sweep")]
+    mod sweep_tests {
+        use super::super::sweep::*;
+
+        fn estimate<L: FnMut(&[f64]) -> f64>(dim: usize, spec: &NoiseSweepSpec, loss: L, seed: u64) -> f64 {
+            let mut scratch = NoiseSweepScratch::new(dim, spec);
+            let w0 = vec![0.0; dim];
+            noise_sweep_lambda(spec, &w0, loss, &mut scratch, seed)
+        }
+
+        /// G1 anchor 1 — quadratic bowl (ISOLATED regular minimum — star
+        /// body): λ = d/2. Measured +3.2% (d=2) / −17.1% (d=4): the
+        /// Gaussian radial tail inside the ladder band biases star bodies
+        /// DOWN as d grows (documented instrument bias, Bench 765) — gates
+        /// carry the margin, ranking within a family stays monotone.
+        #[test]
+        fn sweep_bowl_recovers_half_dimension() {
+            for (d, tol) in [(2_usize, 0.15), (4_usize, 0.25)] {
+                let spec = NoiseSweepSpec::default();
+                let lam = estimate(
+                    d,
+                    &spec,
+                    |w| 0.5 * w.iter().map(|x| x * x).sum::<f64>(),
+                    0x5EED_0782,
+                );
+                let target = d as f64 / 2.0;
+                assert!(
+                    (lam - target).abs() <= tol * target,
+                    "bowl d={d}: λ̂={lam:.4} target={target} (rel {:+.1}%)",
+                    (lam / target - 1.0) * 100.0
+                );
+            }
+        }
+
+        /// G1 anchor 2 — quartic monomial Σwᵢ⁴ (star body, no cutoff in
+        /// K itself): λ = d/4. Same star-body radial-tail bias:
+        /// +1.0% / −18.4% / −19.3% at d = 2 / 4 / 8 (measured).
+        #[test]
+        fn sweep_quartic_recovers_quarter_dimension() {
+            for (d, tol) in [(2_usize, 0.15), (4_usize, 0.25), (8_usize, 0.25)] {
+                let spec = NoiseSweepSpec::default();
+                let lam = estimate(
+                    d,
+                    &spec,
+                    |w| w.iter().map(|x| x.powi(4)).sum::<f64>(),
+                    0x5EED_0782,
+                );
+                let target = d as f64 / 4.0;
+                assert!(
+                    (lam - target).abs() <= tol * target,
+                    "quartic d={d}: λ̂={lam:.4} target={target} (rel {:+.1}%)",
+                    (lam / target - 1.0) * 100.0
+                );
+            }
+        }
+
+        /// G1 anchor 3 — planted RRR (a=b=3, r=1): λ = r(a+b−r)/2 = 2.5,
+        /// d = 6 params — the LoRA-shape TUBE anchor: the flat fiber makes
+        /// the sublevel sets tubes, the along-tube Gaussian factor is
+        /// s-independent and cancels — measured −1.1%, the near-unbiased
+        /// class (singular geometries: tubes/cones).
+        #[test]
+        fn sweep_planted_rrr_recovers_tangent_dimension() {
+            let mut planted = [0.0_f64; 6];
+            fill_gaussian_dirs(&mut planted, 99);
+            let (a, b) = planted.split_at(3);
+            // W* = A*·B* (3×3 rank-1); loss over w = [A (3), B (3)].
+            let loss = |w: &[f64]| {
+                let mut acc = 0.0;
+                for i in 0..3 {
+                    for j in 0..3 {
+                        let dw = w[i] * w[3 + j] - a[i] * b[j];
+                        acc += dw * dw;
+                    }
+                }
+                acc
+            };
+            let spec = NoiseSweepSpec::default();
+            let mut scratch = NoiseSweepScratch::new(6, &spec);
+            let lam = noise_sweep_lambda(&spec, &planted, loss, &mut scratch, 0x5EED_0782);
+            let target = 2.5;
+            assert!(
+                (lam - target).abs() <= 0.15 * target,
+                "rrr: λ̂={lam:.4} target={target} (rel {:+.1}%)",
+                (lam / target - 1.0) * 100.0
+            );
+        }
+
+        // ── The paper's ReLU toy (Murfet et al. 2020 §6) ──────────────────
+        // H=5 two-layer ReLU on x ∈ [−1,1]², d = 4H+1 = 21 params, layout
+        // [wᵢx, wᵢy, bᵢ, qᵢ]×5 then c. Truth s_m (m=3): ridge directions at
+        // angles π/m + (i−1)·2π/m, b = −1/3, q = 1; units m+1..=H dead.
+        // K is a finite midpoint sum over a FIXED 32×32 point set (the
+        // paper's own empirical L_n is the same construction at n=1000):
+        // exact f64 arithmetic, no quadrature-error floor.
+        const TOY_H: usize = 5;
+        const TOY_M: usize = 3;
+        const TOY_DIM: usize = 4 * TOY_H + 1;
+
+        fn toy_truth() -> [f64; TOY_DIM] {
+            let mut s = [0.0_f64; TOY_DIM];
+            for i in 0..TOY_M {
+                let ang = core::f64::consts::PI / TOY_M as f64
+                    + (i as f64) * core::f64::consts::TAU / TOY_M as f64;
+                s[4 * i] = ang.cos();
+                s[4 * i + 1] = ang.sin();
+                s[4 * i + 2] = -1.0 / 3.0;
+                s[4 * i + 3] = 1.0;
+            }
+            s
+        }
+
+        fn toy_f(x: [f64; 2], w: &[f64]) -> f64 {
+            let mut out = w[4 * TOY_H]; // c
+            for i in 0..TOY_H {
+                let pre = w[4 * i] * x[0] + w[4 * i + 1] * x[1] + w[4 * i + 2];
+                if pre > 0.0 {
+                    out += w[4 * i + 3] * pre;
+                }
+            }
+            out
+        }
+
+        fn toy_loss_n(w: &[f64], truth: &[f64], n: usize) -> f64 {
+            let h = 2.0 / n as f64;
+            let mut acc = 0.0;
+            for i in 0..n {
+                for j in 0..n {
+                    let x = [-1.0 + (i as f64 + 0.5) * h, -1.0 + (j as f64 + 0.5) * h];
+                    let d = toy_f(x, w) - toy_f(x, truth);
+                    acc += d * d;
+                }
+            }
+            acc // scale-invariant for the slope fit
+        }
+
+        fn toy_loss(w: &[f64], truth: &[f64]) -> f64 {
+            toy_loss_n(w, truth, 32)
+        }
+
+        /// G1 anchor 4 — the headline singularity cell (Murfet et al. 2020
+        /// §6): d=21, d/2 = 10.5, paper SGLD reference λ ≈ 0.526 (tempered
+        /// GLOBAL). Measured LOCAL tangent-cone exponent at the s_m apex:
+        /// λ̂ ≈ 2.77 — stable under 9× denser quadrature (2.7715 → 2.7710)
+        /// and 16× draws (2.91): a local isotropic probe resolves the cone
+        /// mixture's dominant slope, NOT the tempered-global 0.526 (which
+        /// lives in strata/posterior mass a local probe cannot see — the
+        /// recorded instrument boundary, Bench 765). The GATE is the
+        /// singularity assertion: λ̂ ∈ [2.0, 3.6] — a 2.9×-to-5.3×
+        /// reduction vs d/2 — the estimator sees the singular geometry,
+        /// decisively not the parameter count.
+        #[test]
+        fn sweep_relu_toy_sees_the_singularity() {
+            let truth = toy_truth();
+            assert_eq!(toy_loss(&truth, &truth), 0.0); // w₀ on W₀ exactly
+            let spec = NoiseSweepSpec::default();
+            let mut scratch = NoiseSweepScratch::new(TOY_DIM, &spec);
+            let lam = noise_sweep_lambda(
+                &spec,
+                &truth,
+                |w| toy_loss(w, &truth),
+                &mut scratch,
+                0x5EED_0782,
+            );
+            assert!(
+                (2.0..=3.6).contains(&lam),
+                "relu toy: λ̂={lam:.4} must sit in [2.0, 3.6] vs d/2=10.5 (singularity gate)"
+            );
+        }
+
+        /// G2 — cost contract: a full default estimate is `1 + K·m` loss
+        /// evals (6145 here) with µs-class overhead per eval; generous
+        /// 250 ms debug-build ceiling guards accidental O(m²) rot on a
+        /// cold-path (freeze-time) instrument.
+        #[test]
+        fn sweep_g2_estimate_cost_ceiling() {
+            let spec = NoiseSweepSpec::default();
+            let mut scratch = NoiseSweepScratch::new(4, &spec);
+            let w0 = [0.0_f64; 4];
+            let t0 = std::time::Instant::now();
+            let lam = noise_sweep_lambda(&spec, &w0, |w| 0.5 * w.iter().map(|x| x * x).sum::<f64>(), &mut scratch, 7);
+            let el = t0.elapsed();
+            assert!(lam.is_finite());
+            assert!(
+                el.as_millis() < 250,
+                "default estimate took {el:?} (6145 trivial evals) — O(m²) rot?"
+            );
+        }
+
+        /// Diagnostics (not a gate): print every anchor's measured λ̂ and
+        /// relative error for bench recording / re-calibration.
+        /// `cargo test -p katgpt-core --features slt_sweep --lib
+        /// sweep_diagnostics -- --ignored --nocapture`
+        #[test]
+        #[ignore = "diagnostics: prints the measured ladder values"]
+        fn sweep_diagnostics() {
+            let spec = NoiseSweepSpec::default();
+            for d in [2_usize, 4] {
+                let lam = estimate(d, &spec, |w| 0.5 * w.iter().map(|x| x * x).sum::<f64>(), 0x5EED_0782);
+                println!("bowl      d={d:2}  λ̂={lam:8.4}  target={:<5} rel={:+7.2}%", d as f64 / 2.0, (lam / (d as f64 / 2.0) - 1.0) * 100.0);
+            }
+            for d in [2_usize, 4, 8] {
+                let lam = estimate(d, &spec, |w| w.iter().map(|x| x.powi(4)).sum::<f64>(), 0x5EED_0782);
+                println!("quartic   d={d:2}  λ̂={lam:8.4}  target={:<5} rel={:+7.2}%", d as f64 / 4.0, (lam / (d as f64 / 4.0) - 1.0) * 100.0);
+            }
+            let mut planted = [0.0_f64; 6];
+            fill_gaussian_dirs(&mut planted, 99);
+            let (a, b) = planted.split_at(3);
+            let rrr_loss = |w: &[f64]| {
+                let mut acc = 0.0;
+                for i in 0..3 {
+                    for j in 0..3 {
+                        let dw = w[i] * w[3 + j] - a[i] * b[j];
+                        acc += dw * dw;
+                    }
+                }
+                acc
+            };
+            let mut scratch = NoiseSweepScratch::new(6, &spec);
+            let lam = noise_sweep_lambda(&spec, &planted, rrr_loss, &mut scratch, 0x5EED_0782);
+            println!("rrr  a=b=3 r=1   λ̂={lam:8.4}  target=2.5   rel={:+7.2}%", (lam / 2.5 - 1.0) * 100.0);
+            let truth = toy_truth();
+            for n in [32_usize, 96] {
+                let mut scratch = NoiseSweepScratch::new(TOY_DIM, &spec);
+                let lam = noise_sweep_lambda(&spec, &truth, |w| toy_loss_n(w, &truth, n), &mut scratch, 0x5EED_0782);
+                println!("relu toy d=21 N={n:2}  λ̂={lam:8.4}  ref≈0.526 (SGLD)  d/2=10.5");
+            }
+            // The sample-wall probe: 16× draws moves the ladder's mass
+            // window two decades deeper (i0 stays at absolute count 2).
+            {
+                let mut deep = NoiseSweepSpec::default();
+                deep.draws = 16_384;
+                deep.scales = 3;
+                let mut scratch = NoiseSweepScratch::new(TOY_DIM, &deep);
+                let lam = noise_sweep_lambda(&deep, &truth, |w| toy_loss_n(w, &truth, 32), &mut scratch, 0x5EED_0782);
+                println!("relu toy d=21 N=32 m=16384  λ̂={lam:8.4}  (wall probe)");
+            }
+        }
+
+        /// G3 — determinism: same seed ⇒ bit-identical; different seed ⇒ a
+        /// different estimate (stream actually moved).
+        #[test]
+        fn sweep_deterministic_under_seed() {
+            let spec = NoiseSweepSpec::default();
+            let bowl = |w: &[f64]| 0.5 * w.iter().map(|x| x * x).sum::<f64>();
+            let a = estimate(4, &spec, bowl, 0x5EED_0782);
+            let b = estimate(4, &spec, bowl, 0x5EED_0782);
+            assert_eq!(a.to_bits(), b.to_bits());
+            let c = estimate(4, &spec, bowl, 0xDEAD_BEEF);
+            assert_ne!(a.to_bits(), c.to_bits());
+        }
+
+        /// G4 — alloc-free estimate path (scratch pre-built outside the
+        /// measured region; in-place selection + sort). The Issue-741
+        /// profile-free predicate.
+        #[test]
+        #[cfg(any(debug_assertions, feature = "alloc_tracking"))]
+        fn sweep_alloc_free_estimate() {
+            let spec = NoiseSweepSpec::default();
+            let mut scratch = NoiseSweepScratch::new(4, &spec);
+            let w0 = [0.0_f64; 4];
+            let bowl = |w: &[f64]| 0.5 * w.iter().map(|x| x * x).sum::<f64>();
+            crate::alloc::reset_alloc_stats();
+            let lam = noise_sweep_lambda(&spec, &w0, bowl, &mut scratch, 7);
+            let (count, _bytes) = crate::alloc::get_alloc_stats();
+            assert!(lam.is_finite());
+            assert_eq!(count, 0, "estimate path must be alloc-free");
         }
     }
 }

@@ -68,7 +68,9 @@
 # 09-04; platform-invariant per the landing analysis, zero target_os cfg
 # at default features). katgpt-core raised 2041→2053 2026-09-15 (Issue 781
 # / Bench 764 — the slt module promoted default-on, +12 tests; same box,
-# measured). Raising a floor is a
+# measured). katgpt-core raised 2053→2060 2026-09-15 (Issue 782 / Bench 765
+# — slt_sweep promoted default-on, +7 gate tests +1 ignored diagnostics;
+# same box, measured 2060/8). Raising a floor is a
 # measured act; lowering one needs a note in the commit that does it.
 #
 # --test-threads=2 is deliberate (the riir-train 507 precedent): a weekly
@@ -85,7 +87,7 @@ set -u
 
 ROWS="
 katgpt-rs:203
-katgpt-core:2053
+katgpt-core:2060
 katgpt-dec:249:pca_global
 "
 
