@@ -3692,14 +3692,21 @@ collapsing.
   window. The P0.7 re-gate measured the P0 caveat honestly: the synthetic
   harness's planted-logit σ 1–8 regime does not occur on the real Bonsai-8B
   routing surface (σ̂ ≈ 0.14) — the primitive repairs a failure mode that
-  is real in the paper's regime and absent here at n ≤ 32.
+  is real in the paper's regime and absent here at n ≤ 32 — and the Issue
+    762 T0 long-context re-measure extended the same verdict to 173 blocks
+    (σ̂ saturates 0.35; the regime never appears on real paths).
 
 🔧 Feature flag: `asentmax_schedule` (katgpt-attn; implies `dash_attn`;
 root shim forwards) — the Issue 747 family gate. Opt-in: P0's router socket
 is wired (P0.7) but the real-model re-gate measured no quality gain on the
 Bonsai-8B routing surface (σ̂ ≈ 0.14 — the over-sparsification regime is
 absent there), so promotion to default-on is NOT justified by the evidence
-(see the P0.7 row above + Bench 713's P0.7 addendum); P2/P3 remain
+(see the P0.7 row above + Bench 713's P0.7 addendum). The long-context
+re-measure (Issue 762 T0, 173 blocks) QUALIFIED that verdict — scheduled
+wins mean oracle-mass at every n ≥ 24 — but the gain is budget-confounded
+(support 2.1×), and the T0.1 promotion review (owner, 2026-09-14) decided
+it STAYS OPT-IN until an equal-budget axis shows the selection itself wins
+(Bench 713 long-context addendum; Issue 762 closed); P2/P3 remain
 unwired on any production KV path (the riir-ai consumer follow-up would be
 their hot-path gate).
 
@@ -3787,7 +3794,7 @@ Adaptive-variant precedent (zero cost unless constructed).
 GOAT-gates it onto a production path (candidates: the ASEntmax arm decision,
 the T0.1 equal-budget axis).
 
-📖 Issue: [762](../../.issues/762_asentmax_p4_stretch.md) ·
+📖 Issue: `762` (removed; git history) ·
 Research: [549](../../.research/549_ASEntmax_Length_Adaptive_Entmax_Attention.md) ·
 Bench: [759](../../.benchmarks/759_logit_regime_goat.md) — G1/G2/G4 ALL
 PASS (exact thresholds at n=100..10k; 8.2–8.6 ns/elem; 0 allocs) ·

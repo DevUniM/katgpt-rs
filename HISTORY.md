@@ -2722,6 +2722,45 @@ P4 stretch (T4.1–T4.4) deferred to Issue 762. Issue file removed per the
 noise-reduction rule; the full record lives in git history
 (`git log -- .issues/747_asentmax_modelless_mining.md`).
 
+## Issue 762 — ASEntmax P4 stretch (HoldConcentration, Kamath regime detector, per-head grid, RoPE cutoff): CLOSED (2026-09-14)
+
+Origin: Issue 747's P4 deferral. Terminal states, all four tasks decided:
+
+- **T0 long-context re-measure DONE** (2026-09-13, Bench 713 long-context
+  addendum; `asentmax_long_context_regate` gate, 5 tests over the committed
+  11,093-token / 173-block fixture): σ̂ climbs with n (0.14 → 0.35) but
+  SATURATES below the σ ≥ 1 over-sparsification regime at every measured
+  bucket (8 → 173) — the T4.3/T4.4 premise surface does not exist on real
+  paths. Second finding: the scheduled arm wins mean oracle-mass at every
+  n ≥ 24 (+0.034 overall, +0.05–0.07 at n ≥ 64) and doubles deep-needle
+  top-8 retention (59.3% vs 29.6%) — budget-confounded (support 2.1×),
+  recorded honestly in the bench.
+- **T4.1 HoldConcentration DONE** (2026-09-13, Bench 759 G1a):
+  `SsmaxMode::HoldConcentration{c,k}` — Lemma 2's softmax side, the exact
+  finite-n multiplier `ln((n−k)c/(k(1−c)))/Δ̂`; Fixed/Adaptive
+  bit-identical (re-pinned); 7–30 ns/call; ships in the default-on ssmax
+  module (Adaptive-variant precedent, zero cost unless constructed).
+- **T4.2 logit_regime DONE** (2026-09-13, Bench 759): the Kamath range-law
+  detector `ρ = Δ̂/(2σ̂√(2 ln n))` + normalized-entropy dispersion
+  (katgpt-core, opt-in feature `logit_regime`) — independent two-pass moment
+  σ̂ (only the ratio detects); Gaussian band [0.35, 1.15]; 8.2–8.6 ns/elem;
+  0 allocs. Consumers: the ASEntmax arm decision + the equal-budget reopen
+  axis.
+- **T0.1 promotion-review DECIDED (owner, 2026-09-14): option (a) —
+  `asentmax_schedule` STAYS OPT-IN.** The long-context addendum qualified
+  the P0.7 "no gain" verdict but the gain remains budget-confounded —
+  promotion is not justified by the evidence (feature-gate-audit
+  discipline). Reopen condition (measurable, stands): an equal-budget
+  recall axis or the P1 derived-k controller comparison must show the
+  SELECTION (not just the 2.1× support size) wins before any default-on
+  proposal.
+- **T4.3/T4.4 CLOSED-deferred** — the σ ≥ 1 regime does not appear at
+  n ≤ 173 (σ̂ saturates 0.35); reopen only if a real large-σ surface or a
+  longer-context regime appears — re-measure before building.
+
+Issue file removed per the noise-reduction rule; the full record lives in
+git history (`git log -- .issues/762_asentmax_p4_stretch.md`).
+
 ## Issue 772 — config-audit first pass over katgpt-rs (7 inert/assert-only knobs + orphan-report layer): CLOSED (2026-09-14)
 
 The 09-13 14-repo `--config-audit`/`--orphan-report` consumer sweep

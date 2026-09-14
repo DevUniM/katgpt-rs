@@ -121,3 +121,7 @@ anywhere in the workspace (adding the variant is additive).
   its existing modes — a consumer comparison is future work).
 - Issue 762 T4.3/T4.4 remain deferred per the T0 verdict (σ̂ saturates 0.35,
   the large-σ regime does not exist on real paths at n ≤ 173).
+- T0.1 decided (owner, 2026-09-14): option (a) — `asentmax_schedule` stays
+  opt-in; Issue 762 CLOSED with the equal-budget reopen condition recorded
+  (Bench 713 long-context addendum; record: HISTORY.md). The `logit_regime`
+  opt-in standing above is unchanged by the close.

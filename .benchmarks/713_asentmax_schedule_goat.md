@@ -373,6 +373,9 @@ noise-level at 173 blocks. PASS.
   the P1 derived-k controller comparison must show the selection (not just
   the support size) wins before any default-on proposal. Filed as the
   promotion-review task in Issue 762.
+- **T0.1 DECIDED (owner, 2026-09-14): option (a) — stays opt-in; Issue 762
+  CLOSED.** The reopen condition stands exactly as written above; no
+  default-on proposal is on the table until it fires (record: HISTORY.md).
 
 ## P2/P3 substrate check (substrate-first skill)
 
