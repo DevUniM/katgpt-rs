@@ -283,9 +283,22 @@ STRONG_OPTIN_RES = [
 
 # Weak "default" — bare word, not part of a compound (default-features,
 # default-off, default-on, default `value`).
-# Negative lookahead: "default" NOT followed by `-`, `=`, or whitespace+`(`
-# (so "default `(0.82L→0.45L)`" and "default-features" are excluded).
-WEAK_DEFAULT_RE = re.compile(r"\bdefault\b(?![-=]|\s*\(`)", re.IGNORECASE)
+# Negative lookahead: "default" NOT followed by `-`, `=`, or a parenthesised
+# backticked VALUE in either order — "default (`0.82L`)" or "default `(0.82L)`".
+#
+# ⚑ Issue 789: the lookahead was `\s*\(` + backtick only, and the ONE live
+# instance in the workspace is the other order — `default `(0.82L→0.45L)``, the
+# exact string this comment has always quoted. The excluded shape appears in no
+# manifest in any repo. It was latent because that line's comment also says
+# "promotion blocked", so rung 1 reaches a verdict before rung 6 misfires; the
+# fix changes no classification in the corpus (measured, 7465 comments).
+#
+# ⚠ Deliberately NOT widened to any backtick: `(?!\s*\(?`)` reads a
+# code-reference `default` as no claim at all and takes 21 comments of the form
+# "Not in `default` directly; transitively enabled via `X`" from `default` to
+# `unknown` — silently dropping them from the cross-check. Those 21 do carry a
+# real claim that no rung reads, which is its own gap and not this one's.
+WEAK_DEFAULT_RE = re.compile(r"\bdefault\b(?![-=]|\s*(?:\(`|`\())", re.IGNORECASE)
 
 
 def classify_comment(comment: str) -> tuple[str, str]:
@@ -340,6 +353,142 @@ def classify_comment(comment: str) -> tuple[str, str]:
     if m:
         return "default", m.group(0)
     return "unknown", ""
+
+
+def selftest() -> list[str]:
+    """Known-answer arms over the classifier ladder and the default closure.
+
+    Issue 789. This gate was one of six docs_gate CHECKS whose failure path no
+    test had ever executed — and it is the one with the most to lose from a
+    silent regression, because `classify_comment` is a SEVEN-LEVEL precedence
+    ladder whose order IS the verdict. A rule that moves one rung up or down
+    does not error; it reclassifies comments, and both directions are wrong in
+    a way that reads like a clean run.
+
+    Every arm below is an input whose answer is decidable from the ladder's own
+    docstring, and the ones marked ⚑ reproduce measured historical defects:
+    the case-SENSITIVE `Opt-in` that missed this repo's 32 `OPT-IN` lines and
+    mislabelled `signed_coupling_dynamics`, and the case-INSENSITIVE
+    `default-off` substring that `parse_status_phrase`'s word boundaries fixed.
+
+    Pure string work plus one temp manifest — runs unconditionally in `main`.
+    """
+    import tempfile
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    def status(comment: str) -> str:
+        return classify_comment(comment)[0]
+
+    # ── the ladder, rung by rung, in precedence order ─────────────────────
+    # 1. Demotion/negation beats everything: an explicit decision NOT to
+    #    promote outranks any incidental default-on mention.
+    eq("rung 1 · demoted", status("DEFAULT-ON (Plan 9): demoted 2026-01-01"), "opt-in")
+    eq("rung 1 · stays opt-in",
+       status("default-on everywhere else; stays opt-in here"), "opt-in")
+    eq("rung 1 · promotion deferred",
+       status("DEFAULT-ON candidate; promotion deferred on GOAT G2"), "opt-in")
+    eq("rung 1 · not promoted", status("default-on in root, not promoted here"), "opt-in")
+    # 2. The canonical promotion template outranks a casual opt-in mention.
+    eq("rung 2 · canonical template",
+       status("DEFAULT-ON (Plan 340): supersedes the old opt-in path"), "default")
+    # ⚑ The rung-2 paren guard is load-bearing only IN COMBINATION with rung 3:
+    #   capitalised  -> rung 2 declines, rung 3 fires          -> opt-in
+    #   lowercase    -> rung 2 declines, rung 3 misses, rung 4 -> default
+    # Its own comment names the lowercase phrasing as the false match it
+    # prevents, and that is not what happens. Both arms are pinned so the
+    # asymmetry is a measurement rather than a surprise.
+    eq("rung 2 · the paren guard defers to rung 3 (capitalised)",
+       status("DEFAULT-ON (behavior Opt-in until a consumer lands)"), "opt-in")
+    eq("rung 2 · lowercase falls through to rung 4, guard notwithstanding",
+       status("DEFAULT-ON (behavior opt-in until a consumer lands)"), "default")
+    # 3. ⚑ Explicit capitalised Opt-in, BOTH casings. The all-caps form was
+    #    missing: 32 lines here use OPT-IN against 176 using Opt-in, and any
+    #    that also mentioned default-on incidentally fell through to rung 4.
+    eq("rung 3 ⚑ Opt-in", status("Opt-in — default-on precedent in riir-ai"), "opt-in")
+    eq("rung 3 ⚑ OPT-IN (the measured miss)",
+       status("OPT-IN — promotion waits on a production consumer"), "opt-in")
+    eq("rung 3 ⚑ OPT-IN outranks a bare DEFAULT-ON mention",
+       status("OPT-IN here; DEFAULT-ON in root"), "opt-in")
+    # 4. A bare DEFAULT-ON mention, once rungs 1-3 have fallen through.
+    eq("rung 4 · bare mention", status("DEFAULT-ON in root"), "default")
+    # 5. Strong phrases, default before opt-in.
+    eq("rung 5 · on by default", status("on by default since the GOAT gate"), "default")
+    eq("rung 5 · promoted", status("promoted 2026-08-01"), "default")
+    eq("rung 5b · off by default", status("off by default; enable for eval"), "opt-in")
+    eq("rung 5b ⚑ default-off is not 'default' by substring",
+       status("default-off until G3 passes"), "opt-in")
+    eq("rung 5b · not in default", status("not in default"), "opt-in")
+    # 6. Weak bare "default" — and the compound forms it must NOT fire on.
+    eq("rung 6 · bare default", status("in the default set"), "default")
+    eq("rung 6 · default-features is not a status claim",
+       status("needs default-features = false"), "unknown")
+    # ⚑ Both orders. Backtick-then-paren is the shape that actually occurs
+    # (`cross_stage_relocation`, root Cargo.toml) and the one the lookahead
+    # missed until Issue 789; paren-then-backtick is the shape it did exclude
+    # and which occurs nowhere.
+    eq("rung 6 · a default VALUE is not a status claim (backtick first)",
+       status("default `(0.82L)` tuned per Plan 9"), "unknown")
+    eq("rung 6 · a default VALUE is not a status claim (paren first)",
+       status("default (`0.82L`) tuned per Plan 9"), "unknown")
+    # A backticked code reference to the default ARRAY still reads as a claim
+    # — pinned deliberately, because widening the lookahead to any backtick
+    # drops 21 live comments out of the cross-check (see WEAK_DEFAULT_RE).
+    eq("rung 6 · a backticked `default` reference still reads as a claim",
+       status("Not in `default` directly; transitively enabled via `x`"), "default")
+    # 7. Unknown, and the empty case.
+    eq("rung 7 · no status phrase", status("tuning knob for the decoder"), "unknown")
+    eq("rung 7 · empty comment", classify_comment(""), ("unknown", ""))
+
+    # ── extract_inline_comment: a `#` inside a quoted string is not a comment
+    eq("a plain inline comment", extract_inline_comment('foo = []  # Opt-in'), "Opt-in")
+    eq("a # inside double quotes is not a comment",
+       extract_inline_comment('foo = ["bar#baz"]'), None)
+    eq("a # inside quotes does not shadow the real comment",
+       extract_inline_comment('foo = ["bar#baz"]  # Opt-in'), "Opt-in")
+    eq("no comment at all", extract_inline_comment("foo = []"), None)
+
+    # ── _parse_intra_crate_spec: only intra-crate specs expand the closure ─
+    eq("a bare feature expands the closure", _parse_intra_crate_spec("alpha"), "alpha")
+    eq("a cross-crate spec does not",
+       _parse_intra_crate_spec("katgpt-dec/alpha"), None)
+    eq("an optional-dep spec does not", _parse_intra_crate_spec("dep:serde"), None)
+    eq("the empty spec does not", _parse_intra_crate_spec(""), None)
+
+    # ── find_cargo_defaults_per_manifest: the TRANSITIVE closure ───────────
+    # The whole drift class this gate names: `micro_belief` is default-on only
+    # because `bom_sampling` pulls it in. A one-hop closure misses it and the
+    # gate then agrees with every stale "Opt-in" comment on such a feature.
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        (repo / "Cargo.toml").write_text(
+            '[features]\n'
+            'default = ["bom_sampling"]\n'
+            'bom_sampling = ["micro_belief"]\n'
+            'micro_belief = ["deep"]\n'
+            'deep = []\n'
+            'unrelated = []\n'
+            'cross = ["katgpt-dec/other"]\n', encoding="utf-8")
+        per = find_cargo_defaults_per_manifest(repo)
+        closure = next(iter(per.values())) if per else set()
+        eq("the closure is transitive, not one-hop",
+           sorted(closure), ["bom_sampling", "deep", "micro_belief"])
+        eq("an unrelated opt-in feature stays out", "unrelated" in closure, False)
+
+        # A cycle must terminate rather than spin the fixed-point loop.
+        (repo / "Cargo.toml").write_text(
+            '[features]\n'
+            'default = ["a"]\n'
+            'a = ["b"]\n'
+            'b = ["a"]\n', encoding="utf-8")
+        cyc = next(iter(find_cargo_defaults_per_manifest(repo).values()))
+        eq("a feature cycle terminates", sorted(cyc), ["a", "b"])
+
+    return fails
 
 
 def iter_cargo_comment_labels(repo_root: Path):
@@ -452,6 +601,17 @@ def audit_repo(repo_root: Path) -> int:
 
 
 def main(argv: list[str]) -> int:
+    # The canary first. `classify_comment`'s precedence ORDER is the verdict:
+    # a rule that moves one rung reclassifies comments in both directions and
+    # errors on nothing, so a failure here is not a finding — it means no
+    # verdict is possible (exit 2, the house convention).
+    arm_failures = selftest()
+    if arm_failures:
+        print("✗ INSTRUMENT: cargo_comment_audit's own selftest does not pass, so "
+              "every classification below would be unreadable:")
+        for f in arm_failures:
+            print(f)
+        return 2
     if len(argv) < 2:
         here = Path(__file__).resolve().parent.parent
         return 1 if audit_repo(here) else 0

@@ -96,7 +96,126 @@ def parse_table(text: str) -> dict[str, str]:
     return {m.group(1): m.group(2) for m in _TABLE_ROW.finditer(body)}
 
 
+def selftest() -> list[str]:
+    """Known-answer arms over the two parsers and the quantity extractor.
+
+    Issue 789. This gate exists because two hand-duplicated lists drifted and
+    nothing compared them; it then ran for days with nothing comparing IT to a
+    known answer. Every arm below is an input whose correct output is decidable
+    by reading it, which is the only kind this gate's arithmetic admits: the
+    live inputs are the very files under test, so a "does it agree with itself"
+    check would be vacuous.
+
+    Pure string work — runs unconditionally at the top of `main()`.
+    """
+    import contextlib
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    @contextlib.contextmanager
+    def expect_exit(label: str, code: int):
+        """Assert SystemExit(code), with the arm's own output SWALLOWED.
+
+        Both refusal paths print an `✗ INSTRUMENT:` line before raising, and a
+        clean run that prints two of them is a gate whose next reader assumes
+        it is broken — the exact failure `docs_gate.sh`'s header warns about.
+        """
+        sink = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(sink):
+                yield
+        except SystemExit as e:
+            if e.code != code:
+                fails.append(f"    {label}: exited {e.code!r}, want {code!r}")
+            if "INSTRUMENT" not in sink.getvalue():
+                fails.append(f"    {label}: exited {code} without saying why "
+                             f"(no ✗ INSTRUMENT line) — a bare refusal is "
+                             f"indistinguishable from a crash")
+            return
+        fails.append(f"    {label}: did not exit at all")
+
+    # ── quantities(): an ADDRESS is not a quantity ─────────────────────────
+    eq("a quantity survives", quantities("two hand-duplicated lists"), ["two"])
+    eq("a digit is a quantity", quantities("710 row(s) scanned"), ["710"])
+    eq("case is folded", quantities("Seven predicates"), ["seven"])
+    eq("an issue address is stripped", quantities("membership (Issue 749)"), [])
+    eq("a plan address is stripped", quantities("the rule (Plan 340)"), [])
+    eq("a comma-listed address is stripped whole",
+       quantities("a number allocated twice (Issues 724, 725)"), [])
+    eq("a slash-composed address is stripped whole",
+       quantities("the floor rule (Research 322 / Plan 340)"), [])
+    eq("an address does not eat the quantity after it",
+       quantities("the ten predicates must agree (Issue 788)"), ["ten"])
+    eq("a task suffix does not extend the address",
+       quantities("the row rule (Issue 513 T6) over two lists"), ["two"])
+    # The input order is deliberately the REVERSE of the sorted order: with
+    # "three ... two" both orders coincide and the arm cannot see `sorted()`
+    # being dropped (measured — it read INERT under exactly that perturbation).
+    eq("quantities are sorted, not positional",
+       quantities("two lists and three rows"), ["three", "two"])
+    eq("no quantity is an empty list, not None",
+       quantities("membership both ways"), [])
+
+    # ── parse_checks(): the array, and refusing to read zero ──────────────
+    sample_sh = (
+        'CHECKS=(\n'
+        '  "scripts/alpha.py:first, with two lists"\n'
+        '  "beta.py:second (Issue 749)"\n'
+        ')\n'
+    )
+    eq("rows parse, basename only",
+       parse_checks(sample_sh), {"alpha.py": "first, with two lists",
+                                 "beta.py": "second (Issue 749)"})
+    # A renamed or reformatted array must exit 2 — a parser that reads zero
+    # rows reports perfect agreement between two empty sets.
+    with expect_exit("a missing CHECKS array exits 2", 2):
+        parse_checks("CHECK_LIST=(\n  \"alpha.py:x\"\n)\n")
+
+    # ── parse_table(): SCOPED to the section, not a document-wide scan ─────
+    sample_ag = (
+        f"# doc\n\n{SECTION}\n\n"
+        "| check | asserts |\n|---|---|\n"
+        "| `alpha.py` | first, with two lists |\n"
+        "| `beta.py` | second (Issue 749) |\n"
+        "\n## Some Other Section\n\n"
+        "| check | asserts |\n|---|---|\n"
+        "| `gamma.py` | an unrelated table somebody added later |\n"
+    )
+    eq("the table parses inside its section",
+       parse_table(sample_ag), {"alpha.py": "first, with two lists",
+                                "beta.py": "second (Issue 749)"})
+    eq("a later section's table is NOT absorbed",
+       "gamma.py" in parse_table(sample_ag), False)
+    with expect_exit("a retitled section exits 2", 2):
+        parse_table("# doc\n\n## Retitled\n\n| `alpha.py` | x |\n")
+
+    # The two extractors must agree on a row that is genuinely identical, and
+    # disagree on one that drifts by a NUMBER while the prose merely differs in
+    # emphasis — the whole asymmetry this gate is built on.
+    eq("emphasis-only difference is not drift",
+       quantities("pinned by membership") == quantities("pinned by MEMBERSHIP"), True)
+    eq("a number difference IS drift",
+       quantities("the six predicates") == quantities("the seven predicates"), False)
+
+    return fails
+
+
 def main() -> int:
+    # The canary runs first. A parser that goes blind here does not report a
+    # finding — it reports perfect agreement between two empty sets, which is
+    # why the floors below and these arms both exist (exit 2, not 1).
+    arm_failures = selftest()
+    if arm_failures:
+        print("✗ INSTRUMENT: docs_gate_checks_sync's own selftest does not pass, so "
+              "the comparison below would be unreadable:")
+        for f in arm_failures:
+            print(f)
+        return 2
+
     checks = parse_checks(io.open(SH, encoding="utf-8").read())
     table = parse_table(io.open(AGENTS, encoding="utf-8").read())
 
