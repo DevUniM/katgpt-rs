@@ -169,13 +169,12 @@ within a fixed CHECKS set, and only as a range.
 ⚠ The set moved to **18** on 2026-09-14 (Issue 775's
 `platform_dead_code_floor_gate.py`, a 2415-file Rust-source walk measured at
 **~6.2s wall** standalone), and the CPU figure at 18 checks is **UNMEASURED,
-not unchanged**: the landing run was on the Windows workstation, where this
-gate's own `times`-based total reads **1.26s CPU against a 19.7s wall** —
-which is not a measurement of the same quantity as the series above (the
-interpreter is resolved through a shim, and children CPU is evidently not
-being accounted; the gate's ⛔ guard only fires at ~0). Take the 18-check CPU
-figure from the next M3 run; do NOT read 13.37s forward across a CHECKS
-change, and do not read 1.26s as a speedup.
+not unchanged**: the landing run was on the Windows workstation, where `times`
+does not account for native children at all (Issue 776, measured below) and
+the gate now prints `CPU SUPPRESSED` rather than the 1.26s it used to. Take
+the 18-check CPU figure from the next M3 run; do NOT read 13.37s forward
+across a CHECKS change, and do not read a Windows run's number — there is
+none — as a speedup.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -214,6 +213,22 @@ indent destroys it (the first two versions printed a confident zero next to a
 multi-second run. Both arms verified against the block extracted from the
 tracked file: redirect → 0.45s from a child that burned 0.43s; pipe → 0.00s
 and the ⛔ fires.
+⛔ **And the ~0 guard is not the whole hazard — the figure has a PLATFORM
+premise (Issue 776, 2026-09-14).** On Windows/MSYS, `times` accounts for MSYS
+children and reports essentially nothing for NATIVE ones, so a run whose work
+is all Python prints a well-formed, plausible number built from `sed`/`tail`
+overhead alone: **1.26s CPU against a 19.7s wall**, with the ~0 guard quiet.
+Measured one child at a time, each burning ~2s CPU: an MSYS `bash -c` loop →
+**1.796s user + 0.468s sys**, `py -c` → **0.000s + 0.015s**, python.exe by
+absolute path → **0.000s + 0.045s**. So it is the MSYS/native boundary, **not**
+the `py` launcher shim — resolving a real executable recovers nothing. A
+wall-ratio test cannot separate that from a busy box (this gate's own 12.65s
+CPU on a 299.1s wall is 4%), so the gate CALIBRATES instead: it burns a known
+0.25s of CPU in a child of the resolved interpreter and requires `times` to
+have seen at least half of it, printing `CPU SUPPRESSED` and wall-only when it
+did not. Both arms measured on the same box: native child → 0.000s seen,
+suppressed; MSYS child → 0.358s seen, figure printed. **Cite the CPU figure
+from a POSIX workstation; a Windows run has no CPU number to compare.**
 
 `.github/workflows/docs_gate.yml` runs it per-push on **`main` only** —
 develop pushes do not fire it, so run `./scripts/docs_gate.sh` locally for

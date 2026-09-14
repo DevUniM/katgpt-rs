@@ -2036,6 +2036,30 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 
 ## Issue log (resolved)
 
+- **Issue 776 — the docs gate's CPU self-timing printed a well-formed number that measured nothing on Windows** FILED + RESOLVED + removed
+  (2026-09-14, same session; issue file removed at close, this row + git history are
+  the durable record; found while landing Issue 775's 18th check). The gate's own
+  header already documents one way its CPU total stops being a measurement (a forked
+  `times` reports `0m0.000s`) and guards it at ~0. This is the OTHER way, and it
+  prints a plausible number instead of a zero: on Windows/MSYS, `times` accounts for
+  MSYS children and reports essentially nothing for NATIVE ones, so a run whose work
+  is all Python reported **1.26s CPU against a 19.7s wall** — built from `sed`/`tail`
+  overhead — while AGENTS.md instructs the reader to cite exactly that figure against
+  an M3 series of 13.37s. T1, one child at a time, each burning ~2s of CPU: MSYS
+  `bash -c` loop -> children **1.796s user + 0.468s sys**; `py -c` -> **0.000s +
+  0.015s**; python.exe by ABSOLUTE PATH -> **0.000s + 0.045s**. So the interpreter
+  shim was NOT the cause and T2 is refuted by measurement — resolving a real
+  executable recovers nothing; it is the MSYS/native boundary. The fix DEVIATES from
+  T3's proposal (a CPU-vs-wall ratio): this gate's own history is 12.65s CPU on a
+  299.1s wall — 4% — so no ratio separates an unaccounted platform from a busy box.
+  It CALIBRATES instead, the house instrument-alive idiom: burn a known 0.25s of CPU
+  in a child of the RESOLVED interpreter, require `times` to have seen at least half,
+  and print `CPU SUPPRESSED` + wall-only + the remedy when it did not (T4). Both arms
+  measured on the same box: native child -> 0.000s seen, suppressed; MSYS child ->
+  0.358s seen, figure printed. Cost ~0.35s per run. Every check's VERDICT was
+  unaffected throughout — 18/18 green before and after; only the timing line was
+  wrong.
+
 - **Issue 775 — `platform_dead_code_audit.py` had no VERDICT half, and nothing automatic ran it** RESOLVED + removed
   (2026-09-14; issue file removed at close, this row + git history are the durable
   record; filed the same day the report half landed, `a0cbc398`). The report was a

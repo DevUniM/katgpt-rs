@@ -227,22 +227,68 @@ gate_wall="$("$PY" -c "print('%.1f' % ($(now) - $GATE_T0))")"
 times_out="$(mktemp)"
 times > "$times_out"
 gate_cpu="$(awk 'NR==2 { t=0; for (i=1;i<=NF;i++) { split($i, p, "m"); sub("s","",p[2]); t += p[1]*60 + p[2] } printf "%.2f", t }' "$times_out")"
-echo "  ⏱  total ${gate_wall}s wall · ${gate_cpu}s CPU in the checks (rows: this shell, then the checks)"
-sed 's/^/     /' "$times_out"
 
-# ...and the instrument must prove itself NON-INERT, because the failure mode
-# above is a well-formed number, not an error. N python3 checks cannot burn
-# ~no CPU: if the total reads as ~0 across a multi-second run, the measurement
-# broke and the figure must not be quoted.
-if [ "$(awk -v c="$gate_cpu" -v w="$gate_wall" 'BEGIN { print (c < 0.05 && w > 5) ? "INERT" : "OK" }')" = "INERT" ]; then
-    echo "  ⛔ the CPU figure above is NOT a measurement: ${gate_cpu}s of CPU across"
-    echo "     ${gate_wall}s of wall is impossible for ${#CHECKS[@]} python3 checks."
-    echo "     The times builtin was read from a forked context — do not quote it."
+# ── Does `times` account for these children AT ALL? (Issue 776) ─────────────
+# The ~0 guard below catches a number destroyed by a fork. It does NOT catch
+# the other way this figure stops being a measurement, because that one prints
+# a well-formed, plausible-looking value: on Windows/MSYS, `times` accounts for
+# MSYS children and reports essentially NOTHING for native (non-MSYS) ones.
+# Measured 2026-09-14 on this workspace's Windows box, one child at a time,
+# each burning ~2s of CPU:
+#     bash -c 'while ...'               -> children 1.796s user 0.468s sys  ✓
+#     py -c '...'                       -> children 0.000s user 0.015s sys  ✗
+#     <python.exe by absolute path>     -> children 0.000s user 0.045s sys  ✗
+# So it is the MSYS/native boundary, NOT the `py` launcher shim — resolving a
+# real executable does not recover it. The gate printed 1.26s CPU against a
+# 19.7s wall and the ~0 guard stayed quiet, while AGENTS.md instructs the
+# reader to cite exactly that figure.
+#
+# A ratio against the wall clock cannot separate the two (this gate's own
+# history is 12.65s CPU on a 299.1s wall — 4%, legitimately), so the
+# instrument proves itself instead: burn a KNOWN amount of CPU in a child and
+# check whether `times` saw it. An unaccounted platform gets a refusal, never
+# a number.
+cal_burn=0.25
+cal_before="$(awk 'NR==2 { t=0; for (i=1;i<=NF;i++) { split($i, p, "m"); sub("s","",p[2]); t += p[1]*60 + p[2] } printf "%.3f", t }' "$times_out")"
+"$PY" -c "import time
+_t = time.process_time()
+while time.process_time() - _t < $cal_burn:
+    pass" >/dev/null 2>&1
+cal_out="$(mktemp)"
+times > "$cal_out"
+cal_after="$(awk 'NR==2 { t=0; for (i=1;i<=NF;i++) { split($i, p, "m"); sub("s","",p[2]); t += p[1]*60 + p[2] } printf "%.3f", t }' "$cal_out")"
+cal_seen="$(awk -v a="$cal_after" -v b="$cal_before" 'BEGIN { d = a - b; printf "%.3f", (d > 0 ? d : 0) }')"
+# Half the burn is the bar: scheduling noise and interpreter startup move this
+# by tens of milliseconds, not by a factor of ten.
+cal_ok="$(awk -v s="$cal_seen" -v b="$cal_burn" 'BEGIN { print (s >= b / 2) ? "OK" : "UNACCOUNTED" }')"
+rm -f "$cal_out"
+
+if [ "$cal_ok" = "UNACCOUNTED" ]; then
+    echo "  ⏱  total ${gate_wall}s wall · CPU SUPPRESSED (Issue 776)"
+    echo "     ⛔ children CPU is NOT accounted on this platform: a child that burned"
+    echo "        ${cal_burn}s of CPU moved the times children total by ${cal_seen}s."
+    echo "        The raw rows below are real for MSYS children and ~0 for native ones,"
+    echo "        so the total is NOT the quantity AGENTS.md tells you to cite. Read"
+    echo "        wall only here, and take the CPU figure from a POSIX workstation."
+    sed 's/^/     /' "$times_out"
+else
+    echo "  ⏱  total ${gate_wall}s wall · ${gate_cpu}s CPU in the checks (rows: this shell, then the checks)"
+    sed 's/^/     /' "$times_out"
+
+    # ...and the instrument must prove itself NON-INERT, because the failure mode
+    # above is a well-formed number, not an error. N python3 checks cannot burn
+    # ~no CPU: if the total reads as ~0 across a multi-second run, the measurement
+    # broke and the figure must not be quoted.
+    if [ "$(awk -v c="$gate_cpu" -v w="$gate_wall" 'BEGIN { print (c < 0.05 && w > 5) ? "INERT" : "OK" }')" = "INERT" ]; then
+        echo "  ⛔ the CPU figure above is NOT a measurement: ${gate_cpu}s of CPU across"
+        echo "     ${gate_wall}s of wall is impossible for ${#CHECKS[@]} python3 checks."
+        echo "     The times builtin was read from a forked context — do not quote it."
+    fi
+    echo "     CPU is the load-invariant figure: 12.65s / 12.52s / 12.69s measured"
+    echo "     on runs whose WALL was 128.3s / 299.1s / 15.0s — 20x wall, 1.4% CPU."
+    echo "     Cite the CPU number; read wall as a range, never as a baseline."
 fi
 rm -f "$times_out"
-echo "     CPU is the load-invariant figure: 12.65s / 12.52s / 12.69s measured"
-echo "     on runs whose WALL was 128.3s / 299.1s / 15.0s — 20x wall, 1.4% CPU."
-echo "     Cite the CPU number; read wall as a range, never as a baseline."
 
 if [ "$failed" -ne 0 ]; then
     echo "✗ docs gate FAILED — $failed of ${#CHECKS[@]} check(s)"
