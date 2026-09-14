@@ -11,6 +11,50 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 774 (2026-09-14, M3 session) resolved in `22e65be4` — the wasm32 surface audit's BY-DEP verdict: the row predicate was dep-blind, closed with a five-canary self-test
+
+Filed and landed the same day, from the quiet-repo audit sweep. The
+resolver upgraded a package only on ROW evidence (`-p` / literal
+`--manifest-path` / the two 738-T1 shapes), so a lane building a package
+TRANSITIVELY read as UNCOVERED: `-p riir-shader-showcase --target wasm32`
+compiles the showcase's in-repo path deps too, and riir-shader's core (1
+site) + effects (2 sites) read UNCOVERED while every `build-wasm.sh`
+bundle build compiles them — compile-verified before filing
+(`cargo check -p riir-shader-effects --target wasm32-unknown-unknown`
+exit 0, 30.3s).
+
+The fix is a FOURTH verdict, `✓ by-dep`, never folded into NAMED — the
+distinction is load-bearing: by-dep coverage dies by an innocent
+dep-graph edit in someone else's manifest, and the reader must see which
+kind of coverage they hold. Credit rules (all conservative): non-optional
+path deps in plain `[dependencies]` + target tables whose cfg POSITIVELY
+names wasm32; `workspace = true` entries resolve through the root
+`[workspace.dependencies]` table (root-RELATIVE paths — the first draft
+joined them against the member manifest and the canary caught it);
+dev/build deps, optional deps, native-target tables, and cross-repo path
+targets credit nothing. Seeds are named ∪ derived — a derived row's `-p`
+list compiles its path-dep closure exactly like a literal one.
+
+`--self-test` (five canaries in a throwaway git repo, sharing the ONE
+`verdict_for` classifier with main — two copies would be the
+two-parsers-disagree trap): named / by-dep / uncovered (the seal-remake
+`.issues/010` lineage the upgrade must NOT collapse) / optional-not-credited
+/ workspace-table-resolved. All five hold; the workspace-table arm is the
+one that caught the root-relative path bug.
+
+Landing measurement (2026-09-14, post-774): **26 NAMED · 2 BY-DEP · 0
+UNRESOLVED · 1 UNCOVERED** over 216 files / 29 packages / 20 repos (was
+26/0/3 pre-upgrade; the 2026-09-08 standing of 23 NAMED / 0 UNCOVERED over
+191 files / 23 packages was stale — siblings had added wasm32 surface).
+The 1 remaining UNCOVERED is `seal-poc-submodule` (seal-online-remaster):
+deliberately excluded from that repo's CI (`--exclude seal-poc-submodule`,
+needs protoc), depended on by nothing (it deps on seal-core, not the
+reverse) — the standing negative control for the new verdict, and an
+arm-vs-row decision that stays with that repo's owner (read-only here).
+Notes are sorted at print now too: the resolver's note sets iterate in
+PYTHONHASHSEED order and an unsorted report is not diffable run-to-run —
+cosmetic churn was masking real verdict flips in the landing diff.
+
 ## Issue 748 (2026-09-14, M3 session) resolved — option (a): all three unwired Lean negative tests now run in their lean_proofs.yml CI jobs (~162s/main push)
 
 The issue's gap 2: three of the four Lean negative tests
