@@ -11,6 +11,59 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 781 (2026-09-15, M3 session) resolved in `580bda30` — slt: the RLCT λ + WBIC selection primitive, GOAT G1–G4 + floor ALL PASS, promoted default-on
+
+`katgpt_core::slt` (feature `slt = []` → **default-on since landing**; Bench 764):
+six closed-form functions over the singular-learning-theory selection
+currency — `rlct_reduced_rank` λ(r) = r(a+b−r)/2 (Aoyagi–Watanabe 2005;
+LoRA structure exactly), `wbic` nL + λ·log n, `free_energy` with the
+(m−1)·loglog n multiplicity term, `bayes_gap` λ/n (the BAYES-predictive gap
+law — a point fit realizes C/n, C = 2λ for this family; the module doc
+makes the distinction load-bearing), `sigmoid_wbic_weight` σ(−ΔWBIC/τ)
+pairwise mixture weights (sigmoid-native; K-way mixes compose
+Bradley-Terry products, never a softmax), and `bic_overpenalty_nats`
+(r²/2·ln n — the gauge orbit the naive parameter count over-charges vs
+the manifold; present at EVERY rank incl. full).
+
+**GOAT evidence (Bench 764):** G1 planted-rank recovery — a=b=8, r*=6,
+n=2000, seeded; WBIC picks 6, raw loss picks 8 (r_max, monotone — the
+failure mode), naive-parameter BIC picks 5 at the tuned marginal
+direction (realized gain ≈24 nats inside the (Δλ≈19, Δd/2≈30)·ln n
+window — the over-penalization measured, not asserted). **Load-bearing
+loss convention found the hard way:** per-SAMPLE nats (Σ_dims), not
+per-dim averages — the first draft averaged over dims, shrinking every
+gain by 1/a=8 and collapsing all selection margins (kept as a note so
+the next harness doesn't re-find it). UQ floor gate — bayes CRPS/s
+0.598 vs the incumbent d/2n floor 0.604 vs constants 0.632+ at equal
+0.972 coverage; measured on the WBIC-mixture predictor's realized gap
+(the λ/n law's actual referent; same-s scoring isolates the center);
+**thin ~1% margin recorded honestly** (a=b=8 — the gauge over-count is
+small against λ; widens with r/k*). G2 sub-µs O(k); G3 default count
+2041→2053 (test_gate floor raised in-commit, measured); G4 0 allocs
+under `--release --features slt,alloc_tracking`; `--all-features`
+check clean; docs_gate 17/17 after the 603-total/202-default count
+bumps (README ×2 sites + examples/README + the 'and 117 more' → 118).
+
+**T0 novelty gate (the noise-sweep λ̂ estimator): KEEP, with the honest
+caveat** — two targeted searches (2026-09-15) + the LLC-estimation
+survey (Emergent Mind 2025-10-15) surface only SGLD/tempered-posterior
+(arXiv:2308.12108, 2402.03698, 2507.21449), exact-algebraic 2-D
+(2608.20183), and linear-response (2605.07970) routes; no
+Gaussian-perturbation V(t) power-law route published. BUT the estimator
+FORM λ̂ = m/Σ ln(u_max/uⱼ) is the classical Hill estimator (1975) — the
+novelty is the APPLICATION (loss-deficit ratios under frozen-weight
+noise → λ), not the statistics. T4 (estimator + calibration ladder:
+quadratic bowl ⇒ d/2, planted RRR, ReLU toy ≈0.53) deferred as its own
+unit, unblocked by the verdict. T6 consumer wiring filed: riir-ai
+(freeze/thaw WBIC tie-break + sigmoid mixture weights) +
+riir-neuron-db (free-energy cross-n ledger in Raven/δ-Mem merge/keep
+ranking).
+
+Anti-Laplace rule shipped in the module doc (R558 §5): no
+Hessian/curvature generalization prediction — that instrument class
+measured ~10³× the true λ. λ is a freeze/consolidation-seam scalar,
+never a per-tick signal.
+
 ## Issue 775 (2026-09-14, M3 session) resolved in `3a59abe1` — dual_wave: the PC-ALM dual accumulator + closed-form rate laws (core) + the ballistic DEC wave kernel (dec), GOAT ALL PASS, opt-in
 
 Research 554 (PC-ALM, arXiv:2605.31022) distilled into a two-crate opt-in

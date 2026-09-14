@@ -1,4 +1,6 @@
-# Research 558: Singular Learning Theory — RLCT λ + WBIC as a Selection Currency
+# Research 558: Singular Learning Theory — RLCT λ + WBIC as a Selection Currency [L1-183]
+
+**Status:** RECORD + LANDED — the Track-A half shipped as `katgpt_core::slt`, promoted default-on (`580bda30`, Bench 764 GOAT, 2026-09-15). The T0 novelty verdict on the §2.3 noise-sweep estimator: KEEP at application level (form = classical Hill estimator — caveat recorded in HISTORY §Issue 781); T4 estimator deferred. Track-C half = riir-train Plan 404 (unclaimed).
 
 > **Source:** [Deep Learning is Singular, and That's Good](https://arxiv.org/abs/2010.11560) — Murfet, Wei, Gong, Li, Gell-Redman, Quella (U. Melbourne), arXiv:2010.11560, Oct 2020; IEEE TNNLS 34(12):10473–10486, Dec 2023
 > **Date:** 2026-09-14
