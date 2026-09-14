@@ -11,6 +11,39 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 748 (2026-09-14, M3 session) resolved — option (a): all three unwired Lean negative tests now run in their lean_proofs.yml CI jobs (~162s/main push)
+
+The issue's gap 2: three of the four Lean negative tests
+(`proof_negative_test.sh`) were invoked by NOTHING — not even on `main`.
+Only riir-chain ran both scripts in one job. katgpt-rs, riir-ai and
+riir-neuron-db ran only `proof_gate.sh`, so in each the one artifact that
+proves the gate is non-inert never executed in CI. The owner picked option
+(a) — wire all three:
+
+| repo | commit | measured marginal cost / main push |
+|---|---|---|
+| katgpt-rs | `3c97358c` | ~119s (Mathlib-backed, same job reuses the gate's `.lake`) |
+| riir-ai | `ecb21f3f7` | ~37s (Mathlib-backed, same) |
+| riir-neuron-db | `4a68575` | ~6s (Mathlib-free) |
+| riir-chain | (already wired, Plan 016) | ~15s already paid |
+
+Each wiring adds the script to BOTH `paths:` lists (so editing the harness
+itself fires the lane) and a step AFTER `proof_gate.sh` in the SAME job —
+the negative test reuses the `.lake` state the gate just built, which is why
+the marginal cost is seconds, not a second Mathlib download. Two stale step
+names fixed in passing (riir-ai "16 theorems" at an audited 22; riir-neuron-db
+"34 theorems" at 58 — the exact step-name drift class this repo's own
+workflow comment warns about), plus the three sentinel comments that claimed
+a hand-run-only / no-lane life. Validated on the workstation before landing,
+per repo: gate PASS (39 / 22 / 58 theorems) + negative test 8/8 / 15/15 /
+17/17 + clean-tree rebuild + `.proofs` byte-clean after each.
+
+Gap 1 (no lane covers `develop`) is UNCHANGED BY DESIGN — main-only triggers
+are the owner's 2026-09-09 Actions-spending call, recorded in the issue and
+still true: a green `lean_proofs.yml` badge says nothing about a develop
+commit; the workstation run remains that coverage. The `workflow_dispatch`
+button exists for naming a run on demand.
+
 ## Issue 773 (2026-09-14, M3 session) resolved — the 772-B2 removal's stale re-export: root lib E0432 under `flashar_consensus,plasma_path`, found by riir-ai's guard through the path dep
 
 `3c3c52ce` (Issue 772 B2) deleted `ternary_fusion_gate` from
