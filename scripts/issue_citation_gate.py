@@ -557,6 +557,8 @@ def selftest() -> list[str]:
     Pure functions plus one temp repo — runs unconditionally at the top of
     `main`, before any pin is read.
     """
+    import contextlib
+    import io
     import tempfile
 
     fails: list[str] = []
@@ -591,11 +593,32 @@ def selftest() -> list[str]:
     eq("a single-digit citation is outside the width bound", cites("Issue 7"), [])
     eq("unseen_by_width counts what the bound cannot see",
        unseen_by_width("Issue 7 and Issues 12, 3"), (1, 1))
+    # ⚑ The LEAD window, added by Issue 790 T3. `citations` hands `qualifiers`
+    # `line[m.start() - _ALIAS_REACH : m.start()]`, and nothing asserted its
+    # extent: an off-by-one flip on that subtraction changes which prose counts
+    # as sitting ON a citation, which is exactly what decides an alias
+    # qualification. The window is 40 chars and is measured at its edge.
+    pad = "x" * (_ALIAS_REACH - len("riir-chain "))
+    lead_in = [lead for _ln, _k, _n, lead in citations(pad + "riir-chain Issue 750")]
+    eq("a name at the far edge of the lead window is IN it",
+       [("riir-chain" in l) for l in lead_in], [True])
+    lead_out = [lead for _ln, _k, _n, lead in
+                citations("riir-chain " + "x" * _ALIAS_REACH + " Issue 750")]
+    eq("a name past the lead window is OUT of it",
+       [("riir-chain" in l) for l in lead_out], [False])
+    eq("the lead window never runs off the start of the line",
+       [lead for _ln, _k, _n, lead in citations("Issue 750")], [""])
 
     # ── aliases(): a short form is only offered when it is unambiguous ────
     eq("the full name is always a form", aliases("katgpt-rs"), ["katgpt-rs"])
-    eq("a >=4-char stem earns an alias",
+    eq("a 5-char stem earns an alias",
        aliases("riir-chain"), ["riir-chain", "chain"])
+    # ⚑ EXACTLY 4 is the documented boundary and nothing sat on it: every arm
+    # used a 5-char or a 2/3-char stem, so `arm_reach_audit` reported the
+    # `>= 4` surviving a `>= -> >` flip (Issue 790 T3). `riir-auth` is the
+    # live repo whose stem is exactly 4.
+    eq("a stem of exactly 4 earns an alias",
+       aliases("riir-auth"), ["riir-auth", "auth"])
     eq("⚑ a 2-char stem does not ('ai' collides with prose)",
        aliases("riir-ai"), ["riir-ai"])
     eq("a 3-char stem does not", aliases("riir-dao"), ["riir-dao"])
@@ -679,6 +702,15 @@ def selftest() -> list[str]:
         eq("pins parse, comments and blanks dropped",
            parse_pins(pins_path), {"documents": ["AGENTS.md", "HISTORY.md"],
                                    "min_repos": 16})
+        # ⚑ The `"=" not in line` half of the filter had no arm: a prose line
+        # with no `=` must be DROPPED, not partitioned into a key with an empty
+        # value (which `int()` would then raise on, from a line nobody expects
+        # to be a pin).
+        pins_path.write_text("documents = AGENTS.md\n"
+                             "a stray prose line with no equals sign\n"
+                             "min_repos = 16\n", encoding="utf-8")
+        eq("an equals-less line is dropped, not partitioned",
+           parse_pins(pins_path), {"documents": ["AGENTS.md"], "min_repos": 16})
 
     # ── heading_allocated(): the ONLY path that can suppress a finding ────
     # Its two filters are measured here rather than assumed, per its docstring.
@@ -729,6 +761,103 @@ def selftest() -> list[str]:
         eq("heading_style_blind measures the gap, both sides filtered",
            heading_style_blind(repo, ".issues", ["katgpt-rs", "riir-train"]),
            (1, 3))
+
+    # ── ci_deferred(): the DEFERRAL, which is this gate's loudest output ──
+    # ⚑ Issue 790 T3. Eight of this module's survivors were in here, and it is
+    # the path a reader trusts on EVERY partial-clone and CI run — the
+    # "instrument alive, adjudication deferred" line. Nothing armed any of it:
+    # not the two blindness refusals, not the posture label, not the
+    # locally-resolve/cross-repo split that the line reports as fact.
+    global REPO_ROOT
+    _real_root = REPO_ROOT
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            REPO_ROOT = Path(td)
+            (REPO_ROOT / ".issues").mkdir()
+            for n in ("0123", "0124"):
+                (REPO_ROOT / ".issues" / f"{n}_local_thing.md").write_text(
+                    "x", encoding="utf-8")
+            doc = "D.md"
+            # ⚠ TWO local and ONE cross, deliberately ASYMMETRIC: with 1 and 1
+            # the `n in local[kind]` test flipped to `not in` produces the
+            # identical message, and the arm reads INERT against the very
+            # mutation it is aimed at (measured).
+            (REPO_ROOT / doc).write_text(
+                "see Issue 123 and Issue 124 (ours) and Issue 456 (theirs)\n",
+                encoding="utf-8")
+            pins = {"max_single_digit": 0, "min_citations_scanned": 3}
+
+            def deferred(posture="CI", **over):
+                sink = io.StringIO()
+                with contextlib.redirect_stdout(sink):
+                    rc = ci_deferred({**pins, **over}, [doc], 16, posture=posture)
+                return rc, sink.getvalue()
+
+            rc, out = deferred()
+            eq("the clean deferral returns 0", rc, 0)
+            # The split is REPORTED as fact, so it is pinned as fact: 123 is
+            # allocated locally, 456 is not.
+            eq("the local/cross split is right",
+               "3 citations scanned in 1 document(s); 2 resolve locally, "
+               "1 cross-repo" in out, True)
+            eq("the deferral says it is NOT an adjudication",
+               "this line is not an adjudication" in out, True)
+            eq("the CI posture is named", "DOCS_GATE_CI=1" in out, True)
+            rc, out = deferred(posture="partial")
+            eq("the partial-clone posture is named a DIFFERENT way",
+               (rc, PARTIAL_MARKER in out, "DOCS_GATE_CI=1" in out), (0, True, False))
+
+            # Both blindness refusals must exit 2 — a deferral printed over a
+            # blind instrument is the one output here that must not exist.
+            rc, out = deferred(min_citations_scanned=4)
+            eq("a walk below its floor refuses", (rc, "INSTRUMENT" in out), (2, True))
+            # Both single-digit FORMS, one at a time. ⚠ `unseen_h + unseen_t`
+            # is summed in the condition and again in the message, and with a
+            # head-only fixture a `+ -> -` flip is arithmetically identical
+            # (1 - 0 == 1 + 0) — so the TAIL form is the one that discriminates
+            # it, and both are pinned rather than assumed symmetric.
+            for label, body, want_n in (
+                ("a single-digit HEAD", "see Issue 123 and Issue 7\n", 1),
+                ("a single-digit list TAIL", "see Issues 123, 4\n", 1),
+            ):
+                (REPO_ROOT / doc).write_text(body, encoding="utf-8")
+                rc, out = deferred(min_citations_scanned=1)
+                # ⚠ The count is anchored on `INSTRUMENT: ` and not matched as
+                # a bare substring: `"-1 single-digit …"` CONTAINS
+                # `"1 single-digit …"`, so the loose form passed a flipped sum
+                # that printed a negative count (measured).
+                eq(f"{label} in scope refuses",
+                   (rc, "width bound cannot SEE" in out,
+                    f"INSTRUMENT: {want_n} single-digit" in out),
+                   (2, True, True))
+            # …and a missing pinned document, which is the cheapest way for a
+            # deferral to be reported over a file nobody opened.
+            (REPO_ROOT / doc).unlink()
+            rc, out = deferred(min_citations_scanned=1)
+            eq("a missing pinned document refuses",
+               (rc, "never opened" in out), (2, True))
+
+            # ── unterminated_fences(): the hazard REPORT, and its address ──
+            # It takes the repo as a parameter, so it arms directly. The
+            # `open_at + 1` is a 0-to-1-indexed conversion and nothing checked
+            # it: a wrong line here points the reader at the wrong fence.
+            docs_pinned = _self_docs()
+            (REPO_ROOT / docs_pinned[0]).write_text(
+                "lead\nprose\n```\nswallowed to EOF\n", encoding="utf-8")
+            eq("an unterminated fence is reported at its OPENING line",
+               unterminated_fences(REPO_ROOT), [(docs_pinned[0], 3)])
+            (REPO_ROOT / docs_pinned[0]).write_text(
+                "lead\n```\nclosed\n```\n", encoding="utf-8")
+            eq("a terminated document reports nothing",
+               unterminated_fences(REPO_ROOT), [])
+            # A pinned document that does not exist is SKIPPED, not a crash —
+            # the report is a hazard list, and the missing-doc verdict belongs
+            # to `ci_deferred`/`main`, not here.
+            (REPO_ROOT / docs_pinned[0]).unlink()
+            eq("an absent pinned document is skipped",
+               unterminated_fences(REPO_ROOT), [])
+    finally:
+        REPO_ROOT = _real_root
 
     return fails
 

@@ -111,6 +111,18 @@ def find_cargo_defaults_per_manifest(repo_root: Path) -> dict[Path, set[str]]:
             if name == "default":
                 defaults |= normalized
         resolved = set(defaults)
+        # ⚠ Issue 790 T3 read all three lines below against `arm_reach_audit`
+        # and they are provably EQUIVALENT under mutation — recorded so the
+        # next reader does not mistake "no arm kills it" for "untested":
+        #   `len(deps) + 2`  a pure chain of N features plus `default` is N+1
+        #                    entries needing N-1 rounds, and (N+1)-2 = N-1, so
+        #                    even the slack-less bound is exactly sufficient.
+        #   `changed = True/False`  flipping it only stops the early break; the
+        #                    loop then runs its full bound and resolves the same.
+        #   `not in resolved and not in new_added`  both targets are SETS, so
+        #                    an `or` merely re-adds a member.
+        # Each is a redundant guard, kept for legibility, and none can be
+        # canaried. See AGENTS.md § An arm that exists and runs.
         changed = True
         for _ in range(len(deps) + 2):
             if not changed:
@@ -488,6 +500,184 @@ def selftest() -> list[str]:
         cyc = next(iter(find_cargo_defaults_per_manifest(repo).values()))
         eq("a feature cycle terminates", sorted(cyc), ["a", "b"])
 
+        # ⚑ Transitive DEPTH, added by Issue 790 T3. This arm exists to pin
+        # that the closure reaches the last link of a chain, and it is worth
+        # having — but it does NOT kill the `len(deps) + 2` mutant, and the
+        # reason is a proof rather than a missing fixture:
+        #
+        #   a pure chain of N features plus `default` is N+1 entries in `deps`,
+        #   and propagating from the default set takes N-1 rounds. The mutated
+        #   bound `len(deps) - 2` is (N+1)-2 = N-1 — EXACTLY sufficient. Adding
+        #   unrelated features grows `deps` without growing the depth, so the
+        #   slack only widens. No feature graph discriminates the two.
+        #
+        # So that row is provably EQUIVALENT. Recorded here so the next person
+        # does not spend the twenty minutes this took.
+        (repo / "Cargo.toml").write_text(
+            '[features]\n'
+            'default = ["a"]\n'
+            'a = ["b"]\n'
+            'b = ["c"]\n'
+            'c = ["d"]\n'
+            'd = []\n', encoding="utf-8")
+        chain = next(iter(find_cargo_defaults_per_manifest(repo).values()))
+        eq("a pure chain resolves to its LAST link",
+           sorted(chain), ["a", "b", "c", "d"])
+
+        # A manifest with no [features] table contributes no closure at all,
+        # rather than an empty one that then reads as "nothing is default".
+        (repo / "Cargo.toml").write_text('[package]\nname = "x"\n',
+                                         encoding="utf-8")
+        eq("a manifest with no [features] is not in the closure map",
+           find_cargo_defaults_per_manifest(repo), {})
+
+    fails += _audit_repo_arms()
+    return fails
+
+
+def _audit_repo_arms() -> list[str]:
+    """End-to-end arms over the VERDICT, on a fixture repo.
+
+    Issue 790 T3: 19 of this module's survivors were in `audit_repo` and
+    `iter_cargo_comment_labels`, and both take a repo path — so the whole
+    verdict was armable the entire time and nothing did it. `classify_comment`
+    having arms is not the same as the GATE having them: the classifier can be
+    perfect while the scope choice, the dedup, the override or the population
+    count is wrong, and every one of those fails silently.
+    """
+    import contextlib
+    import io
+    import tempfile
+
+    fails: list[str] = []
+
+    def run(files: dict[str, str]) -> tuple[int, str]:
+        """(mismatches, output) for a synthetic repo.
+
+        ⚠ Each fixture gets a `[package]` header, and that is LOAD-BEARING
+        rather than cosmetic: `find_cargo_defaults` (the UNION closure) resolves
+        through the package graph and returns an EMPTY set for a manifest with
+        no package name, while `find_cargo_defaults_per_manifest` reads the same
+        file correctly. Fixtures without it made three arms fail against
+        perfectly good code — measured, and pinned as its own arm below, so that
+        asymmetry is a documented property rather than a trap for the next
+        person writing a fixture here.
+        """
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for i, (rel, body) in enumerate(files.items()):
+                p = root / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                if not body.lstrip().startswith("[package]"):
+                    body = f'[package]\nname = "fixture{i}"\n' + body
+                p.write_text(body, encoding="utf-8")
+            sink = io.StringIO()
+            with contextlib.redirect_stdout(sink):
+                n = audit_repo(root)
+            return n, sink.getvalue()
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    # The class this whole auditor exists for: a TRANSITIVELY default-on
+    # feature still labelled Opt-in.
+    n, out = run({"Cargo.toml":
+                  '[features]\n'
+                  'default = ["bom_sampling"]\n'
+                  'bom_sampling = ["micro_belief"]\n'
+                  'micro_belief = []  # Opt-in — stale label\n'})
+    eq("a transitively default-on feature labelled Opt-in is a MISMATCH", n, 1)
+    eq("…and the message names the scope it consulted",
+       "per-manifest" in out or "OPT-IN but feature IS" in out, True)
+
+    # The inverse.
+    n, _ = run({"Cargo.toml":
+                '[features]\n'
+                'default = []\n'
+                'alpha = []  # DEFAULT-ON (Plan 9): promoted\n'})
+    eq("a DEFAULT-ON label on an opt-in feature is a MISMATCH", n, 1)
+
+    # Both labels correct.
+    n, out = run({"Cargo.toml":
+                  '[features]\n'
+                  'default = ["alpha"]\n'
+                  'alpha = []  # DEFAULT-ON (Plan 9): promoted\n'
+                  'beta = []   # Opt-in\n'})
+    eq("correct labels are not a mismatch", n, 0)
+    # The POPULATION is a separate claim from the verdict: a run that checked
+    # nothing prints "0 mismatches" and reads exactly like a clean one.
+    eq("both labelled lines were checked", "checked 2 inline comments" in out, True)
+
+    # The local-scope override is TRUSTED — the comment is being precise.
+    n, _ = run({"Cargo.toml":
+                '[features]\n'
+                'default = ["alpha"]\n'
+                'alpha = []  # stays opt-in at root by design\n'})
+    eq("a local-scope override is trusted, not flagged", n, 0)
+
+    # The SCOPE CHOICE, both directions, which is the subtlest thing here and
+    # had no arm: an opt-in claim is judged PER-MANIFEST (a sub-crate may
+    # default the same name without contradicting it) and a default-on claim
+    # is judged against the UNION (the comment may describe any crate).
+    split = {
+        "Cargo.toml": '[features]\n'
+                      'default = []\n'
+                      'alpha = []  # Opt-in at root\n',
+        "crates/sub/Cargo.toml": '[features]\n'
+                                 'default = ["alpha"]\n'
+                                 'alpha = []  # DEFAULT-ON (Plan 9): here\n',
+    }
+    n, _ = run(split)
+    eq("an opt-in claim is scoped PER-MANIFEST, not to the union", n, 0)
+    union = {
+        "Cargo.toml": '[features]\n'
+                      'default = []\n'
+                      'alpha = []  # DEFAULT-ON in the sub-crate\n',
+        "crates/sub/Cargo.toml": '[features]\n'
+                                 'default = ["alpha"]\n'
+                                 'alpha = []\n',
+    }
+    n, _ = run(union)
+    eq("a default-on claim is judged against the UNION", n, 0)
+
+    # Lines that are not feature definitions must be skipped, and `default`
+    # itself is not a feature to label.
+    n, out = run({"Cargo.toml":
+                  '# Opt-in\n'
+                  '[features]  # Opt-in\n'
+                  'default = ["alpha"]  # Opt-in — not a feature row\n'
+                  'alpha = []\n'})
+    eq("comment/table/default lines are not labelled rows", (n, "checked 0" in out),
+       (0, True))
+
+    # ⚑ The closure ASYMMETRY, pinned so it is a property and not a trap: the
+    # UNION closure resolves through the package graph and sees nothing in a
+    # manifest with no `[package] name`, while the per-manifest closure reads
+    # the same file fine. Every real manifest here has a package section, so
+    # this is latent — and it cost three arms before it was understood.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        body = '[features]\ndefault = ["alpha"]\nalpha = []\n'
+        (root / "Cargo.toml").write_text(body, encoding="utf-8")
+        from bench_doc_audit import find_cargo_defaults as _union
+        eq("the UNION closure needs a package name", _union(root), set())
+        eq("the PER-MANIFEST closure does not",
+           sorted(next(iter(find_cargo_defaults_per_manifest(root).values()))),
+           ["alpha"])
+        (root / "Cargo.toml").write_text('[package]\nname = "p"\n' + body,
+                                         encoding="utf-8")
+        eq("…and with a package name the two agree", _union(root), {"alpha"})
+
+    # A commented row whose name is not in [features] is not a row either.
+    n, out = run({"Cargo.toml":
+                  '[features]\n'
+                  'default = []\n'
+                  'alpha = []\n'
+                  'ghost = []  # Opt-in\n'})
+    eq("an undefined feature name is skipped",
+       "checked 1 inline comments" in out, True)
+
     return fails
 
 
@@ -516,6 +706,13 @@ def iter_cargo_comment_labels(repo_root: Path):
         defined_names = set(feats.keys())
         for ln, line in enumerate(text.splitlines(), 1):
             stripped = line.strip()
+            # ⚠ A fast SKIP, not a filter: the regex below already rejects a
+            # blank line, a `#` comment and a `[table]` header, because it
+            # anchors on `^[a-zA-Z]…=\s*\[`. So this line is provably
+            # EQUIVALENT under mutation (Issue 790 T3 measured it surviving an
+            # `or -> and` flip) and is kept for legibility and cost, not
+            # correctness. The arms still pin the BEHAVIOUR — a comment line
+            # and a table header must not be labelled rows.
             if not stripped or stripped.startswith("#") or stripped.startswith("["):
                 continue
             m = re.match(r"^([a-zA-Z][a-zA-Z0-9_-]*)\s*=\s*\[", stripped)
