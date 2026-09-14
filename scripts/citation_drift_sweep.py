@@ -252,6 +252,10 @@ GATE = HERE / "issue_citation_gate.py"
 FIELDS = ("min_citations", "max_cross", "max_in_local_range", "max_orphan")
 
 CROSS, IN_RANGE, ORPHAN = "CROSS", "IN-LOCAL-RANGE", "ORPHAN"
+# Issue 780. A SUBSET of IN_RANGE, kept in that bucket for the `max_in_local_range`
+# ceiling (the undecided population did not change) and listed separately so the
+# 4-row display truncation cannot hide a finding behind undecided noise.
+MISATTR_IN_RANGE = "MISATTRIBUTED-IN-RANGE"
 
 # A crate token is only usable as a REPO HINT when it cannot collide with
 # ordinary prose: hyphenated and >= 6 characters. `xtask`, `core`, `cli` are
@@ -344,7 +348,8 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
                 elsewhere[kind].setdefault(n, []).append(s.name)
 
     got = {"n_docs": 0, "n_cites": 0, "ambiguous": set(), "misleading": 0,
-           "misattributed": 0, "cross_units": set(), "repeat": 0,
+           "misattributed": 0, MISATTR_IN_RANGE: [],
+           "cross_units": set(), "repeat": 0,
            "unseen_width": 0, "alias_trailing": 0,
            CROSS: [], IN_RANGE: [], ORPHAN: []}
     for doc in docs:
@@ -387,7 +392,35 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
             cls = (IN_RANGE if n <= top[kind] else CROSS if owners else ORPHAN)
             tag = ""
             bad = adj - set(owners)
-            if cls is CROSS and bad:
+            if cls is IN_RANGE and bad:
+                # Issue 780. IN-LOCAL-RANGE is "UNDECIDED, never clean"
+                # because a local referent that was skipped or never committed
+                # is plausible. This row REFUTES that premise with its own
+                # text: it reached this bucket only because `n not in mine`
+                # (the Issue-754 oracle — worktree AND git log AND headings —
+                # found no local allocation), and the author wrote a DIFFERENT
+                # repo's name directly ON the citation. Followable, to the
+                # wrong place. Its own class, never pooled into CROSS: CROSS
+                # is unfollowable, and the two repairs read differently.
+                #
+                # ⛔ The boundary is MEASURED and it is NOT the obvious one.
+                # The same predicate at the `n in mine` short-circuit one
+                # branch up is 19 rows workspace-wide and 19 of them are
+                # FALSE — the prose contrasting a local number with a remote
+                # one, the 40-char lead catching the NEIGHBOUR's address
+                # (`riir-ai Issue 853 / this repo's Issue 093`, ``in
+                # `riir-neuron-db/src/local_kv.rs` (Issue 043``). That is the
+                # mechanism, not luck: a locally-allocated number HAS a local
+                # referent for the prose to contrast against. So the rule
+                # stops here, and the exemption is a measurement rather than
+                # an oversight. The IN-RANGE column is n = 1 — "0 false" there
+                # is one row's worth of evidence, not a rate.
+                got[MISATTR_IN_RANGE].append(f"{doc}:{ln}  {kind} {n}")
+                tag = (f"  [⛔MISATTRIBUTED-IN-RANGE: names "
+                       f"{'/'.join(sorted(bad))}, which does NOT own {n}; "
+                       f"the local-range excuse does not apply — {repo.name} "
+                       f"never allocated {n}]")
+            elif cls is CROSS and bad:
                 # An explicit attribution sitting ON the citation that names a
                 # repo without the number. Same standing as the crate hint: it
                 # ORDERS the repair, it is not a verdict. Hand-adjudicated at
@@ -578,6 +611,69 @@ def selftest() -> list[str]:
             fails.append(f"zero-padding: `Issue 0500` and `Issue 500` must be "
                          f"ONE number, got {len(pad[CROSS])} CROSS rows")
 
+        # ── Issue 780: MISATTRIBUTED-IN-RANGE, and the boundary that keeps it
+        # honest. Four arms, because the class is defined as much by what it
+        # must NOT promote as by what it must. A third sibling is required:
+        # the number has to be IN this repo's range, unallocated here, and
+        # owned by a repo the prose does NOT name — one sibling cannot build
+        # that (`is_qualified` accepts any named repo when NOTHING owns the
+        # number, which is the ORPHAN rule, not this one).
+        third = ws / "riir-thirdlib"
+        (third / ".issues").mkdir(parents=True)
+        (third / ".issues" / "006_theirs.md").write_text("x")
+        alloc["riir-thirdlib"] = {k: (set() if k != "Issue" else {6})
+                                  for k in icg.KINDS}
+        s3 = [sib, third]
+        (me / "AGENTS.md").write_text("riir-fakesib Issue 006 is the wrong address.\n")
+        wa = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if len(wa[MISATTR_IN_RANGE]) != 1:
+            fails.append(f"MISATTRIBUTED-IN-RANGE did not fire: "
+                         f"{wa[MISATTR_IN_RANGE]} / {wa[IN_RANGE]}")
+        if len(wa[IN_RANGE]) != 1 or "MISATTRIBUTED-IN-RANGE" not in wa[IN_RANGE][0]:
+            fails.append(f"the row must stay in IN_RANGE and carry its tag: "
+                         f"{wa[IN_RANGE]}")
+        if wa[CROSS]:
+            fails.append(f"MISATTRIBUTED-IN-RANGE must not also count as CROSS: "
+                         f"{wa[CROSS]} — the two repairs read differently")
+
+        # CONTROL A: the named repo OWNS it -> not a finding at all.
+        (me / "AGENTS.md").write_text("riir-thirdlib Issue 006 is addressed.\n")
+        ca = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if ca[MISATTR_IN_RANGE] or ca[IN_RANGE] or ca[CROSS] or ca[ORPHAN]:
+            fails.append(f"control A: a correctly-addressed in-range citation "
+                         f"produced a finding: {ca}")
+
+        # CONTROL B: bare, no attribution -> still UNDECIDED, never promoted.
+        (me / "AGENTS.md").write_text("Issue 006 is bare.\n")
+        cb = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if cb[MISATTR_IN_RANGE] or len(cb[IN_RANGE]) != 1:
+            fails.append(f"control B: a bare in-range citation must stay "
+                         f"UNDECIDED: {cb[MISATTR_IN_RANGE]} / {cb[IN_RANGE]}")
+
+        # CONTROL C: the repo name is in the 3-line WINDOW but not ON the
+        # citation. `adj` is lead-only by design (Issue 752) and the promotion
+        # inherits that — a name that was never an attribution must not become
+        # a wrong address.
+        (me / "AGENTS.md").write_text("riir-fakesib ships other things.\n"
+                                      "Issue 006 is bare here.\n")
+        cc = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if cc[MISATTR_IN_RANGE]:
+            fails.append(f"control C: a WINDOW-only repo name must not promote "
+                         f"an in-range row: {cc[MISATTR_IN_RANGE]}")
+
+        # CONTROL D: the MEASURED exemption (19 rows, 19 false). A number this
+        # repo DID allocate, with a non-owner sibling named right on it — the
+        # prose contrasting a local number with a remote one. Must stay
+        # AMBIGUOUS, promoted by nothing.
+        (me / "AGENTS.md").write_text("riir-thirdlib Issue 010 is this repo's own.\n")
+        cd = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if cd[MISATTR_IN_RANGE] or cd[IN_RANGE] or cd[CROSS]:
+            fails.append(f"control D: a LOCALLY-ALLOCATED number must not be "
+                         f"promoted by an adjacent non-owner name — that is "
+                         f"the 19/19-false exemption: {cd}")
+        if len(cd["ambiguous"]) != 1:
+            fails.append(f"control D: the row must remain AMBIGUOUS: {cd['ambiguous']}")
+
         # pin parser: globals + 5-field rows, comments stripped, arity enforced
         pins = ws / "pins.txt"
         pins.write_text("# c\nmin_repos = 15\nrepo-a 10 0 0 0  # trailing\n\n")
@@ -721,6 +817,16 @@ def main() -> int:
               f"below would pass vacuously")
         return 2
 
+    # Issue 780. A MISSING ceiling is refused, never defaulted: a wall that
+    # silently reads as "absent, so anything passes" is the green-zero shape
+    # this whole family exists to refuse.
+    if "max_misattributed_in_range" not in glob:
+        print(f"✗ INSTRUMENT: {PINS.name} declares no "
+              f"`max_misattributed_in_range` — the Issue 780 class would have "
+              f"no ceiling and every row would pass silently")
+        return 2
+    glob_wall = glob["max_misattributed_in_range"]
+
     crates = crate_map(repos)
     patterns = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                 for c in crates}
@@ -729,7 +835,7 @@ def main() -> int:
 
     bad = False
     tot = {"docs": 0, "cites": 0, "amb": 0, "mis": 0, "misat": 0,
-           "units": 0, "rep": 0, "width": 0, "trail": 0,
+           "units": 0, "rep": 0, "width": 0, "trail": 0, MISATTR_IN_RANGE: 0,
            CROSS: 0, IN_RANGE: 0, ORPHAN: 0}
     mine_row = None
     for repo in repos:
@@ -749,7 +855,7 @@ def main() -> int:
         # is TWO adjudications in two documents, not one. A union reported 142
         # where the work is 164.
         tot["units"] += units
-        for cls in (CROSS, IN_RANGE, ORPHAN):
+        for cls in (CROSS, IN_RANGE, ORPHAN, MISATTR_IN_RANGE):
             tot[cls] += len(got[cls])
         if repo.resolve() == REPO_ROOT:
             mine_row = got
@@ -766,6 +872,15 @@ def main() -> int:
                              (ORPHAN, "max_orphan")):
                 if len(got[cls]) > row[key]:
                     flags.append(f"{cls} {len(got[cls])} > pinned {row[key]}")
+        # Issue 780 — a GLOBAL wall, deliberately not a per-repo ratchet field:
+        # the class has no backlog anywhere (1 row workspace-wide at landing,
+        # repaired in the same commit), so per-repo pins would be 16 zeros and
+        # a 5th field on every row for a quantity that is 0 by contract.
+        if len(got[MISATTR_IN_RANGE]) > glob_wall:
+            flags.append(f"{MISATTR_IN_RANGE} {len(got[MISATTR_IN_RANGE])} > "
+                         f"pinned {glob_wall} — a citation that is FOLLOWABLE "
+                         f"to the WRONG repo; the local-range excuse does not "
+                         f"apply (this repo never allocated the number)")
         findings = got[CROSS] + got[IN_RANGE] + got[ORPHAN]
         status = "✗" if flags else ("·" if findings else "✓")
         # `cross` counts EDITS, `over N num` counts ADJUDICATIONS — and they are
@@ -790,6 +905,9 @@ def main() -> int:
         if len(got[CROSS]) > cap:
             print(f"      … {len(got[CROSS]) - cap} more cross row(s) "
                   f"(re-run with --full)")
+        # ahead of the undecided list, and NEVER truncated: these are findings.
+        for r in got[MISATTR_IN_RANGE]:
+            print(f"      ⛔wrong-addr:{r}")
         for r in got[IN_RANGE][:(len(got[IN_RANGE]) if FULL else 4)]:
             print(f"      undecided:{r}")
         for r in got[ORPHAN]:
@@ -842,7 +960,9 @@ def main() -> int:
           f"{tot[IN_RANGE]} IN-LOCAL-RANGE · {tot[ORPHAN]} ORPHAN")
     print(f"  AMBIGUOUS (local AND sibling — undecidable by number, NOT a pass): "
           f"{tot['amb']}  ·  ⛔MISLEADING crate hints: {tot['mis']}"
-          f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}")
+          f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}"
+          f"  ·  ⛔MISATTRIBUTED-IN-RANGE (Issue 780 — FOLLOWABLE to the wrong "
+          f"repo, walled at {glob_wall}): {tot[MISATTR_IN_RANGE]}")
     print(f"  of the {tot[CROSS]} CROSS: {tot['rep']} carry the REPEAT label — "
           f"the same document already attributes that number elsewhere, so the "
           f"repair is mechanical (copy it), not a lookup. The labels are "

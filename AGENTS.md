@@ -355,6 +355,32 @@ census is exhaustive over ROWS, not over the ORACLE it checks them against** —
 so never quote an error rate without naming the instrument the sample was
 adjudicated against.
 
+⛔ **And `katgpt-rs Issue 513` — the wrong address the paragraph above names as
+a worked example — was still standing in the workspace when Issue 780 went
+looking for it** (riir-neuron-db `AGENTS.md:82`, repaired to `riir-train Issue
+513 T6`). Not because `is_qualified` missed it: because the `⛔MISATTRIBUTED`
+tag was computed **only in the CROSS bucket**, and the three-way bucketing runs
+first. A citation whose number also falls under the *citing* repo's own ceiling
+was reclassified **IN-LOCAL-RANGE** — "UNDECIDED, never clean" — and the tag
+never ran. Never counted, never gated. IN-LOCAL-RANGE's premise is refuted by
+such a row's own text: it reaches that bucket only when the Issue-754 oracle
+found **no** local allocation *and* the author wrote a different repo's name
+directly on the citation. **CROSS is unfollowable; this is followable, to the
+wrong place** — its own class (`MISATTRIBUTED-IN-RANGE`), walled at 0
+globally rather than ratcheted per repo, because it has no backlog.
+⛔ The boundary is **measured, and it is not the obvious one.** The same
+predicate one branch up — at the `n in mine` short-circuit, where the number
+*is* locally allocated — is **19 rows workspace-wide and 19 of them are
+FALSE**: prose contrasting a local number with a remote one, the 40-char lead
+catching the *neighbour's* address (`riir-ai Issue 853 / this repo's Issue
+093`). That asymmetry is mechanism, not luck — a locally-allocated number has
+a local referent for the prose to contrast against — so the rule stops at
+IN-RANGE and the exemption is a measurement rather than an oversight. Read the
+other column honestly too: it is **n = 1**, so "0 false positives" there is one
+row's worth of evidence, not a rate. The per-push gate needed **no** change and
+that is itself the finding — it has no IN-RANGE bucket at all, so the sweep
+that cross-checks it was the **more lenient** of the two.
+
 Each sweep carries **two floors, not one**: a ceiling is green over whatever
 the instrument can SEE, so the finding count needs the *population* that
 produced it, and the population floor is 0 in every repo that has none of the

@@ -183,3 +183,34 @@ seal-remake                39      0               0       0
 # ORPHAN is 0 everywhere and is still its own column: it is a DIFFERENT repair
 # (the number is wrong, or its repo left the contract) from CROSS, and pooling
 # the two would hide whichever is rarer.
+
+# ── Issue 780: MISATTRIBUTED-IN-RANGE — a GLOBAL wall, not a per-repo ratchet ─
+#
+# A citation carrying an explicit attribution ON it to a repo that does NOT own
+# the number, where the number is also under the citing repo's own ceiling. The
+# three-way bucketing used to reclassify those as IN-LOCAL-RANGE ("UNDECIDED,
+# never clean") and the ⛔MISATTRIBUTED tag was computed only in the CROSS
+# bucket, so the row was never counted, tagged or gated.
+#
+# IN-LOCAL-RANGE's premise is refuted by the row itself: it reaches that bucket
+# only when `n not in mine` — the Issue-754 oracle (worktree AND git log AND
+# headings) found NO local allocation — and the author named a different repo
+# directly on the citation. Followable, to the wrong place.
+#
+# 0 and not a ratchet because the class has no backlog: **1 row workspace-wide**
+# at landing (riir-neuron-db AGENTS.md:82, `katgpt-rs Issue 513 T6` where
+# katgpt-rs never allocated 513 and riir-train owns it — its T6 is that
+# paragraph's own subject), repaired in the landing commit. A 5th per-repo field
+# would be 16 zeros.
+#
+# ⛔ The boundary is MEASURED. The same predicate one branch up — at the
+# `n in mine` short-circuit, where the number IS locally allocated — is **19
+# rows and 19 of them are FALSE**: the prose contrasting a local number with a
+# remote one, and the 40-char lead catching the NEIGHBOUR's address
+# (`riir-ai Issue 853 / this repo's Issue 093`; ``in
+# `riir-neuron-db/src/local_kv.rs` (Issue 043``). Mechanism, not luck — a
+# locally-allocated number HAS a local referent for the prose to contrast
+# against. The rule stops at IN-RANGE, and that exemption is a measurement.
+# The IN-RANGE column is n = 1: "0 false positives" there is one row's worth of
+# evidence, not a rate.
+max_misattributed_in_range = 0

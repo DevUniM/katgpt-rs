@@ -3542,3 +3542,94 @@ UNSEEN and red; with it, six pass carrying the deferral on the pass line.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/779_sweep_family_partial_clone.md`).
+
+## Issue 780 — a wrong address reads as UNDECIDED when its number is in local range: CLOSED (2026-09-14)
+
+`is_qualified()` (Issue 752) fixed the *question* — "is a repo named?" →
+"does that repo **own** the number?" — and `citation_drift_sweep.audit()`
+annotates the answer with `⛔MISATTRIBUTED`. The annotation was gated on
+`cls is CROSS`, and the three-way bucketing runs first:
+
+```python
+cls = (IN_RANGE if n <= top[kind] else CROSS if owners else ORPHAN)
+```
+
+So a citation carrying an explicit attribution **on** it to a repo that does
+not own the number was reclassified **IN-LOCAL-RANGE** — "UNDECIDED, never
+clean" — whenever the number also fell under the *citing* document's own
+ceiling. Never counted, never tagged, never gated, and printed only inside a
+4-row truncation of undecided noise.
+
+**IN-LOCAL-RANGE's premise is refuted by such a row's own text.** It reaches
+that bucket only when `n not in mine[kind]` — the Issue-754 oracle (worktree
+AND `git log` AND headings) found no local allocation — *and* the author wrote
+a different repo's name directly on the citation. Both halves of "a local
+referent is plausible" are gone. **CROSS is unfollowable; this is followable,
+to the wrong place**, so it is its own class (`MISATTRIBUTED-IN-RANGE`), kept
+inside the IN_RANGE bucket for the `max_in_local_range` ceiling (the undecided
+*population* did not change) and printed ahead of it, never truncated.
+
+**The one row it was hiding was the example this repo's own AGENTS.md names.**
+`katgpt-rs Issue 513` is written into `is_qualified`'s docstring and into the
+§citation paragraph as a worked instance of a wrong address — and it was still
+standing in the workspace: riir-neuron-db `AGENTS.md:82`,
+`# Workstation-only pre-push layer (katgpt-rs Issue 513 T6)`. katgpt-rs has
+never allocated 513 (`git log --all -- '.issues/513*'` empty, `.highwater` 779);
+**riir-train** owns it (`513_required_features_rows_are_unverified.md`, filed
+`389a0a6b`, closed + removed `5a4265df`), and that issue's own T6 is the
+paragraph's subject by name — *"BLOCKED ON OWNER CALL (Actions spend) …
+2026-09-11 owner verdict: DECLINED for riir-neuron-db … the workstation
+`required_features_touched.sh` layer already covers it."* riir-neuron-db's top
+allocation is 617, 513 ≤ 617, and that arithmetic is the whole reason nobody
+saw it. Repaired to `riir-train Issue 513 T6` (riir-neuron-db, its own commit).
+
+**The boundary is measured, and it is not the obvious one.** The same predicate
+has a second home — the `n in mine[kind]` short-circuit one branch up, where
+the number *is* locally allocated. Measured over 16 repos × AGENTS.md+HISTORY.md
+(3,392 citations), after `is_qualified` clears every row some named owner covers:
+
+| bucket | rows | hand-read |
+|---|---|---|
+| `n <= top`, not allocated (IN-RANGE) | **1** | 1 true, 0 false |
+| `n in mine` (locally allocated) | **19** | **0 true, 19 false** |
+
+The 19 are one shape: the prose is *contrasting* a local number with a remote
+one and the 40-char lead catches the neighbour's address — ``riir-ai Issue 853
+/ this repo's Issue 093``, ``riir-ai Issues 574/589/537/672 + local Issue
+059``, ``in `riir-neuron-db/src/local_kv.rs` (Issue 043``, ``at
+`riir-game-sdk/crates/riir-games-cluster/`. Plan 010``. That asymmetry is
+mechanism rather than luck: a locally-allocated number **has** a local referent
+for the prose to contrast against, and a never-allocated one does not. So the
+rule stops at IN-RANGE, the short-circuit stays exactly as it was, and the
+exemption is a measurement instead of an oversight. ⚠ Read the other column
+honestly too — it is **n = 1**, so "0 false positives" is one row's worth of
+evidence, not a rate.
+
+**T2 resolved as a NO-OP, and that is the second finding.** The per-push
+`issue_citation_gate.py` has **no IN-RANGE bucket at all** — it skips only the
+*allocated* set and reds on everything else unqualified — so the sweep that
+cross-checks the gate was the **more lenient** of the two instruments. The
+divergence, not the gate, was the defect.
+
+Ceiling design: a **global wall** (`max_misattributed_in_range = 0`), not a 5th
+per-repo ratchet field — the class has no backlog anywhere, so per-repo pins
+would be 16 zeros. A missing pin is **refused** (exit 2), never defaulted, or
+the wall reads as "absent, so anything passes" — the green-zero shape this
+family exists to refuse.
+
+Four self-test arms, and the class is defined as much by what it must **not**
+promote: the finding fires; a correctly-addressed in-range citation produces
+nothing; a bare one stays UNDECIDED; a *window-only* repo name (not on the
+citation — `adj` is lead-only by Issue 752) does not promote; and a
+locally-allocated number with an adjacent non-owner name stays AMBIGUOUS, which
+is the 19/19-false exemption asserted rather than assumed. Both directions
+proven on the **live** corpus too: with the riir-neuron-db line stashed the
+sweep reds naming it, and restored it goes clean.
+
+⛔ One DRY defect found by its own canary: the row-list append and the tag were
+two separate `cls is IN_RANGE and bad` tests, so disabling one left the other
+certifying. One predicate, one place — the canary caught it because the arm
+that survived reported a *different* failure than the one that was disabled.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/780_misattributed_is_computed_only_in_the_cross_bucket.md`).
