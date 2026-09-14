@@ -48,11 +48,18 @@ survives contact with the next person to type `text=True`.
 Floors, not just ceilings: a ceiling of 0 is green over whatever the walk can
 see, so the population (tracked `*.py` files AND `subprocess` call sites) is
 pinned underneath it. Self-test runs on every invocation, both directions.
+
+The scan is over the **AST**, not over text. The first version paren-matched
+and reported four offenders in this very file — every one of them a FIXTURE
+STRING in its own `selftest()`. The repairs available then were to exempt the
+gate from itself or to obfuscate its own test data, and an exempt gate
+certifies nothing. A file the parser cannot read is **UNPARSED** and reds; it
+is never folded into the pass column.
 """
 
 from __future__ import annotations
 
-import re
+import ast
 import sys
 from pathlib import Path
 
@@ -68,69 +75,100 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FLOOR_PY_FILES = 40
 FLOOR_CALLS = 30
 
-LOCALE_TEXT = re.compile(r"\b(?:text|universal_newlines)\s*=\s*True\b")
-CALL = re.compile(r"\bsubprocess\s*\.\s*(?:run|Popen|check_output|check_call|call)\s*\(")
+# Structural, not textual. An earlier paren-matching version scanned this very
+# file and reported FOUR offenders — every one of them a FIXTURE STRING inside
+# `selftest()`. A gate that cannot read its own source without tripping on its
+# own test data would have to be exempted from itself, and an exempt gate
+# certifies nothing. `ast` sees string literals as literals.
+SUBPROCESS_FUNCS = {"run", "Popen", "check_output", "check_call", "call"}
 
 
-def call_spans(src: str) -> list[tuple[int, int]]:
-    """(start, end) of every `subprocess.*(` call, by paren matching.
+def _is_subprocess_call(node: ast.Call) -> bool:
+    f = node.func
+    return (isinstance(f, ast.Attribute) and f.attr in SUBPROCESS_FUNCS
+            and isinstance(f.value, ast.Name) and f.value.id == "subprocess")
 
-    Paren matching and not a regex: these calls wrap across up to eight lines
-    here, and a line-scoped match would miss every kwarg below the first one —
-    which is where `encoding=` is written when it is written at all.
-    """
-    spans: list[tuple[int, int]] = []
-    for m in CALL.finditer(src):
-        depth = 0
-        i = m.end() - 1
-        while i < len(src):
-            c = src[i]
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    spans.append((m.start(), i + 1))
-                    break
-            i += 1
-    return spans
+
+def _kw_true(node: ast.Call, name: str) -> bool:
+    for k in node.keywords:
+        if k.arg == name and isinstance(k.value, ast.Constant) and k.value.value is True:
+            return True
+    return False
+
+
+def _has_kw(node: ast.Call, name: str) -> bool:
+    return any(k.arg == name for k in node.keywords)
+
+
+def _launches_python(node: ast.Call) -> bool:
+    """`sys.executable` appearing anywhere in the call, as CODE."""
+    for sub in ast.walk(node):
+        if (isinstance(sub, ast.Attribute) and sub.attr == "executable"
+                and isinstance(sub.value, ast.Name) and sub.value.id == "sys"):
+            return True
+    return False
+
+
+def _pins_child_encoder(node: ast.Call) -> bool:
+    """`PYTHONIOENCODING` as a string CONSTANT anywhere in the call — normally
+    the key of the `env=` dict. A constant and not a source-text match, so a
+    comment or a docstring mentioning the name never counts as pinning it."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Constant) and sub.value == "PYTHONIOENCODING":
+            return True
+    return False
 
 
 def scan_text(src: str) -> tuple[list[str], list[str], int]:
-    """(decode_offenders, child_offenders, calls_seen) for one source text."""
+    """(decode_offenders, child_offenders, calls_seen) for one source text.
+
+    Raises `SyntaxError` on an unparseable source. The caller must surface
+    that rather than counting it as clean — an instrument admitting it cannot
+    read is the trap audit's UNPARSED verdict, and pooling it into the pass
+    column is how a classifier goes blind and still prints zero.
+    """
+    tree = ast.parse(src)
     decode: list[str] = []
     child: list[str] = []
-    spans = call_spans(src)
-    for start, end in spans:
-        call = src[start:end]
-        line = src.count("\n", 0, start) + 1
-        head = " ".join(call.split())[:90]
-        if LOCALE_TEXT.search(call) and "encoding=" not in call:
-            decode.append(f"{line}: {head}")
-        if "sys.executable" in call and "PYTHONIOENCODING" not in call:
-            child.append(f"{line}: {head}")
-    return decode, child, len(spans)
+    calls = 0
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and _is_subprocess_call(node)):
+            continue
+        calls += 1
+        head = " ".join(ast.unparse(node).split())[:90]
+        if ((_kw_true(node, "text") or _kw_true(node, "universal_newlines"))
+                and not _has_kw(node, "encoding")):
+            decode.append(f"{node.lineno}: {head}")
+        if _launches_python(node) and not _pins_child_encoder(node):
+            child.append(f"{node.lineno}: {head}")
+    return decode, child, calls
 
 
-def scan(repo: Path) -> tuple[dict, dict, int, int]:
-    """(decode, child, py_files, calls) over the repo's TRACKED `*.py`."""
+def scan(repo: Path) -> tuple[dict, dict, int, int, list[str]]:
+    """(decode, child, py_files, calls, unparsed) over the repo's TRACKED *.py."""
     decode: dict = {}
     child: dict = {}
+    unparsed: list[str] = []
     calls = 0
     files, _ = tracked_files(repo, "*.py")
     for p in files:
+        rel = str(p.relative_to(repo)).replace("\\", "/")
         try:
             src = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
+            unparsed.append(f"{rel}: unreadable")
             continue
-        d, c, n = scan_text(src)
+        try:
+            d, c, n = scan_text(src)
+        except SyntaxError as e:
+            unparsed.append(f"{rel}:{e.lineno}: {e.msg}")
+            continue
         calls += n
-        rel = str(p.relative_to(repo)).replace("\\", "/")
         if d:
             decode[rel] = d
         if c:
             child[rel] = c
-    return decode, child, len(files), calls
+    return decode, child, len(files), calls, unparsed
 
 
 def selftest() -> list[str]:
@@ -162,12 +200,33 @@ def selftest() -> list[str]:
                            "    text=True,\n    encoding=\"utf-8\",\n"
                            "    errors=\"replace\",\n)\n"),
         "bytes-mode": 'subprocess.run(cmd, capture_output=True)\n',
-        "not-a-call": 'text=True  # a bare kwarg in prose, no subprocess call\n',
+        "not-a-call": 'x = True  # a bare kwarg in prose, no subprocess call\n',
+        # A non-True value is not this defect: `text=flag` is somebody's own
+        # switch and `text=False` is bytes mode.
+        "text-not-true": 'subprocess.run(cmd, text=flag)\n',
     }.items():
         d, _, n = scan_text(src)
         check(d == [], f"DECODE false positive on {label}: {d}")
-    check(scan_text('text=True\n')[2] == 0,
-          "a bare kwarg outside any call was counted as a call site")
+    check(scan_text('x = True\n')[2] == 0,
+          "a bare assignment outside any call was counted as a call site")
+
+    # A STRING containing the offending source is data, not code. This arm is
+    # not hypothetical: an earlier paren-matching version of this scanner
+    # reported four offenders in THIS file, every one of them a fixture string
+    # in the block above, and the only repairs available were to exempt the
+    # gate from itself or to obfuscate its own test data.
+    d, c, n = scan_text('SRC = "subprocess.run(cmd, text=True)"\n'
+                        'DOC = """subprocess.run([sys.executable, s], text=True)"""\n')
+    check((d, c, n) == ([], [], 0),
+          f"a string literal was scanned as code: decode={d} child={c} calls={n}")
+
+    # And the inverse: an UNPARSEABLE file must raise, not read as clean. The
+    # trap audit's UNPARSED lesson — a classifier that cannot read must say so.
+    try:
+        scan_text("def f(:\n")
+        fails.append("an unparseable source did not raise — it would count as clean")
+    except SyntaxError:
+        pass
 
     # CHILD-ENCODER — both directions.
     d, c, _ = scan_text('subprocess.run([sys.executable, s], capture_output=True,\n'
@@ -201,7 +260,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     repo = Path(argv[1]).resolve() if len(argv) > 1 else REPO_ROOT
-    decode, child, py_files, calls = scan(repo)
+    decode, child, py_files, calls, unparsed = scan(repo)
     n_dec = sum(len(v) for v in decode.values())
     n_chi = sum(len(v) for v in child.values())
 
@@ -212,6 +271,12 @@ def main(argv: list[str]) -> int:
     for rel in sorted(child):
         for row in child[rel]:
             print(f"    ⛔ CHILD-ENCODER {rel}:{row}")
+    for row in unparsed:
+        print(f"    ⛔ UNPARSED      {row}")
+    if unparsed:
+        problems.append(f"{len(unparsed)} file(s) the parser could not read — "
+                        "UNPARSED is the instrument admitting it cannot see, "
+                        "never a pass")
     if n_dec:
         problems.append(f"{n_dec} call(s) decode with the system locale "
                         '(add encoding="utf-8", errors="replace")')
@@ -224,8 +289,8 @@ def main(argv: list[str]) -> int:
                         "a population that shrank")
     if calls < FLOOR_CALLS:
         problems.append(f"parse FLOOR breached: {calls} subprocess call site(s) "
-                        f"< {FLOOR_CALLS} — the walk is intact but the span "
-                        "matcher found nothing")
+                        f"< {FLOOR_CALLS} — the walk is intact but the AST pass "
+                        "found nothing")
 
     if problems:
         print(f"✗ subprocess-encoding gate FAILED — {len(problems)} problem(s) "
@@ -238,9 +303,9 @@ def main(argv: list[str]) -> int:
         return 1
 
     print(f"✓ subprocess-encoding gate PASSED — 0 locale-decoding call(s), "
-          f"0 unpinned python child(ren) over {py_files} tracked .py file(s) "
-          f"(floor {FLOOR_PY_FILES}) / {calls} subprocess call site(s) "
-          f"(floor {FLOOR_CALLS})")
+          f"0 unpinned python child(ren), 0 unparsed over {py_files} tracked "
+          f".py file(s) (floor {FLOOR_PY_FILES}) / {calls} subprocess call "
+          f"site(s) (floor {FLOOR_CALLS})")
     return 0
 
 

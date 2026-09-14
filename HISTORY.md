@@ -3440,10 +3440,19 @@ Ceilings of 0 on **two separately pinned classes**: DECODE (`text=True` /
 `sys.executable` spawn with no `PYTHONIOENCODING` in `env=`) — they are found
 by different halves of the classifier and a shared pin would hide which
 regressed. Floors under both (60 tracked `*.py`, 44 `subprocess` call sites), a
-paren-matched span scanner rather than a line-scoped one (`encoding=` is on a
-later line than `text=True` in every wrapped call here — a line matcher passes
-the one-liner arm and fails the wrapped one), and an 11-assertion self-test
-that runs on every invocation with both directions per class.
+self-test that runs on every invocation with both directions per class.
+
+The scanner went through the same lesson the classifier in Issue 775 did, in
+one commit. Text scanning has to be paren-matched rather than line-scoped
+(`encoding=` sits on a later line than `text=True` in every wrapped call
+here) — and the paren-matched version then reported **four offenders in the
+gate's own file**, every one a fixture string inside its `selftest()`. The
+repairs on offer were to exempt the gate from itself or to obfuscate its test
+data, and an exempt gate certifies nothing. It scans the **AST** instead: a
+string literal is a literal, `text=flag` and `text=False` are not this defect,
+`sys.executable` and `PYTHONIOENCODING` are matched structurally rather than
+as source text, and a file the parser cannot read is **UNPARSED** and reds
+rather than passing.
 
 It earned its keep on its first run: a **28th** site nobody had grepped for,
 `.agents/skills/doc-sync/tools/linkcheck_sweep.py`, outside `scripts/`

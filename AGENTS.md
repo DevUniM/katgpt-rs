@@ -840,11 +840,19 @@ It is a per-push **gate** and not a sweep-and-done for one reason:
 `staged_set_audit.py` has carried the correct form *and a comment naming this
 exact defect, dated 2026-09-04*, since the day it was written, and 27 more call
 sites were added without it. The ceiling is 0 on both classes over a floored
-population (tracked `*.py` AND `subprocess` call sites); the span matcher is
-paren-matched, not line-scoped, because `encoding=` is written on a later line
-than `text=True` in every wrapped call here. Its first real run found a 28th
-site nobody had grepped for — `.agents/skills/doc-sync/tools/linkcheck_sweep.py`,
-outside `scripts/` entirely.
+population (tracked `*.py` AND `subprocess` call sites). Its first real run
+found a 28th site nobody had grepped for —
+`.agents/skills/doc-sync/tools/linkcheck_sweep.py`, outside `scripts/`
+entirely.
+
+**It scans the AST, and that was not the first design.** A text scanner has to
+be paren-matched rather than line-scoped (`encoding=` sits on a later line than
+`text=True` in every wrapped call here), and the paren-matched version then
+reported **four offenders in the gate's own file** — every one a fixture string
+inside its `selftest()`. The repairs on offer were to exempt the gate from
+itself or to obfuscate its test data, and an exempt gate certifies nothing.
+`ast` sees a string literal as a literal; a file it cannot parse is
+**UNPARSED** and reds, never folded into the pass column.
 
 ## Before committing in a shared worktree — `scripts/staged_set_audit.py`
 
