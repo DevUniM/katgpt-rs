@@ -913,8 +913,8 @@ unsafe fn avx2_sigmoid_inplace(x: &mut [f32]) {
 unsafe fn avx2_exp_sum_inplace(x: &mut [f32]) -> f32 {
     use core::arch::x86_64::{
         _mm256_add_epi32, _mm256_add_ps, _mm256_castsi256_ps, _mm256_cvtps_epi32, _mm256_loadu_ps,
-        _mm256_mul_ps, _mm256_round_ps, _mm256_set1_epi32, _mm256_set1_ps, _mm256_setzero_ps,
-        _mm256_slli_epi32, _mm256_storeu_ps, _mm256_sub_ps,
+        _mm256_max_epi32, _mm256_min_epi32, _mm256_mul_ps, _mm256_round_ps, _mm256_set1_epi32,
+        _mm256_set1_ps, _mm256_setzero_ps, _mm256_slli_epi32, _mm256_storeu_ps, _mm256_sub_ps,
     };
     unsafe {
         const ROUND_NEAREST: i32 = 0x00;
@@ -953,7 +953,20 @@ unsafe fn avx2_exp_sum_inplace(x: &mut [f32]) -> f32 {
                 let p3 = _mm256_add_ps(v_one, _mm256_mul_ps(_mm256_mul_ps(vg, v_third), p4));
                 let p2 = _mm256_add_ps(v_one, _mm256_mul_ps(_mm256_mul_ps(vg, v_half), p3));
                 let q = _mm256_add_ps(v_one, _mm256_mul_ps(vg, p2));
-                let vn_shifted_i = _mm256_add_epi32(vn_i, _mm256_set1_epi32(127));
+                // 2^n via AVX2 bit manipulation: shift = (n + 127) << 23.
+                // Clamp n to [-126, 127] — the contract EVERY sibling kernel
+                // already holds (avx2_exp_inplace, all NEON/wasm variants,
+                // cephes_exp_scalar). This fused kernel was the ONE missing
+                // it (riir-train Issue 549): for x < -87.3 (n + 127 <= 0) the
+                // unclamped shift wraps the exponent field and produces
+                // ~1e33-magnitude garbage instead of ~0 — a softmax whose
+                // input spread exceeds 87 nats then NaNs the loss on AVX2
+                // machines only (NEON clamps, so aarch64 never trips it).
+                let vn_clamped = _mm256_max_epi32(
+                    _mm256_min_epi32(vn_i, _mm256_set1_epi32(127)),
+                    _mm256_set1_epi32(-126),
+                );
+                let vn_shifted_i = _mm256_add_epi32(vn_clamped, _mm256_set1_epi32(127));
                 let v_scale_bits = _mm256_slli_epi32::<23>(vn_shifted_i);
                 let v_scale = _mm256_castsi256_ps(v_scale_bits);
                 let r = _mm256_mul_ps(v_scale, q);

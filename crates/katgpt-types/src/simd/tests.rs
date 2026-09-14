@@ -2447,6 +2447,104 @@ fn simd_exp_sum_matches_f32_exp_truth_referenced() {
     }
 }
 
+// ── simd_exp_sum_inplace extreme-range tests (riir-train Issue 549) ────────
+
+#[test]
+fn simd_exp_sum_extreme_inputs_underflow_not_wrap() {
+    // Regression guard: the AVX2 fused exp+sum kernel was the ONE sibling
+    // missing the n-clamp before the (n + 127) << 23 bit trick. For
+    // x < -87.3 (n + 127 <= 0) the unclamped shift wrapped the exponent
+    // field and produced ~1e33-magnitude garbage instead of ~0 — a softmax
+    // whose input spread exceeds 87 nats then NaNs/garbles the loss on
+    // AVX2 machines only (NEON/wasm/scalar siblings all clamp, so aarch64
+    // never trips it). Surfaced as riir-train Issue 549: seed-1000 full
+    // training collapsed on the 4090, healthy on M3.
+    //
+    // Low side is the bug's axis (softmax inputs are max-shifted to <= 0);
+    // the high side is asserted as finite saturation (~2^127 * q), matching
+    // the clamped-sibling semantics rather than libm's inf.
+    let cases: &[&[f32]] = &[
+        &[-100.0, 0.0, -1.0],
+        &[-200.0, -100.0, 0.0, 1.0],
+        &[-88.0, -87.0, 0.0],
+        // Extremes crossing the 32-wide main loop, the 8-wide remainder
+        // loop, AND the scalar tail (three code paths, one contract).
+        &[
+            -300.0, -150.0, -90.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -95.0, 8.0, 9.0,
+            10.0, 11.0, 12.0, -120.0, 13.0,
+        ],
+        // High side: finite saturation, not exponent-wrap NaN/garbage.
+        &[100.0, 0.0],
+    ];
+    for case in cases {
+        let mut fused = case.to_vec();
+        let mut sep = case.to_vec();
+        let fused_sum = simd_exp_sum_inplace(&mut fused);
+        simd_exp_inplace(&mut sep);
+
+        // High-side designed semantics differ by path: vector lanes clamp
+        // n to 127 → finite ~2^127 * q; the scalar tail early-exits to +inf
+        // (cephes_exp_scalar) for n > 127. Both are correct saturation —
+        // the BUG signature is wrong sign/magnitude (pre-fix AVX2 vector
+        // lanes returned NEGATIVE ~1e-33 for x=+100 via exponent wrap).
+        for (i, (&xi, (&a, &b))) in case.iter().zip(fused.iter().zip(sep.iter())).enumerate() {
+            if xi <= -88.0 {
+                // Low side (the bug's axis — softmax inputs are max-shifted
+                // to <= 0): must be finite ~0, never wrapped garbage.
+                assert!(
+                    a.is_finite() && a.abs() < 1e-30,
+                    "fused exp({xi}) = {a} at {i} — unclamped 2^n wrap (should underflow to ~0)"
+                );
+                assert!(
+                    b.is_finite() && b.abs() < 1e-30,
+                    "separate exp({xi}) = {b} at {i} — unclamped 2^n wrap"
+                );
+            } else if xi >= 89.0 {
+                assert!(
+                    a > 1e37,
+                    "fused exp({xi}) = {a} at {i} — exponent wrap (should saturate positive huge/inf)"
+                );
+                assert!(
+                    b > 1e37,
+                    "separate exp({xi}) = {b} at {i} — exponent wrap"
+                );
+            } else {
+                // In-range: truth-referenced against libm (the Issue 027
+                // contract, ~5e-4 covers range-reduction cancellation).
+                let expected = xi.exp();
+                let rel_err = (a - expected).abs() / expected.abs().max(1e-30);
+                assert!(
+                    rel_err < 5e-4,
+                    "exp({xi}) = {a} vs libm {expected}, rel_err={rel_err:.3e}"
+                );
+                // Fused and unfused kernels are the same polynomial + the
+                // same clamp contract — in-range they must agree tightly
+                // (pre-fix on AVX2 they disagreed by ~1e38 on extremes).
+                assert!(
+                    (a - b).abs() < 1e-6,
+                    "fused/unfused disagree at {i}: x={xi}, fused={a}, separate={b}"
+                );
+            }
+        }
+
+        // The softmax invariant that actually broke: the denominator stays
+        // strictly positive (a ~1e33 garbage term made it huge-negative
+        // pre-fix → every weight garbage → NaN loss downstream). Overflow
+        // cases may saturate the sum to +inf — positive by construction.
+        assert!(
+            fused_sum > 0.0 && !fused_sum.is_nan(),
+            "sum must be positive (finite or +inf), got {fused_sum} for {case:?}"
+        );
+        let has_overflow = case.iter().any(|&v| v >= 89.0);
+        if !has_overflow {
+            assert!(
+                fused_sum.is_finite(),
+                "sum must be finite with no overflow inputs, got {fused_sum} for {case:?}"
+            );
+        }
+    }
+}
+
 // ── simd_sigmoid_tanh_clamp_inplace tests (Issue 024/025) ──────────────
 
 /// Reference implementation using the scalar `fast_sigmoid` path — the
