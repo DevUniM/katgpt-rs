@@ -104,13 +104,25 @@ marked row so the claim stays auditable.
   lands DRIFT, which is the honest verdict, so no whitelist of channel
   shapes gates comparability.
 - One occurrence per line; case-sensitive extensions; no other comment
-  syntax (# only — correct for all six scanned types); string literals are
-  not distinguished from code (a line scanner cannot — the house answer for
-  Rust is the AST in platform_dead_code_audit.py, which does not transfer to
-  YAML/sh/Dockerfile).
+  syntax (# only — correct for all six scanned types). STRING LITERALS:
+  for .py, triple-quoted regions (either three-quote delimiter — docstrings
+  are the 99% case) are MASKED by a minimal line-oriented state machine
+  before any matching, because this file's own docstring prose fired three
+  false DRIFT rows on 2026-09-15 (the fourth instrument in this family to
+  meet the shape — see the landing record below). Single-quoted one-line
+  string literals in .py still count as occurrences: documented, not
+  solved, and measured-absent in the workspace today. Shell heredocs and
+  YAML block scalars are NOT modeled — measured-absent too (the only .sh
+  occurrences workspace-wide are the two marked -e lines; no block scalar
+  carries the token). The house answer for Rust is the AST in
+  platform_dead_code_audit.py, which does not transfer to YAML/sh.
 - This file's own self-test fixtures are BUILT AT RUNTIME (the token is
-  assembled from the TRIGGER constant), so this source carries no occurrence
-  and the katgpt-rs self-scan stays exactly the repo's real surface.
+  assembled from the TRIGGER constant), and its own docstrings are MASKED
+  by the same triple-quote state machine the scanner applies to every .py
+  file — the scanner learned the language shape rather than the docs being
+  obfuscated or the file exempting itself (the AGENTS.md law: an instrument
+  that certifies nothing exempts nothing). The katgpt-rs self-scan shows
+  exactly the repo's real surface.
 
 # Exits
 
@@ -144,6 +156,20 @@ the other three directly above their occurrences — rule (b)). Result:
 1 UNRESOLVED-MARKED (riir-chain; the counted UNRESOLVED ceiling re-pinned
 to 0) · riir-game-sdk stays NO-PIN-OVERRIDE 1 by design (pin-absence
 dominates the marker) · 13 UNPINNED-REPO unchanged. Sweep green.
+
+Self-scan incident (same day, after that green): the follow-up docstring
+prose planted three false DRIFT rows in THIS file (lines 38, 79, 243 —
+grammar examples and the rule-(c) rationale, all inside triple-quoted
+docstrings). Fourth instrument in the family to meet the shape, per
+AGENTS.md's lineage: platform_dead_code_audit (literal masking dropped
+inline format args), subprocess_encoding_gate (its own selftest fixtures
+were the four offenders; it moved to an AST), wasm32_surface_audit (a raw
+string's cfg read as surface), now this file. The repair is the scanner
+learning the shape — a minimal line-oriented triple-quote state machine
+for .py, UNPARSED on a runaway region (the trap-sentinel law) — not
+docstring obfuscation, not a self-exemption. Post-repair: the three
+self-hits gone, every other repo's verdict byte-identical to the pre-
+incident green, sweep green.
 """
 
 from __future__ import annotations
@@ -152,7 +178,7 @@ import argparse
 import re
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -192,6 +218,66 @@ OCC_RE = re.compile(
 # `ENV NAME=value` is never counted twice (one occurrence per line, v1).
 DOCKER_ENV_RE = re.compile(
     r"(?<![A-Za-z0-9_.\-])ENV[ \t]+" + TRIGGER + r"[ \t]+" + _VAL_GRP)
+
+# Triple-quote delimiters, built without a literal triple in THIS source —
+# the file scans itself, and a `"""` literal here would open a false region
+# in its own masker (the self-scan law: the scanner reads its own file).
+_TRIPLE_RE = re.compile('"' * 3 + "|" + "'" * 3)
+
+
+def _py_code_slices(lines: list[str]) -> tuple[list[str], str | None]:
+    """Per-line CODE text — the parts of each physical line outside
+    triple-quoted string regions — and the delimiter still open at EOF.
+
+    Minimal line-oriented state machine (v1): while OUTSIDE, the first
+    three-quote delimiter of either kind opens a region; while INSIDE,
+    only the MATCHING delimiter closes it (the other triple is plain
+    text — Python agrees).
+    A full `#` comment line never changes state (Python agrees: it is a
+    comment). Lines whose content is string come back as empty code, so
+    docstring prose never fires an occurrence.
+
+    A region still open at EOF returns it as `state` — the file is
+    UNPARSED, never silently half-skipped: a runaway docstring swallowing
+    the rest of the file must not read as clean (the trap-sentinel UNPARSED
+    law), and must not read as DRIFT either. Occurrences in the readable
+    prefix before the runaway still count — they are real text the scanner
+    did read; the UNPARSED flag is what keeps the file from ever reading
+    as a pass.
+
+    Documented v1 limits: escape sequences (`\"\"\"` inside a string),
+    single-quoted NORMAL strings containing a triple, and a triple inside
+    a trailing `#` comment can false-open a region. Measured absent in the
+    workspace today (the only .py occurrences ever seen were this file's
+    own docstring prose); re-measure before relying on the masking for a
+    file that plays games with quotes.
+    """
+    code: list[str] = []
+    state: str | None = None
+    for line in lines:
+        if state is None and line.lstrip().startswith("#"):
+            code.append(line)
+            continue
+        buf: list[str] = []
+        pos = 0
+        while pos < len(line):
+            if state is None:
+                m = _TRIPLE_RE.search(line, pos)
+                if m is None:
+                    buf.append(line[pos:])
+                    break
+                buf.append(line[pos:m.start()])
+                state = m.group(0)
+                pos = m.end()
+            else:
+                end = line.find(state, pos)
+                if end == -1:
+                    pos = len(line)
+                    break
+                pos = end + len(state)
+                state = None
+        code.append("".join(buf))
+    return code, state
 
 
 def is_scannable(rel: str) -> bool:
@@ -287,22 +373,29 @@ class Occ:
         return f"{self.rel}:{self.lineno}"
 
 
-def scan_lines(rel: str, lines: list[str], pin: str | None) -> list[Occ]:
+def scan_lines(rel: str, raw_lines: list[str], pin: str | None,
+               code_lines: list[str] | None = None) -> list[Occ]:
+    """Occurrence scan over one file. `code_lines` is the triple-quote-
+    masked text for .py files (docstring content removed); every decision —
+    comment skip, occurrence match, marker context — runs on it, while the
+    printed `line` stays the RAW source line so rows stay auditable."""
+    if code_lines is None:
+        code_lines = raw_lines
     occs: list[Occ] = []
-    for idx, raw in enumerate(lines):
-        if raw.lstrip().startswith("#"):
+    for idx, code in enumerate(code_lines):
+        if code.lstrip().startswith("#"):
             continue
-        m = OCC_RE.search(raw)
+        m = OCC_RE.search(code)
         form = "assign"
         if m is None:
-            m = DOCKER_ENV_RE.search(raw)
+            m = DOCKER_ENV_RE.search(code)
             form = "docker-env"
         if m is None:
             continue
         value = norm_value(m.group("val"))
         occs.append(Occ(rel, idx + 1, value,
-                        classify(value, has_marker(lines, idx), pin),
-                        form, raw.rstrip()))
+                        classify(value, has_marker(code_lines, idx), pin),
+                        form, raw_lines[idx].rstrip()))
     return occs
 
 
@@ -325,6 +418,8 @@ class RepoScan:
     vendored: int          # vendor/ files the walk excluded, ALL file types
     occs: list
     unpinned_repo: bool
+    unparsed: list = field(default_factory=list)   # files the masker could
+    # not fully read (runaway triple-quote) — never folded into clean
 
     def count(self, verdict: str) -> int:
         return sum(1 for o in self.occs if o.verdict == verdict)
@@ -334,17 +429,25 @@ def scan_repo(root: Path, name: str) -> RepoScan:
     pin = repo_pin(root)
     files, vendored = tracked_files(root, "*")
     occs: list[Occ] = []
+    unparsed: list[str] = []
     walked = 0
     for f in files:
         rel = f.relative_to(root).as_posix()
         if not is_scannable(rel):
             continue
         walked += 1
-        lines = f.read_text(encoding="utf-8", errors="replace").splitlines()
-        occs.extend(scan_lines(rel, lines, pin))
+        raw = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        if rel.endswith(".py"):
+            code, open_q = _py_code_slices(raw)
+            if open_q is not None:
+                unparsed.append(rel)
+        else:
+            code = raw
+        occs.extend(scan_lines(rel, raw, pin, code))
     return RepoScan(name, root, pin, (root / "rust-toolchain.toml").is_file(),
                     walked, vendored, occs,
-                    (root / "Cargo.toml").is_file() and pin is None)
+                    (root / "Cargo.toml").is_file() and pin is None,
+                    unparsed)
 
 
 # ── floors (shared with the sweep — one parser, one file, two consumers) ────
@@ -377,12 +480,13 @@ def _pin_txt(scan: RepoScan) -> str:
 
 def report(scans: list, verbose: bool = False) -> None:
     tot = {v: 0 for v in VERDICTS}
-    tot_walked = tot_unpinned = 0
+    tot_walked = tot_unpinned = tot_unparsed = 0
     for s in scans:
         for v in VERDICTS:
             tot[v] += s.count(v)
         tot_walked += s.walked
         tot_unpinned += 1 if s.unpinned_repo else 0
+        tot_unparsed += len(s.unparsed)
         hot = s.count("DRIFT") or s.count("UNRESOLVED")
         status = "⛔" if s.count("DRIFT") else ("·" if hot else "✓")
         print(f"{status} {s.name:22s} pin={_pin_txt(s):7s} files={s.walked:<5d} "
@@ -403,11 +507,14 @@ def report(scans: list, verbose: bool = False) -> None:
             print("      ℹ UNPINNED-REPO — root Cargo.toml with no "
                   "rust-toolchain.toml: version-sensitive code, no declared "
                   "pin (intake P14 (k)(ii))")
+        for rel in s.unparsed:
+            print(f"      ⚠ UNPARSED          {rel} — a triple-quote region "
+                  f"never closed; the file never reads as clean")
     print()
     print(f"{len(scans)} repo(s) · {tot_walked} scannable tracked file(s) · "
           + " · ".join(f"{v.lower().replace('_', '-')} {tot[v]}"
                        for v in VERDICTS)
-          + f" · {tot_unpinned} UNPINNED-REPO")
+          + f" · {tot_unpinned} UNPINNED-REPO · {tot_unparsed} UNPARSED")
     print("  scope: hardcoded toolchain overrides in tracked "
           ".sh/.yml/.yaml/.toml/.py + Dockerfile paths; one occurrence per "
           "line; # comments skipped in every scanned type")
@@ -454,6 +561,28 @@ _CHAIN_TAIL = "    --network none\n"
 
 def _chain_occ(value: str) -> str:
     return "    -e " + TRIGGER + "=" + value + " \\\n"
+
+
+# ── .py triple-quote fixtures (the self-scan incident shape) ─────────────
+# Built without a literal triple in THIS source: the file scans itself, and
+# a `"""` literal here would open a false region in its own masker.
+
+def _py_docstring(inner: str, close: bool = True) -> str:
+    q = '"' * 3
+    return q + "\n" + inner + (q + "\n" if close else "")
+
+
+def _py_oneliner(inner: str) -> str:
+    q = '"' * 3
+    return q + inner + q + "\n"
+
+
+# Files expected to come back UNPARSED, keyed by case label (every other
+# case must read fully — an unexpected UNPARSED file fails its arm).
+WANT_UNPARSED = {
+    "py unterminated triple-quote is UNPARSED, never half-clean":
+        ("doc.py",),
+}
 
 
 PIN_TOML = 'channel = "1.98.1"\n'
@@ -545,6 +674,24 @@ SELFTEST_CASES = (
     ("toml quoted value (quotes stripped before compare)",
      {"cargo-config.toml": "[env]\n" + TRIGGER + ' = "1.98.1"\n'}, {},
      3, {("MATCH", "1.98.1")}, False),
+    ("py docstring prose is NOT an occurrence (the self-scan incident shape)",
+     {"doc.py": _py_docstring("doc prose: " + TRIGGER + "=1.0.0 inside\n")
+                + "x = 1\n"}, {},
+     3, set(), False),
+    ("py one-line triple-quoted string is NOT an occurrence",
+     {"doc.py": _py_oneliner("one-liner with " + TRIGGER + "=x inside")
+                + "x = 1\n"}, {},
+     3, set(), False),
+    ("py occurrence AFTER a closed docstring re-arms the scanner",
+     {"doc.py": _py_docstring("harmless doc\n")
+                + "env " + TRIGGER + "=1.0.0\n"}, {},
+     3, {("DRIFT", "1.0.0")}, False),
+    ("py unterminated triple-quote is UNPARSED, never half-clean",
+     {"doc.py": "env " + TRIGGER + "=1.0.0\n"
+                + _py_docstring("runaway prose mentioning "
+                                + TRIGGER + "=1.0.0\n", close=False)
+                + TRIGGER + "=1.98.1\n"}, {},
+     3, {("DRIFT", "1.0.0")}, False),
     ("clean pinned repo: zero occurrences, not UNPINNED",
      {"a.sh": "cargo build --release\n", "b.py": "print(1)\n"}, {},
      4, set(), False),
@@ -568,15 +715,18 @@ def selftest() -> int:
             _write_tree(root, files, **kwargs)
             res = scan_repo(root, f"c{idx}")
             got_occs = sorted((o.verdict, o.value) for o in res.occs)
+            want_unparsed = WANT_UNPARSED.get(label, ())
             ok = (res.walked == want_walked and got_occs == sorted(want_occs)
-                  and res.unpinned_repo == want_unpinned)
+                  and res.unpinned_repo == want_unpinned
+                  and tuple(res.unparsed) == want_unparsed)
             mark = "✓" if ok else "✗"
             if not ok:
                 bad += 1
                 print(f"  {mark} {label}")
                 print(f"      walked {res.walked} (want {want_walked}), occs "
                       f"{got_occs} (want {sorted(want_occs)}), unpinned "
-                      f"{res.unpinned_repo} (want {want_unpinned})")
+                      f"{res.unpinned_repo} (want {want_unpinned}), unparsed "
+                      f"{res.unparsed} (want {list(want_unparsed)})")
             else:
                 print(f"  {mark} {label}")
     print()

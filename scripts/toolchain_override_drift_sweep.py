@@ -46,6 +46,12 @@ and simply absent, so this would either red on every run or derive an EMPTY
 population and print a confident green over zero repos. Workstation, on
 demand, every contract repo.
 
+UNPARSED files (a .py triple-quote region never closed) red their repo
+UNCONDITIONALLY — never a ceiling, never folded into clean: a runaway
+docstring swallowing the rest of a file is the instrument admitting it
+cannot see (the trap-sentinel law), and an admission must not be
+optionally green.
+
     toolchain_override_audit.py        report, exit 0, any repos you name
     toolchain_override_drift_sweep.py  verdict, every contract repo, pinned
 
@@ -101,6 +107,11 @@ def repo_flags(scan: toa.RepoScan, row: dict | None) -> list[str]:
         flags.append(
             f"UNRESOLVED {n_unres} > pinned {row['max_unresolved']} — a "
             f"TOKEN override the classifier cannot evaluate")
+    if scan.unparsed:
+        flags.append(
+            f"{len(scan.unparsed)} file(s) the scanner could not fully read "
+            f"({', '.join(scan.unparsed)}) — UNPARSED is the instrument "
+            f"admitting it cannot see, never a pass")
     return flags
 
 
@@ -266,7 +277,7 @@ def main() -> int:
     bad = False
     tot_walked = 0
     tot = {v: 0 for v in toa.VERDICTS}
-    tot_unpinned = 0
+    tot_unpinned = tot_unparsed = 0
 
     for name in names:
         scan = toa.scan_repo(WORKSPACE / name, name)
@@ -275,6 +286,7 @@ def main() -> int:
             tot[v] += scan.count(v)
         tot_walked += scan.walked
         tot_unpinned += 1 if scan.unpinned_repo else 0
+        tot_unparsed += len(scan.unparsed)
 
         status = "✗" if flags else ("·" if scan.count("DRIFT")
                                     or scan.count("UNRESOLVED") else "✓")
@@ -295,6 +307,8 @@ def main() -> int:
         if scan.unpinned_repo:
             print("      ℹ UNPINNED-REPO — root Cargo.toml with no "
                   "rust-toolchain.toml (intake P14 (k)(ii))")
+        for rel in scan.unparsed:
+            print(f"      ⚠ UNPARSED          {rel}")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
@@ -312,7 +326,7 @@ def main() -> int:
     print(f"\n{len(names)} contract repo(s) · {tot_walked} scannable tracked "
           f"file(s) · " + " · ".join(f"{v.lower().replace('_', '-')} {tot[v]}"
                                      for v in toa.VERDICTS)
-          + f" · {tot_unpinned} UNPINNED-REPO")
+          + f" · {tot_unpinned} UNPINNED-REPO · {tot_unparsed} UNPARSED")
     print("  scope: hardcoded toolchain overrides in tracked "
           ".sh/.yml/.yaml/.toml/.py + Dockerfile paths vs the repo ROOT pin")
     print("  repair: add `# toolchain-override-deliberate: <reason>` on the "
