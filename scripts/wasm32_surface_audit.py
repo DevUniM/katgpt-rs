@@ -65,6 +65,9 @@ CFG_RE = re.compile(r'target_arch\s*=\s*"wasm32"')
 CFG_ERE = r'target_arch *= *"wasm32"' 
 NEG_RE = re.compile(r'not\s*\(\s*target_arch\s*=\s*"wasm32"')
 COMMENT_RE = re.compile(r"^\s*(//|/\*|\*)")
+# `cfg!(` — the RUNTIME branch, matched on the MASKED text (the token survives
+# masking; the value string does not, so the original is read back for it).
+CFG_MACRO_RE = re.compile(r"\bcfg!\s*\(")
 PKG_NAME_RE = re.compile(r'^\s*name\s*=\s*"([^"]+)"', re.M)
 CARGO_ROW_RE = re.compile(r"cargo\s+(?:\+\S+\s+)?(check|clippy|build|test)\b")
 DASH_P_RE = re.compile(r"(?:-p|--package)[= ]+([A-Za-z0-9_-]+)")
@@ -144,7 +147,7 @@ def package_of(repo: Path, rel: str) -> str | None:
 
 
 def positive_packages(repo: Path) -> tuple[dict[str, int], list[str], int]:
-    """(package -> positive cfg site count, positive files, files walked).
+    """(package -> gated site count, positive files, files walked, cfg! branches).
 
     The walk size is ALL tracked wasm32-mentioning .rs (minus vendored), not
     just the positive ones: the floor's job is to catch a BLIND grep, and a
@@ -158,21 +161,126 @@ def positive_packages(repo: Path) -> tuple[dict[str, int], list[str], int]:
     ]
     hits: dict[str, int] = {}
     positive_files: list[str] = []
+    runtime = 0
     for rel in files:
         try:
-            lines = (repo / rel).read_text(encoding="utf-8", errors="replace").splitlines()
+            text = (repo / rel).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        n = sum(
-            1
-            for ln in lines
-            if CFG_RE.search(ln) and not COMMENT_RE.match(ln) and not NEG_RE.search(ln)
-        )
+        if "wasm32" not in text:
+            continue
+        n, rt = positive_sites(text)
+        runtime += rt
         if n:
             pkg = package_of(repo, rel) or "(unattributed)"
             hits[pkg] = hits.get(pkg, 0) + n
             positive_files.append(rel)
-    return hits, positive_files, len(files)
+    return hits, positive_files, len(files), runtime
+
+
+def positive_sites(text: str) -> tuple[int, int]:
+    """-> (gated attribute sites, `cfg!` RUNTIME branches). Never pooled.
+
+    ⛔ Reads ATTRIBUTES, not lines. A line scan cannot tell a real
+    `#[cfg(target_arch = "wasm32")]` from one inside a raw string, and
+    riir-clippy's `src/platform_audit.rs` is four such fixtures — Rust source
+    embedded in `r#"…"#` as test INPUT for the platform-dead-code classifier.
+    Measured 2026-09-15: those four were this audit's entire count for that
+    repo, so it reported `1 package UNCOVERED, its arm compiles nowhere` about
+    a repo with no wasm32 code at all, and hard-failed that row's sweep.
+
+    Third instrument to meet this. `platform_dead_code_audit` masks literals
+    and says why; `subprocess_encoding_gate` moved to an AST because its
+    paren-matched text scanner *"reported four offenders in the gate's own
+    file — every one a fixture string inside its selftest()."* The masker is
+    IMPORTED rather than re-written: it is a hand-rolled Rust lexer with its
+    own measured defect history (inline format args), and a second copy is a
+    second thing to get wrong.
+
+    ⚠ `cfg!(target_arch = "wasm32")` is split out and NOT counted as surface.
+    It is a RUNTIME branch — it compiles on every target, so no lane can fail
+    to reach it and it is not the thing this audit asks about. Seven sites
+    workspace-wide (katgpt-rs 2, riir-ai 1, riir-shader 3, +1). Reported so the
+    exclusion is re-measurable rather than remembered, never folded into the
+    gated count.
+    """
+    from platform_dead_code_audit import mask_file
+
+    try:
+        masked, attrs = mask_file(text)
+    except Exception:
+        # A file the masker cannot read is NOT zero sites. Fall back to the
+        # line scan, which over-reports on fixtures and never under-reports.
+        lines = text.splitlines()
+        return sum(1 for ln in lines if CFG_RE.search(ln)
+                   and not COMMENT_RE.match(ln) and not NEG_RE.search(ln)), 0
+    gated = sum(1 for a in attrs
+                if CFG_RE.search(a.raw) and not NEG_RE.search(a.raw))
+    # `cfg!` survives masking as the token; only its VALUE string is blanked,
+    # so the original text is read back at that offset. A `cfg!` inside a
+    # string literal is blanked WHOLE and cannot match here.
+    rt = 0
+    for m in CFG_MACRO_RE.finditer(masked):
+        window = text[m.start():m.start() + 120]
+        if CFG_RE.search(window) and not NEG_RE.search(window):
+            rt += 1
+    return gated, rt
+
+
+def positive_sites_arms() -> list[str]:
+    """`positive_sites` — the string-literal immunity and the `cfg!` split.
+
+    The measured case is riir-clippy's `src/platform_audit.rs`: four
+    `#[cfg(target_arch = "wasm32")]` inside `r#"…"#` fixtures, which were that
+    repo's ENTIRE count and made this audit report `1 package UNCOVERED, its
+    arm compiles nowhere` about a repo with no wasm32 code at all.
+    """
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    real = '#[cfg(target_arch = "wasm32")]\nfn f() {}\n'
+    eq("a real attribute is a gated site", positive_sites(real), (1, 0))
+    # The measured false positive. A raw string carrying Rust source is test
+    # INPUT for another classifier, not a wasm32 arm.
+    fixture = ('fn t() {\n    let src = r#"\n'
+               '#[cfg(target_arch = "wasm32")]\nfn inner() {}\n"#;\n}\n')
+    eq("⛔ an attribute inside a raw string is NOT a site",
+       positive_sites(fixture), (0, 0))
+    eq("...and an ordinary string literal is not either",
+       positive_sites('const S: &str = "#[cfg(target_arch = \\"wasm32\\")]";\n'),
+       (0, 0))
+    eq("a real attribute in a file that also has a fixture still counts",
+       positive_sites(real + fixture), (1, 0))
+    # `cfg!` is a RUNTIME branch: split out, never pooled into the gated count.
+    eq("a cfg! branch is counted apart, not as surface",
+       positive_sites('fn f() { if cfg!(target_arch = "wasm32") { g(); } }\n'),
+       (0, 1))
+    eq("a cfg! branch inside a raw string is neither",
+       positive_sites('fn t() { let s = r#"if cfg!(target_arch = "wasm32") {}"#; }\n'),
+       (0, 0))
+    # The NEGATIVE cfg is an ordinary native-only guard; counting it inflates
+    # everything (riir-ai .issues/892 T4).
+    eq("a not(wasm32) guard is not a positive site",
+       positive_sites('#[cfg(not(target_arch = "wasm32"))]\nfn f() {}\n'), (0, 0))
+    eq("a compound positive cfg still counts once",
+       positive_sites('#[cfg(all(target_arch = "wasm32", '
+                      'target_feature = "simd128"))]\nfn f() {}\n'), (1, 0))
+    # A multi-LINE attribute is one site, not one per line — the line scan
+    # counted them per line and this is where the two disagree most.
+    eq("a multi-line attribute is ONE site",
+       positive_sites('#[cfg(all(\n    target_arch = "wasm32",\n'
+                      '    target_feature = "simd128"\n))]\nfn f() {}\n'), (1, 0))
+    # A comment is not a cfg — the prose recording why a file has NO wasm32
+    # arm otherwise makes that file read as browser code.
+    eq("a commented attribute is not a site",
+       positive_sites('// #[cfg(target_arch = "wasm32")]\nfn f() {}\n'), (0, 0))
+    eq("an inner attribute counts",
+       positive_sites('#![cfg(target_arch = "wasm32")]\nfn f() {}\n'), (1, 0))
+
+    return fails
 
 
 def logical_lines(text: str) -> list[str]:
@@ -512,6 +620,12 @@ class RepoSurface(NamedTuple):
     bydep: set
     res_notes: list
     dep_notes: list
+    # `cfg!(target_arch = "wasm32")` sites, EXCLUDED from `hits` and
+    # carried so the exclusion is re-measurable rather than remembered.
+    # A runtime branch compiles on every target, so no lane can fail to
+    # reach it and it is not the question this audit asks. Defaulted, so
+    # the early-return construction below needs no change.
+    runtime: int = 0
 
     @property
     def reachable(self) -> bool:
@@ -533,7 +647,7 @@ class RepoSurface(NamedTuple):
 
 def classify_repo(repo: Path) -> RepoSurface:
     """Walk + classify one repo. No printing — the caller decides the shape."""
-    hits, positive_files, files_walked = positive_packages(repo)
+    hits, positive_files, files_walked, runtime = positive_packages(repo)
     if not hits:
         return RepoSurface(files_walked, {}, 0, 0, 0, 0,
                            set(), set(), set(), [], [])
@@ -562,11 +676,12 @@ def classify_repo(repo: Path) -> RepoSurface:
     graph = dep_graph(repo, manifest_pkg_names(repo))
     bydep, dep_notes = by_dep_cover(graph, seeds, hits)
     return RepoSurface(files_walked, hits, rows, wildcards, derived, root_only,
-                       named, resolved, bydep, res_notes, dep_notes)
+                       named, resolved, bydep, res_notes, dep_notes, runtime)
 
 
 def self_test() -> int:
-    """Prove the by-dep detectors fire, BOTH directions (Issue 774 landing).
+    """Prove the by-dep detectors fire, BOTH directions (Issue 774 landing),
+    and the SITE classifier's string-literal immunity (`positive_sites_arms`).
 
     Five canary crates in a throwaway git repo:
       canary-a  named by the lane row        -> ✓ named
@@ -616,7 +731,7 @@ def self_test() -> int:
              "commit", "-qm", "canary"),
         ):
             subprocess.run(["git", "-C", str(tmp), *args], capture_output=True, encoding="utf-8", errors="replace")
-        hits, positive_files, _ = positive_packages(tmp)
+        hits, positive_files, _, _ = positive_packages(tmp)
         named, _, wildcards, derived, root_only, row_files = lane_coverage(tmp)
         row_texts = []
         for rel in row_files:
@@ -650,12 +765,31 @@ def self_test() -> int:
             print(f"  {'ok' if good else 'FAIL':<4} {pkg}: want {want!r}, got {actual!r}")
         print(f"\n  {'PASS' if ok else 'FAIL'} — all five canary verdicts hold" if ok
               else "\n  FAIL — a verdict drifted")
-        return 0 if ok else 1
+        # The scanner arms are reached from HERE too, not only from main():
+        # `arm_reach_audit` invokes an arm by NAME, and `self_test` is in its
+        # vocabulary while `positive_sites_arms` is not — an arm it cannot
+        # call is an arm measured as reaching nothing.
+        scanner = positive_sites_arms()
+        for f in scanner:
+            print(f"  fail positive_sites{f}")
+        return 0 if (ok and not scanner) else 1
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main() -> int:
+    # The scanner arms run on EVERY invocation, unlike the five-canary git
+    # fixture below: they cost nothing (no subprocess, no tree) and they guard
+    # the classifier that decides the population every other verdict is a
+    # ceiling over. An instrument that miscounts its own corpus prints a
+    # confident number either way.
+    scanner = positive_sites_arms()
+    if scanner:
+        print("✗ positive_sites self-test FAILED — the site classifier "
+              "does not behave as documented:")
+        for f in scanner:
+            print(f)
+        return 2
     argv = sys.argv[1:]
     if argv == ["--self-test"]:
         print("wasm32 SURFACE audit — by-dep canary (Issue 774)\n")
@@ -675,13 +809,20 @@ def main() -> int:
         if not s.hits:
             if s.files_walked:
                 print(f"  {repo.name}: {s.files_walked} file(s) mention wasm32, "
-                      f"0 with POSITIVE cfgs (all native-only guards) — nothing to compile")
+                      f"0 with POSITIVE cfgs (all native-only guards) — nothing "
+                      f"to compile"
+                      + (f"; {s.runtime} `cfg!` runtime branch(es) EXCLUDED"
+                         if s.runtime else ""))
             continue
         tot_pos_pkgs += len(s.hits)
         print(f"  {repo.name}: {s.files_walked} file(s) walked · "
               f"{len(s.hits)} package(s) with positive cfgs · "
               f"{s.rows} wasm32 row(s) ({s.wildcards} --workspace, "
-              f"{s.derived} derived, {s.root_only} root-only)")
+              f"{s.derived} derived, {s.root_only} root-only)"
+              # Reported, never folded: a `cfg!` branch compiles on EVERY
+              # target, so no lane can fail to reach it and it is not surface.
+              + (f" · {s.runtime} `cfg!` runtime branch(es) EXCLUDED"
+                 if s.runtime else ""))
         for pkg, mark in sorted(s.verdicts().items()):
             if mark == "? UNRESOLVED":
                 tot_unres += 1

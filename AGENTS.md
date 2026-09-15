@@ -887,6 +887,24 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   `.issues/892` T4). **Comment lines are excluded** — prose explaining a cfg
   is not a cfg, and the comment recording why a file has *no* wasm32 arm
   otherwise makes that file read as browser code.
+- ⛔ **And it reads ATTRIBUTES, not lines** (2026-09-15). A line scan cannot
+  tell a real `#[cfg(target_arch = "wasm32")]` from one inside a raw string,
+  and riir-clippy's `src/platform_audit.rs` is four such fixtures — Rust
+  source embedded in `r#"…"#` as test INPUT for the platform-dead-code
+  classifier. Those four were that repo's ENTIRE count, so the audit reported
+  `1 package UNCOVERED, its arm compiles nowhere` about a repo with no wasm32
+  code at all, and hard-failed its sweep row. **Third instrument to meet this
+  class**: `platform_dead_code_audit` masks literals and says why, and
+  `subprocess_encoding_gate` moved to an AST because its text scanner *"reported
+  four offenders in the gate's own file — every one a fixture string inside its
+  `selftest()`."* The masker is IMPORTED from `platform_dead_code_audit`, not
+  re-written: it is a hand-rolled Rust lexer with its own measured defect
+  history, and a second copy is a second thing to get wrong.
+- ⚠ `cfg!(target_arch = "wasm32")` is split out and **not counted as
+  surface**. It is a RUNTIME branch — it compiles on every target, so no lane
+  can fail to reach it and it is not the question this audit asks. Seven sites
+  workspace-wide; printed on the per-repo line as `EXCLUDED` so the decision is
+  re-measurable rather than remembered, never folded into the gated count.
 - First measurement (2026-09-07): **9 NAMED · 15 UNRESOLVED · 0 UNCOVERED**
   over 196 files / 24 positive-cfg packages / 17 repos. Resolved 2026-09-08
   (738 T1): the two-shape resolver upgrades a derived-row package only on
