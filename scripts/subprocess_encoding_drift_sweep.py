@@ -340,7 +340,7 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    # The population axis, shared (Issues 779 + 782): UNREGISTERED reds in every
+    # The population axis, shared (Issues 793 + 782): UNREGISTERED reds in every
     # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
     # with it. Never auto-detected — a genuine removal whose row update was
     # forgotten is set-identical to a partial clone from the walk alone.

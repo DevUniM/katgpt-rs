@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The workstation sweeps' POPULATION verdict — one copy (Issue 779).
+"""The workstation sweeps' POPULATION verdict — one copy (Issue 793).
 
 Every drift sweep in `scripts/` pins per-repo rows and then has to answer the
 same question about the rows it did NOT see: is a pinned repo missing because

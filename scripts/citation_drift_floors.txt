@@ -184,7 +184,7 @@ seal-remake                39      0               0       0
 # (the number is wrong, or its repo left the contract) from CROSS, and pooling
 # the two would hide whichever is rarer.
 
-# ── Issue 780: MISATTRIBUTED-IN-RANGE — a GLOBAL wall, not a per-repo ratchet ─
+# ── Issue 794: MISATTRIBUTED-IN-RANGE — a GLOBAL wall, not a per-repo ratchet ─
 #
 # A citation carrying an explicit attribution ON it to a repo that does NOT own
 # the number, where the number is also under the citing repo's own ceiling. The

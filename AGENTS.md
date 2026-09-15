@@ -170,7 +170,7 @@ within a fixed CHECKS set, and only as a range.
 `platform_dead_code_floor_gate.py`, a 2415-file Rust-source walk measured at
 **~6.2s wall** standalone), and the CPU figure at 18 checks is **UNMEASURED,
 not unchanged**: the landing run was on the Windows workstation, where `times`
-does not account for native children at all (Issue 776, measured below) and
+does not account for native children at all (Issue 792, measured below) and
 the gate now prints `CPU SUPPRESSED` rather than the 1.26s it used to. Take
 the 18-check CPU figure from the next M3 run; do NOT read 13.37s forward
 across a CHECKS change, and do not read a Windows run's number — there is
@@ -231,7 +231,7 @@ multi-second run. Both arms verified against the block extracted from the
 tracked file: redirect → 0.45s from a child that burned 0.43s; pipe → 0.00s
 and the ⛔ fires.
 ⛔ **And the ~0 guard is not the whole hazard — the figure has a PLATFORM
-premise (Issue 776, 2026-09-14).** On Windows/MSYS, `times` accounts for MSYS
+premise (Issue 792, 2026-09-14).** On Windows/MSYS, `times` accounts for MSYS
 children and reports essentially nothing for NATIVE ones, so a run whose work
 is all Python prints a well-formed, plausible number built from `sed`/`tail`
 overhead alone: **1.26s CPU against a 19.7s wall**, with the ~0 guard quiet.
@@ -294,7 +294,7 @@ marker reds naming both hypotheses; a repo on disk the file does not know
 reds in every posture, marker or not.
 
 **Every sweep below answers the partial-clone question the same way, once
-(Issue 779): `scripts/sweep_population.py`.** Seven of them carried a
+(Issue 793): `scripts/sweep_population.py`.** Seven of them carried a
 copy-pasted "pinned but ABSENT from the derived walk" loop and hard-red on a
 known 16-of-20 box with `DOCS_GATE_PARTIAL_CLONE=1` already set and every
 content assertion green — and a sweep that always reds is a sweep nobody runs.
@@ -440,7 +440,7 @@ adjudicated against.
 
 ⛔ **And the wrong address the paragraph above names as a worked example —
 riir-train Issue 513 written up as `katgpt-rs Issue 513` — was still standing
-in the workspace when Issue 780 went looking for it** (riir-neuron-db `AGENTS.md:82`, repaired to `riir-train Issue
+in the workspace when Issue 794 went looking for it** (riir-neuron-db `AGENTS.md:82`, repaired to `riir-train Issue
 513 T6`). Not because `is_qualified` missed it: because the `⛔MISATTRIBUTED`
 tag was computed **only in the CROSS bucket**, and the three-way bucketing runs
 first. A citation whose number also falls under the *citing* repo's own ceiling
@@ -487,7 +487,7 @@ punctuation rule separates them. So the cost is **printed every run** rather
 than guessed at, with the standing of AMBIGUOUS: on the local side it lands as
 UNDECIDED noise (riir-clippy's 10 undecided rows are its own four numbers),
 and on the owners side as a **false** `⛔MISATTRIBUTED` — Issue 754's exact
-failure, inherited by Issue 780's in-range class. 0 live instances today, which
+failure, inherited by Issue 794's in-range class. 0 live instances today, which
 is the reason to print it rather than remember it.
 
 ⚠ **A document that discusses a misattribution has to reproduce it**, and the
@@ -1216,7 +1216,7 @@ count is what the bucket note above forbids.
 Issue 775 landed six canary arms over a gate's **own pin arithmetic, which the
 classifier's self-test cannot reach**. The sentence above is in this file, it is
 correct, and it names a rule. The rule landed in **one** gate and was never
-generalised — the sixth recorded instance of that shape (Issues 777, 778, 779,
+generalised — the sixth recorded instance of that shape (Issues 777, 778, 793,
 782, 783). Measured 2026-09-14: **six of twenty** CHECKS invoked no arm at all,
 own or delegated, carrying **2,050 lines** of per-push logic whose failure path
 no test had ever executed.
@@ -1494,7 +1494,7 @@ riir-clippy 9+1, riir-ai 6, riir-dapps 1, seal-game-editor 1. Two were not
 latent: `riir-clippy/scripts/gen_dashboard.py:552` reads `git log --pretty=%s`
 across the siblings, and **every commit subject in this workspace uses an
 em-dash**. Read that as the standing failure mode, now recorded five times
-(Issues 777, 778, 779, 782, 783): a rule landed in one instrument and never
+(Issues 777, 778, 793, 782, 783): a rule landed in one instrument and never
 generalised. Before fixing such a class, grep the whole family and land the
 repair as one shared mechanism.
 

@@ -5,7 +5,7 @@ Issue 789. `platform_dead_code_floor_gate.py` landed with "six canary arms over
 the gate's own pin arithmetic, **which the classifier's self-test cannot
 reach**". That sentence is in AGENTS.md, it is correct, and it names a rule.
 The rule landed in ONE gate and was never generalised — the sixth recorded
-instance of that shape here (Issues 777, 778, 779, 782, 783). Measured when
+instance of that shape here (Issues 777, 778, 793, 782, 783). Measured when
 this file was written: SIX of the twenty CHECKS invoked no arm at all, their
 own or delegated, carrying 2,050 lines of per-push logic whose failure path no
 test had ever executed.

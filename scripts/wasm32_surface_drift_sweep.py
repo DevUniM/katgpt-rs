@@ -341,7 +341,7 @@ def main() -> int:
         bad = True
         print(f"✗ {TOTALS}: UNRESOLVED {tot_unres} > {g['max_unresolved']}")
 
-    # The population axis, shared (Issues 779 + 782).
+    # The population axis, shared (Issues 793 + 782).
     pop_lines, deferred, pop_fail = population_verdict(
         [k for k in pins if k != TOTALS], names)
     for _line in pop_lines:

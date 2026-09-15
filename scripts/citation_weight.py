@@ -121,6 +121,42 @@ def corpus(repo: Path) -> dict[str, str]:
     return blobs
 
 
+def removed_candidates(repo: Path, dirname: str, number: str) -> list[str]:
+    """Stems that HELD this number and were removed — the shape `candidates()`
+    cannot see, and the commonest collision shape there is (Issue 791 T1).
+
+    A document closed under the noise-reduction rule is deleted, so a
+    double-allocation where one side has closed leaves exactly ONE file on
+    disk and reads as "not a duplicate". That is the majority case, not an
+    edge: every number this repo allocates is expected to end up removed.
+
+    `-M` is not decoration. Without rename detection a RENUMBERED document
+    reports as a deletion at its old number, and the tool would resurrect a
+    collision somebody already resolved — manufacturing the finding it exists
+    to adjudicate. With it, a rename is an `R` and `--diff-filter=D` skips it.
+
+    ⛔ It does NOT recover a file created and removed with no commit in
+    between; git never saw it. That is Issue 754's blind spot, and the
+    instrument that covers it is `numbering_drift_sweep.heading_allocated`,
+    reading HISTORY.md headings. Named here because a reader who finds one
+    candidate and no removal must not conclude there was never a second.
+    """
+    out = subprocess.run(
+        ["git", "-C", str(repo), "log", "-M", "--diff-filter=D", "--name-only",
+         "--format=", "--", f"{dirname}/"],
+        capture_output=True, encoding="utf-8", errors="replace").stdout
+    n = int(number)
+    stems = set()
+    for rel in out.split("\n"):
+        name = os.path.basename(rel.strip())
+        if not name.endswith(".md"):
+            continue
+        m = re.match(r"^(\d+)_", name)
+        if m and int(m.group(1)) == n:
+            stems.add(name[:-3])
+    return sorted(stems)
+
+
 def candidates(repo: Path, dirname: str, number: str) -> list[str]:
     d = repo / dirname
     n = int(number)
@@ -213,6 +249,12 @@ def selftest() -> list[str]:
     if "313" in stem_tokens("313_swir_real_model_validation"):
         fails.append("stem tokens: kept the ambiguous number")
     fails += attribute_arms()
+    # Called from HERE and not from main(): `arm_reach_audit` invokes an arm
+    # only by the names in its vocabulary (`selftest`, `canary`, ...), so a
+    # helper wired into main() is measured as reaching nothing. Measured on
+    # the commit that added it — four `removed_candidates` decisions read
+    # SURVIVED with the arms already written and passing.
+    fails += removed_candidate_arms()
     return fails
 
 
@@ -328,6 +370,107 @@ def attribute_arms() -> list[str]:
     return f
 
 
+def removed_candidate_arms() -> list[str]:
+    """`removed_candidates` against a REAL git tree (Issue 791 T1).
+
+    A fixture repo and not a stub, because the whole rule is what `git log -M
+    --diff-filter=D` reports: the recovery, the rename EXCLUSION, and the
+    number match are all properties of that command's output, and a stub would
+    assert this function's parsing against a transcript somebody wrote by hand.
+    """
+    import shutil
+    import tempfile
+
+    if not shutil.which("git"):
+        return ["    removed_candidate_arms: UNSEEN \u2014 no `git` on PATH, so "
+                "the history recovery was asserted by NOTHING"]
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        d = root / ".issues"
+        d.mkdir(parents=True)
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(root), *a],
+                                  capture_output=True, encoding="utf-8",
+                                  errors="replace", check=True).stdout.strip()
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "arm@example.invalid")
+        git("config", "user.name", "arm")
+
+        def commit(msg):
+            git("add", "-A")
+            git("commit", "-q", "-m", msg)
+
+        # 050: closed and REMOVED. This is the shape `candidates()` cannot see,
+        # and it is the majority case — every number here ends up removed.
+        (d / "050_closed_and_gone.md").write_text("x\n" * 40, encoding="utf-8")
+        # 051: still on disk.
+        (d / "051_still_here.md").write_text("y\n" * 40, encoding="utf-8")
+        # 052: RENUMBERED to 060 below. A rename is not an allocation being
+        # released and re-taken; resurrecting it would manufacture the finding
+        # this tool exists to adjudicate.
+        (d / "052_renumbered_away.md").write_text("z\n" * 40, encoding="utf-8")
+        commit("one")
+        (d / "050_closed_and_gone.md").unlink()
+        (d / "052_renumbered_away.md").rename(d / "060_renumbered_away.md")
+        commit("two")
+
+        eq("a removed document is recovered from history",
+           removed_candidates(root, ".issues", "050"), ["050_closed_and_gone"])
+        eq("a document still on disk is not reported as removed",
+           removed_candidates(root, ".issues", "051"), [])
+        eq("a RENUMBERED document is not resurrected at its old number "
+           "(`-M` is why)", removed_candidates(root, ".issues", "052"), [])
+        eq("...and its NEW number has no removal either",
+           removed_candidates(root, ".issues", "060"), [])
+        # The number must match exactly, not by prefix: `05` and `0500` are
+        # different allocations and a loose compare pools them.
+        eq("a number is matched exactly, not by prefix",
+           removed_candidates(root, ".issues", "5"), [])
+        eq("an unallocated number recovers nothing",
+           removed_candidates(root, ".issues", "099"), [])
+        # A leading-zero spelling is the SAME number: the file is `050_` and a
+        # caller writing `50` must not be told the collision does not exist.
+        eq("50 and 050 are the same allocation",
+           removed_candidates(root, ".issues", "50"), ["050_closed_and_gone"])
+        # Only `.md`, and only `NNN_`-prefixed: a stray file in the directory
+        # is not an allocation.
+        (d / "050_note.txt").write_text("n\n", encoding="utf-8")
+        (d / "notanumber.md").write_text("n\n", encoding="utf-8")
+        commit("three")
+        (d / "050_note.txt").unlink()
+        (d / "notanumber.md").unlink()
+        commit("four")
+        eq("a removed non-.md at the same number is not a candidate",
+           removed_candidates(root, ".issues", "050"), ["050_closed_and_gone"])
+
+        # The LIVE reader, over the same fixture. It is the other half of the
+        # union main() builds, and its three guards fail the same silent way:
+        # by shrinking the candidate set until a duplicate reads as a single.
+        eq("candidates sees the file on disk",
+           candidates(root, ".issues", "051"), ["051_still_here"])
+        eq("candidates does not see the removed one",
+           candidates(root, ".issues", "050"), [])
+        eq("candidates matches the number exactly, not by prefix",
+           candidates(root, ".issues", "5"), [])
+        eq("candidates reads 51 and 051 as one allocation",
+           candidates(root, ".issues", "51"), ["051_still_here"])
+        (d / "notanumber.md").write_text("n\n", encoding="utf-8")
+        (d / "051_still_here.txt").write_text("n\n", encoding="utf-8")
+        eq("candidates ignores an unnumbered .md and a numbered non-.md",
+           candidates(root, ".issues", "051"), ["051_still_here"])
+
+    return fails
+
+
 def main() -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked
     # 2026-09-06 on cp874: check/cross/middot/arrow FAIL, em-dash OK); keep the
@@ -360,14 +503,22 @@ def main() -> int:
                     help="also score the CITING FILE'S PATH against each stem")
     ap.add_argument("--show-unresolved", action="store_true",
                     help="print every site the margin could not decide")
+    ap.add_argument("--live-only", action="store_true",
+                    help="only candidates on disk (the pre-Issue-791 behaviour)")
     a = ap.parse_args()
 
     repo = Path(a.repo).resolve()
     kind = a.kind or {".plans": "Plan", ".issues": "Issue", ".research": "Research",
                       ".proposals": "Proposal", ".benchmarks": "Bench"}.get(a.dirname, "Plan")
-    cands = candidates(repo, a.dirname, a.number)
+    live = candidates(repo, a.dirname, a.number)
+    gone = [] if a.live_only else [c for c in removed_candidates(
+        repo, a.dirname, a.number) if c not in live]
+    cands = live + gone
     if len(cands) < 2:
-        print(f"{repo.name}{a.dirname}/{a.number}: {len(cands)} candidate(s) — not a duplicate")
+        extra = ("" if a.live_only else
+                 " (git history searched for removed ones too)")
+        print(f"{repo.name}{a.dirname}/{a.number}: {len(cands)} candidate(s) — "
+              f"not a duplicate{extra}")
         return 0
 
     tokens = {c: stem_tokens(c) for c in cands}
@@ -380,16 +531,26 @@ def main() -> int:
     blobs = corpus(repo)
     by_name, won, unresolved, sites, detail, undecided, path_hits = attribute(
         blobs, cands, tokens, kind, a.number, a.window, a.margin, a.path_affinity)
+    # ⚠ Reported apart, never folded, and never subtracted. A removed document
+    # has no file of its own left, so every trace of it lives in HISTORY.md —
+    # which means its whole score can come from its own obituary while a live
+    # rival's comes from third-party use. Those are not the same evidence.
+    # They are not deducted either: Issue 724 T2's rule is about the COST of
+    # moving a number, and a HISTORY line is an edit that would have to move.
+    # The reader adjudicates; the tool refuses to decide it silently.
+    hist = {c: sum(1 for s_ in detail[c] if s_.startswith("HISTORY.md:"))
+            for c in cands}
 
     print(f"{repo.name}{a.dirname}/{a.number} — {len(blobs)} tracked text files, "
           f"{sites} ambiguous `{kind} {int(a.number)}` site(s)")
     for c in cands:
-        print(f"  {c}")
+        print(f"  {c}   [{'on disk' if c in live else 'REMOVED — recovered from git history'}]")
         print(f"      tokens    {sorted(tokens[c])}")
         print(f"      by-name   {by_name[c]}")
         if a.path_affinity:
             print(f"      path-hits {path_hits[c]}  (folded into the score below)")
-        print(f"      attributed {won[c]}")
+        print(f"      attributed {won[c]}"
+              + (f"   (of which HISTORY.md: {hist[c]})" if hist[c] else ""))
         for s in detail[c][:a.show]:
             print(f"          {s}")
     print(f"  UNRESOLVED  {unresolved}  ({unresolved / sites:.0%} of sites)" if sites

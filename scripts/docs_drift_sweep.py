@@ -142,7 +142,7 @@ def main() -> int:
     notes: list[str] = []
 
     # The population axis, shared (Issue 782 T3). This sweep still carried the
-    # copy-pasted "pinned but absent" loop Issue 779 replaced in eight others;
+    # copy-pasted "pinned but absent" loop Issue 793 replaced in eight others;
     # it only LOOKED exempt because all eight label-bearing repos happen to be
     # checked out here. Three verdicts, never interchangeable: UNREGISTERED
     # reds in every posture, UNSEEN reds without the marker, the same set

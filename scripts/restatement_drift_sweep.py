@@ -157,7 +157,7 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
 
     fail = 0
     # The population axis, shared (Issue 782 T3). This sweep still carried the
-    # copy-pasted UNSEEN loop that Issue 779 replaced in eight others — on a
+    # copy-pasted UNSEEN loop that Issue 793 replaced in eight others — on a
     # partial clone it hard-red with no marker support, and it only LOOKED
     # exempt because its four pinned repos all happen to be checked out here.
     #

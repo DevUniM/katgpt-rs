@@ -8,7 +8,7 @@ into nine buckets — and nothing asserted any of it. No gate, no sweep, and no
 `AGENTS.md` entry at all; its only mentions in this repo were three incidental
 `HISTORY.md` lines.
 
-Ninth instance of one shape (Issues 777, 778, 779, 782, 783, 784, 785): a rule
+Ninth instance of one shape (Issues 777, 778, 793, 782, 783, 784, 785): a rule
 landed in one instrument and never generalised. This one was QUIETER than 784
 and 785 — it never had a hand-typed standing figure to go stale, so there was
 nothing to catch being wrong. An instrument nobody is told about does not drift
@@ -671,7 +671,7 @@ def main(argv: list[str]) -> int:
         print("  stability: SKIPPED (--no-stability) — the cross-repo axis was "
               "not measured on this run")
 
-    # The population axis, shared (Issues 779 + 782).
+    # The population axis, shared (Issues 793 + 782).
     pop_lines, deferred, pop_fail = population_verdict(pins, names)
     for _line in pop_lines:
         print(_line)

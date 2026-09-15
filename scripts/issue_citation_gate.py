@@ -332,7 +332,7 @@ def heading_style_blind(repo: Path, subdir: str,
 
     Why it matters in the direction that is currently 0: an incomplete OWNERS
     set turns a correctly-qualified citation into a FALSE ⛔MISATTRIBUTED —
-    Issue 754's exact failure, inherited by Issue 780's MISATTRIBUTED-IN-RANGE.
+    Issue 754's exact failure, inherited by Issue 794's MISATTRIBUTED-IN-RANGE.
     Latent, so it is printed rather than remembered.
     """
     kind = _SUBDIR_KIND.get(subdir)

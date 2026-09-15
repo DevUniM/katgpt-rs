@@ -75,7 +75,7 @@ seal-remake                 3          0           0          0
 # katgpt-web, riir-dao, riir-deployer and riir-esp32 are not checked out on the
 # box that landed this (16 of 20), so they were never MEASURED — and a pin
 # nobody measured is a number, not an expectation. They ride the shared
-# population verdict as DEFERRED under DOCS_GATE_PARTIAL_CLONE=1 (Issues 779 +
+# population verdict as DEFERRED under DOCS_GATE_PARTIAL_CLONE=1 (Issues 793 +
 # 782) and will report UNPINNED on the first full checkout, which is the
 # intended red: an unmeasured repo must red until somebody measures it.
 # Identical posture to platform_dead_code_drift_floors.txt's same four rows —

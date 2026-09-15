@@ -252,7 +252,7 @@ GATE = HERE / "issue_citation_gate.py"
 FIELDS = ("min_citations", "max_cross", "max_in_local_range", "max_orphan")
 
 CROSS, IN_RANGE, ORPHAN = "CROSS", "IN-LOCAL-RANGE", "ORPHAN"
-# Issue 780. A SUBSET of IN_RANGE, kept in that bucket for the `max_in_local_range`
+# Issue 794. A SUBSET of IN_RANGE, kept in that bucket for the `max_in_local_range`
 # ceiling (the undecided population did not change) and listed separately so the
 # 4-row display truncation cannot hide a finding behind undecided noise.
 MISATTR_IN_RANGE = "MISATTRIBUTED-IN-RANGE"
@@ -393,7 +393,7 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
             tag = ""
             bad = adj - set(owners)
             if cls is IN_RANGE and bad:
-                # Issue 780. IN-LOCAL-RANGE is "UNDECIDED, never clean"
+                # Issue 794. IN-LOCAL-RANGE is "UNDECIDED, never clean"
                 # because a local referent that was skipped or never committed
                 # is plausible. This row REFUTES that premise with its own
                 # text: it reached this bucket only because `n not in mine`
@@ -467,7 +467,7 @@ def gate_says() -> tuple[int, int, int]:
     quantity the gate owns; asserting beats trusting. -> (rc, scanned, findings)
 
     `scanned` is **-2** when the gate DEFERRED its cross-repo adjudication
-    (Issue 779 T3). Under `DOCS_GATE_PARTIAL_CLONE=1` the gate prints
+    (Issue 793 T3). Under `DOCS_GATE_PARTIAL_CLONE=1` the gate prints
     `partial: N citations scanned in …` rather than `scanned N citations`, and
     a regex that knows only the second shape returns -1 — which this sweep
     reads as "the instrument is untrustworthy" and exits 2. That is a correct
@@ -611,7 +611,7 @@ def selftest() -> list[str]:
             fails.append(f"zero-padding: `Issue 0500` and `Issue 500` must be "
                          f"ONE number, got {len(pad[CROSS])} CROSS rows")
 
-        # ── Issue 780: MISATTRIBUTED-IN-RANGE, and the boundary that keeps it
+        # ── Issue 794: MISATTRIBUTED-IN-RANGE, and the boundary that keeps it
         # honest. Four arms, because the class is defined as much by what it
         # must NOT promote as by what it must. A third sibling is required:
         # the number has to be IN this repo's range, unallocated here, and
@@ -829,12 +829,12 @@ def main() -> int:
               f"below would pass vacuously")
         return 2
 
-    # Issue 780. A MISSING ceiling is refused, never defaulted: a wall that
+    # Issue 794. A MISSING ceiling is refused, never defaulted: a wall that
     # silently reads as "absent, so anything passes" is the green-zero shape
     # this whole family exists to refuse.
     if "max_misattributed_in_range" not in glob:
         print(f"✗ INSTRUMENT: {PINS.name} declares no "
-              f"`max_misattributed_in_range` — the Issue 780 class would have "
+              f"`max_misattributed_in_range` — the Issue 794 class would have "
               f"no ceiling and every row would pass silently")
         return 2
     glob_wall = glob["max_misattributed_in_range"]
@@ -849,7 +849,7 @@ def main() -> int:
     # quantity with the standing of AMBIGUOUS, never a verdict and never
     # folded into a finding count. Printed because the direction that HURTS is
     # currently 0 (an incomplete OWNERS set manufactures a FALSE
-    # ⛔MISATTRIBUTED — Issue 754's failure, inherited by Issue 780's
+    # ⛔MISATTRIBUTED — Issue 754's failure, inherited by Issue 794's
     # in-range class), and a latent cost that is only remembered is one that
     # gets forgotten.
     blind = {}
@@ -900,7 +900,7 @@ def main() -> int:
                              (ORPHAN, "max_orphan")):
                 if len(got[cls]) > row[key]:
                     flags.append(f"{cls} {len(got[cls])} > pinned {row[key]}")
-        # Issue 780 — a GLOBAL wall, deliberately not a per-repo ratchet field:
+        # Issue 794 — a GLOBAL wall, deliberately not a per-repo ratchet field:
         # the class has no backlog anywhere (1 row workspace-wide at landing,
         # repaired in the same commit), so per-repo pins would be 16 zeros and
         # a 5th field on every row for a quantity that is 0 by contract.
@@ -947,7 +947,7 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    # The population axis, shared (Issue 779): UNREGISTERED reds in every
+    # The population axis, shared (Issue 793): UNREGISTERED reds in every
     # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
     # with it. Never auto-detected — a genuine removal whose row update was
     # forgotten is set-identical to a partial clone from the walk alone.
@@ -992,7 +992,7 @@ def main() -> int:
     print(f"  AMBIGUOUS (local AND sibling — undecidable by number, NOT a pass): "
           f"{tot['amb']}  ·  ⛔MISLEADING crate hints: {tot['mis']}"
           f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}"
-          f"  ·  ⛔MISATTRIBUTED-IN-RANGE (Issue 780 — FOLLOWABLE to the wrong "
+          f"  ·  ⛔MISATTRIBUTED-IN-RANGE (Issue 794 — FOLLOWABLE to the wrong "
           f"repo, walled at {glob_wall}): {tot[MISATTR_IN_RANGE]}")
     b_acc = sum(a for a, _ in blind.values())
     b_shp = sum(t for _, t in blind.values())

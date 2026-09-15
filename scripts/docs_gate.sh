@@ -231,7 +231,7 @@ times_out="$(mktemp)"
 times > "$times_out"
 gate_cpu="$(awk 'NR==2 { t=0; for (i=1;i<=NF;i++) { split($i, p, "m"); sub("s","",p[2]); t += p[1]*60 + p[2] } printf "%.2f", t }' "$times_out")"
 
-# ── Does `times` account for these children AT ALL? (Issue 776) ─────────────
+# ── Does `times` account for these children AT ALL? (Issue 792) ─────────────
 # The ~0 guard below catches a number destroyed by a fork. It does NOT catch
 # the other way this figure stops being a measurement, because that one prints
 # a well-formed, plausible-looking value: on Windows/MSYS, `times` accounts for
@@ -267,7 +267,7 @@ cal_ok="$(awk -v s="$cal_seen" -v b="$cal_burn" 'BEGIN { print (s >= b / 2) ? "O
 rm -f "$cal_out"
 
 if [ "$cal_ok" = "UNACCOUNTED" ]; then
-    echo "  ⏱  total ${gate_wall}s wall · CPU SUPPRESSED (Issue 776)"
+    echo "  ⏱  total ${gate_wall}s wall · CPU SUPPRESSED (Issue 792)"
     echo "     ⛔ children CPU is NOT accounted on this platform: a child that burned"
     echo "        ${cal_burn}s of CPU moved the times children total by ${cal_seen}s."
     echo "        The raw rows below are real for MSYS children and ~0 for native ones,"

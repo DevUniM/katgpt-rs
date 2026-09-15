@@ -252,7 +252,7 @@ Issue 775 landed `platform_dead_code_floor_gate.py` with *"six canary arms over
 the gate's own pin arithmetic, **which the classifier's self-test cannot
 reach**"*. That sentence was in AGENTS.md, it was correct, and it named a rule.
 The rule landed in **one** gate and was never generalised — the **sixth**
-recorded instance of that shape (Issues 777, 778, 779, 782, 783). It was found
+recorded instance of that shape (Issues 777, 778, 793, 782, 783). It was found
 by asking the question one level up from Issue 787: 787 mechanised *"is every
 instrument findable?"*, and nothing asked *"is every gate's own verdict
 validated?"*
@@ -662,7 +662,7 @@ cross-repo instrument in `scripts/` in that position, after `1a5b6571` bounded
 the two documented exceptions (`suite_membership_audit.py`, 1,203 load-bearing
 unpinned rows; `gguf_header_audit.py`, model-file introspection).
 
-**Ninth instance of one shape** (Issues 777, 778, 779, 782, 783, 784, 785), and
+**Ninth instance of one shape** (Issues 777, 778, 793, 782, 783, 784, 785), and
 the QUIETEST. 784 and 785 were found because a hand-typed cross-repo figure had
 gone stale in public — 46% stale in 784's case. This one had no such figure to
 go wrong. An instrument nobody is told about does not drift into error; it
@@ -2563,7 +2563,7 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 
 ## Issue log (resolved)
 
-- **Issue 776 — the docs gate's CPU self-timing printed a well-formed number that measured nothing on Windows** FILED + RESOLVED + removed
+- **Issue 792 (allocated as 776; renumbered per Issue 791) — the docs gate's CPU self-timing printed a well-formed number that measured nothing on Windows** FILED + RESOLVED + removed
   (2026-09-14, same session; issue file removed at close, this row + git history are
   the durable record; found while landing Issue 775's 18th check). The gate's own
   header already documents one way its CPU total stops being a measurement (a forked
@@ -2622,7 +2622,7 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
   MOD-REF), sweep ~30s over 16 repos, docs gate 18/18 green. ⚠ The docs gate's own CPU
   self-timing read **1.26s against a 19.7s wall** on this Windows box — not comparable
   to the M3 series (13.37s at 17 checks) and not caught by the gate's ~0 guard; filed
-  as Issue 776 rather than silently re-pinned.
+  as Issue 792 rather than silently re-pinned.
 
 - **Issue 765 — the docs gate's 3 workstation-only instruments red with a MISLEADING remedy on a partial clone (the 4090 box class)** RESOLVED + removed
   (2026-09-13; the `DOCS_GATE_PARTIAL_CLONE=1` marker axis; issue file removed at close,
@@ -3989,7 +3989,7 @@ entirely.
 the normal posture where it previously crashed; docs gate 19/19. The remaining
 partial-clone red in that sweep — the gate prints its DEFERRED line instead of
 `scanned N citations`, so the cross-assert refuses — is a different class and
-is filed as Issue 779.
+is filed as Issue 793.
 
 **Cost of the CHECKS move.** The docs-gate set went 18 → 19 on the same day it
 went 17 → 18, so the 18-check CPU figure will never be measured; AGENTS.md now
@@ -3999,7 +3999,7 @@ CHECKS count beside the timing rather than the timing alone.
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/778_subprocess_text_true_locale.md`).
 
-## Issue 779 — the workstation sweeps' partial-clone verdict, one copy: CLOSED (2026-09-14)
+## Issue 793 (allocated as 779; renumbered per Issue 791) — the workstation sweeps' partial-clone verdict, one copy: CLOSED (2026-09-14)
 
 Running the whole sweep family from the Windows box after the Issue 777 walk
 repair: **seven of eight sweeps reported FAILED with every content assertion
@@ -4066,7 +4066,73 @@ UNSEEN and red; with it, six pass carrying the deferral on the pass line.
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/779_sweep_family_partial_clone.md`).
 
-## Issue 780 — a wrong address reads as UNDECIDED when its number is in local range: CLOSED (2026-09-14)
+## Issue 792 (allocated as 776; renumbered per Issue 791) — the docs gate's CPU self-timing printed a well-formed number that measured nothing on Windows: CLOSED (2026-09-14)
+
+Full record in the session entry below, where it was filed as 776. This heading
+exists so the number is READABLE: `issue_citation_gate.heading_allocated` reads
+`## Issue NNN (…) — title` and does not read a bullet, so 793 and 794 were
+discoverable after the renumbering and 792 was not. Verified both ways.
+
+## Issue 791 (2026-09-15) — three numbers allocated twice across a 57-commit divergence: CLOSED
+
+Two sessions both read `.issues/.highwater`, both incremented it correctly from
+their own view, and both allocated **776, 779 and 780**. Neither was wrong about
+the counter; a counter records the NEXT free number and is not a ledger of who
+took what, and the rebase's `max(ours, theirs)` — the only sound merge for a
+monotonic counter — is exactly what makes a double-allocation invisible.
+
+**T1 — the instrument could not see the commonest collision shape.**
+`citation_weight.candidates()` enumerated `.md` files ON DISK, so a
+double-allocation where one side has CLOSED leaves one file and reads as "not a
+duplicate". Every number this repo allocates is expected to end up removed, so
+that is the majority case, not an edge. `removed_candidates()` recovers it from
+`git log -M --diff-filter=D`; `-M` is load-bearing, because without rename
+detection a RENUMBERED document reports as a deletion at its old number and the
+tool would resurrect a collision somebody already resolved. ⛔ It still cannot
+see a file created and removed with no commit in between — Issue 754's blind
+spot, covered only by `numbering_drift_sweep.heading_allocated`.
+
+⚠ The report grew a `of which HISTORY.md:` column, reported apart and never
+folded or subtracted. A removed document has no file left, so its whole score
+can come from its own obituary while a live rival's comes from third-party use;
+those are not the same evidence. Not deducted, because Issue 724 T2's rule is
+about the COST of moving a number and a HISTORY line is an edit that must move.
+
+**T2 — adjudicated, and this session moved in all three.**
+
+| number | weight | outcome |
+|---|---|---|
+| 776 | theirs 16 vs mine 5 (+13 / 21 decided) | mine moves, by the rule outright |
+| 779 | **mine 13** vs theirs 8 (+5 / 21 decided) | mine moves anyway |
+| 780 | mine +4, UNRESOLVED **10** > decided 4 | instrument DECLINES; mine moves |
+
+⛔ **The 779 row is the one worth reading.** Weight measures the cost of moving
+a number and it cannot see that one side's move requires another session's
+agreement. Mine is CLOSED and removed — its whole footprint is mechanical
+citations in files this session owns — and theirs is live open work.
+Coordination-free beats a 5-site lead, and a rule that would have renumbered a
+colleague's open file on a 5-site margin is a rule to bound, not to follow off
+a cliff.
+
+50 lines rewritten: `scripts/**` wholesale (all 31 citations verified as this
+session's by reading them), `AGENTS.md` and `HISTORY.md` by LINE because both
+are mixed corpora, and `crates/**`, `benches/**`, `.research/**` and the
+other session's own HISTORY entry untouched. The three headings carry
+`(allocated as NNN; renumbered per Issue 791)` so a commit message that already
+says the old number stays followable.
+
+⚠ The instance lists (`Issues 777, 778, 793, 782, 783`) are left in
+CHRONOLOGICAL order and now read out of numeric sequence. That is deliberate:
+the sentence counts recurrences of a shape, 793 was the THIRD, and sorting it
+last would assert a false chronology to make a list look tidy.
+
+**T3 — deferred, and the reason is a measurement not yet taken.** A gate that
+reds when a commit allocates a number its remote parent already allocated needs
+its false-positive rate measured first: a long-lived branch legitimately
+allocates ahead of its remote, and this repo's own divergence was 57 commits.
+The cheap half is procedural and already written down (fetch before allocating).
+
+## Issue 794 (allocated as 780; renumbered per Issue 791) — a wrong address reads as UNDECIDED when its number is in local range: CLOSED (2026-09-14)
 
 `is_qualified()` (Issue 752) fixed the *question* — "is a repo named?" →
 "does that repo **own** the number?" — and `citation_drift_sweep.audit()`
@@ -4211,10 +4277,10 @@ Consequence, both directions: an incomplete **local** set lands as UNDECIDED
 noise — riir-clippy's 10 undecided rows are its own four numbers, every one
 recorded in its own HISTORY.md in the unread style. An incomplete **owners**
 set manufactures a **false** `⛔MISATTRIBUTED` — Issue 754's exact failure,
-inherited by Issue 780's `MISATTRIBUTED-IN-RANGE`. 0 live instances today,
+inherited by Issue 794's `MISATTRIBUTED-IN-RANGE`. 0 live instances today,
 which is precisely why it is printed rather than remembered.
 
-⛔ **The write-up of Issue 780 introduced four rows of the class it
+⛔ **The write-up of Issue 794 introduced four rows of the class it
 documents**, and that is the lasting lesson here: a document that discusses a
 misattribution has to reproduce it, and the instrument cannot tell a quoted
 specimen from a live one. Three were riir-train Issue 513 quoted under
@@ -4271,7 +4337,7 @@ untouched: this is dev, so `debug_assertions` was ON throughout.
 
 ## Issue 782 — a pinned repo absent from the walk is never visited: CLOSED (2026-09-14)
 
-Issue 779 gave the sweep family one shared partial-clone verdict
+Issue 793 gave the sweep family one shared partial-clone verdict
 (`scripts/sweep_population.py`) because **seven** sweeps carried a copy-pasted
 "pinned but ABSENT from the derived walk" loop and hard-red on a known
 16-of-20 box. Three were left alone for not carrying that loop. **All three

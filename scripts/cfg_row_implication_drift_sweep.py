@@ -200,7 +200,7 @@ def main(argv: list[str]) -> int:
             fails.append(f"pin desync: katgpt-rs min_with_cfg {mine['min_with_cfg']} here "
                          f"vs {local_cfg} in {LOCAL_PINS.name}")
 
-    # The population axis, shared (Issue 782, the Issue 779 verdict). The loop
+    # The population axis, shared (Issue 782, the Issue 793 verdict). The loop
     # above walks the DERIVED repos, so it catches walk->pins (UNREGISTERED)
     # and is blind to pins->walk: a pinned repo the walk never found is never
     # iterated, and this sweep used to print "every repo within its pins" over
