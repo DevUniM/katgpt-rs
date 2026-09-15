@@ -85,10 +85,33 @@
 
 set -u
 
+# ⛔ katgpt-types is here because of riir-train Issue 549, and the reason is the
+# COMPILE-vs-EXECUTE axis this script exists for, one platform over.
+# `avx2_exp_sum_inplace` — the fused exp+sum behind every softmax — was the one
+# exp kernel missing the n-clamp before the `(n + 127) << 23` bit-trick, so for
+# x < -87.3 the shift wrapped the exponent field and returned ~1e23-1e33 garbage
+# instead of ~0. It cost two sessions and presented as "seed-1000 training
+# collapses on the 4090, healthy on the M3".
+#
+# The regression test landed in `490b662e` and was EXECUTED BY NOTHING:
+# full_gate is macOS/aarch64 (the NEON sibling always clamped, so that lane
+# cannot see this class) and is compile+lint, not execute; wasm32_gate builds a
+# different kernel; and this — the only executing lane, ubuntu-latest, x86_64,
+# where `is_avx2_fma_available()` dispatches to the kernel that had the bug —
+# did not select the crate. A guard nobody runs is the "uninvoked assertion is
+# UNKNOWN, not passing" rule in AGENTS.md, applied to the one test written to
+# stop this exact defect recurring.
+#
+# The floor is arch-INVARIANT and that was checked, not assumed: the crate's
+# three `cfg(target_arch)` sites are assertions inside ONE test body, not gates
+# on whole test functions, so the count is the same on aarch64 and x86_64 —
+# which matters because AGENTS.md tells you to run this script locally, and a
+# floor derived from one arch would red on the other.
 ROWS="
 katgpt-rs:203
 katgpt-core:2060
 katgpt-dec:249:pca_global
+katgpt-types:139
 "
 
 canary=0
