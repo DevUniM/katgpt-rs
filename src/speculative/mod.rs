@@ -265,8 +265,8 @@ pub use d2f_verifier::{D2fDrafterVerifier, DraftAcceptPolicy};
 pub use d2f::{d2f_decode_block_with_prompt_with_sampler, d2f_decode_block_with_sampler};
 #[cfg(feature = "tri_mode")]
 pub use diffusion_sampler::{
-    DiffusionSampler, SamplerDecision, SamplerFeatures, SamplerTrajectory, SamplerVariant,
-    collect_trajectories, train_logistic_on_patterns,
+    DiffusionSampler, N_STABILITY_FEATURES, SamplerDecision, SamplerFeatures, SamplerTrajectory,
+    SamplerVariant, StabilityTracker, TOPK_DRIFT_K, collect_trajectories, train_logistic_on_patterns,
 };
 
 #[cfg(feature = "sudoku")]

@@ -11,6 +11,27 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 802 CLOSED (2026-09-16) — commitment-gap calibration rig: residue DEAD-BY-DOMINATION at micro scale; stability features (item 3) shipped earlier in the day
+
+[Bench 802 calibration-rig record](.benchmarks/802_commitment_gap_calibration_rig.md), rig at
+`../riir-ai/crates/riir-poc/benches/commitment_gap_calibration.rs`. Items 2/3/5 shipped earlier
+2026-09-16 (`f23b2d81b`, `226be38d9`). Item 1's defend-wrong verdict, executed per the issue's own
+rule: G1 (TSD-gap separates would-miss states) is REGIME-DEPENDENT — 31–82× when the decode is
+cascade-dominated, 2.4× when commits collapse into 1–2 waves and 38% of early states revise; G2
+PASS — per-(class,t) calibrated thresholds beat a tuned global rule exactly where the precision
+constraint binds (0.2587 @ 1.76 fwd vs 0.2538 @ 2.47); G3 FAIL — the no-gate one-forward baseline
+dominates the entire joint-gate family (1.00 fwd @ 0.2937; +3.5 acc at half the NFE). Mechanism,
+measured: self-consistency labels are blind to context contamination; single-pass calibration
+misses its own precision target off-policy (p* 0.90 → 0.61 realized). Item 4's horizon axis
+measured UNDEFINED at micro (reference cascade ≤ 2 waves — no per-position structure to reallocate
+verify budget against; the rig prints the per-position table, so the measurement rides any future
+scale-up run for free). Revival condition (all required): large would-miss mass + revisions that
+improve rather than corrupt context + a genuinely-iterating baseline + a DAgger-style on-policy
+calibration round. Also landed: root `katgpt_rs::speculative` re-export surface completed with
+`StabilityTracker`/`TOPK_DRIFT_K`/`N_STABILITY_FEATURES` (item 3 shipped them in `katgpt-forward`;
+the root shim missed them). Issue file removed per the noise-reduction rule; git history + this
+row + the bench record are the trail.
+
 ## Issue 800 Arm C phase 1 (2026-09-16) — GraphStablePool<T> extracted: the common contract verified across 4 sites (a 4th found in-repo)
 
 `877e06eb2` + [Bench 800-C](.benchmarks/800_graphstablepool_phase1.md). The DRY-extraction

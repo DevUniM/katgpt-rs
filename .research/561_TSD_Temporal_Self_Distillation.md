@@ -2,7 +2,7 @@
 
 > **Source:** "Temporal Self-Distillation: Faster Inference in Discrete Diffusion Language Models" — Xu, Miele, Jazbec, Roth, Nalisnick, Bogunovic (Basel/Amsterdam/JHU), arXiv:2609.15177, 2026-09-14
 > **Date:** 2026-09-16
-> **Status:** Done — GAIN (model-based plan filed; modelless class killed by prior art, residue filed)
+> **Status:** Done — GAIN (model-based plan filed; modelless class killed by prior art, residue filed) — residue SETTLED 2026-09-16: [Bench 802 calibration-rig](../.benchmarks/802_commitment_gap_calibration_rig.md) — DEAD-BY-DOMINATION at micro scale (issue closed+removed; trail in HISTORY.md)
 > **Related Research:** 151 (GDSD — this paper's own init checkpoint for planning tasks), 149 (FlashAR — decode-strategy cousin), 085 RMSD, 107 ZEDA, 122 EDGE-OPD, 160 SDPG
 > **Related Plans:** riir-train/.plans/409 (TSD micro GOAT gate), katgpt-rs .issues/802 (commitment-gap calibration residue)
 > **Classification:** Public
