@@ -4306,6 +4306,40 @@ that would have answered was blind in the direction that mattered. *A census is
 exhaustive over ROWS, not over the ORACLE it checks them against* — Issue 754's
 sentence, holding for a third time.
 
+## Issue 796 — the allocation-time dual-allocation gate: the FP rate measured, the gate built CLASSIFIED: RESOLVED (2026-09-15)
+
+791 T3 and 795 both deferred the allocation-time gate on its unmeasured false-
+positive rate. `scripts/dual_allocation_fp_probe.py` measured it from git's own
+records — reflog-reconstructed (local_tip, upstream_tip) pairs, union-sampled
+over BOTH timelines' entry timestamps (a fetch moves the remote-tracking ref
+WITHOUT moving HEAD, so local-only sampling misses the divergence-discovery
+moment; measured: the first cut saw 48 green katgpt-rs pairs and missed the
+very RED it was built for). 18 repos, ~90 d: **634 divergent pairs, 7202
+one-sided (the feared long-lived-branch shape — green BY CONSTRUCTION), 164
+RED pair-instants = 39 distinct incidents = 31 TWIN + 8 INDEPENDENT.**
+
+The twin/independent split is structural, by filename STEM per colliding
+number — the subject-equality test MISLABELS (measured: seal-remake `2`'s twin
+commits carry different subjects; the stems are identical). The 8 INDEPENDENT,
+all stem-verified: riir-ai 722/780/935, riir-chain 30+72/34, riir-clippy
+79/83, seal-game-editor 192–195.
+
+Verdict: the deferral's fear is MOOT (one-sided allocation never fires) and
+its caution RIGHT (a naive hard gate cries wolf 31/39 on twins — one incident
+contributed 43 pair-REDs). `scripts/dual_allocation_gate.py` is therefore
+CLASSIFIED: TWIN annotates exit-neutral (your own rebased line; fetch
+resolves it), INDEPENDENT exits 1 with both sides' adding commits named.
+`--prove-fires` builds the two-session fixture in a temp dir and asserts both
+verdicts against real git — and earned its keep before the gate ever ran: the
+probe's FIRST sweep was VOID (a `--.issues` pathspec typo made every
+measurement the empty set — 105 green katgpt-rs pairs that measured nothing)
+and the fixture caught it before any rate was recorded. Reach limit, binding
+on every single-box instrument: the 791 divergence itself is not
+reconstructible from this box's reflogs — it lived on the wire between boxes;
+the gate sees what the running box participates in, at fetch/push time.
+Gate NOT joined to docs_gate CHECKS (796 T5): a workstation green first,
+with 4 sibling agents active this session.
+
 ## Issue 794 (allocated as 780; renumbered per Issue 791) — a wrong address reads as UNDECIDED when its number is in local range: CLOSED (2026-09-14)
 
 `is_qualified()` (Issue 752) fixed the *question* — "is a repo named?" →

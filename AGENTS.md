@@ -1692,6 +1692,19 @@ scored against each candidate's distinctive filename tokens, awarded only on a
 strict margin, with everything else printed as its own UNRESOLVED number and
 never folded into a winner.
 
+At ALLOCATION time the same class is caught earlier: `scripts/dual_allocation_gate.py`
+(Issue 796) reds when this checkout and its upstream have both added numbered
+documents since their merge base — classified structurally by filename stem:
+same stem on both lines = TWIN (your own rebased work, exit-neutral, a fetch
+resolves it), different stems = INDEPENDENT (two documents about to own one
+number, exit 1, both sides' adding commits named). Measured basis (the probe,
+`dual_allocation_fp_probe.py`): the deferral's feared shape — one side
+allocating ahead — is green BY CONSTRUCTION (7202 one-sided pairs, zero
+fires), while 39 real divergence incidents in 90 days split 31 TWIN / 8
+INDEPENDENT. Reach limit: it sees divergences THIS box participates in at
+fetch/push time; box-vs-box collisions on the wire are the merge-time wall's
+(Issue 795's) jurisdiction.
+
 ⛔ **A collision where BOTH holders have CLOSED is the MAJORITY case, and the
 instrument was blind to it** (Issue 795). A document closed under the
 noise-reduction rule is deleted, so the pair leaves nothing on disk and reads as
