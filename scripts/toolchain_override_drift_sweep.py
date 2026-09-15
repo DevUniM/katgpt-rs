@@ -76,6 +76,7 @@ sys.path.insert(0, str(HERE))
 import toolchain_override_audit as toa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -318,6 +319,15 @@ def main() -> int:
     # loudly with it. Never auto-detected — a genuine removal whose row update
     # was forgotten is set-identical to a partial clone from the walk alone.
     pop_lines, deferred, pop_fail = population_verdict(pins, names)
+
+    # Issue 797 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — every scannable file plus the root toolchain pin they are read against.
+    deferred.extend(sweep_advisory(
+        names, ("*.sh", "*.yml", "*.yaml", "*.toml", "*.py", "Dockerfile*"), root=WORKSPACE))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

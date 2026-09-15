@@ -281,6 +281,7 @@ develop work. One line per check:
 | `platform_dead_code_floor_gate.py` | an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775) |
 | `subprocess_encoding_gate.py` | a `subprocess` call that decodes with the SYSTEM locale — silent mojibake, or `stdout = None` with the returncode intact (Issue 778) |
 | `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
+| `sweep_advisory_membership_gate.py` | a `*_drift_sweep.py` that does not call the Issue-797 worktree advisory — its findings and floors then describe whatever the working tree happened to say; gated by MEMBERSHIP, because a count is green on a swap and went stale two hours after it was typed (Issue 797 T5) |
 | `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
@@ -327,10 +328,14 @@ check at all** — it iterates the DERIVED repos, so it caught walk→pins
 evaluated by nothing. **That silent green is the worse direction:** a sweep
 that hard-reds is impossible to misread, and this one survived the 779 census
 *because* it was quieter, not because it was correct. All eleven share the
-verdict now. ⚠ **"Eleven" is that day's measurement and this paragraph keeps
-it deliberately** — the family is **16** as of 2026-09-15 (Issue 797 wired the
-worktree advisory into all of them and counted), so read every "eleven" below
-as a dated figure the way this document tells you to read any count in prose. ⚠ A **subset**-population sweep has TWO populations and they are
+verdict now. ⛔ **"Eleven" is that day's measurement, and every count of this
+family in prose has gone stale — including one written the same morning.**
+Issue 797 wired the worktree advisory into the family and typed **sixteen**
+into this document; two hours later a concurrent session landed two more sweeps
+and the figure was wrong. The repair is not a fresher number: it is
+`sweep_advisory_membership_gate.py`, which reds on a `*_drift_sweep.py` that
+does not call the advisory, so the next one cannot land unwired. **Take the
+family size from that gate's PASS line, never from a sentence here.** ⚠ A **subset**-population sweep has TWO populations and they are
 not interchangeable: hand `population_verdict` the **contract walk**, never the
 subset — the restatement sweep, handed its own `.proofs` set, reported **16
 phantom absences** and failed. The hole the shared verdict cannot see is
@@ -1630,15 +1635,35 @@ scripts/worktree_state.py            # the 36 arms (exit 1 on failure)
   BOTH directions (the `DEFERRED` precedent) and is **SILENT** when nothing
   dirty meets that sweep's own population. MASKED is the exception, and it
   needs no separate teeth: the pins already count it, because they read HEAD.
-- **Wired into all sixteen sweeps**, at the existing `population_verdict()`
-  call site, each with the globs naming its OWN population — so the `*.lean`
-  sweep stays silent while somebody edits Rust. Verified per-population on the
-  landing run: the `*.rs` sweeps reported riir-ai (3), the `*.md` ones riir-ai
-  (1), `numbering` katgpt-rs (1) + riir-ai (1), `subprocess_encoding`
-  katgpt-rs (16) — its own in-flight edits — and `trap_sentinel` / `restatement`
-  printed nothing at all. Landing it in one instrument and not the family is
-  the failure mode recorded six times here already (Issues 777, 778, 793, 782,
-  783, 789).
+- **Wired into EVERY sweep**, at the existing `population_verdict()` call
+  site, each with the globs naming its OWN population — so the `*.lean` sweep
+  stays silent while somebody edits Rust. Verified per-population on the landing
+  run: the `*.rs` sweeps reported riir-ai (3), the `*.md` ones riir-ai (1),
+  `numbering` katgpt-rs (1) + riir-ai (1), `subprocess_encoding` katgpt-rs (16)
+  — its own in-flight edits — and `trap_sentinel` / `restatement` printed
+  nothing at all. Landing it in one instrument and not the family is the
+  failure mode recorded six times here already (Issues 777, 778, 793, 782, 783,
+  789).
+- ⛔ **And "every" was typed as a NUMBER first, which made it wrong within two
+  hours.** The landing commit said *"all sixteen sweeps"*; a concurrent session
+  then pushed `pipefail_discard_drift_sweep.py` and
+  `toolchain_override_drift_sweep.py`, neither wired, and nothing noticed. So
+  this is the **seventh** instance of the never-generalised shape and the first
+  one repaired mechanically rather than by hand:
+  `scripts/sweep_advisory_membership_gate.py` (docs-gate CHECK) reds on a
+  tracked `*_drift_sweep.py` calling neither `sweep_advisory()` nor
+  `worktree_advisory()`. Gated by **MEMBERSHIP**, because *a set is gateable
+  where its cardinality is not* — a count is green on a swap. Exemptions carry
+  a reason each and the file is deliberately EMPTY; a stale pin (its sweep
+  wired since, or gone) reds too, so the file cannot only ever loosen.
+  ⚠ It asserts the CALL, never that the patterns name the sweep's own
+  population — a sweep passing `("*.lean",)` over a Rust walk is silent forever
+  and reads as wired. That is a per-sweep read, the same limit
+  `check_validation_gate` records about arm quality.
+  ⛔ Its FIRST run reported `citation_drift_sweep` — the most thoroughly wired
+  member, the only one with the row-level split — as UNWIRED, because the
+  predicate named one of the mechanism's **two** entry points. A criterion that
+  condemns the most careful caller is the criterion that is wrong.
 - The row-level UNCOMMITTED/MASKED split is wired into `citation_drift_sweep.py`
   alone, because it is the one whose findings carry a `file:line` address and
   the one where the class was measured. `audit()` takes an injected

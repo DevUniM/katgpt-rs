@@ -4298,6 +4298,52 @@ Arm reach for the new module (`--include-all`): **19 of 23**, the three live
 survivors being `check=True` / `capture_output=True` on the fixture BUILDERS,
 with the reason written at the line.
 
+**T5 — "every sweep" is a MEMBERSHIP assertion now, because the count was
+wrong within two hours.** The landing commit said *"wired into all sixteen
+sweeps"* and AGENTS.md said so too. A concurrent session then pushed
+`pipefail_discard_drift_sweep.py` and `toolchain_override_drift_sweep.py`,
+neither wired, and nothing noticed — the prose was stale before the commit
+carrying it had finished being pushed. So this is the **seventh** instance of
+the never-generalised shape (777, 778, 793, 782, 783, 789) and the first one
+repaired mechanically: `scripts/sweep_advisory_membership_gate.py`, a docs-gate
+CHECK, reds on a tracked `*_drift_sweep.py` calling neither `sweep_advisory()`
+nor `worktree_advisory()`. **Membership, not a count** — a count is green on a
+swap, and *a set is gateable where its cardinality is not*
+(`cfg_gated_floor_gate`'s rule). Exemptions carry a reason each, the file is
+deliberately EMPTY, and a stale pin reds so it cannot only ever loosen.
+
+⛔ **Its FIRST run reported `citation_drift_sweep` — the most thoroughly wired
+member, the only one carrying the row-level split — as UNWIRED**, because the
+predicate named one of the mechanism's TWO entry points. A criterion that
+condemns the most careful caller is the criterion that is wrong. Standing:
+18 sweeps, all wired, floors 15/15.
+⚠ It asserts the CALL and never that the patterns name the sweep's own
+population: a sweep passing `("*.lean",)` over a Rust walk is silent forever
+and reads as wired. Per-sweep read, not statically decidable — the same limit
+`check_validation_gate` records about arm quality.
+
+**T6 — the sibling's brand-new `dual_allocation_gate` was UNREACHED, and its
+own collision is what exposed it.** Joining the CHECKS set put it in
+`arm_reach_gate`'s population, which measured **0 killed of 28**: `selftest()`
+delegated ENTIRELY to the probe module's arms, and *delegation cannot reach the
+consumer* (Issue 775's sentence, Issue 789's rule). The fixture arms that DO
+reach `classify` / `added_stems` / `adding_commits` already existed — as
+`prove_fires()`, a name `arm_reach` deliberately never invokes.
+
+`selftest()` calls them now. ⚠ The `RUN_ARMS` exclusion is a COST decision
+measured against arms that `git archive` a frozen tree (80.2s vs 4.4s, 436 git
+invocations); this one builds two small temp repos in **1.45s**, against the
+docs gate's ~26s wall — cheaper than the `platform_dead_code_floor_gate` check
+already in the set. Reach went **0 → 11 killed**, UNREACHED back to its walled
+0, and the 12 survivors are adjudicated: 11 fixture-builder kwargs, and one
+`or`→`and` in `classify`'s resolve guard that is **EQUIVALENT by measurement**
+— deleting `refs/remotes/origin/X` makes `rev-parse --abbrev-ref
+HEAD@{upstream}` fail too, so `upstream_of_head` returns empty and the guard one
+line up fires first. The first attempt at an arm there asserted the wrong skip
+string and proved the branch unreachable instead, which is how the pin reason
+got written.
+
+
 ⚠ **Its own number collided, which is the joke and also the evidence.** The
 other session allocated 796 the same hour for the allocation-time
 dual-allocation gate and pushed first, so this renumbered to 797 — and their

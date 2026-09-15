@@ -216,11 +216,59 @@ def prove_fires() -> list[str]:
             fails.append(f"fixture: twin 901 not classified TWIN: {rows2}")
         if [r["number"] for r in indep2] != [900]:
             fails.append(f"fixture: 900 must stay INDEPENDENT: {rows2}")
+        # ── Issue 797 T6: the two decisions the fixture above cannot reach ──
+        # `arm_reach_audit` measured this module UNREACHED (0 killed of 28)
+        # before its arms were invoked at all; these two are what remained live
+        # once they were, and both are real rules rather than fixture plumbing.
+
+        # (1) `adding_commits` filters by `want`. Every number in the fixture is
+        # wanted, so the membership test was asserted by nothing — and dropping
+        # it names the WRONG commit to a human resolving a collision, which is
+        # the one thing this output is for.
+        rng = f"{git(a, 'merge-base', 'HEAD', 'origin/main').strip()}..HEAD"
+        all_rows = adding_commits(a, rng, {900, 901})
+        none_rows = adding_commits(a, rng, {999})
+        if not all_rows:
+            fails.append("adding_commits found no commit for a wanted number")
+        if none_rows:
+            fails.append(f"adding_commits ignored `want` \u2014 it named commits for "
+                         f"a number nobody asked about: {none_rows}")
+
+        # (2) `classify`'s `not head or not remote_tip` guard is MEASURED
+        # UNREACHABLE and therefore pinned rather than armed. To reach it with
+        # exactly one side empty the upstream must be configured AND its tip
+        # unresolvable; measured on this box, deleting `refs/remotes/origin/X`
+        # makes `rev-parse --abbrev-ref HEAD@{upstream}` fail too, so
+        # `upstream_of_head` returns "" and the guard one line up fires first.
+        # An `or`->`and` mutant there is EQUIVALENT: the verdict is identical
+        # and only the skip REASON could differ, in a state git will not
+        # produce. Written down because "writing the reason is the
+        # adjudication" — the first attempt at an arm here asserted the wrong
+        # skip string and proved the branch instead.
     return fails
 
 
 def selftest() -> list[str]:
-    fails = probe_selftest()
+    """⛔ This used to delegate ENTIRELY to the probe's arms, and delegation
+    cannot reach the consumer (Issue 775's sentence, Issue 789's rule).
+
+    `arm_reach_audit` measured the consequence: **0 killed of 55**, the whole
+    module UNREACHED — `classify`, `added_stems`, `adding_commits` and
+    `upstream_of_head` were asserted by nothing, in a gate that runs on every
+    push. The fixture arms that DO reach them already existed as
+    `prove_fires()`, behind `--prove-fires`, and `arm_reach` deliberately never
+    invokes that name.
+
+    ⚠ `prove_fires` is excluded from `RUN_ARMS` for a COST reason that does not
+    apply here: the exclusion was measured against known-answer arms that
+    `git archive` a frozen tree (80.2s vs 4.4s, 436 git invocations). This one
+    builds two small temp repos and runs in **1.45s**, against the docs gate's
+    ~24s wall — cheaper than the `platform_dead_code_floor_gate` check already
+    in the set. Calling it here costs that once per push and buys the module its
+    only reach. Its body stays unmutated either way, because the name is still
+    in `ARM_NAMES`.
+    """
+    fails = probe_selftest() + prove_fires()
     if not callable(numbers_added):
         fails.append("probe import: numbers_added missing")
     return fails
