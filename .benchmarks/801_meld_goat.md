@@ -5,6 +5,13 @@ associativity 512/512, λ⋆ within 3.24e-7 of brute-force optimum, boundedness
 depth-64, disagreement-coding limits); **G1 quality ladder: RED FLAG — the
 paper's depth-ladder shape did NOT reproduce on our synthetic fixture**;
 Super-GOAT Q3 stays BLOCKED on T4. Measured 2026-09-16, M3 Max, D=32.
+**RESOLVED 2026-09-16 (same day): T4 ran and REFUTED the quality axis** —
+riir-ai Bench 932 (`286687cd0`): mean matches/beats every meld arm on the
+adjudicating same-multiset D_eff readout (all margins ≤ +0.008); this bench's
+σ-regime hypothesis confirmed for absolute quality but the ordering never
+crosses law-8. The λ̃ disagreement-trace utility CONFIRMED (AUC 0.976).
+Close-out: katgpt-rs HISTORY.md "Issue 801 CLOSED" row + Research 560
+§"PoC Verdict" addendum. This record stands as the T3 algebra evidence.
 
 Provenance: Issue 801 T3 — the §3.6 PoC discipline says the quality axis is
 claimed only from a measured PoC, never from architecture. This bench is the

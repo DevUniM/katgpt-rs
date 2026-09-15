@@ -11,6 +11,56 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 801 CLOSED (2026-09-16) — T4 PoC: composition-quality REFUTED, disagreement-trace CONFIRMED; T5 routing: meld stays opt-in as a contradiction detector, Super-GOAT Q3 blocked-as-refuted, T2 audit stands
+
+The arc, one session: T1 PDF-transcribed (2026-09-15); T2 audit `ee6993a77` (Research 560
+addendum — the census survives code-level scrutiny: 4 INADMISSIBLE / 1 PARTIAL / 1 N.A.);
+T3 primitive `43f15f7c8`+`f314d5006` (algebra fully validated — commutativity EXACT
+bitwise, non-associativity 512/512, λ⋆ ≤3.24e-7 from brute force; Bench 801 red flag:
+paper's depth-ladder shape did not transfer); **T4 PoC `286687cd0` (riir-ai Bench 932):
+REFUTED** — mean matches/beats every meld arm on the adjudicating same-multiset D_eff
+readout (all margins ≤ +0.008 vs the +0.05 bar; tanh ≥ law-8 never restored across the
+σ ∈ [0.25,2] × β ∈ [0.1,10] sweep; best meld-family D_eff separation ≈ chance 0.5
+everywhere), with the mean's own theorem-signature CONFIRMED empirically (blind within
+multiset 0.499–0.502, sees across multisets 0.590→0.625) and Bench 801's tanh-operating-
+point mechanism confirmed for absolute quality (σ=0.25 nearly doubles tanh's d=5
+recovery — but the ordering never crosses). **The one positive extraction: the λ̃
+disagreement trace — r(mean λ̃, ‖u−v‖) = −0.791, contradiction AUC 0.976, per-coordinate
+localization precision@8 = 0.997, mean provably trace-free** — the one axis the T2 audit
+found absent from every shipped composer (axis iv), now shipped in `katgpt_core::meld`
+(opt-in feature `meld`). T5 routing per the issue's refuted branch: keep the primitive,
+record the negative (Research 560 addendum §PoC Verdict + status DOWNGRADED), keep the
+audit as the standing finding; fusion rows F1/F2 lose the composition-for-structure
+premise (their disagreement-trace half survives via λ̃); F6's provenance hook (Issue 618
+drift ledger) unaffected. Revival path on record (not owed): amplitude-vector 2AFC to
+localize where bracketing info lives + the stochastic-noise readout for the clean
+exp(S₂) identification. Issue file removed per the noise-reduction rule; this row +
+Research 560 are the record.
+
+## Issue 800 Arms A+B closed (2026-09-16) — bf16 SIMD G2 FAIL-honest (autovec parity); slot-flip DECLINE (ties mpsc); JSD kernel lands (Issue 802 item 2)
+
+Three more measured verdicts in one batch, all honest closes:
+- **Arm A** (`f314d5006`, [Bench 800](.benchmarks/800_bf16_simd_goat.md)): the pufferlib
+  kernel-shape premise does not exist on M3+rustc — LLVM auto-vectorizes the scalar
+  reference into the same NEON code (1.00× widen/trunc, 1.19–1.23× RNE vs the ≥4× gate).
+  G1/G4 pass (RNE bit-exact vs `half` incl. NaN class; zero-alloc); stays opt-in, A4
+  consumer wiring deferred, AVX2 execution parity compile-verified only (4090 run
+  optional).
+- **Arm B** ([Bench 800-B](.benchmarks/800_slotflip_arm_b_decline.md)): the Cleanba
+  slot-ownership mechanic beats serial +21–46% but TIES mpsc (+9.1/+0.5/+1.7/+0.0%,
+  sign flips across runs) → B2 DECLINE, `async_qdq.rs` stays single-threaded; no
+  consumer lives in the short-compute regime where the mechanism could matter. The
+  normative lock-free protocol + its staleness proof land as
+  `crates/katgpt-kv/tests/slot_flip_staleness.rs` (4/4 ×5 runs) — the reusable artifact
+  if a future consumer ever needs real cross-thread overlap.
+- **Issue 802 item 2** ([Bench 802](.benchmarks/802_jsd_topk_kernel.md)): the NaN-safe
+  bounded top-K JSD kernel lands in `katgpt_core::jsd_topk` (opt-in) — disjoint
+  supports → BITWISE ln 2, identical → bitwise 0.0, NaN-safe by construction (the
+  KL-trap that poisons gates is structurally unreachable), zero-alloc INTO form,
+  scale-invariant, 2069/0. The task-sketch sign error in the JSD expansion was caught
+  and corrected (shipped term ≥ 0 by convexity). Prerequisite for 802's calibration
+  tables (1) + graded tri_mode verdicts (4) — both still open.
+
 ## Issue 801 T1–T3 (2026-09-16) — NAP audit + `meld` primitive: the census survives code-level scrutiny; the algebra holds, the quality ladder did NOT transfer (T4 is the sole adjudicator)
 
 Three landings, one session: Research 560 addendum `ee6993a77` (T2 audit — all 6

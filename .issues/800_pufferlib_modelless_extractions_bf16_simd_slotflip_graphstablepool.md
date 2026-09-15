@@ -1,6 +1,6 @@
 # Issue 800 — pufferlib-derived modelless primitive candidates (bf16 SIMD lead, slot-flip buffer, GraphStablePool)
 
-**Status:** OPEN (2026-09-15) — Arm A CLOSED 2026-09-16 (G2 FAIL-honest, `f314d5006` + [Bench 800](../.benchmarks/800_bf16_simd_goat.md)); Arms B/C open. The modelless-track findings from the PufferLib distill (riir-train [Research 454](../../riir-train/.research/454_pufferlib_pooled_env_rollout_architecture.md) @ `6ffa5b10`, MIT; adversarial-panel No-GD brief, coverage reads done). Three arms; one candidate was honestly killed at the panel (the 3-state spin handshake — channels/papaya are house style, no port).
+**Status:** OPEN (2026-09-15) — Arm A CLOSED 2026-09-16 (G2 FAIL-honest, `f314d5006` + [Bench 800](../.benchmarks/800_bf16_simd_goat.md)); Arm B CLOSED 2026-09-16 (**DECLINE** — ties mpsc, record: [Bench 800-B](../.benchmarks/800_slotflip_arm_b_decline.md)); Arm C open. The modelless-track findings from the PufferLib distill (riir-train [Research 454](../../riir-train/.research/454_pufferlib_pooled_env_rollout_architecture.md) @ `6ffa5b10`, MIT; adversarial-panel No-GD brief, coverage reads done). Three arms; one candidate was honestly killed at the panel (the 3-state spin handshake — channels/papaya are house style, no port).
 
 ## Arm A (lead) — SIMD bf16⇄f32 batch conversion kernels → `katgpt-core`
 
@@ -15,9 +15,9 @@ The only clearly-absent piece. Today `riir-ai/crates/riir-engine/src/weight_tens
 
 `async_qdq.rs` `DoubleBuffer` ships the slots but the overlap is *simulated* (single-threaded); real cross-thread overlap exists only as ANE channel split-jobs. PufferLib's Cleanba mechanic worth having is the **lock-free slot-ownership flip**: producer touches only `write_slot`, consumer only `ready_slot`, flip = one seq-cst store, warmup-boot fills slot 0.
 
-- [ ] B1 PoC: cross-thread slot-flip vs serial vs **mpsc-channel baseline** (the honest bar — channels are the Rust default and may tie at 20 Hz cadence)
-- [ ] B2 Decision gate: promote only if it beats BOTH baselines; if channels tie → record the decline in the arm's closing note (pufferlib needs the spin machine because C pthreads has no channels; we might not)
-- [ ] B3 G1: one-slot-staleness is the *spec* (consumer sees exactly epoch-old data; torn read structurally impossible — producer never writes the ready slot)
+- [x] B1 PoC: cross-thread slot-flip vs serial vs **mpsc-channel baseline** (the honest bar — channels are the Rust default and may tie at 20 Hz cadence). **DONE 2026-09-16** — `crates/katgpt-kv/benches/slot_flip_poc.rs` (3 variants × 16/64 KiB × short/long compute, median-of-7 ×2 runs, bit-identical-checksum tripwire) + `tests/slot_flip_staleness.rs` (B3 gate 4/4 ×5 runs incl. 24k-flip max-contention): slot-flip beats serial +21–46% everywhere (real overlap) but **ties mpsc** (+9.1/+0.5/+1.7/+0.0% — sign flips inside ±5% across runs). All `DoubleBuffer` consumers live in the long-compute regime (64 KiB chunks, 50 µs+ attention) where channels are free.
+- [x] B2 Decision gate: promote only if it beats BOTH baselines; if channels tie → record the decline in the arm's closing note (pufferlib needs the spin machine because C pthreads has no channels; we might not). **DONE 2026-09-16: DECLINE** — the tie clause fired; `async_qdq.rs` stays single-threaded, upgrade NOT filed. Regime map: slot-flip's only >mpsc cell (16 KiB short-compute, +9.1%) still misses the >10% bar and has NO consumer (grep verified). [Bench 800-B](../.benchmarks/800_slotflip_arm_b_decline.md)
+- [x] B3 G1: one-slot-staleness is the *spec* (consumer sees exactly epoch-old data; torn read structurally impossible — producer never writes the ready slot). **DONE 2026-09-16** — 4/4 tests ×5 stable runs (monotonic epochs, no skips/dups/tears, warmup contract, ticket arithmetic); the PoC carries its own copy of the protocol as the normative spec (write scope kept the PoC standalone of `src/`); interval-disjoint-window argument at the exact lines.
 
 ## Arm C — `GraphStablePool<T>` extraction → `katgpt-core`
 
