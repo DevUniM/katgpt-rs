@@ -970,6 +970,18 @@ path = "benches/modality_superposition_bench.rs"
 required-features = ["sense_composition", "micro_belief", "modality_additive"]
 harness = false
 
+# Issue 952 §B T3 — Belief dual state POC (PC-ALM dual accumulator on the
+# sense belief kernel; Research 554 / arXiv:2605.31022). Bench-local
+# prototype: λ ∈ [f32;8] integrates the (belief − slow-expectation)
+# residual; the dual's only footprint is a one-sided per-tick evidence
+# demotion feeding the SHIPPED accumulate+evolve_belief path; readout =
+# sigmoid(⟨λ, d⟩). α = 0 (and the arming phase) is bit-identical to the
+# incumbent by construction (G1 measures it). Consumer: riir-ai Issue 952 §B.
+[[bench]]
+name = "belief_dual_bench"
+path = "benches/belief_dual_bench.rs"
+required-features = ["sense_composition"]
+harness = false
 
 # Issue 001 — Orthogonal Procrustes GOAT benchmark.
 # G1: <=800 us at n=512, d=32. G2: <=5 ms at n=2048, d=64.
