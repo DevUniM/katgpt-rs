@@ -425,7 +425,7 @@ impl Statistics {
 
 // ── Events ─────────────────────────────────────────────────────
 
-#[derive(Event, Clone, Debug)]
+#[derive(Message, Clone, Debug)]
 pub enum GameEvent {
     TurnStarted {
         player: u8,
@@ -956,7 +956,7 @@ mod tests {
 
     #[test]
     fn owned_component() {
-        let entity = Entity::from_raw(42);
+        let entity = Entity::from_raw_u32(42).unwrap();
         let owned = Owned::new(entity);
         assert_eq!(owned.owner, entity);
         assert!(!owned.is_mortgaged);
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn owned_hotel_detection() {
-        let entity = Entity::from_raw(1);
+        let entity = Entity::from_raw_u32(1).unwrap();
         let mut owned = Owned::new(entity);
         owned.houses = 5;
         assert!(owned.has_hotel());

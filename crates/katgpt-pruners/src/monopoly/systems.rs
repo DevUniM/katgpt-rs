@@ -43,7 +43,7 @@ pub fn init_world(seed: u64) -> World {
     world.insert_resource(GameConfig::default());
     world.insert_resource(TurnState::new(0));
     world.insert_resource(Statistics::default());
-    world.init_resource::<Events<GameEvent>>();
+    world.init_resource::<Messages<GameEvent>>();
     build_board(&mut world);
     shuffle_decks(&mut world, seed);
     let entities = spawn_players(&mut world);

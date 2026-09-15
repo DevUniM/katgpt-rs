@@ -401,7 +401,7 @@ pub struct PlayerEntities {
 
 // ── Events ─────────────────────────────────────────────────────
 
-#[derive(Event, Clone, Debug)]
+#[derive(Message, Clone, Debug)]
 pub enum GameEvent {
     PlayerMoved {
         player: u8,

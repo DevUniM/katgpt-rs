@@ -33,7 +33,7 @@ bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 half = "2"
 
 # Optional — feature-gated
-bevy_ecs = { version = "0.15", optional = true }    # bomber (no, bomber stays) / monopoly
+bevy_ecs = { version = "0.19", optional = true }    # monopoly (its only consumer here; bomber stayed in the root crate) — bumped 0.15→0.19, Issue 799
 wasmi = { version = "2", optional = true, features = ["simd"] }          # reserved — bomber feature is in main crate; `simd`: hosts load +simd128-built modules
 papaya = { version = "0.2", optional = true }         # lock-free HashMap (bfcf_lfu_shard, rosetta, dynamic_rank, decision_explainer, belief_drafter)
 rustfft = { version = "6", optional = true }          # reserved

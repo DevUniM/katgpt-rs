@@ -109,7 +109,7 @@ pub fn run_bomber_game(
     for _tick in 0..config.tick_limit {
         // Drain events from previous tick
         {
-            let mut event_reader = world.resource_mut::<Events<GameEvent>>();
+            let mut event_reader = world.resource_mut::<Messages<GameEvent>>();
             tick_events.clear();
             tick_events.extend(event_reader.drain());
         }
@@ -143,7 +143,7 @@ pub fn run_bomber_game(
 
     // Drain remaining events after loop ends
     {
-        let mut event_reader = world.resource_mut::<Events<GameEvent>>();
+        let mut event_reader = world.resource_mut::<Messages<GameEvent>>();
         round_events.extend(event_reader.drain());
     }
 

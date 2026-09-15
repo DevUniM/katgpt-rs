@@ -326,7 +326,7 @@ fn run_round(
     for _tick in 0..tick_limit {
         // Drain events from previous tick
         let tick_events: Vec<GameEvent> = {
-            let mut event_reader = world.resource_mut::<bevy_ecs::event::Events<GameEvent>>();
+            let mut event_reader = world.resource_mut::<bevy_ecs::message::Messages<GameEvent>>();
             event_reader.drain().collect()
         };
         round_events.extend(tick_events.iter().cloned());
@@ -363,7 +363,7 @@ fn run_round(
 
     // Drain remaining events
     {
-        let mut event_reader = world.resource_mut::<bevy_ecs::event::Events<GameEvent>>();
+        let mut event_reader = world.resource_mut::<bevy_ecs::message::Messages<GameEvent>>();
         round_events.extend(event_reader.drain().collect::<Vec<GameEvent>>());
     }
 

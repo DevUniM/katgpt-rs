@@ -8,7 +8,7 @@
 //!
 //! Run: `cargo run --example bomber_07_bomb_types --features bomber`
 
-use bevy_ecs::event::Events;
+use bevy_ecs::message::Messages;
 use bevy_ecs::prelude::{Entity, World};
 use katgpt_rs::pruners::bomber::arena::EMPTY_ARENA;
 use katgpt_rs::pruners::bomber::*;
@@ -30,7 +30,7 @@ fn fresh_world() -> World {
 }
 
 fn drain_events(world: &mut World) -> Vec<GameEvent> {
-    world.resource_mut::<Events<GameEvent>>().drain().collect()
+    world.resource_mut::<Messages<GameEvent>>().drain().collect()
 }
 
 fn find_explosions(events: &[GameEvent]) -> Vec<(i32, i32, u32)> {

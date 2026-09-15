@@ -38,7 +38,7 @@ fastrand = "2"
 
 # Uuid::now_v7() for EigenbasisProvenance.window_id (Phase 12 absorption —
 # hla_eigenbasis.rs). Optional, enabled by `hla_eigenbasis_recovery`.
-uuid = { version = "1", features = ["v7"], optional = true }
+uuid = { version = "1", features = ["v7", "rng-getrandom"], optional = true }
 
 [features]
 # All flags are empty tracking gates mirroring the historical katgpt-rs

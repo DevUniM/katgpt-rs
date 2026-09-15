@@ -102,7 +102,7 @@ fastrand = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { version = "1", features = ["alloc"] }
-bevy_ecs = { version = "0.15", optional = true }  # Standalone ECS (Plan 033)
+bevy_ecs = { version = "0.19", optional = true }  # Standalone ECS (Plan 033 bomber + Plan 035 monopoly arenas; bumped 0.15→0.19, Issue 799)
 wasmi = { version = "2", optional = true, features = ["simd"] }  # WASM bomber validator (Plan 034, wasmi migration Plan 167). `simd`: hosts load +simd128-built modules
 papaya = { version = "0.2", optional = true }      # Lock-free concurrent HashMap (Plan 037)
 # katgpt-tokenizer (Issue 014): extracted to standalone crate. Non-optional — the
@@ -156,14 +156,17 @@ memmap2 = { version = "0.9", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # getrandom wasm32 backends — required so that transitive consumers (bevy_ecs
-# → bevy_utils → ahash pulls BOTH getrandom 0.2 and 0.3) compile for the
-# browser / CF Worker / wasmtime wasm32-unknown-unknown targets. Without
-# these, `secure_vessel` / `bomber-wasm` / `bomber` fail with getrandom's
+# → bevy_utils → ahash pulls getrandom 0.2 and 0.3; uuid ≥1.26 pulls 0.4)
+# compile for the browser / CF Worker / wasmtime wasm32-unknown-unknown
+# targets. Without these, `bomber-wasm` / `bomber` fail with getrandom's
 # "wasm32-unknown-unknown targets are not supported by default" error.
 # getrandom 0.3 renamed the feature: `js` (0.2) → `wasm_js` (0.3).
 # See https://docs.rs/getrandom/#webassembly-support
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+# getrandom 0.4 (uuid 1.26 → uuid-rng-internal, Issue 799 bevy_ecs 0.19 bump):
+# same wasm32-default-off premise, same fix.
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 # (Issue 413, 2026-07-08): coreml-native / coreml-proto / prost / metal moved
 # into crates/katgpt-backend/Cargo.toml's macOS target-deps section. The
@@ -374,7 +377,7 @@ binary_plasma = ["katgpt-core/binary_plasma", "katgpt-transformer/binary_plasma"
 peira_distill = ["katgpt-core/peira_distill", "katgpt-spectral/peira_distill", "bandit", "katgpt-speculative/peira_distill"]  # PEIRA inter-view regressor alignment — collapse-free modelless distillation (Plan 153 GOAT 7/7, Research 115) — default-ON. Phase 4: substrate moved to katgpt-spectral; root re-exports as `katgpt_rs::distill::peira`. Plan 387: peira_pruner (spec-decode ScreeningPruner) moved to katgpt-speculative.
 ilc_distill = ["bandit", "katgpt-speculative/ilc_distill"]  # ILC Iterative Latent Clustering — synonym-aware DDTree pruning (Research 136 GOAT 6/6, arXiv:2605.27734) — default-ON. Phase 6: substrate moved to katgpt-speculative; root re-exports as `katgpt_rs::distill::ilc`.
 trd_refined_draft = ["elf_sde", "bandit", "bt_rank", "katgpt-speculative/trd_refined_draft"]  # Trajectory-Refined Draft — modelless TRD for speculative decoding (Plan 249 GOAT 7/7, Research 217) — default-ON. Plan 384 (2026-07-05): substrate moved to katgpt-speculative; root re-exports as `katgpt_rs::distill::trd`.
-monopoly = ["bevy_ecs", "bandit", "katgpt-pruners/monopoly"]  # Monopoly Board Game Engine (Plan 034)
+monopoly = ["bevy_ecs", "bandit", "katgpt-pruners/monopoly"]  # Monopoly Board Game Engine (Plan 035)
 go = ["bandit", "dep:reqwest", "katgpt-pruners/go"]  # AutoGo API bridge + Go GameState (Plan 065)
 randopt_weight = ["bandit", "katgpt-pruners/randopt_weight"]  # RandOpt weight-space perturbation ensembling (Plan 121, Research 080)
 thicket_variance_probe = ["rv_gated_routing", "katgpt-pruners/thicket_variance_probe"]  # Thicket Variance Probe — decoding-space density routing signal (Plan 267, Research 235) — composes with RV for ablation

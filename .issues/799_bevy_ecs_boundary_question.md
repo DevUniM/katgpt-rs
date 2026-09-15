@@ -1,6 +1,10 @@
 # Issue 799 — bevy_ecs 0.15 optional arm: bump to 0.19 or retire (BOUNDARY.md question)
 
-**Status:** DECIDED 2026-09-15 — **BUMP to 0.19** (T1+T2 below); T3–T6 execution scoped for the landing session. Prior session's API-surface audit spot-check verified same day (zero scheduler/Commands/change-detection hits re-confirmed against `src/pruners/bomber` + `crates/katgpt-pruners/src/monopoly`).
+**Status:** EXECUTED 2026-09-15 — **BUMPED to 0.19.1 and landed** (T3–T6
+below all done: API deltas were three mechanical renames, wasm32 lanes
+green with the new getrandom-0.4 pin, BOUNDARY.md row + comment-drift
+fixes in the landing commit, Bench 799 GOAT record: semantics PASS,
+harness ~2× slower documented with no floor flip).
 
 ## Why this issue exists
 
@@ -158,20 +162,38 @@ is part of the gap this issue closes.
       repos' bevy 0.19 pins). (4) The wasm32 transitive-tree impact (root
       `Cargo.toml` ~158 getrandom backend pins) is the one real risk and is
       owned by T3's re-verification step.
-- [ ] If bump: audit bevy_ecs 0.15→0.19 API deltas against the ACTUAL usage
+- [x] If bump: audit bevy_ecs 0.15→0.19 API deltas against the ACTUAL usage
       sites above (World::query/query_filtered signatures, Events::drain,
       Component/Resource/Event derive requirements, Entity semantics) and
       re-verify the wasm32 lanes (getrandom backend pin set, bevy_utils →
       ahash version shift) — feature-gated code needs
       `--verify-args "--features bomber"` / `--features monopoly` builds.
+      **DONE 2026-09-15:** the exercised surface needed exactly three
+      mechanical renames (`Events<E>`→`Messages<E>`, `#[derive(Event)]`→
+      `#[derive(Message)]` for buffered events, `World::send_event`→
+      `write_message`) + `Entity::from_raw`→`from_raw_u32().unwrap()` in a
+      test helper. wasm32 lanes re-verified green (`bomber` and
+      `bomber,monopoly` at wasm32-unknown-unknown) with the NEW third
+      backend pin getrandom 0.4 `wasm_js` (uuid 1.26 → uuid-rng-internal →
+      getrandom 0.4; also `rng-getrandom` added to katgpt-spectral's uuid
+      so `v7` no longer pulls bare getrandom). Full feature-gated suites:
+      katgpt-pruners monopoly 289/0; katgpt-rs bomber+monopoly tests 662/0.
 - [ ] If retire: define the replacement (lighter substrate vs archiving the
       arenas) and what happens to `binned_blend`/`kernel_blend` whose GOAT
       evidence lives on bomber tournaments — reproducibility of Benchmark 432
-      must survive the change.
-- [ ] Record the decision in `BOUNDARY.md` if the dep contract changes
+      must survive the change. (MOOT — bump chosen.)
+- [x] Record the decision in `BOUNDARY.md` if the dep contract changes
       (either way: name bevy_ecs in the allowlist explicitly, or record its
       removal), and fix the three comment-drift findings above in the same
-      landing commit.
-- [ ] If bump: run the GOAT gate on `bench_bomber_arena` before/after to
+      landing commit. **DONE 2026-09-15:** BOUNDARY.md now names bevy_ecs
+      (allowlist row + the 0.4 getrandom pin note); comment-drift findings
+      1+2 fixed in the bump commit (Plan 035 cite; katgpt-pruners comment
+      names monopoly only); finding 3 folded into the root-dep comment.
+- [x] If bump: run the GOAT gate on `bench_bomber_arena` before/after to
       prove no perf regression in the tournament harness (the arenas are
       benchmark infrastructure; a silent slowdown poisons future GOAT gates).
+      **DONE 2026-09-15 — Bench 799 (`.benchmarks/799_bevy_ecs_019_bump_arena_goat.md`):**
+      G1 semantics PASS (outcome-asserting suites green at both pins);
+      G2 measured ~2.0× harness slowdown (366→728 µs/game median, loaded
+      box, interleaved A/B) — PASS with the cost recorded: no consumer
+      floor flips, tournament throughput documented for future gates.

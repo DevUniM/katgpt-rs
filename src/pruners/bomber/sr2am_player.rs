@@ -886,6 +886,9 @@ mod tests {
         }
 
         let (new, extend, skip, spechop) = player.decision_stats();
+        // Mutated only under `sia_feedback` (below) — silenced for the other
+        // feature combos so a narrow-feature clippy run stays clean.
+        #[allow(unused_mut)]
         let mut total = new + extend + skip + spechop;
         // Under `sia_feedback`, the ConfiguratorBandit can also pick
         // HarnessUpdate / WeightUpdate, which are tracked separately in

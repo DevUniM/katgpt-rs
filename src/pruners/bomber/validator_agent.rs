@@ -558,7 +558,7 @@ pub fn evaluate_validator(candidate: &ValidatorCandidate, rounds: u32) -> ArenaE
         for _tick in 0..EVAL_TICK_LIMIT {
             // Drain events from previous tick
             {
-                let mut event_reader = world.resource_mut::<bevy_ecs::event::Events<GameEvent>>();
+                let mut event_reader = world.resource_mut::<bevy_ecs::message::Messages<GameEvent>>();
                 tick_events.clear();
                 tick_events.extend(event_reader.drain());
             }
@@ -626,7 +626,7 @@ pub fn evaluate_validator(candidate: &ValidatorCandidate, rounds: u32) -> ArenaE
 
         // Drain remaining events
         {
-            let mut event_reader = world.resource_mut::<bevy_ecs::event::Events<GameEvent>>();
+            let mut event_reader = world.resource_mut::<bevy_ecs::message::Messages<GameEvent>>();
             // `drain()` is already an iterator — the intermediate `Vec` was waste.
             round_events.extend(event_reader.drain());
         }
