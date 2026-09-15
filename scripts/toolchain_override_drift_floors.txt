@@ -24,17 +24,41 @@
 # (1) at its first run was BY DESIGN — those rows were documented-deliberate
 # in PROSE (AGENTS.md, the rust-toolchain.toml header, workflow comments),
 # prose is not a marker, and the wall held until the in-source markers
-# landed. RESOLVED the same day: all five markers are in (katgpt-rs
-# full_gate.yml + wasm32_gate.yml via rule (b); riir-ai g2_netem_docker.sh
-# via rule (c) — the marker sits above the docker-run head because a comment
-# line cannot live inside a backslash-continuation arg list; riir-chain
-# toolchain_drift.yml via rule (b), UNRESOLVED-MARKED; riir-game-sdk
-# t36_netem_partition_docker.sh marked but NO-PIN-OVERRIDE, pin-absence
-# dominates). First green sweep: 0 DRIFT / 3 DELIBERATE / 0 UNRESOLVED /
-# 1 UNRESOLVED-MARKED / 1 NO-PIN-OVERRIDE / 13 UNPINNED-REPO. The expected
-# file for this class stays deliberately EMPTY (see
+# landed. The expected file for this class stays deliberately EMPTY (see
 # toolchain_override_expected.txt) unless an occurrence can never carry an
 # in-source marker.
+#
+# ⛔ CORRECTED, same day (Issue 798). This block previously read "RESOLVED
+# the same day: all five markers are in" and quoted a green sweep. Only TWO
+# of the five existed — the katgpt-rs pair below. The three sibling markers
+# were edited into their worktrees, measured green, written up here, and
+# never committed anywhere; the sweep read `drift 1 · unresolved 1 · ✗
+# FAILED` for the whole interval. The quoted figures were a real measurement
+# of a state NO commit contained — Issue 797's class, reached by a PROSE
+# record rather than by a floor. Issue 797's worktree advisory (41ecdcbd)
+# postdates that write-up by hours and names exactly these three repos on
+# the repair run.
+#
+# THE RULE THIS ADOPTS: a cross-repo repair is not landed until it is
+# COMMITTED in the sibling repo, and a record here claiming one must CITE
+# THE SIBLING COMMIT. "the marker is in" is unverifiable and stood false for
+# six hours; a SHA is checkable with one `git -C ../<repo> cat-file -e`.
+#
+# Markers actually in, each cited (verified 2026-09-15):
+#   katgpt-rs      .github/workflows/full_gate.yml    rule (b)   cb03c8dc
+#   katgpt-rs      .github/workflows/wasm32_gate.yml  rule (b)   cb03c8dc
+#   riir-ai        scripts/g2_netem_docker.sh         rule (c)   8296fe206
+#   riir-game-sdk  scripts/t36_netem_partition_...sh  rule (c)   a17117c
+#   riir-chain     .github/workflows/toolchain_drift.yml rule (b) d842200
+# Rule (c) = the marker sits above the docker-run head, because a comment
+# line cannot live inside a backslash-continuation arg list. The two docker
+# overrides are deliberate rather than decayed: each script BAKES its own
+# image (riir-g2-netem:1.95 / riir-t36-netem:1.95, both FROM
+# rust:1.95.0-bookworm), so the value tracks the baked container, not the
+# workspace pin. Sweep after the four sibling commits, 16 repos on this box:
+# 0 DRIFT / 3 DELIBERATE / 0 UNRESOLVED / 1 UNRESOLVED-MARKED /
+# 1 NO-PIN-OVERRIDE / 10 UNPINNED-REPO — take the figure from a run, not
+# from this comment.
 #
 # ── max_unresolved is a COUNTED ceiling, pinned at its measured value ────────
 # A TOKEN value (${{ ... }}, ${VAR}, $VAR) cannot be evaluated statically.

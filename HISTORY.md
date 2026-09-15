@@ -11,6 +11,51 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 798 (2026-09-15) — a tracked landing record claimed a sibling-repo repair that was never committed
+
+Two tracked files in `scripts/` recorded cross-repo repairs as landed and
+green on 2026-09-15 (`cb03c8dc`). Neither existed in the sibling repo, and
+both sweeps were RED for the whole interval.
+
+`toolchain_override_drift_floors.txt` read *"RESOLVED the same day: all five
+markers are in"* and quoted `0 DRIFT / 3 DELIBERATE / 0 UNRESOLVED / 1
+UNRESOLVED-MARKED`. Measured by `git grep toolchain-override-deliberate` over
+the four named repos: **2 of the 5 existed**, both the katgpt-rs pair; the
+sweep read `drift 1 · unresolved 1 · ✗ FAILED`.
+`pipefail_discard_expected.txt` had **dropped a row** because riir-chain
+`teardown.sh:24` *"got the same tail in the riir-chain commit"*; the tail did
+not exist and the row read `✗ UNPINNED`. Dropping a pin for an absent fix is
+the unrecoverable direction — nothing then points at the site.
+
+The shape is unambiguous: the sibling files were edited in the worktree, the
+sweeps run green against those uncommitted edits, the records written from
+that run, katgpt-rs committed, the sibling edits never committed anywhere —
+not in any sibling's worktree, index or stash today. That is **Issue 797's
+class reached by a PROSE record rather than by a floor**, and 797's worktree
+advisory (`41ecdcbd`) postdates the write-up by hours; it names exactly those
+three repos on the repair run, making this the first real-world validation of
+797 against an incident 797 did not know about.
+
+Repaired at the four sibling commits, each now cited by SHA in the record it
+belongs to: riir-ai `8296fe206` + riir-game-sdk `a17117c` (deliberate markers
+— both scripts BAKE their own `FROM rust:1.95.0-bookworm` image, so the
+override tracks the container, not the workspace pin), riir-chain `d842200`
+(the workflow marker + the `|| true` tail, which restored an unreachable
+`already gone` branch). Both sweeps PASS.
+
+**No new instrument.** Do not gate on prose landing claims: the sweep IS the
+verification and it was red from the moment the record was written. The rule
+adopted instead — *a cross-repo repair is not landed until it is COMMITTED in
+the sibling repo, and a record here claiming one must cite the sibling
+commit* — is in AGENTS.md § Before committing in a shared worktree.
+
+⚠ Non-finding, recorded so it is not re-investigated: the pipefail sweep's
+PASS line says *"every pinned row firing"* beside `50 FINDING · 51 pinned
+row(s)`. The both-directions check is real
+(`pipefail_discard_drift_sweep.py:425-431`) and correctly skips repos absent
+from the box. `riir-deployer` holds exactly one row and is one of the four
+absent repos: 51 − 1 deferred = 50 checked = 50 findings.
+
 ## riir-train Issue 549 fixed in `490b662e` (2026-09-15, M3 + 4090 session) — avx2_exp_sum_inplace: the one exp kernel missing the n-clamp
 
 The fused exp+sum SIMD kernel behind every `softmax` call was the ONLY exp

@@ -39,8 +39,18 @@
 
 # (dropped 2026-09-15: full_gate.sh WASM_RESIDUE got its `|| true` tail in the
 # instrument-landing commit — the changed-set case now reaches the != comparison
-# instead of dying in grep; and riir-chain teardown.sh:24 got the same tail in
-# the riir-chain commit, restoring its already-gone re-run branch.)
+# instead of dying in grep; and riir-chain teardown.sh:24 got the same tail,
+# restoring its already-gone re-run branch.)
+#
+# ⛔ CORRECTED, same day (Issue 798). The teardown.sh half of that note was
+# FALSE when written: the row was dropped here on the strength of a fix that
+# did not exist in riir-chain, and this sweep read `✗ UNPINNED finding
+# riir-chain:cloudflare/edge-wallet-container/teardown.sh:cc4d29da#1 · FAILED`
+# until the real fix landed at riir-chain d842200. Dropping a row for an
+# absent fix is the UNRECOVERABLE direction — nothing then points at the
+# site. The rule adopted in Issue 798: a cross-repo repair is not landed
+# until it is COMMITTED in the sibling repo, and a note here claiming one
+# must CITE THE SIBLING COMMIT, as this one now does.
 katgpt-rs:scripts/proof_gate.sh:b6c4ffde#1   DELIBERATE tripwire: death on an empty PrintAxioms.lean is the precondition assert - an axiom-free proof must fail loud here, not pass. Drop the row only in the commit that re-homes the assert.   #= directives="$(grep -c '^#print axioms' PrintAxioms.lean)"
 riir-ai:scripts/ci_feature_guard.sh:f99c829e#1   LIVE kill-shape: a layer whose output carries no 'test result: ok' line kills the whole CI guard before its summary - the perf_rematch damage shape; unexamined - fix drops the row.   #= DFLASH_PASSED=$(echo "$DFLASH_OUT" | grep -oE 'test result: ok\. [0-9]+' | grep -oE '[0-9]+' | head -1)
 riir-ai:scripts/ci_feature_guard.sh:8c7f3f7c#1   LIVE kill-shape: a layer whose output carries no 'test result: ok' line kills the whole CI guard before its summary - the perf_rematch damage shape; unexamined - fix drops the row.   #= FMQ_PASSED=$(echo "$FMQ_OUT" | grep -oE 'test result: ok\. [0-9]+' | grep -oE '[0-9]+' | head -1)

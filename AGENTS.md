@@ -1718,6 +1718,25 @@ build HEAD's version + your edit, `git hash-object -w`, then `git
 update-index --cacheinfo`. Their hunks stay uncommitted; the worktree stays
 coherent for them.
 
+⛔ **A cross-repo repair is not landed until it is COMMITTED in the sibling
+repo, and a record HERE claiming one must CITE THE SIBLING COMMIT** (Issue
+798). Measured: two tracked files in `scripts/` recorded sibling repairs as
+landed and green — `toolchain_override_drift_floors.txt` ("all five markers
+are in", plus a quoted green sweep) and `pipefail_discard_expected.txt` (a
+row DROPPED because riir-chain "got the same tail"). **Two of the five
+markers existed**, both in this repo, the tail did not exist at all, and both
+sweeps were RED for the whole interval. The sibling edits were made in the
+worktree, measured green, written up, and never committed anywhere.
+
+That is Issue 797's class reached by a **prose record** rather than by a
+floor, and 797's worktree advisory — which names exactly those three repos
+on the repair run — postdates the write-up by hours. **Do not add a gate
+that parses prose landing claims**: the sweep IS the verification and it was
+red from the moment the record was written. What a SHA buys is a claim a
+reader can check with one `git -C ../<repo> cat-file -e`, where "the marker
+is in" stood false for six hours. Dropping a pin row for an absent fix is
+the **unrecoverable** direction — nothing then points at the site.
+
 **Shared target dir:** a count-pinned or feature-switching gate run
 concurrently with another cargo process in the same `target/` reports a
 failing test that passes when run alone. Read the failure's **shape**:
