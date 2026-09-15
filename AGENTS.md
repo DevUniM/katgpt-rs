@@ -396,12 +396,16 @@ security gate PASSES an unverified run**; with the emptiness check too, the
 fail-loud branch fires. (That line carried a second, independent defect: it
 ended `)":`, a stray colon concatenated outside the quotes, so `[ -z
 "$LEAK_LINE" ]` could never fire and the branch was dead code regardless of
-pipefail. Fixed at riir-neuron-db `9696cc8`.) The whole non-riir-ai population
-is triaged now — 51 findings down to 37, twelve sites fixed in seven sibling
-repos and six adjudicated INERT BY CONSTRUCTION (an earlier `if grep -q` on the
+pipefail. Fixed at riir-neuron-db `9696cc8`.) The full census is TRIAGED now —
+51 findings down to 10 pinned rows, all DELIBERATE (the 4 `proof_gate.sh`
+`grep -c` tripwires) or INERT BY CONSTRUCTION (an earlier `if grep -q` on the
 same pattern and file, or an earlier `[ -z ]` early exit, which a static
-classifier cannot see). What is left unexamined is riir-ai's 26, whose checkout
-on this box is another session's and 109 commits behind. Two bash laws are
+classifier cannot see): the 37 live kill-shapes were fixed across ten repos —
+the 25-row riir-ai block (rove ×2, tcc ×1, 22 `ci_feature_guard.sh`
+layer-summary sites) at riir-ai `11d629672`, two earlier batches (14 sites) in
+their own repos, and the final 3 (deployer control-do TS_PAIR `b3c7bbd`,
+mmorpg warm-tier-do SEQ1/SEQ2 `0688254`) in the closing pass; every downstream
+was verified to own the empty case before its `|| true` landed. Two bash laws are
 MEASURED, not reasoned: `local x="$(fails)"` does not kill (local masks the
 status — its own LOCAL-MASKED bucket, listed never gated), and a
 `(grep ‖ true) | tail` paren-group is guarded by its interior — which is
