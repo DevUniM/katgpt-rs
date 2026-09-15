@@ -4230,6 +4230,77 @@ its false-positive rate measured first: a long-lived branch legitimately
 allocates ahead of its remote, and this repo's own divergence was 57 commits.
 The cheap half is procedural and already written down (fetch before allocating).
 
+## Issue 796 (2026-09-15) — a sweep reads the WORKTREE, so a finding may exist in NO commit: CLOSED
+
+Found by trying to close the last standing CROSS row in
+`citation_drift_sweep.py`. It had been carried across a context boundary as
+backlog reading *"blocked — that session has HISTORY.md uncommitted"*. The
+correct verdict was not *blocked*; it was **there is nothing to fix**, and no
+amount of reading the sweep's own output could say which.
+
+Every instrument in the sweep family walks the **working tree**, and this
+workspace runs five-plus concurrent agent sessions against **shared worktrees**
+— `staged_set_audit.py` exists for exactly that hazard one axis over.
+
+**The measurement** (`citation_drift_sweep.audit()` run twice per dirty repo,
+once over the worktree and once with every dirty in-scope document replaced by
+its HEAD blob, 16 of 20 repos):
+
+| repo | dirty tracked | in scope | worktree | HEAD |
+|---|---|---|---|---|
+| riir-ai | 6 | `HISTORY.md` | **CROSS = 1** | **CROSS = 0** |
+| seal-remake | 1 | — | — | — |
+
+The workspace's **entire** standing CROSS finding was an artifact. HEAD carries
+`Filed … from the riir-train Research 453 session`; an uncommitted edit by
+another session strips the qualifier. The POPULATION moved too — `n_cites` 601
+(worktree) vs 607 (HEAD), `ambiguous` 162 vs 163 — because that session's
+uncommitted deletion of a 30-line block took six citations out of the
+denominator, so a floor re-pinned from such a run is wrong on every other box.
+
+**Two directions, and the second had never been looked at.** UNCOMMITTED (the
+worktree carries a row HEAD does not) is a false accusation: loud, and the
+repair means editing a file another session holds open. **MASKED** (HEAD
+carries a row the worktree does not) is a false green — the defect is
+committed, in the repo, and the sweep says clean. Measured **0** today, which
+is a measurement and not an absence of the class.
+
+**T1** — `scripts/worktree_state.py`, one copy: `dirty_files()`, `head_text()`,
+`split_rows()`, `dirty_in_scope()`, `sweep_advisory()`, 36 arms.
+**T2** — wired into all **16** sweeps at the existing `population_verdict()`
+call site, each with the globs naming its OWN population. ADVISORY, never a
+failure: a sweep that hard-reds on an ordinary dirty worktree is a sweep nobody
+runs. Verified per-population on the landing run — the `*.rs` sweeps reported
+riir-ai (3), `*.md` riir-ai (1), `numbering` katgpt-rs (1) + riir-ai (1),
+`subprocess_encoding` katgpt-rs (16), and `trap_sentinel` / `restatement`
+printed nothing at all.
+**T3** — the row-level split in `citation_drift_sweep.py`, via an injected
+`read(path) -> str | None` so the same classifier can be pointed at HEAD. The
+DISPLAY reads the worktree; the PINS read HEAD.
+**T4** — AGENTS.md section; docs gate 21/21; arm-reach gate green.
+
+**Three things this got wrong before it got them right**, all in my own code:
+
+- ⛔ The `\` → `/` normalisation in `dirty_files` is DEFENSIVE and its arm
+  certified nothing — deleting the line reds NOTHING, because `git status
+  --porcelain` emits POSIX separators on every platform, measured on the
+  Windows box where a naive reading expects the opposite. The arm asserts
+  git's OUTPUT SHAPE now.
+- ⛔ `("*.rs")` is not a tuple. Iterating it yields characters, `fnmatch(rel,
+  "*")` matches everything, and the advisory silently reports every dirty file
+  in the repo — **8 of 15** call sites were written that way in the wiring
+  commit. The helper coerces and an arm pins both sides.
+- ⛔ The row key must be LINE-FREE. Any edit above a citation shifts its line,
+  so a line-bearing key reports every row in an edited document as UNCOMMITTED
+  *and* MASKED at once.
+
+Arm reach for the new module (`--include-all`): **19 of 23**, the three live
+survivors being `check=True` / `capture_output=True` on the fixture BUILDERS,
+with the reason written at the line.
+
+Issue file removed per the noise-reduction rule; the full record lives in git
+history (`git log -- .issues/796_worktree_state_sweep_findings.md`).
+
 ## Issue 795 (2026-09-15) — 70 numbering collisions the gate could not see, 9 of them live: CLOSED
 
 Issue 791 recorded **three** double-allocated numbers and closed. Pointing the

@@ -327,7 +327,10 @@ check at all** — it iterates the DERIVED repos, so it caught walk→pins
 evaluated by nothing. **That silent green is the worse direction:** a sweep
 that hard-reds is impossible to misread, and this one survived the 779 census
 *because* it was quieter, not because it was correct. All eleven share the
-verdict now. ⚠ A **subset**-population sweep has TWO populations and they are
+verdict now. ⚠ **"Eleven" is that day's measurement and this paragraph keeps
+it deliberately** — the family is **16** as of 2026-09-15 (Issue 796 wired the
+worktree advisory into all of them and counted), so read every "eleven" below
+as a dated figure the way this document tells you to read any count in prose. ⚠ A **subset**-population sweep has TWO populations and they are
 not interchangeable: hand `population_verdict` the **contract walk**, never the
 subset — the restatement sweep, handed its own `.proofs` set, reported **16
 phantom absences** and failed. The hole the shared verdict cannot see is
@@ -1578,6 +1581,91 @@ inside its `selftest()`. The repairs on offer were to exempt the gate from
 itself or to obfuscate its test data, and an exempt gate certifies nothing.
 `ast` sees a string literal as a literal; a file it cannot parse is
 **UNPARSED** and reds, never folded into the pass column.
+
+## A sweep reads the WORKTREE, so a finding may exist in NO commit — `scripts/worktree_state.py`
+
+Issue 796. Every instrument in the sweep family above walks the **working
+tree**. This workspace runs five-plus concurrent agent sessions against
+**shared worktrees** — `staged_set_audit.py` (below) exists for exactly that
+hazard one axis over — so a row a sweep prints may sit on a line no commit
+contains, and a repo a sweep calls clean may be clean only because somebody's
+uncommitted edit removed the offending line.
+
+Measured 2026-09-15, `citation_drift_sweep.audit()` run twice per dirty repo
+(the worktree, then every dirty in-scope document replaced by its HEAD blob):
+the workspace's **entire** standing CROSS finding — 1 of 1 — was an artifact.
+HEAD carries `Filed … from the riir-train Research 453 session`; an uncommitted
+edit by another session strips the qualifier, and the sweep reports an
+unfollowable citation. It had already cost a session, carried across a context
+boundary as backlog reading *"blocked, that session has HISTORY.md
+uncommitted"*. The correct verdict was not *blocked*; it was **there is nothing
+to fix**, and no amount of reading the sweep's own output could say which.
+
+**The POPULATION moves too**, which a row-level read alone misses: the same two
+runs put `n_cites` at **601 (worktree) vs 607 (HEAD)** and `ambiguous` at 162 vs
+163, because that session's uncommitted deletion of a 30-line block took six
+citations out of the denominator. A floor or ratchet re-pinned from such a run
+bakes another session's in-flight edit into a tracked expectations file, where
+it reds on every other box.
+
+Three verdicts, never interchangeable:
+
+- **COMMITTED** — the finding's file matches HEAD. An ordinary finding.
+- **UNCOMMITTED** — the worktree carries a row HEAD does not. **Displayed**
+  (it is what the file says today, and hiding it would be its own lie) but
+  **never adjudicated against a pin**. The split of responsibility, once: the
+  DISPLAY reads the worktree, the PINS read HEAD.
+- **MASKED** — HEAD carries a row the worktree does not. A *false green*: the
+  defect is committed, in the repo, and the sweep says the repo is clean. The
+  silent direction and therefore the worse one. **0 today, which is a
+  measurement and not an absence of the class** — nothing had ever looked.
+
+```bash
+scripts/worktree_state.py            # the 36 arms (exit 1 on failure)
+```
+
+- ⚠ **ADVISORY, never a failure.** A sweep that hard-reds on an ordinary dirty
+  worktree is a sweep nobody runs — the cries-wolf outcome this document names
+  for `.benchmarks/` in the numbering gate. It rides the sweep's FINAL line in
+  BOTH directions (the `DEFERRED` precedent) and is **SILENT** when nothing
+  dirty meets that sweep's own population. MASKED is the exception, and it
+  needs no separate teeth: the pins already count it, because they read HEAD.
+- **Wired into all sixteen sweeps**, at the existing `population_verdict()`
+  call site, each with the globs naming its OWN population — so the `*.lean`
+  sweep stays silent while somebody edits Rust. Verified per-population on the
+  landing run: the `*.rs` sweeps reported riir-ai (3), the `*.md` ones riir-ai
+  (1), `numbering` katgpt-rs (1) + riir-ai (1), `subprocess_encoding`
+  katgpt-rs (16) — its own in-flight edits — and `trap_sentinel` / `restatement`
+  printed nothing at all. Landing it in one instrument and not the family is
+  the failure mode recorded six times here already (Issues 777, 778, 793, 782,
+  783, 789).
+- The row-level UNCOMMITTED/MASKED split is wired into `citation_drift_sweep.py`
+  alone, because it is the one whose findings carry a `file:line` address and
+  the one where the class was measured. `audit()` takes an injected
+  `read(path) -> str | None` so the SAME classifier can be pointed at HEAD's
+  blobs; `None` means "absent from the source being read" and must stay
+  distinguishable from empty text.
+- ⛔ **The row key is deliberately LINE-FREE** — `(document, kind, number)`.
+  Any edit above a citation shifts its line, so a line-bearing key reports
+  every row in an edited document as UNCOMMITTED *and* MASKED at once. The arm
+  for it plants two citations behind a padding line and requires the key sets
+  to be equal.
+- ⛔ **An arm whose perturbation reds nothing certifies nothing, and this
+  module caught one of its own.** `dirty_files` normalises `\` to `/`, and
+  deleting that line reds NOTHING: `git status --porcelain` emits POSIX
+  separators on every platform, measured on the Windows workstation where a
+  naive reading expects the opposite. The arm asserts git's OUTPUT SHAPE — the
+  premise — rather than pretending to test a defensive line. The normalisation
+  that does bite is in `split_rows`, on the CALLER's path.
+- ⛔ **A bare string is a footgun, not a convenience.** `("*.rs")` is not a
+  tuple; iterating it yields characters, `fnmatch(rel, "*")` matches
+  everything, and the advisory silently reports every dirty file in the repo.
+  Caught in this module's own wiring commit, where **8 of 15** call sites had
+  written it without the comma. The helper coerces and an arm pins both sides.
+- Arm reach (`--include-all`): **19 of 23**, the three live survivors being
+  `check=True` / `capture_output=True` on the fixture BUILDERS — flipping one
+  makes the fixture wrong rather than a rule wrong, and the reason is written
+  at the line.
 
 ## Before committing in a shared worktree — `scripts/staged_set_audit.py`
 

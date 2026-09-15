@@ -143,6 +143,7 @@ sys.path.insert(0, str(HERE))
 import len_derived_binding_audit as lda  # noqa: E402
 from skill_repo_set_gate import derive_repos as derive_repo_names  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -673,6 +674,15 @@ def main(argv: list[str]) -> int:
 
     # The population axis, shared (Issues 793 + 782).
     pop_lines, deferred, pop_fail = population_verdict(pins, names)
+
+    # Issue 796 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — kernels and bind sites.
+    deferred.extend(sweep_advisory(
+        names, ("*.rs",), root=WORKSPACE))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

@@ -76,6 +76,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cfg_row_implication_audit as cria  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
 from cfg_gated_target_audit import derive_repos  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -208,6 +209,15 @@ def main(argv: list[str]) -> int:
     # repaired failed LOUDLY, which is impossible to misread.
     pop_lines, deferred, pop_fail = population_verdict(
         pins, {r.name for r in repos})
+
+    # Issue 796 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — required-features rows + the sources they gate.
+    deferred.extend(sweep_advisory(
+        repos, ("Cargo.toml", "*.rs"), root=WORKSPACE))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

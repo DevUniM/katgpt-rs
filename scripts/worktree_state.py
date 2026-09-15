@@ -1,0 +1,546 @@
+#!/usr/bin/env python3
+"""A sweep reads the WORKTREE, so a finding may exist in NO commit — ONE copy.
+
+Issue 796. Every instrument in the cross-repo sweep family walks the working
+tree. This workspace runs five-plus concurrent agent sessions against SHARED
+worktrees — `staged_set_audit.py` exists for exactly that hazard one axis over
+— so a row a sweep prints may sit on a line no commit contains, and a repo a
+sweep calls clean may be clean only because somebody's uncommitted edit removed
+the offending line.
+
+Measured 2026-09-15, `citation_drift_sweep.audit()` run twice per dirty repo
+(worktree, then every dirty in-scope document replaced by its HEAD blob): the
+workspace's **entire** standing CROSS finding — 1 of 1 — was an artifact of an
+uncommitted edit that stripped a `riir-train` qualifier HEAD carries. It had
+already cost a session, carried across a context boundary as backlog reading
+"blocked, that session has HISTORY.md uncommitted". The correct verdict was
+not *blocked*; it was **there is nothing to fix**, and no amount of reading the
+sweep's own output could say which.
+
+Three verdicts, never interchangeable:
+
+- **COMMITTED** — the finding's file matches HEAD. An ordinary finding:
+  counted, pinnable, somebody's to repair.
+- **UNCOMMITTED** — the file differs from HEAD, so the row may exist in no
+  commit. **Displayed** (it is what the file says today, and hiding it would be
+  its own lie) but **never adjudicated against a pin** — a ceiling breached by
+  somebody's in-flight edit is a red nobody can repair, and a ceiling re-pinned
+  from one bakes that edit into a tracked expectations file, where it reds on
+  every other box. The split of responsibility, once: the DISPLAY reads the
+  worktree, the PINS read HEAD.
+- **MASKED** — HEAD carries a row the worktree does not. A *false green*: the
+  defect is committed, in the repo, and the sweep says the repo is clean. This
+  is the silent direction and therefore the worse one. Measured 0 today, which
+  is a measurement and not an absence of the class.
+
+The POPULATION moves too, which a row-level read alone misses: the same two
+runs put `n_cites` at **601 (worktree) vs 607 (HEAD)**, because the other
+session's uncommitted deletion of a 30-line block took six citations out of the
+denominator. A floor re-pinned from such a run is wrong everywhere else.
+
+⚠ **ADVISORY, never a failure.** A sweep that hard-reds on an ordinary dirty
+worktree is a sweep nobody runs — the cries-wolf outcome AGENTS.md names for
+`.benchmarks/` in the numbering gate. The advisory rides the sweep's FINAL line
+in BOTH directions (the `DEFERRED` precedent in `sweep_population.py`: a notice
+printed only on failure is one nobody reads on the run that passes), and it is
+SILENT when nothing dirty intersects the sweep's own population — a banner that
+prints on every run is a banner nobody reads either.
+
+Self-test: `scripts/worktree_state.py` (exit 1 on failure). Every arm is
+two-sided where two sides exist — an arm whose perturbation reds nothing
+certifies nothing (`platform_dead_code_audit.py`'s first `vendor/` arm).
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+COMMITTED = "COMMITTED"
+UNCOMMITTED = "UNCOMMITTED"
+MASKED = "MASKED"
+
+
+def _git(root, *args) -> subprocess.CompletedProcess:
+    """`encoding=` explicitly, never `text=True` — Issue 778: `text=True`
+    decodes with the SYSTEM locale, and every path here may carry one."""
+    return subprocess.run(
+        ["git", "-C", str(root), *args],
+        capture_output=True, encoding="utf-8", errors="replace")
+
+
+def dirty_files(root) -> frozenset[str]:
+    """Tracked repo-relative paths that differ from HEAD (staged or not).
+
+    - The `.git` probe is load-bearing, exactly as in `tracked_walk.py`:
+      `git -C` walks UP until it finds a repository, so a non-repo directory
+      nested inside one would otherwise answer with its PARENT's dirty set.
+    - A tree with no `.git` — a `git archive` extraction, a synthetic fixture —
+      is **clean by construction**, so the answer is the empty set and NOT an
+      error. `tracked_walk.py`'s fallback precedent.
+    - Untracked files are excluded: a sweep's population is what git tracks
+      (Issue 777), so an untracked file is not in it to begin with.
+    - A rename reports its DESTINATION. The source no longer exists on disk, so
+      no finding can carry its address.
+    """
+    root = Path(root)
+    if not (root / ".git").is_dir():
+        return frozenset()
+    out = _git(root, "status", "--porcelain", "--untracked-files=no")
+    if out.returncode != 0:
+        return frozenset()
+    rels: set[str] = set()
+    for line in out.stdout.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:].strip()
+        # `-> ` splits a rename; the quoting is git's own for non-ASCII paths.
+        if " -> " in path:
+            path = path.split(" -> ")[-1]
+        # The `.replace` is DEFENSIVE, and its arm says so. `git status
+        # --porcelain` emits POSIX separators on every platform — measured on
+        # the Windows workstation, where a naive reading would expect `\` — so
+        # deleting this line reds NOTHING. An arm whose perturbation reds
+        # nothing certifies nothing, so the arm below asserts git's OUTPUT
+        # SHAPE (the premise) rather than pretending to test this line. The
+        # real normalisation that does bite is in `split_rows`, on the
+        # CALLER's path, which may genuinely be a `pathlib` Windows string.
+        rels.add(path.strip('"').replace("\\", "/"))
+    return frozenset(rels)
+
+
+def head_text(root, rel: str) -> str | None:
+    """HEAD's blob for a repo-relative path, or None.
+
+    None means BOTH "not in HEAD" (a newly added file — there is no committed
+    version for a MASKED comparison to read) and "no repository". The callers
+    treat those the same way, because both say the same thing: this run has
+    nothing committed to compare against.
+    """
+    root = Path(root)
+    if not (root / ".git").is_dir():
+        return None
+    out = _git(root, "show", f"HEAD:{rel}")
+    return out.stdout if out.returncode == 0 else None
+
+
+def split_rows(rows, path_of, dirty: frozenset[str]) -> tuple[list, list]:
+    """(committed, uncommitted) for a caller's finding rows.
+
+    `path_of(row)` yields the row's repo-relative path. A row whose path this
+    run cannot determine counts as COMMITTED — the conservative direction for
+    a bucket whose whole purpose is to WITHHOLD rows from the count.
+    """
+    keep, held = [], []
+    for row in rows:
+        rel = path_of(row)
+        (held if rel and rel.replace("\\", "/") in dirty else keep).append(row)
+    return keep, held
+
+
+def dirty_in_scope(root, patterns) -> int:
+    """How many of a repo's dirty files this sweep's own walk would have read.
+
+    `patterns` are `fnmatch` globs matched against the repo-relative POSIX path
+    AND against the basename, because a sweep's population is usually stated as
+    a bare suffix (`*.rs`) while its paths are nested. Matching only the full
+    path would report 0 for every sweep in the family and make the advisory
+    silently vacuous — the green-zero shape this whole family exists to refuse.
+    """
+    from fnmatch import fnmatch
+    # A bare string is a FOOTGUN, not a convenience: iterating it yields single
+    # characters, `fnmatch(rel, "*")` matches everything, and the advisory
+    # silently reports every dirty file in the repo as being in scope. Caught in
+    # this module's own wiring commit, where 8 of 15 call sites had written
+    # `("*.rs")` without the tuple comma.
+    if isinstance(patterns, str):
+        patterns = (patterns,)
+    n = 0
+    for rel in dirty_files(root):
+        base = rel.rsplit("/", 1)[-1]
+        if any(fnmatch(rel, pat) or fnmatch(base, pat) for pat in patterns):
+            n += 1
+    return n
+
+
+def sweep_advisory(repos, patterns, root=None) -> list[str]:
+    """The one-line wiring for a sweep with no per-row file address.
+
+    `repos`    — what this run actually MEASURED, as paths or as bare names.
+                 Deliberately not re-derived here: an advisory about a repo the
+                 sweep never read is noise, and the family's repo variable is
+                 sometimes a name set and sometimes a path list.
+    `patterns` — the globs naming this sweep's own population, so a sweep over
+                 `*.lean` stays silent while somebody is editing Rust.
+    `root`     — the workspace, required only when `repos` are names.
+
+    A name this run cannot resolve to a directory is SKIPPED rather than
+    guessed at: `population_verdict()` already owns the "a repo is missing"
+    verdict, and a second instrument answering that question differently is
+    how two gates come to disagree about one quantity.
+    """
+    scope: dict[str, int] = {}
+    for r in repos:
+        s = str(r)
+        if isinstance(r, Path) or '/' in s or chr(92) in s:
+            path = Path(r)
+        elif root is not None:
+            path = Path(root) / s
+        else:
+            path = None
+        if path is None or not path.is_dir():
+            continue
+        scope[path.name] = dirty_in_scope(path, patterns)
+    return worktree_advisory(scope)
+
+
+def worktree_advisory(scope_counts: dict[str, int],
+                      uncommitted_rows: int = 0,
+                      masked_rows: int = 0) -> list[str]:
+    """The lines that ride a sweep's FINAL line. Empty when nothing is dirty.
+
+    `scope_counts` — {repo name: count of dirty files INSIDE this sweep's own
+    walked population}. Zero-valued entries are filtered here rather than
+    demanded of every caller; that filter is what keeps the advisory silent on
+    an ordinary clean run, so it is asserted by its own arm.
+    """
+    inscope = {k: v for k, v in scope_counts.items() if v}
+    if not inscope and not uncommitted_rows and not masked_rows:
+        return []
+    out: list[str] = []
+    if inscope:
+        detail = ", ".join(f"{k} ({v})" for k, v in sorted(inscope.items()))
+        out.append(
+            f"⚠ WORKTREE: {sum(inscope.values())} file(s) in this sweep's own "
+            f"population differ from HEAD — {detail}. Counts and floors from "
+            "this run describe a state NO commit contains; do not re-pin from "
+            "it (Issue 796)")
+    if uncommitted_rows:
+        out.append(
+            f"⚠ UNCOMMITTED: {uncommitted_rows} row(s) sit on a file that "
+            "differs from HEAD — they may be another session's in-flight edit. "
+            "Shown above (that is what the file says today) but NOT adjudicated "
+            "against the pins, which read HEAD")
+    if masked_rows:
+        out.append(
+            f"⛔ MASKED: {masked_rows} row(s) exist in HEAD and not in the "
+            "worktree — a COMMITTED defect this run would otherwise report "
+            "clean")
+    return out
+
+
+# ───────────────────────────── self-test ──────────────────────────────────
+
+def _run(cwd, *args):
+    """FIXTURE BUILDER, not decision logic.
+
+    `arm_reach_audit --include-all` reports the three `True` kwargs here and in
+    `_repo` as live survivors, and they are the correct place to stop: they
+    build the git trees the arms then assert over, so flipping one makes the
+    fixture wrong rather than making a rule wrong, and every arm downstream
+    reds on the malformed tree instead. Recorded here rather than remembered,
+    because "writing the reason is the adjudication".
+    """
+    subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                   capture_output=True)
+
+
+def _repo(tmp: Path, name: str) -> Path:
+    r = tmp / name
+    r.mkdir(parents=True)
+    _run(r, "init", "-q", "-b", "main")
+    _run(r, "config", "user.email", "t@t")
+    _run(r, "config", "user.name", "t")
+    return r
+
+
+def dirty_arms() -> list[str]:
+    """`dirty_files` / `head_text`, two-sided against a real git tree."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        r = _repo(tmp, "r")
+        (r / "a.md").write_text("one\n", encoding="utf-8")
+        (r / "b.md").write_text("two\n", encoding="utf-8")
+        sub = r / "sub"
+        sub.mkdir()
+        (sub / "c.md").write_text("three\n", encoding="utf-8")
+        _run(r, "add", "-A")
+        _run(r, "commit", "-qm", "init")
+
+        check(dirty_files(r) == frozenset(),
+              f"a freshly committed tree was not clean: {dirty_files(r)}")
+
+        # unstaged modification
+        (r / "a.md").write_text("one CHANGED\n", encoding="utf-8")
+        check(dirty_files(r) == {"a.md"},
+              f"an unstaged modification was not seen: {dirty_files(r)}")
+        # the OTHER side: b.md must NOT be reported
+        check("b.md" not in dirty_files(r),
+              "an untouched file was reported dirty")
+
+        # staged modification — the arm that reds if `--untracked-files=no`
+        # were mistaken for "worktree only"
+        _run(r, "add", "a.md")
+        check(dirty_files(r) == {"a.md"},
+              f"a STAGED modification was not seen: {dirty_files(r)}")
+
+        # A nested path arrives POSIX-separated. This asserts git's OUTPUT
+        # SHAPE, not the `.replace` in `dirty_files` — deleting that line reds
+        # nothing here, because git already emits `/` (measured on Windows).
+        # Written as the premise it is: if a future git emitted `\` on this
+        # platform, the defensive line would silently become load-bearing and
+        # this arm is where that shows up.
+        (sub / "c.md").write_text("three CHANGED\n", encoding="utf-8")
+        raw = _git(r, "status", "--porcelain", "--untracked-files=no").stdout
+        check("sub/c.md" in raw,
+              f"PREMISE: git --porcelain did not emit a POSIX separator on this "
+              f"platform — the defensive replace in dirty_files is now "
+              f"load-bearing and untested: {raw!r}")
+        check("sub/c.md" in dirty_files(r),
+              f"a nested path was not reported: {dirty_files(r)}")
+
+        # untracked is NOT dirty — the population is what git tracks
+        (r / "new.md").write_text("x\n", encoding="utf-8")
+        check("new.md" not in dirty_files(r),
+              "an untracked file was counted as dirty")
+
+        # The SHORTEST porcelain line there is: two status characters, a
+        # space, and a one-character name — exactly 4. The `len(line) < 4`
+        # guard exists to drop git's blank tail, and off by one it silently
+        # drops a real file. Its OWN repo, because `r` is carrying a staged
+        # edit by this point and any commit here would sweep that in.
+        r3 = _repo(tmp, "shortname")
+        (r3 / "a").write_text("one\n", encoding="utf-8")
+        _run(r3, "add", "-A")
+        _run(r3, "commit", "-qm", "short")
+        (r3 / "a").write_text("two\n", encoding="utf-8")
+        check(dirty_files(r3) == {"a"},
+              f"a ONE-character filename was dropped — the porcelain line is "
+              f"4 characters and the length guard is off by one: "
+              f"{dirty_files(r3)}")
+
+        # head_text reads the COMMITTED bytes, not the worktree's
+        check(head_text(r, "a.md") == "one\n",
+              f"head_text returned the worktree text: {head_text(r, 'a.md')!r}")
+        check(head_text(r, "new.md") is None,
+              "head_text invented a blob for a path not in HEAD")
+
+        # ── the `.git` probe: a non-repo directory INSIDE a repo ──────────
+        # Without the probe `git -C` walks up and answers with r's dirty set.
+        plain = r / "plain"
+        plain.mkdir()
+        check(dirty_files(plain) == frozenset(),
+              f"a non-repo dir inside a repo inherited its PARENT's dirty set: "
+              f"{dirty_files(plain)}")
+        check(head_text(plain, "a.md") is None,
+              "head_text answered for a non-repo directory")
+
+        # a tree with no .git at all is clean by construction, not an error
+        bare = tmp / "extracted"
+        bare.mkdir()
+        (bare / "a.md").write_text("x\n", encoding="utf-8")
+        check(dirty_files(bare) == frozenset(),
+              "an extracted tree was not treated as clean")
+
+        # ── rename reports the DESTINATION ────────────────────────────────
+        r2 = _repo(tmp, "r2")
+        (r2 / "old.md").write_text("k\n", encoding="utf-8")
+        _run(r2, "add", "-A")
+        _run(r2, "commit", "-qm", "init")
+        _run(r2, "mv", "old.md", "newname.md")
+        d = dirty_files(r2)
+        check("newname.md" in d,
+              f"a rename did not report its destination: {d}")
+
+    return fails
+
+
+def split_arms() -> list[str]:
+    """`split_rows` withholds exactly the rows whose file is dirty."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    rows = [("a.md", 1), ("b.md", 2), ("sub/c.md", 3), (None, 4)]
+    keep, held = split_rows(rows, lambda r: r[0], frozenset({"a.md", "sub/c.md"}))
+    check([r[1] for r in held] == [1, 3], f"wrong rows withheld: {held}")
+    check([r[1] for r in keep] == [2, 4], f"wrong rows kept: {keep}")
+
+    # An address-less row is COMMITTED — the conservative direction for a
+    # bucket that WITHHOLDS from the count.
+    check((None, 4) in keep, "an address-less row was withheld from the count")
+
+    # Backslashes normalise on BOTH sides of the comparison.
+    keep, held = split_rows([("sub\\c.md", 9)], lambda r: r[0],
+                            frozenset({"sub/c.md"}))
+    check(len(held) == 1, f"a Windows-separator row did not match: {keep} {held}")
+
+    # Nothing dirty -> nothing withheld.
+    keep, held = split_rows(rows, lambda r: r[0], frozenset())
+    check(held == [] and len(keep) == 4, f"a clean tree withheld rows: {held}")
+    return fails
+
+
+def scope_arms() -> list[str]:
+    """`dirty_in_scope` matches a NESTED path against a bare-suffix pattern.
+
+    The basename fallback is the whole point: every sweep in the family states
+    its population as `*.rs` / `*.py` / `*.lean`, and every real finding sits
+    several directories down. Path-only matching would return 0 everywhere and
+    make the advisory vacuous — a green zero, which is what this family exists
+    to refuse. So the arm plants the finding DEEP.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        r = _repo(tmp, "scoped")
+        deep = r / "crates" / "a" / "src"
+        deep.mkdir(parents=True)
+        (deep / "lib.rs").write_text("fn a() {}\n", encoding="utf-8")
+        (r / "notes.md").write_text("x\n", encoding="utf-8")
+        (r / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+        _run(r, "add", "-A")
+        _run(r, "commit", "-qm", "init")
+
+        check(dirty_in_scope(r, ("*.rs",)) == 0,
+              "a clean repo reported files in scope")
+
+        (deep / "lib.rs").write_text("fn a() { }\n", encoding="utf-8")
+        check(dirty_in_scope(r, ("*.rs",)) == 1,
+              "a NESTED .rs did not match the bare-suffix pattern — the "
+              "basename fallback is missing and the advisory is vacuous")
+        # The other side: a sweep over a different population stays silent.
+        check(dirty_in_scope(r, ("*.lean",)) == 0,
+              "a .lean sweep counted a dirty .rs — a sweep must not warn about "
+              "a population it never reads")
+
+        (r / "notes.md").write_text("y\n", encoding="utf-8")
+        check(dirty_in_scope(r, ("*.rs", "*.md")) == 2,
+              "two patterns did not union")
+        # A literal root-level name (the citation sweep's own shape).
+        check(dirty_in_scope(r, ("notes.md",)) == 1,
+              "a literal filename pattern did not match")
+        # A path-shaped pattern still works — the basename fallback WIDENS,
+        # it must not replace the path match.
+        (r / "Cargo.toml").write_text("[package]\nname='x'\n", encoding="utf-8")
+        check(dirty_in_scope(r, ("crates/*/src/*.rs",)) == 1,
+              "a path-shaped pattern stopped matching")
+
+        # A bare string must behave as a ONE-pattern tuple, never as a
+        # character sequence whose `*` matches the whole repo.
+        check(dirty_in_scope(r, "*.rs") == 1,
+              "a bare-string pattern was iterated as characters — `*` then "
+              "matches every dirty file and the advisory over-reports silently")
+        check(dirty_in_scope(r, "*.lean") == 0,
+              "a bare-string pattern matched a population it does not name")
+
+        lines = sweep_advisory([r], ("*.rs",))
+        check(len(lines) == 1 and "scoped (1)" in lines[0],
+              f"sweep_advisory did not name the repo by DIRECTORY: {lines}")
+        check(sweep_advisory([r], ("*.lean",)) == [],
+              "sweep_advisory was not silent for an untouched population")
+
+        # ── the resolution branch, all three ways in ──────────────────────
+        # The family hands this function a NAME set as often as a path list
+        # (`names`, `seen`, `present`, `contract`), so the name arm is the one
+        # that most call sites actually exercise.
+        by_name = sweep_advisory(["scoped"], ("*.rs",), root=tmp)
+        check(by_name == lines,
+              f"a bare NAME + root did not resolve to the same answer as the "
+              f"path: {by_name} vs {lines}")
+        # A name with no root cannot be resolved, and must be SKIPPED rather
+        # than guessed at or crashed on — `population_verdict()` owns the
+        # "a repo is missing" verdict and two instruments answering it
+        # differently is how two gates come to disagree about one quantity.
+        check(sweep_advisory(["scoped"], ("*.rs",)) == [],
+              "a name with no root was not skipped")
+        check(sweep_advisory(["no-such-repo"], ("*.rs",), root=tmp) == [],
+              "a name that resolves to nothing was not skipped")
+        # A path that does not exist takes the same exit, through the OTHER
+        # branch of the same guard.
+        check(sweep_advisory([tmp / "no-such-dir"], ("*.rs",)) == [],
+              "a non-existent PATH was not skipped")
+    return fails
+
+
+def advisory_arms() -> list[str]:
+    """The advisory is SILENT on a clean run and names each class when not."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    check(worktree_advisory({}) == [],
+          "the advisory printed on a clean run — a banner on every run is one "
+          "nobody reads")
+    check(worktree_advisory({"riir-ai": 0}) == [],
+          "a zero count was not filtered — the dict's emptiness is what keeps "
+          "the advisory silent")
+
+    lines = worktree_advisory({"riir-ai": 1})
+    check(len(lines) == 1 and "riir-ai (1)" in lines[0],
+          f"the advisory did not name the repo and count: {lines}")
+    check("do not re-pin" in lines[0],
+          f"the advisory did not say what it is FOR: {lines}")
+
+    lines = worktree_advisory({}, uncommitted_rows=2)
+    check(len(lines) == 1 and "UNCOMMITTED" in lines[0]
+          and "NOT adjudicated" in lines[0] and "Shown above" in lines[0],
+          f"the UNCOMMITTED class did not print alone, saying BOTH that the row "
+          f"is displayed and that the pins ignore it: {lines}")
+
+    lines = worktree_advisory({}, masked_rows=3)
+    check(len(lines) == 1 and lines[0].startswith("⛔"),
+          f"MASKED must be ⛔, not ⚠ — it is a COMMITTED defect: {lines}")
+
+    lines = worktree_advisory({"r": 1}, 2, 3)
+    check(len(lines) == 3, f"the three classes were pooled: {lines}")
+    return fails
+
+
+def selftest() -> list[str]:
+    return (dirty_arms() + split_arms() + scope_arms()
+            + advisory_arms())
+
+
+def main() -> int:
+    fails = selftest()
+    if fails:
+        print("worktree_state selftest FAILED:")
+        for f in fails:
+            print("  ✗ " + f)
+        return 1
+    print("✓ worktree_state selftest — 36 assertion(s): clean tree, unstaged + "
+          "STAGED modification, untouched file not reported, git's POSIX "
+          "separator asserted as a PREMISE, untracked excluded, head_text "
+          "reads HEAD not the "
+          "worktree and invents nothing, the .git probe refuses a PARENT's "
+          "dirty set, an extracted tree is clean not an error, a rename "
+          "reports its destination, a ONE-character filename survives the porcelain length guard, a NESTED path matches a bare-suffix "
+          "pattern while a foreign population stays silent (and a BARE STRING is one pattern, not a character sequence), split withholds "
+          "exactly the dirty rows "
+          "(address-less row kept, separators normalised both sides), a bare "
+          "NAME + root resolves as a path does while an unresolvable one "
+          "is SKIPPED, and the "
+          "advisory is SILENT on a clean run with the three classes unpooled")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

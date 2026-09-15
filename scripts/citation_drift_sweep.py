@@ -242,6 +242,8 @@ sys.path.insert(0, str(HERE))
 # disagree about what a citation IS.
 import issue_citation_gate as icg  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import (  # noqa: E402
+    dirty_files, head_text, worktree_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -256,6 +258,10 @@ CROSS, IN_RANGE, ORPHAN = "CROSS", "IN-LOCAL-RANGE", "ORPHAN"
 # ceiling (the undecided population did not change) and listed separately so the
 # 4-row display truncation cannot hide a finding behind undecided noise.
 MISATTR_IN_RANGE = "MISATTRIBUTED-IN-RANGE"
+# The finding classes, as a tuple, for the Issue-796 worktree-vs-HEAD diff.
+# MISATTR_IN_RANGE is deliberately absent: it is a SUBSET of IN_RANGE, and
+# including it would count its rows twice on both sides of the comparison.
+_CLASSES = (CROSS, IN_RANGE, ORPHAN)
 
 # A crate token is only usable as a REPO HINT when it cannot collide with
 # ordinary prose: hyphenated and >= 6 characters. `xtask`, `core`, `cli` are
@@ -335,10 +341,39 @@ def top_allocated(repo: Path, alloc: dict[str, set[int]]) -> dict[str, int]:
 FULL = "--full" in sys.argv
 
 
+_ROW_KEY = re.compile(r"^(\S+?):(\d+)\s+(\S+)\s+(\d+)\s")
+
+
+def _row_key(row: str) -> tuple[str, str, str]:
+    """A finding row's identity ACROSS two reads of the same document.
+
+    `(document, kind, number)` — deliberately NOT the line number. Comparing
+    a worktree row with a HEAD row is the whole point, and any edit above a
+    citation shifts its line, so a line-bearing key would report every row in
+    an edited document as both UNCOMMITTED and MASKED at once (Issue 796).
+    """
+    m = _ROW_KEY.match(row)
+    return (m.group(1), m.group(3), m.group(4)) if m else ("", "", row[:80])
+
+
+def _worktree_read(p: Path) -> str | None:
+    """The default document source: the WORKING TREE, or None if absent."""
+    if not p.is_file():
+        return None         # not every repo carries a HISTORY.md — absence
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
 def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
           docs: list[str], crates: dict[str, str],
-          patterns: dict[str, re.Pattern]) -> dict:
-    """One repo -> the three finding classes + BOTH populations under them."""
+          patterns: dict[str, re.Pattern], read=_worktree_read) -> dict:
+    """One repo -> the three finding classes + BOTH populations under them.
+
+    `read(path) -> str | None` is injected (Issue 796) so the SAME classifier
+    can be pointed at HEAD's blobs instead of the working tree. `None` means
+    "this document does not exist in the source being read", and it is not a
+    finding either way — but it must stay distinguishable from empty text, or
+    a repo with no HISTORY.md and a repo whose HISTORY.md is empty read alike.
+    """
     mine = alloc[repo.name]
     top = top_allocated(repo, mine)
     elsewhere: dict[str, dict[int, list[str]]] = {k: {} for k in icg.KINDS}
@@ -353,11 +388,10 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
            "unseen_width": 0, "alias_trailing": 0,
            CROSS: [], IN_RANGE: [], ORPHAN: []}
     for doc in docs:
-        p = repo / doc
-        if not p.is_file():
-            continue          # not every repo carries a HISTORY.md — absence
-        got["n_docs"] += 1    # is not a finding, but the doc COUNT is printed
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = read(repo / doc)
+        if text is None:
+            continue          # absence is not a finding, but the doc COUNT is
+        got["n_docs"] += 1    # printed, so it must not silently include it
         lines = text.splitlines()
         # The width bound's complement, re-counted every run rather than
         # remembered from one dated measurement (Issue 753).
@@ -499,6 +533,114 @@ def gate_says() -> tuple[int, int, int]:
     return (r.returncode,
             int(scanned.group(1)) if scanned else -1,
             int(failed.group(1)) if failed else (0 if r.returncode == 0 else -1))
+
+
+def worktree_arms() -> list[str]:
+    """Issue 796 — the worktree-vs-HEAD split, against a REAL git repository.
+
+    A known-answer arm in BOTH directions, because either alone certifies the
+    wrong thing: UNCOMMITTED alone would pass on an instrument that simply
+    ignored HEAD, and MASKED alone would pass on one that ignored the worktree.
+    The fixtures are real commits — a stubbed `head_text` would test the stub,
+    and the `.git` probe is the part most likely to go wrong.
+    """
+    import subprocess
+    import tempfile
+
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    CLEAN = "nothing to cite here\n"
+    CITE = "a bare cross reference to Issue 500 with no owner named\n"
+
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        me, sib = ws / "fake-repo", ws / "riir-fakesib"
+        for r in (me, sib):
+            (r / ".issues").mkdir(parents=True)
+            (r / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (me / ".issues" / "010_local.md").write_text("x", encoding="utf-8")
+        (sib / ".issues" / "500_sib.md").write_text("x", encoding="utf-8")
+        alloc = {"fake-repo": {k: ({10} if k == "Issue" else set())
+                               for k in icg.KINDS},
+                 "riir-fakesib": {k: ({500} if k == "Issue" else set())
+                                  for k in icg.KINDS}}
+        docs = ["AGENTS.md"]
+
+        def run(read=_worktree_read):
+            return audit(me, [sib], alloc, docs, {}, {}, read=read)
+
+        # ── the COMMITTED state carries the finding ───────────────────────
+        (me / "AGENTS.md").write_text(CITE, encoding="utf-8")
+        git(me, "init", "-q", "-b", "main")
+        git(me, "config", "user.email", "t@t")
+        git(me, "config", "user.name", "t")
+        git(me, "add", "-A")
+        git(me, "commit", "-qm", "init")
+
+        base = run()
+        check(len(base[CROSS]) == 1,
+              f"the fixture does not produce a CROSS row at all, so neither "
+              f"direction below can mean anything: {base[CROSS]}")
+
+        def head_read(p: Path) -> str | None:
+            return head_text(me, p.name)
+
+        # ── MASKED: the worktree HIDES a committed finding ─────────────────
+        (me / "AGENTS.md").write_text(CLEAN, encoding="utf-8")
+        wt, hd = run(), run(head_read)
+        check(dirty_files(me) == {"AGENTS.md"},
+              f"the dirty set did not see the edit: {dirty_files(me)}")
+        check(len(wt[CROSS]) == 0 and len(hd[CROSS]) == 1,
+              f"MASKED direction: worktree={len(wt[CROSS])} HEAD={len(hd[CROSS])} "
+              f"— expected a clean worktree over a dirty HEAD")
+        wt_keys = {_row_key(r) for c in _CLASSES for r in wt[c]}
+        masked = [r for c in _CLASSES for r in hd[c] if _row_key(r) not in wt_keys]
+        check(len(masked) == 1,
+              f"the MASKED diff did not recover the committed row: {masked}")
+
+        # ── UNCOMMITTED: the worktree INVENTS a finding HEAD does not have ──
+        # Two citations, so the row count moves AND the line numbers shift —
+        # the arm that reds if `_row_key` ever grows a line number back.
+        (me / "AGENTS.md").write_text("padding line\n" + CITE + CITE,
+                                      encoding="utf-8")
+        wt, hd = run(), run(head_read)
+        check(len(wt[CROSS]) == 2 and len(hd[CROSS]) == 1,
+              f"UNCOMMITTED direction: worktree={len(wt[CROSS])} "
+              f"HEAD={len(hd[CROSS])} — expected 2 over 1")
+        wt_keys = {_row_key(r) for c in _CLASSES for r in wt[c]}
+        hd_keys = {_row_key(r) for c in _CLASSES for r in hd[c]}
+        check(wt_keys == hd_keys,
+              f"_row_key is not line-free — a shifted line reported the SAME "
+              f"citation as both UNCOMMITTED and MASKED: {wt_keys} vs {hd_keys}")
+
+        # ── the injected reader must be able to say "not in HEAD" ──────────
+        # A document added but never committed has no HEAD blob, and `None`
+        # must skip it rather than read the worktree behind the caller's back.
+        # Restored to HEAD's bytes, so the repo is clean again and the only
+        # difference below is the document git has never heard of.
+        (me / "AGENTS.md").write_text(CITE, encoding="utf-8")
+        check(dirty_files(me) == frozenset(),
+              f"restoring HEAD's bytes did not clean the repo: {dirty_files(me)}")
+        (me / "NEW.md").write_text(CITE, encoding="utf-8")
+        two = audit(me, [sib], alloc, ["AGENTS.md", "NEW.md"], {}, {})
+        check(two["n_docs"] == 2 and len(two[CROSS]) == 2,
+              f"the worktree read did not see the new document: {two['n_docs']}")
+        hd2 = audit(me, [sib], alloc, ["AGENTS.md", "NEW.md"], {}, {},
+                    read=lambda p: head_text(me, p.name))
+        check(hd2["n_docs"] == 1 and len(hd2[CROSS]) == 1,
+              f"a document absent from HEAD was not skipped — n_docs="
+              f"{hd2['n_docs']}, cross={len(hd2[CROSS])}; a reader that fell "
+              f"back to the worktree here would report a committed finding "
+              f"that does not exist")
+    return fails
 
 
 def selftest() -> list[str]:
@@ -787,7 +929,7 @@ def selftest() -> list[str]:
         if [p.name for p in icg.contract_repos(ws)] != ["fake-repo"]:
             fails.append(f"population derivation wrong: "
                          f"{[p.name for p in icg.contract_repos(ws)]}")
-    return fails
+    return fails + worktree_arms()
 
 
 def main() -> int:
@@ -874,9 +1016,46 @@ def main() -> int:
            "units": 0, "rep": 0, "width": 0, "trail": 0, MISATTR_IN_RANGE: 0,
            CROSS: 0, IN_RANGE: 0, ORPHAN: 0}
     mine_row = None
+    dirty_scope: dict[str, int] = {}
+    n_uncommitted = n_masked = 0
     for repo in repos:
         sibs = [s for s in repos if s != repo]
         got = audit(repo, sibs, alloc, docs, crates, patterns)
+
+        # ── Issue 796: the worktree is not the repo ──────────────────────────
+        # This workspace runs concurrent sessions against SHARED worktrees, so
+        # a row here may sit on a line no commit contains. Measured 2026-09-15:
+        # the workspace's ENTIRE standing CROSS finding — 1 of 1 — was an
+        # uncommitted edit stripping a `riir-train` qualifier HEAD carries.
+        #
+        # The split of responsibility: the DISPLAY shows the worktree (that is
+        # what you see if you open the file, and it is what `gate_says()` reads,
+        # so the T4 cross-check below must stay worktree-vs-worktree), while the
+        # PINS adjudicate HEAD. A tracked expectations file is a claim about a
+        # repo, and a repo's state is its commits — a ceiling re-pinned against
+        # somebody's in-flight edit reds on every other box.
+        scope = sorted(set(dirty_files(repo)) & set(docs))
+        judge = got
+        if scope:
+            dirty_scope[repo.name] = len(scope)
+            heads = {d: head_text(repo, d) for d in scope}
+
+            def _read(p: Path, _heads=heads, _repo=repo) -> str | None:
+                rel = p.name if p.parent == _repo else str(p.relative_to(_repo))
+                if rel in _heads:
+                    return _heads[rel]      # None = not in HEAD (a NEW file)
+                return _worktree_read(p)
+
+            judge = audit(repo, sibs, alloc, docs, crates, patterns, read=_read)
+            wt_keys = {_row_key(r) for c in _CLASSES for r in got[c]}
+            hd_keys = {_row_key(r) for c in _CLASSES for r in judge[c]}
+            n_uncommitted += len(wt_keys - hd_keys)
+            masked = [r for c in _CLASSES for r in judge[c]
+                      if _row_key(r) not in wt_keys]
+            n_masked += len(masked)
+            for r in masked:
+                print(f"⛔ MASKED  {repo.name}: {r}")
+
         row = pins.get(repo.name)
         tot["docs"] += got["n_docs"]
         tot["cites"] += got["n_cites"]
@@ -900,20 +1079,23 @@ def main() -> int:
         if row is None:
             flags.append("UNPINNED — add a row (or it can never red)")
         else:
-            if got["n_cites"] < row["min_citations"]:
-                flags.append(f"walk FLOOR breached: {got['n_cites']} citations < "
+            # `judge`, not `got` — the pins adjudicate HEAD (Issue 796). On a
+            # clean repo the two ARE the same object, so this is a no-op in the
+            # ordinary case and the distinction costs nothing.
+            if judge["n_cites"] < row["min_citations"]:
+                flags.append(f"walk FLOOR breached: {judge['n_cites']} citations < "
                              f"{row['min_citations']} — prose was removed, or the "
                              f"citation regex went blind (which reads as clean)")
             for cls, key in ((CROSS, "max_cross"), (IN_RANGE, "max_in_local_range"),
                              (ORPHAN, "max_orphan")):
-                if len(got[cls]) > row[key]:
-                    flags.append(f"{cls} {len(got[cls])} > pinned {row[key]}")
+                if len(judge[cls]) > row[key]:
+                    flags.append(f"{cls} {len(judge[cls])} > pinned {row[key]}")
         # Issue 794 — a GLOBAL wall, deliberately not a per-repo ratchet field:
         # the class has no backlog anywhere (1 row workspace-wide at landing,
         # repaired in the same commit), so per-repo pins would be 16 zeros and
         # a 5th field on every row for a quantity that is 0 by contract.
-        if len(got[MISATTR_IN_RANGE]) > glob_wall:
-            flags.append(f"{MISATTR_IN_RANGE} {len(got[MISATTR_IN_RANGE])} > "
+        if len(judge[MISATTR_IN_RANGE]) > glob_wall:
+            flags.append(f"{MISATTR_IN_RANGE} {len(judge[MISATTR_IN_RANGE])} > "
                          f"pinned {glob_wall} — a citation that is FOLLOWABLE "
                          f"to the WRONG repo; the local-range excuse does not "
                          f"apply (this repo never allocated the number)")
@@ -964,6 +1146,13 @@ def main() -> int:
         print(_line)
     if pop_fail:
         bad = True
+
+    # Issue 796. Rides the FINAL line in BOTH directions, the `deferred`
+    # precedent — a notice printed only on failure is one nobody reads on the
+    # run that passes. ADVISORY and not a failure: a sweep that hard-reds on an
+    # ordinary dirty worktree is a sweep nobody runs. MASKED is the exception
+    # and it already reds through the pins, because `judge` counts it.
+    deferred.extend(worktree_advisory(dirty_scope, n_uncommitted, n_masked))
 
     # ── T4, second half: the katgpt-rs row must EQUAL the gate's own run ─────
     rc, scanned, findings = gate_says()

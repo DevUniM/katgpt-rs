@@ -50,6 +50,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -155,6 +156,15 @@ def main() -> int:
     # reds in every posture, UNSEEN reds without the marker, the same set
     # DEFERS loudly with it.
     pop_lines, deferred, pop_fail = population_verdict(floors, present)
+
+    # Issue 796 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — the labelled docs + the manifest defaults they are checked against.
+    deferred.extend(sweep_advisory(
+        present, ("*.md", "Cargo.toml"), root=WORKSPACE))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

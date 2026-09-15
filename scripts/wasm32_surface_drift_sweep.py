@@ -81,6 +81,7 @@ sys.path.insert(0, str(HERE))
 import wasm32_surface_audit as wsa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -344,6 +345,16 @@ def main() -> int:
     # The population axis, shared (Issues 793 + 782).
     pop_lines, deferred, pop_fail = population_verdict(
         [k for k in pins if k != TOTALS], names)
+
+    # Issue 796 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — the cfg sites + every lane definition that could name them.
+    deferred.extend(sweep_advisory(
+        names, ("*.rs", "Cargo.toml", ".github/workflows/*.yml",
+     "scripts/*.sh"), root=WORKSPACE))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

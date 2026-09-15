@@ -62,6 +62,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import restatement_theorem_audit as audit  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 FLOORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       "restatement_drift_floors.txt")
@@ -170,6 +171,15 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
                 if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
                 and os.path.isdir(os.path.join(root, d, ".git"))]
     pop_lines, deferred, pop_fail = population_verdict(floors, contract)
+
+    # Issue 796 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — the theorem sources.
+    deferred.extend(sweep_advisory(
+        contract, ("*.lean",), root=root))
     for _line in pop_lines:
         print(_line)
     fail += pop_fail

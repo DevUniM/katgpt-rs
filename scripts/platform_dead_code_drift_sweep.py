@@ -67,6 +67,7 @@ import platform_dead_code_floor_gate as gate      # noqa: E402
 # (Issue 765). A second copy would be a second thing to get wrong, and this one
 # decides whether a short population is a partial clone or a stale file.
 from sweep_population import population_verdict  # noqa: E402
+from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
 # Overridable for testing — the skill_repo_set_gate precedent (Issue 765's
@@ -166,6 +167,15 @@ def main() -> int:
     # while reading like 20 — the confident-green-over-a-subset failure this
     # whole family exists to refuse.
     pop_lines, pop_deferred, pop_fail = population_verdict(floors, present)
+
+    # Issue 796 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — the declaration sites.
+    deferred.extend(sweep_advisory(
+        present, ("*.rs",), root=WORKSPACE))
     for _line in pop_lines:
         print(_line)
     deferred += pop_deferred
