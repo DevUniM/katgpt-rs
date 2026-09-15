@@ -85,6 +85,51 @@ OPTIN_DEFAULT_PHRASES = (
 )
 
 
+class BlindRead(Exception):
+    """A file that EXISTS and could not be READ — the instrument is blind.
+
+    Measured (Issue 790 Finding 9, 2026-09-15). What motivated this was a
+    docs-gate run on a resource-starved box where this audit printed
+    `checked 97 labels, 56 mismatches` — a well-formed verdict, a plausible
+    number, and completely wrong (0 on re-run). The issue INFERRED the
+    mechanism and got it half wrong, so here is the measurement instead, one
+    forced failure mode at a time against this repo's real tree:
+
+    | forced failure              | verdict printed                    | exit |
+    |-----------------------------|------------------------------------|------|
+    | every `.md` read raises     | `checked 0 labels, 0 mismatches`   |  0   |
+    | every manifest read raises  | `checked 0 labels, 0 mismatches`   |  0   |
+    | 10% of manifest reads raise | `checked 97 labels, 1 mismatches`  |  1   |
+    | 50% of manifest reads raise | `checked 97 labels, 24 mismatches` | 24   |
+
+    Two corrections to the inference fall out of that. The manifest direction
+    is NOT "the loud one": an empty default closure makes every label
+    unresolvable rather than mismatched, so it prints the same confident green
+    as the docs direction. And a label FLOOR — the repair the issue proposed —
+    catches both TOTAL failures and would NOT have caught the run that was
+    actually observed, because a PARTIAL read keeps the label count at its full
+    97 and corrupts only the model those labels are judged against.
+
+    So the floor is necessary and not sufficient, and this is the other half:
+    an `OSError` on a file the walk just listed means the tree is unreadable,
+    not that the manifest has no features. It ABORTS, with its own exit code —
+    an instrument that cannot see must not return a number at all. A
+    `TOMLDecodeError` is the opposite case (real content the audit should
+    report and walk past) and keeps its warning.
+    """
+
+
+# `repo_root -> .md files WALKED` for the run just finished. The population
+# behind the label count, and the only thing in the output that distinguishes
+# "this repo has no feature labels" from "this instrument read nothing".
+DOCS_WALKED: dict[str, int] = {}
+
+# The label count of each `audit_repo` call, in order. Published for the same
+# reason DOCS_WALKED is: the floor is asserted OUTSIDE the function that
+# computes the number, so the number has to leave it.
+LABELS_CHECKED: list[int] = []
+
+
 def _parse_feature_spec(spec: str) -> str | None:
     """Normalize a Cargo feature dep spec to a bare feature name.
 
@@ -177,6 +222,12 @@ def load_manifests(repo_root: Path) -> dict[str, dict]:
         try:
             with cargo.open("rb") as f:
                 data = tomllib.load(f)
+        except OSError as e:
+            # NOT a manifest without features — a manifest this process could
+            # not read. Every verdict below is judged against the default
+            # closure these files build, so continuing here does not drop one
+            # package, it silently re-bases the whole audit.
+            raise BlindRead(f"could not READ {cargo}: {e}") from e
         except Exception as e:
             print(f"WARN: could not parse {cargo}: {e}", file=sys.stderr)
             continue
@@ -646,15 +697,26 @@ def classify_token(line: str, m: "re.Match") -> tuple[str, str]:
 
 
 def iter_bench_doc_labels(repo_root: Path):
-    """Yield (rel, lineno, line, qualifier|None, feature, raw, parsed)."""
+    """Yield (rel, lineno, line, qualifier|None, feature, raw, parsed).
+
+    Records the WALK size in `DOCS_WALKED` as it goes: a label count with no
+    population under it cannot tell a repo that has no labels from a walk that
+    found no files, and those print the same line.
+    """
+    walked = 0
+    DOCS_WALKED[str(repo_root)] = 0
     for sub in (".benchmarks", ".docs"):
         d = repo_root / sub
         if not d.is_dir():
             continue
         for md in d.rglob("*.md"):
             rel = md.relative_to(repo_root).as_posix()
+            walked += 1
+            DOCS_WALKED[str(repo_root)] = walked
             try:
                 text = md.read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                raise BlindRead(f"could not READ {rel}: {e}") from e
             except Exception:
                 continue
             for ln, line in enumerate(text.splitlines(), 1):
@@ -667,6 +729,7 @@ def iter_bench_doc_labels(repo_root: Path):
                     if parsed == "unknown":
                         continue
                     yield (rel, ln, line.strip(), qual, feat, raw, parsed)
+    DOCS_WALKED[str(repo_root)] = walked
 
 
 def pure_rule_arms() -> list[str]:
@@ -1115,7 +1178,10 @@ def audit_repo(repo_root: Path) -> int:
             print(f"    file: {rel}:{ln}")
             print(f"    feat: {qual + '/' if qual else ''}{feat}  raw_status: {raw!r}")
             print(f"    line: {line}")
-    tail = f"  -> checked {checked} labels, {mismatches} mismatches"
+    LABELS_CHECKED.append(checked)
+    tail = (f"  -> checked {checked} labels over "
+            f"{DOCS_WALKED.get(str(repo_root), 0)} doc(s), "
+            f"{mismatches} mismatches")
     notes = []
     if foreign:
         notes.append(f"{foreign} cross-repo (qualifier not a crate here)")
@@ -1207,6 +1273,98 @@ LOCAL_CLOSURE_CASE = {
     "hla": [],
     "latent_functor": [],
 }
+
+
+def blindness_arms() -> list[str]:
+    """`floor_verdict` and `BlindRead` — Issue 790 Finding 9's two halves.
+
+    Both are unreachable from every other arm in this file: the floors are pin
+    arithmetic outside the function that computes the number (Issue 775), and
+    the abort only fires on a read that fails, which no fixture produces by
+    accident.
+    """
+    import contextlib
+    import io
+    import tempfile
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    def quiet(root):
+        """audit_repo writes its report to stdout; a fixture's copy of it in
+        the middle of a real run is noise a reader has to learn to ignore."""
+        with contextlib.redirect_stdout(io.StringIO()),              contextlib.redirect_stderr(io.StringIO()):
+            return audit_repo(root)
+
+    # ── the floors. Two, failing differently, and the WALK is checked first:
+    # a dead walk makes the label count 0 too, and reporting that as a
+    # tokenizer regression sends the reader to the wrong instrument.
+    eq("a healthy self-audit clears both floors",
+       floor_verdict(MIN_DOCS + 1, MIN_LABELS + 1), None)
+    eq("exactly at the floors is clean, not a finding",
+       floor_verdict(MIN_DOCS, MIN_LABELS), None)
+    eq("a shrunken walk is reported as a WALK regression",
+       "WALK went blind" in (floor_verdict(MIN_DOCS - 1, MIN_LABELS + 1) or ""),
+       True)
+    eq("a full walk with no labels is reported as READ or TOKENIZER",
+       "READ or TOKENIZER" in (floor_verdict(MIN_DOCS + 1, MIN_LABELS - 1) or ""),
+       True)
+    eq("a dead walk is diagnosed as the WALK even though labels are 0 too",
+       "WALK went blind" in (floor_verdict(0, 0) or ""), True)
+    # The floors guard blindness, not churn: they must sit well below the
+    # measured population or they red on ordinary doc edits.
+    eq("the floors are below the 2026-09-15 measurement (439 docs / 97 labels)",
+       (MIN_DOCS < 439, MIN_LABELS < 97), (True, True))
+
+    # ── the abort. An OSError on a file the walk just listed is the
+    # instrument going blind; a TOMLDecodeError is real content to walk past.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / ".benchmarks").mkdir()
+        (root / ".benchmarks" / "b.md").write_text(
+            "**Feature:** `f` (opt-in)\n", encoding="utf-8")
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "p"\n[features]\ndefault = []\nf = []\n',
+            encoding="utf-8")
+        eq("the fixture repo audits cleanly before anything is broken",
+           quiet(root), 0)
+
+        # MALFORMED toml is a CONTENT problem: warn, walk past, keep auditing.
+        (root / "Cargo.toml").write_text("[package\nname =", encoding="utf-8")
+        try:
+            quiet(root)
+            eq("a malformed manifest does not abort the audit", True, True)
+        except BlindRead:
+            eq("a malformed manifest does not abort the audit", False, True)
+
+        # UNREADABLE is the other case, in both directions.
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "p"\n[features]\nf = []\n', encoding="utf-8")
+        real_open, real_rt = Path.open, Path.read_text
+        for attr, real, pred, who in (("open", real_open,
+                                       lambda q: q.name == "Cargo.toml",
+                                       "an unreadable MANIFEST"),
+                                      ("read_text", real_rt,
+                                       lambda q: q.suffix == ".md",
+                                       "an unreadable DOC")):
+            def boom(self, *a, _r=real, _p=pred, **k):
+                if _p(self) and str(self).startswith(str(root)):
+                    raise OSError(1450, "Insufficient system resources")
+                return _r(self, *a, **k)
+
+            setattr(Path, attr, boom)
+            try:
+                quiet(root)
+                eq(f"{who} aborts rather than reporting a number", False, True)
+            except BlindRead:
+                eq(f"{who} aborts rather than reporting a number", True, True)
+            finally:
+                setattr(Path, attr, real)
+
+    return fails
 
 
 def selftest() -> None:
@@ -1344,38 +1502,103 @@ def selftest() -> None:
     # tests the two models and their join; these are the guards that decide
     # what enters a model in the first place, and each fails by quietly
     # shrinking the population rather than by saying anything.
-    rules = pure_rule_arms() + manifest_reader_arms()
+    rules = pure_rule_arms() + manifest_reader_arms() + blindness_arms()
     if rules:
         raise SystemExit("✗ rule/reader self-test FAILED — a guard that decides "
                          "which packages and labels enter the models does not "
                          "behave as documented:\n" + "\n".join(rules))
 
 
+# ── The blindness floors, katgpt-rs-scoped ─────────────────────────────────
+# Two, and neither is redundant, because they go blind at different stages and
+# only one of them moves when a tokenizer breaks on an unchanged tree:
+#   MIN_DOCS    the WALK. `.benchmarks`/`.docs` renamed, a `rglob` regression,
+#               a checkout that did not land — the label count goes to 0 and
+#               "0 labels, 0 mismatches" is byte-identical to clean.
+#   MIN_LABELS  the READ + the TOKENIZER over a walk that is still full size.
+#               This is riir-chain's "26 docs, 0 labels" shape.
+#
+# ⚠ They bound the TOTAL failures and NOT the partial one. Measured (Issue 790
+# Finding 9): a 50%-failing manifest read keeps the label count at its full 97
+# and prints 24 fabricated mismatches — above both floors, every time. That
+# half is `BlindRead`'s, not these numbers'. A floor is a blindness detector,
+# never a correctness proof, and pairing the two was the point of measuring
+# rather than inferring.
+#
+# Measured 2026-09-15: 439 docs, 97 labels. Floored well below, because these
+# must red on an instrument going blind and NOT on ordinary doc churn.
+MIN_DOCS = 250
+MIN_LABELS = 50
+
+
+def floor_verdict(n_docs: int, n_labels: int) -> str | None:
+    """The blindness verdict for a self-audit, or None. Pure, so it is armable
+    without a tree — the Issue 775 rule that keeps pin arithmetic out of main().
+    """
+    if n_docs < MIN_DOCS:
+        return (f"walked {n_docs} doc(s), floor {MIN_DOCS} — the WALK went "
+                f"blind; a smaller corpus still prints '0 mismatches'")
+    if n_labels < MIN_LABELS:
+        return (f"checked {n_labels} label(s) over {n_docs} doc(s), floor "
+                f"{MIN_LABELS} — the walk is full size and the labels are "
+                f"gone, so this is a READ or TOKENIZER regression")
+    return None
+
+
 def main(argv: list[str]) -> int:
-    selftest()
-    if len(argv) < 2:
-        # Default: audit the repo this script lives in.
-        here = Path(__file__).resolve().parent.parent
-        return 1 if audit_repo(here) else 0
-    total = 0
-    for arg in argv[1:]:
-        p = Path(arg).expanduser().resolve()
-        if not p.is_dir():
-            print(f"skip (not a dir): {arg}", file=sys.stderr)
-            continue
-        if (p / "Cargo.toml").exists():
-            total += audit_repo(p)
-        else:
-            children = [
-                d for d in p.iterdir() if d.is_dir() and (d / "Cargo.toml").exists()
-            ]
-            if children:
-                for c in children:
-                    total += audit_repo(c)
-            else:
+    # The guard wraps this function's WHOLE body rather than delegating to a
+    # `_main`, deliberately: `arm_reach_audit.EXEMPT_FUNCTIONS` exempts the CLI
+    # shell by the name `main`, so splitting the dispatch into a differently
+    # named helper moves argv handling out from under that pin and reports four
+    # phantom survivors. Widening a vocabulary shared by every module in the
+    # workspace to accommodate one refactor is the permissive direction; this
+    # costs one indent level.
+    #
+    # selftest() is INSIDE the guard: on the starved box that motivated this,
+    # its own fixture reads fail too, and an uncaught traceback there says
+    # nothing about which of the two failures the reader should act on.
+    try:
+        selftest()
+        if len(argv) < 2:
+            # Default: audit the repo this script lives in. This is the
+            # docs_gate invocation, and the only one the floors calibrate for.
+            here = Path(__file__).resolve().parent.parent
+            n = audit_repo(here)
+            blind = floor_verdict(DOCS_WALKED.get(str(here), 0),
+                                  LABELS_CHECKED[-1])
+            if blind:
+                print(f"\u26d4 bench_doc_audit BLINDNESS FLOOR \u2014 {blind}",
+                      file=sys.stderr)
+                return 2
+            return 1 if n else 0
+        total = 0
+        for arg in argv[1:]:
+            p = Path(arg).expanduser().resolve()
+            if not p.is_dir():
+                print(f"skip (not a dir): {arg}", file=sys.stderr)
+                continue
+            if (p / "Cargo.toml").exists():
                 total += audit_repo(p)
-    print(f"\n=== TOTAL mismatches across all repos: {total} ===")
-    return 0 if total == 0 else 1
+            else:
+                children = [d for d in p.iterdir()
+                            if d.is_dir() and (d / "Cargo.toml").exists()]
+                if children:
+                    for c in children:
+                        total += audit_repo(c)
+                else:
+                    total += audit_repo(p)
+        print(f"\n=== TOTAL mismatches across all repos: {total} ===")
+        return 0 if total == 0 else 1
+    except BlindRead as e:
+        # Exit 2, never 1: `1` is this script's "mismatches were found", and an
+        # instrument that could not READ has found nothing at all. The two must
+        # not share an exit code \u2014 docs_gate.sh reports on the code alone.
+        print(f"\u26d4 bench_doc_audit ABORTED \u2014 the tree is unreadable, "
+              f"so every verdict below it would be computed against a truncated "
+              f"model:\n    {e}\n  This is NOT '0 mismatches'. Re-run on a box "
+              f"with resources; see BlindRead's docstring for the measurement.",
+              file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
