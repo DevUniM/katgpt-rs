@@ -781,22 +781,28 @@ impl<const N: usize> LatentSpace for EuclideanLatentSpace<N> {
 
 // ─── Norm-matched noise helper (Issue 776 / Research 555 — CVRR §2.1) ──────
 
-/// Deterministic Gaussian noise scaled to `anchor`'s own L2 norm, for
-/// `[f32; N]` points: `n = g · (‖anchor‖/‖g‖)` — magnitude preserved,
-/// structure destroyed.
+/// Deterministic Gaussian noise scaled to `anchor`'s own L2 norm — core
+/// slice form (Issue 619 T1): writes into caller-supplied `out`
+/// (`out.len()` must equal `anchor.len()`), `n = g · (‖anchor‖/‖g‖)` —
+/// magnitude preserved, structure destroyed.
 ///
 /// Same xorshift+Box-Muller stream shape as the in-crate `noise` impls so
-/// the whole battery stays seed-reproducible. Zero-norm anchors return the
-/// zero vector (magnitude trivially preserved). Zero allocation.
+/// the whole battery stays seed-reproducible; `_arr` delegates here, so
+/// the fixed-size and slice forms are bit-identical at the same seed.
+/// Zero-norm anchors write the zero vector (magnitude trivially
+/// preserved). Zero allocation.
 #[inline]
-pub fn norm_matched_noise_arr<const N: usize>(anchor: &[f32; N], seed: u64) -> [f32; N] {
+pub fn norm_matched_noise_slice_into(anchor: &[f32], seed: u64, out: &mut [f32]) {
+    debug_assert_eq!(anchor.len(), out.len(), "out must match anchor length");
+    let n = anchor.len();
     let mut anchor_sq = 0.0f32;
     for x in anchor.iter() {
         anchor_sq += x * x;
     }
     let target = anchor_sq.sqrt();
-    if target < 1e-12 || N == 0 {
-        return [0.0f32; N];
+    if target < 1e-12 || n == 0 {
+        out.fill(0.0);
+        return;
     }
 
     let mut s = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -807,9 +813,8 @@ pub fn norm_matched_noise_arr<const N: usize>(anchor: &[f32; N], seed: u64) -> [
         s
     };
     let mut g_sq = 0.0f32;
-    let mut out = [0.0f32; N];
     let mut i = 0;
-    while i + 2 <= N {
+    while i + 2 <= n {
         let u1 = ((next() >> 11) as f32 / (1u64 << 53) as f32).max(1e-10);
         let u2 = ((next() >> 11) as f32 / (1u64 << 53) as f32) * std::f32::consts::TAU;
         let r = (-2.0 * u1.ln()).sqrt();
@@ -818,7 +823,7 @@ pub fn norm_matched_noise_arr<const N: usize>(anchor: &[f32; N], seed: u64) -> [
         g_sq += out[i] * out[i] + out[i + 1] * out[i + 1];
         i += 2;
     }
-    if i < N {
+    if i < n {
         let u = ((next() >> 11) as f32 / (1u64 << 53) as f32) * 2.0 - 1.0;
         out[i] = u;
         g_sq += u * u;
@@ -828,17 +833,42 @@ pub fn norm_matched_noise_arr<const N: usize>(anchor: &[f32; N], seed: u64) -> [
     if g_norm < 1e-12 {
         // Astronomically unlikely; deterministic fallback — spread the target
         // norm uniformly with alternating signs.
-        let m = target / (N as f32).sqrt();
+        let m = target / (n as f32).sqrt();
         for (j, x) in out.iter_mut().enumerate() {
             *x = if j & 1 == 0 { m } else { -m };
         }
-        return out;
+        return;
     }
 
     let scale = target / g_norm;
     for x in out.iter_mut() {
         *x *= scale;
     }
+}
+
+/// Vec-convenience wrapper over [`norm_matched_noise_slice_into`] for
+/// variable-length points (e.g. `KarcWoutSpace`'s `Vec<f32>`). Allocates
+/// the output; bit-identical to [`norm_matched_noise_arr`] at the same
+/// seed + length.
+#[inline]
+pub fn norm_matched_noise_slice(anchor: &[f32], seed: u64) -> Vec<f32> {
+    let mut out = vec![0.0f32; anchor.len()];
+    norm_matched_noise_slice_into(anchor, seed, &mut out);
+    out
+}
+
+/// Deterministic Gaussian noise scaled to `anchor`'s own L2 norm, for
+/// `[f32; N]` points: `n = g · (‖anchor‖/‖g‖)` — magnitude preserved,
+/// structure destroyed.
+///
+/// Same xorshift+Box-Muller stream shape as the in-crate `noise` impls so
+/// the whole battery stays seed-reproducible. Zero-norm anchors return the
+/// zero vector (magnitude trivially preserved). Zero allocation (stack
+/// array; delegates to the slice core at [`norm_matched_noise_slice_into`]).
+#[inline]
+pub fn norm_matched_noise_arr<const N: usize>(anchor: &[f32; N], seed: u64) -> [f32; N] {
+    let mut out = [0.0f32; N];
+    norm_matched_noise_slice_into(anchor, seed, &mut out);
     out
 }
 
@@ -1329,6 +1359,64 @@ mod tests {
             7,
         );
         assert_eq!(z, [0.0_f32; 8]);
+    }
+
+    #[test]
+    fn test_norm_matched_noise_slice_is_bit_identical_to_arr() {
+        // Issue 619 T1: the slice core and the fixed-size form share one
+        // stream — same seed + length → bit-identical outputs (even + odd
+        // lengths, covering the tail-element path).
+        for (anchor, seed) in [
+            (&[1.5_f32, -2.0, 3.0, -0.5, 4.0, 0.25, -1.0, 0.75][..], 0xC0FFEE_u64),
+            (&[0.3_f32, -1.7, 2.2][..], 42_u64),
+            (&[9.9_f32][..], 1_u64),
+            (&[][..], 5_u64),
+        ] {
+            let via_slice = norm_matched_noise_slice(anchor, seed);
+            let via_into = {
+                let mut buf = vec![f32::NAN; anchor.len()]; // dirty buffer — _into must fully write
+                norm_matched_noise_slice_into(anchor, seed, &mut buf);
+                buf
+            };
+            assert_eq!(via_slice, via_into, "_slice and _slice_into agree");
+            // Compare against _arr at the same length via a fixed-size shim.
+            match anchor.len() {
+                8 => {
+                    let mut a8 = [0.0f32; 8];
+                    a8.copy_from_slice(anchor);
+                    let via_arr = norm_matched_noise_arr(&a8, seed);
+                    assert_eq!(via_slice, via_arr, "len 8: slice ≡ arr");
+                }
+                3 => {
+                    let mut a3 = [0.0f32; 3];
+                    a3.copy_from_slice(anchor);
+                    let via_arr = norm_matched_noise_arr(&a3, seed);
+                    assert_eq!(via_slice, via_arr, "len 3 (odd tail): slice ≡ arr");
+                }
+                1 => {
+                    let via_arr = norm_matched_noise_arr(&[anchor[0]], seed);
+                    assert_eq!(via_slice, via_arr, "len 1: slice ≡ arr");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn test_norm_matched_noise_slice_preserves_norm() {
+        let anchor = vec![0.5_f32, -1.25, 2.0, 0.75, -3.5, 1.0, 0.1, -0.6, 2.2, -0.15];
+        let target: f32 = anchor.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let n = norm_matched_noise_slice(&anchor, 0xBEEF);
+        let got: f32 = n.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            ((got - target) / target).abs() < 1e-4,
+            "L2 norm preserved: got {got}, want {target}"
+        );
+        // Zero-norm Vec stays zero.
+        assert_eq!(
+            norm_matched_noise_slice(&vec![0.0f32; 6], 9),
+            vec![0.0f32; 6]
+        );
     }
 
     #[test]
