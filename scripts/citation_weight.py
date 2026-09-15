@@ -141,20 +141,30 @@ def removed_candidates(repo: Path, dirname: str, number: str) -> list[str]:
     reading HISTORY.md headings. Named here because a reader who finds one
     candidate and no removal must not conclude there was never a second.
     """
+    return sorted(removed_by_number(repo, dirname).get(int(number), ()))
+
+
+def removed_by_number(repo: Path, dirname: str) -> dict[int, set[str]]:
+    """`number -> {stem}` for every REMOVED numbered document in one directory.
+
+    One `git log` for the whole directory. `removed_candidates` is the
+    single-number view of this and DELEGATES rather than re-deriving it: a
+    caller asking about 51 numbers otherwise pays 51 subprocesses for one
+    answer, and two copies of the parse are two things to get wrong (Issue 755).
+    """
     out = subprocess.run(
         ["git", "-C", str(repo), "log", "-M", "--diff-filter=D", "--name-only",
          "--format=", "--", f"{dirname}/"],
         capture_output=True, encoding="utf-8", errors="replace").stdout
-    n = int(number)
-    stems = set()
+    by_num: dict[int, set[str]] = {}
     for rel in out.split("\n"):
         name = os.path.basename(rel.strip())
         if not name.endswith(".md"):
             continue
         m = re.match(r"^(\d+)_", name)
-        if m and int(m.group(1)) == n:
-            stems.add(name[:-3])
-    return sorted(stems)
+        if m:
+            by_num.setdefault(int(m.group(1)), set()).add(name[:-3])
+    return by_num
 
 
 def candidates(repo: Path, dirname: str, number: str) -> list[str]:

@@ -261,7 +261,7 @@ develop work. One line per check:
 | `cfg_gated_floor_gate.py` | `#![cfg]`-gated targets that report a green 0-pass (Issue 713) |
 | `orphaned_attr_gate.py` | a `#[cfg]` separated from its item by a blank line |
 | `percentile_floor_gate.py` | a percentile index that lands on n-1 and so reports the MAX |
-| `numbering_gate.py` | a number allocated twice, or a stale/malformed `.highwater` (Issues 724, 725) |
+| `numbering_gate.py` | a number allocated twice, or a stale/malformed `.highwater` (Issues 724, 725) — including the majority case where BOTH holders have CLOSED and been removed, so nothing is on disk and the tracked check reads clean: walled by membership above the era boundary, ratcheted below it (Issue 795) |
 | `docs_gate_paths_sync.py` | docs_gate.yml's two hand-duplicated trigger `paths:` lists stay identical |
 | `required_features_static_gate.py` | a required-features row naming a feature its package cannot enable (riir-train Issue 513) |
 | `cfg_row_implication_gate.py` | a required-features row that BUILDS and compiles its target to NOTHING (riir-train Issue 513) |
@@ -1661,6 +1661,41 @@ that do not say which document they mean.** `scripts/citation_weight.py <repo>
 scored against each candidate's distinctive filename tokens, awarded only on a
 strict margin, with everything else printed as its own UNRESOLVED number and
 never folded into a winner.
+
+⛔ **A collision where BOTH holders have CLOSED is the MAJORITY case, and the
+instrument was blind to it** (Issue 795). A document closed under the
+noise-reduction rule is deleted, so the pair leaves nothing on disk and reads as
+"not a duplicate" — and every number this repo allocates is expected to end up
+removed. `removed_by_number()` recovers them from `git log -M --diff-filter=D`
+(`-M` is load-bearing: without rename detection a RENUMBERED document reports as
+a deletion at its old number and the tool resurrects a collision somebody
+already resolved). Issue 791 recorded **three** collisions; the same scan with
+the recovery says **70**, over 1374 numbers, 9 of them at or above 700 and all 9
+from one 57-commit divergence.
+
+⚠ **Take the SCOPE from `scripts/numbering_floors.txt`, never from a walk of
+the tree.** A first pass over every numbered directory found 122, and 52 of
+those were `.benchmarks/`, where the leading number is the OWNING plan or issue
+and a family per owner is the intended convention — an exclusion that file
+records, measured, with the note that checking there *"would have been the
+cries-wolf instrument AGENTS.md warns gets ignored."* A population derived from
+the tree is not the population the gate governs.
+
+The verdict is `numbering_gate.py` in the docs gate, in **two regimes**
+(`scripts/number_collisions_expected.txt`): at or above `era_boundary = 700` a
+**WALL pinned by MEMBERSHIP** with a reason per row — a count is green on a
+swap, and the arms assert that case — and below it a **RATCHET**, counted and
+never pinned, because those 61 are the pre-gate archive and Issue 785's rule
+forbids ratcheting a bucket that means *unread*. The boundary is measured, not
+round: the highest legacy collision is 575 and the lowest divergence one is 741.
+
+⛔ **And do not renumber on a margin the instrument did not award.** Six of
+the nine were adjudicated and deliberately left alone — leads of +1 to +5 with
+21–53% UNRESOLVED, one an outright `TIE_FRACTION` tie and one where the tool
+DECLINED (unresolved outnumbered decided). The pin file carries the margin per
+row so the decision is re-readable. Renumbering on a 2-site lead with 47%
+unresolved is the mistake `TIE_FRACTION`'s own docstring names: *pretending it
+can arbitrate is how a coin flip gets recorded as a measurement.*
 
 ## Branch
 

@@ -1,0 +1,69 @@
+# Numbers held by TWO OR MORE documents across this repo's history, pinned by
+# MEMBERSHIP above the era boundary and RATCHETED below it.
+# Read by `scripts/numbering_gate.py` (Issue 795).
+#
+# Format: one row per collision, plus the era boundary and the legacy ratchet.
+#
+#   collision = <dir> <number> <reason>
+#   era_boundary = <number>      numbers >= this are WALLED: any collision here
+#                                that is not pinned below is a finding
+#   legacy_ratchet = <count>     collisions BELOW the boundary, counted only
+#   min_dirs / min_numbers       blindness floors on the walk
+#
+# ── why two regimes, and not one ───────────────────────────────────────────
+# `numbering_gate` already walls TRACKED duplicates at zero. That is correct
+# and it is blind to the majority case: a document closed under the
+# noise-reduction rule is DELETED, so a double-allocation where both sides have
+# closed leaves nothing on disk and reads as clean. Measured 2026-09-15 with
+# `citation_weight.removed_by_number`, which recovers them from git history:
+#
+#   .issues 51 · .research 10 · .plans 9 · .proposals 0
+#
+# 70 collisions over 1374 numbers, and the gate had never reported one.
+#
+# ⚠ The SCOPE is the gate's own, from numbering_floors.txt, and taking it
+# from there rather than walking every numbered directory is load-bearing: a
+# first pass over all six found 122, and 52 of those were `.benchmarks/`, where
+# the leading number is the OWNING plan or issue and a family per owner is the
+# INTENDED convention. numbering_floors.txt says so in the file, measured
+# 2026-09-04, and reporting them would have been ~52 false findings out of the
+# gate that exists to stop exactly that.
+#
+# ⛔ 61 of the 70 are the PRE-GATE archive — the number-recycling `.issues/121` documents, from
+# before the monotonic rule existed — and adjudicating them is a backlog, not a
+# pin. Issue 785's rule forbids ratcheting a bucket that means "unread", so
+# they are RATCHETED as a count and never pinned with invented reasons.
+#
+# Every one of the 9 at or above the boundary is from ONE event, and above the
+# boundary the wall is absolute: a new collision there is a live ambiguity in
+# prose people are writing today.
+#
+# ── the boundary is MEASURED, not chosen for roundness ─────────────────────
+# 700 is where the two populations separate cleanly: the highest legacy
+# collision is `.issues 575` and the lowest divergence one is
+# `.issues 741`. Nothing sits between them, so no row is on the wrong side of
+# it by a judgement call. Re-measure before moving it.
+era_boundary = 700
+legacy_ratchet = 61
+min_dirs = 4
+min_numbers = 1200
+
+# ── the 9, all from the Issue 791 / 795 divergence ─────────────────────────
+# Two sessions both read `.issues/.highwater`, both incremented it correctly
+# from their own view, and the rebase merged the counter with `max(ours,
+# theirs)` — the only sound rule for a monotonic counter, and exactly what
+# makes a double-allocation invisible.
+#
+# Three were RESOLVED by renumbering this session's side to 792/793/794 and
+# stay pinned because the collision is a fact about history that no rewrite
+# undoes. Six were adjudicated and deliberately NOT renumbered; the reason is
+# on each row.
+collision = .issues 741 Issue 795 divergence — this session's alloc-gate profile issue vs the threat-dialect one; weight +21/26 to alloc_gates, both CLOSED and removed
+collision = .issues 775 Issue 795 divergence — platform_dead_code verdict half vs dual_wave_kernel_pcalm; citation_weight DECLINES (UNRESOLVED 31 > 28 decided), so no rewrite was made on a verdict the instrument withheld
+collision = .issues 776 Issue 791 — RESOLVED, this session's side renumbered to 792; the other session's file keeps 776
+collision = .issues 777 Issue 795 divergence — filesystem_walk_population vs modality_additive_belief_superposition; +5 over 36 decided, under the margin worth rewriting 36 citations for
+collision = .issues 778 Issue 795 divergence — subprocess locale vs subspace_intervention layer affinity; citation_weight returns TIE (lead 1 of 18 decided, inside TIE_FRACTION)
+collision = .issues 779 Issue 791 — RESOLVED, this session's side renumbered to 793; the other session's LIVE file keeps 779 despite losing on weight (renumbering open work needs agreement)
+collision = .issues 780 Issue 791 — RESOLVED, this session's side renumbered to 794; citation_weight declined the pair and the coordination-free side moved
+collision = .issues 781 Issue 795 divergence — heading_oracle house style vs slt_wbic_selection; +2 over 17 decided with 47% UNRESOLVED, which is noise, not a verdict
+collision = .issues 782 Issue 795 divergence — pinned-repo-absent vs slt_noise_sweep; +4 over 11 decided with a 3-site loser, below the rewrite threshold

@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
 
 # ── vocabulary: DATA, not derived from the tree ────────────────────────────
 # Deriving both the scope and the population from one walk is what makes a
@@ -193,6 +194,258 @@ def selftest() -> list[str]:
         if (hw, bad) != (872, None):
             fails.append(f"padded/zero-padded highwater misread: {(hw, bad)}")
 
+    # Called from HERE, not from main(): `arm_reach_audit` invokes an arm
+    # only by the names in its vocabulary, so a helper wired into main()
+    # is measured as reaching nothing (measured on the commit that added
+    # it — nine collision_verdict decisions read SURVIVED with the arms
+    # already written and passing).
+    fails += collision_arms()
+
+    return fails
+
+
+def parse_collision_pins(path: Path) -> tuple[dict, dict[tuple[str, int], str]]:
+    """-> (scalars, {(dir, number): reason}) from number_collisions_expected.txt.
+
+    A reasonless `collision =` row is REFUSED, the Issue 789 idiom: a pin file
+    is adjudicated from its reasons, and a row that carries none is a backlog
+    wearing a pin (Issue 785).
+    """
+    scalars: dict[str, int] = {}
+    rows: dict[tuple[str, int], str] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or "=" not in line:
+            continue
+        key, val = (x.strip() for x in line.split("=", 1))
+        if key != "collision":
+            scalars[key] = int(val)
+            continue
+        parts = val.split(None, 2)
+        if len(parts) < 3 or not parts[2].strip():
+            raise ValueError(f"collision row without a reason: {raw.strip()!r}")
+        rows[(parts[0], int(parts[1]))] = parts[2].strip()
+    return scalars, rows
+
+
+def historical_collisions(repo: Path, dirs: list[str]) -> tuple[list[tuple[str, int, list[str]]], int]:
+    """Numbers held by 2+ documents across HISTORY -> (rows, numbers walked).
+
+    ⛔ The tracked-duplicate check one function up is correct and blind to the
+    majority case. A document closed under the noise-reduction rule is DELETED,
+    so a double-allocation where both sides have closed leaves NOTHING on disk
+    and reads as clean — and every number this repo allocates is expected to end
+    up removed. Measured 2026-09-15: 70 collisions in scope, 9 of them from one
+    57-commit divergence, and this gate had never reported one (Issue 795).
+
+    The recovery is `citation_weight.removed_by_number`, imported rather than
+    re-derived: the `-M` rename exclusion it carries is subtle enough that a
+    second copy would be a second thing to get wrong (Issue 755).
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from citation_weight import removed_by_number
+
+    rows, walked = [], 0
+    for dirname in dirs:
+        seen = {n: set(v) for n, v in removed_by_number(repo, dirname).items()}
+        d = repo / dirname
+        if d.is_dir():
+            for entry in d.iterdir():
+                m = NUMBERED.match(entry.name)
+                if m:
+                    seen.setdefault(int(m.group(1)), set()).add(entry.name[:-3])
+        walked += len(seen)
+        for num, stems in sorted(seen.items()):
+            if len(stems) > 1:
+                rows.append((dirname, num, sorted(stems)))
+    return rows, walked
+
+
+def collision_verdict(rows, scalars, pins) -> tuple[list[str], list[str]]:
+    """-> (failures, notes). Two regimes, and the split is the whole design.
+
+    ABOVE `era_boundary` the wall is absolute and pinned by MEMBERSHIP: a new
+    collision there is a live ambiguity in prose people are writing today, and
+    a COUNT would be green on a swap. Reds in BOTH directions — a pinned row
+    that is no longer a collision is a finding too, because the pin and its
+    removal belong in the same commit.
+
+    BELOW it, a RATCHET. Those are the pre-gate archive (`.issues/121`'s
+    number-recycling era) and adjudicating them is a backlog: Issue 785's rule
+    forbids ratcheting a bucket that means "unread", so they are never pinned
+    with invented reasons — only counted, and the count may not grow.
+    """
+    boundary = scalars["era_boundary"]
+    fails, notes = [], []
+    live = {(d, n) for d, n, _ in rows}
+    above = {(d, n) for d, n in live if n >= boundary}
+    legacy = [(d, n) for d, n in live if n < boundary]
+
+    for d, n in sorted(above - set(pins)):
+        stems = next(st for dd, nn, st in rows if (dd, nn) == (d, n))
+        fails.append(f"UNPINNED collision {d}/{n}: {' · '.join(stems)} — a number "
+                     f"above the era boundary held by {len(stems)} documents")
+    for d, n in sorted(set(pins) - above):
+        fails.append(f"STALE pin {d}/{n}: pinned as a collision and no longer one "
+                     f"— remove the row in the commit that resolved it")
+    if len(legacy) > scalars["legacy_ratchet"]:
+        fails.append(f"legacy collisions {len(legacy)} > ratchet "
+                     f"{scalars['legacy_ratchet']} — a number below the era "
+                     f"boundary was allocated twice AGAIN")
+    elif len(legacy) < scalars["legacy_ratchet"]:
+        notes.append(f"legacy collisions {len(legacy)} < ratchet "
+                     f"{scalars['legacy_ratchet']} — re-pin DOWN in this commit")
+    return fails, notes
+
+
+def collision_arms() -> list[str]:
+    """The Issue 795 verdict's OWN arithmetic, which no classifier reaches.
+
+    Issue 775's rule, one gate over: a gate's pin arithmetic sits between two
+    calls into a classifier, so the classifier's self-test cannot see it. Both
+    halves are armed here — the pin PARSER (which refuses a reasonless row) and
+    the two-regime verdict.
+    """
+    import tempfile
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    SC = {"era_boundary": 700, "legacy_ratchet": 2}
+    R = [(".issues", 100, ["a", "b"]), (".issues", 200, ["c", "d"]),
+         (".issues", 800, ["e", "f"])]
+    PINS = {(".issues", 800): "measured"}
+
+    f, n = collision_verdict(R, SC, PINS)
+    eq("a pinned collision above the boundary and a legacy count at the "
+       "ratchet is clean", (f, n), ([], []))
+    # ABOVE the boundary the wall is absolute and pinned by MEMBERSHIP: a COUNT
+    # would be green on a swap, which is the whole reason it is not one.
+    f, _ = collision_verdict(R, SC, {(".issues", 900): "wrong row"})
+    eq("an UNPINNED collision above the boundary is a finding",
+       sum(1 for x in f if x.startswith("UNPINNED")), 1)
+    eq("...and a pin naming a number that is no longer a collision is ALSO one",
+       sum(1 for x in f if x.startswith("STALE")), 1)
+    # The membership swap: same COUNT, different set.
+    f, _ = collision_verdict(
+        [(".issues", 800, ["e", "f"]), (".issues", 900, ["g", "h"])], SC,
+        {(".issues", 800): "m", (".issues", 900): "m"})
+    eq("two pinned collisions above the boundary are clean", f, [])
+    f, _ = collision_verdict(
+        [(".issues", 800, ["e", "f"]), (".issues", 901, ["g", "h"])], SC,
+        {(".issues", 800): "m", (".issues", 900): "m"})
+    eq("a SWAP is caught in both directions, where a count would be green",
+       len(f), 2)
+    # BELOW it, a ratchet. Growth reds; shrinkage is a note, not a failure --
+    # the verdict is "re-pin DOWN", and refusing the commit that RESOLVED a
+    # collision would be the gate punishing the repair.
+    f, _ = collision_verdict(R + [(".issues", 300, ["x", "y"])], SC, PINS)
+    eq("a NEW legacy collision breaches the ratchet",
+       sum(1 for x in f if "ratchet" in x), 1)
+    f, n = collision_verdict([(".issues", 100, ["a", "b"]),
+                              (".issues", 800, ["e", "f"])], SC, PINS)
+    eq("a RESOLVED legacy collision is a note, never a failure",
+       (f, len(n)), ([], 1))
+    # The boundary is INCLUSIVE at its own value: 700 is in the walled era.
+    f, _ = collision_verdict([(".issues", 700, ["a", "b"])],
+                             {"era_boundary": 700, "legacy_ratchet": 0}, {})
+    eq("era_boundary is inclusive — a collision AT it is walled, not legacy",
+       (len(f), sum(1 for x in f if x.startswith("UNPINNED"))), (1, 1))
+    # The DIRECTORY is part of the key: the same number in two directories is
+    # two independent allocations and pooling them would let one vouch for
+    # the other.
+    f, _ = collision_verdict([(".plans", 800, ["a", "b"])], SC, PINS)
+    eq("a pin is keyed by (dir, number), not by number alone", len(f), 2)
+
+    with tempfile.TemporaryDirectory() as td:
+        q = pathlib.Path(td) / "pins.txt"
+        q.write_text("era_boundary = 700\nlegacy_ratchet = 5\n"
+                     "a prose line carrying no equals sign at all\n"
+                     "\n"
+                     "collision = .issues 800 because measured\n"
+                     "# collision = .issues 900 a comment is not a row\n",
+                     encoding="utf-8")
+        sc, rows = parse_collision_pins(q)
+        eq("the parser reads the scalars", sc,
+           {"era_boundary": 700, "legacy_ratchet": 5})
+        eq("...and the rows, reason intact",
+           rows, {(".issues", 800): "because measured"})
+        eq("a commented row is not a pin", (".issues", 900) in rows, False)
+        # A reasonless row is REFUSED, never silently accepted: a pin file is
+        # adjudicated from its reasons, and one that carries none is a backlog
+        # wearing a pin.
+        q.write_text("era_boundary = 700\ncollision = .issues 800\n",
+                     encoding="utf-8")
+        try:
+            parse_collision_pins(q)
+            eq("a collision row with no reason is REFUSED", False, True)
+        except ValueError:
+            eq("a collision row with no reason is REFUSED", True, True)
+
+    # ── the CLASSIFIER, over a real git tree. The two arms above test the pin
+    # arithmetic; this tests what a collision IS, and it is the half that
+    # decides the population everything else is a ceiling over.
+    import shutil
+    import subprocess
+    if not shutil.which("git"):
+        fails.append("    collision_arms: UNSEEN \u2014 no `git` on PATH, so "
+                     "historical_collisions was asserted by NOTHING")
+        return fails
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        d = root / ".issues"
+        d.mkdir(parents=True)
+
+        def git(*a):
+            return subprocess.run(["git", "-C", str(root), *a],
+                                  capture_output=True, encoding="utf-8",
+                                  errors="replace", check=True).stdout.strip()
+
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "arm@example.invalid")
+        git("config", "user.name", "arm")
+        for name in ("010_first_holder.md", "010_second_holder.md",
+                     "011_sole_holder.md", "012_still_here.md"):
+            (d / name).write_text("x\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "-m", "one")
+        # 010 is held twice and BOTH are removed -- the shape the tracked
+        # duplicate check cannot see, and the whole reason this exists.
+        # 011 is removed and held ONCE: a closed document is not a collision.
+        for name in ("010_first_holder.md", "010_second_holder.md",
+                     "011_sole_holder.md"):
+            (d / name).unlink()
+        git("add", "-A")
+        git("commit", "-q", "-m", "two")
+
+        rows, walked = historical_collisions(root, [".issues"])
+        eq("a number held twice with BOTH sides removed is a collision",
+           [(dd, nn) for dd, nn, _ in rows], [(".issues", 10)])
+        eq("...and both stems are reported",
+           next(st for _, nn, st in rows if nn == 10),
+           ["010_first_holder", "010_second_holder"])
+        eq("a removed document held ONCE is not a collision",
+           any(nn == 11 for _, nn, _ in rows), False)
+        eq("a document still on disk and held once is not a collision",
+           any(nn == 12 for _, nn, _ in rows), False)
+        eq("the walk counts every number it saw, collision or not", walked, 3)
+        # A live file meeting a removed one is the mixed case -- the only shape
+        # the old instrument could see, and it must still be one.
+        (d / "012_second_claimant.md").write_text("y\n", encoding="utf-8")
+        git("add", "-A")
+        git("commit", "-q", "-m", "three")
+        (d / "012_second_claimant.md").unlink()
+        git("add", "-A")
+        git("commit", "-q", "-m", "four")
+        rows, _ = historical_collisions(root, [".issues"])
+        eq("a LIVE file meeting a removed one is a collision",
+           sorted(nn for _, nn, _ in rows), [10, 12])
+        eq("a directory that does not exist contributes nothing",
+           historical_collisions(root, [".nope"]), ([], 0))
+
     return fails
 
 
@@ -257,6 +510,26 @@ def main() -> int:
         if hw is not None and by_num and max(by_num) > hw:
             above.append(f"{dirname}: max {max(by_num)} > .highwater {hw} — `value + 1` is already taken")
 
+    # ── historical collisions (Issue 795) ──────────────────────────────────
+    cpins_path = Path(__file__).resolve().parent / "number_collisions_expected.txt"
+    if not cpins_path.is_file():
+        print(f"✗ collision pins file missing: {cpins_path}")
+        return 2
+    try:
+        cscalars, cpins = parse_collision_pins(cpins_path)
+    except ValueError as e:
+        print(f"✗ collision pins file is malformed: {e}")
+        return 2
+    crows, cwalked = historical_collisions(repo, dirs)
+    cfails, cnotes = collision_verdict(crows, cscalars, cpins)
+    if len(dirs) < cscalars["min_dirs"]:
+        cfails.append(f"scope FLOOR: {len(dirs)} dir(s) < {cscalars['min_dirs']} "
+                      f"— the collision walk went blind")
+    if cwalked < cscalars["min_numbers"]:
+        cfails.append(f"walk FLOOR: {cwalked} number(s) < {cscalars['min_numbers']}"
+                      f" — a git-history regression empties this and every "
+                      f"ceiling above passes")
+
     max_dup = pins.get("max_duplicate_numbers", 0)
     max_above = pins.get("max_above_highwater", 0)
     max_malformed = pins.get("max_malformed_highwater", 0)
@@ -277,6 +550,15 @@ def main() -> int:
         print(f"✗ {len(malformed)} malformed .highwater file(s) (pinned ≤ {max_malformed}):")
         for r in malformed:
             print(f"    {r}")
+    if cfails:
+        bad = True
+        print(f"✗ {len(cfails)} HISTORICAL numbering collision finding(s) — a "
+              f"number held by two REMOVED documents is invisible to the "
+              f"tracked-duplicate check above:")
+        for r in cfails:
+            print(f"    {r}")
+    for r in cnotes:
+        print(f"  ⚠ {r}")
     if below_floor:
         bad = True
         print("✗ population FLOOR breached — every other verdict here is a ceiling,")
@@ -295,7 +577,9 @@ def main() -> int:
         return 1
     print(
         f"✓ numbering gate PASSED — {total} numbered file(s) over {len(dirs)} dir(s), "
-        f"0 tracked duplicates, 0 stale allocators, 0 malformed allocators"
+        f"0 tracked duplicates, 0 stale allocators, 0 malformed allocators; "
+        f"{len(crows)} historical collision(s) over {cwalked} number(s), "
+        f"{len(cpins)} pinned above the era boundary"
         + (f", {len(dup_untracked)} untracked warning(s)" if dup_untracked else "")
     )
     return 0
