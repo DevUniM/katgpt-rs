@@ -4073,6 +4073,90 @@ exists so the number is READABLE: `issue_citation_gate.heading_allocated` reads
 `## Issue NNN (…) — title` and does not read a bullet, so 793 and 794 were
 discoverable after the renumbering and 792 was not. Verified both ways.
 
+## Issue 790 (2026-09-14) — an arm that exists and RUNS may still reach nothing: CLOSED (2026-09-15)
+
+`check_validation_gate` asserts that every CHECK invokes an arm and had to state
+its own limit: *"arm QUALITY is not statically decidable and is not claimed."*
+True, and too strong — quality is not **statically** decidable, but **reach** is
+measurable by EXECUTION, and Issue 789 had measured it 53 times by hand, finding
+seven arms that certified nothing. A census done by hand is a census that stops
+being done.
+
+`scripts/arm_reach_audit.py` (report) + `scripts/arm_reach_gate.py` (verdict,
+workstation, ~200s): mutate a module's source OUTSIDE its arm bodies, re-exec,
+run its arm, ask whether the arm noticed. Survivors pinned by MEMBERSHIP with a
+reason per row in `arm_reach_survivors_expected.txt`; the wall is 0 UNPINNED,
+and `UNREACHED` / `NO-ARM` / `BASELINE` are walled SEPARATELY because pooling
+any of them into the survivor count destroys the finding.
+
+**The nine findings, all of them in already-green instruments.**
+
+1. ⛔ **The harness was judging itself.** `run_arm` exec'd modules into a bare
+   dict, so `dataclasses` could not resolve `cls.__module__` — **seven
+   classifiers read CRASHED on their own unmutated source, 796 of 2382
+   mutants.** ⚠ The bare-dict direction is a PREMISE, not an assertion: CPython
+   ≤3.12 guards that lookup and 3.14 does not, so the self-test asserts only
+   that a `@dataclass` module EXECs in the registered namespace and prints which
+   side the interpreter is on.
+2. ⛔ **`BASELINE` was missing, and one of its two arms looks like a PERFECT
+   score.** An arm already failing unmutated kills every mutant, reports 100%
+   reach, and does not merely escape `MIN_KILLED` — it **inflates** it.
+3. `required_features_touched_gate.selftest` was Windows-broken since written
+   (POSIX path literals vs `Path`).
+4. ⛔ **The gate caught the commit that changed it.** The bucket decision sat
+   inline in `measure()` between two calls into the audit. Extracted to a pure
+   `classify(row)`. The first repair re-entered the harness and wedged on `git
+   ls-files` — 17 minutes at 0.02s CPU — and was replaced with injection.
+5. ⛔ **A mutant can never RETURN, and the hang is the MILD half.** A run
+   predicted at 13 minutes burned a core for TWO HOURS. Interrupting it credits
+   the mutant KILLED, because `except BaseException` reads `KeyboardInterrupt`
+   as the arm noticing. `TIMEOUT` is its own verdict with CRASHED's standing,
+   and the deadline is DERIVED from the module's own baseline (10×, floor 30s)
+   rather than typed — one constant cannot mean the same thing to a 0.03s gate
+   and an 8.3s workspace sweep.
+6. ⛔ `required_features_build_audit` used POSIX-only `os.statvfs` in
+   PRODUCTION; the whole module was unimportable on Windows. Swept all 16
+   repos: no other live site.
+7. NO-ARM vs UNREACHED was decided twice, differently. One `has_runnable_arm`.
+8. ⛔ **The blocking-C-call wedge has a mechanism and it is the BOX** — 167
+   orphaned `git.exe` holding pipes. The watchdog is a thread +
+   `interrupt_main` (SIGALRM is POSIX-only), so it reaches a pure-Python loop
+   and NOT a blocking C call; naming the 10% it misses is the point of writing
+   it down.
+9. ⚠ **A starved box makes a gate print a confident WRONG verdict.**
+   `bench_doc_audit` reported `97 labels, 56 mismatches` on a tree that had just
+   passed (0 on re-run). Mechanism INFERRED and deliberately left unrepaired —
+   resolved 2026-09-15 by measurement, and the inference was wrong twice; see
+   `BlindRead`'s docstring.
+
+**T5 DECLINED on a measurement, not blocked.** A cross-repo sweep would EXECUTE
+~700 mutated copies of another repo's gate scripts, and re-measuring the
+population found only **2 of 17** sibling arm-bearing scripts admissible. Do not
+land it by symmetry with the eleven drift sweeps.
+
+`--include-all` completed at **55 of 55** modules: 2376 mutants · 1182 KILLED ·
+652 live · 535 exempt · 1 CRASHED · 6 TIMEOUT · 1 NO-ARM. ⚠ Read that against
+the CHECKS population and not as a comparable number — the 652 is an unread
+backlog, exactly the shape Issue 785 forbids ratcheting. Operating instruction:
+run it **module by module under an external timeout**; one invocation is
+unbounded in the worst case and not resumable, and the worst case happened twice
+on the day it was written.
+
+⛔ **The pattern worth carrying forward, found by fixing rather than by
+reading:** in every module the CLASSIFIER was well armed and the **VERDICT** was
+not, and about a third of the 47 survivors that were about to be pinned as
+"EQUIVALENT" turned out to be plain functions over plain data with no fixture
+and no subprocess between an arm and the decision — real gaps wearing an
+EQUIVALENT label. **Writing the reason is the adjudication**; a classification
+made while reading a list is not the same act. Closing them took the set 47 →
+27, then 26.
+
+Weakest-instrument follow-through (2026-09-15): `feature_isolation_gate` 4 → 24
+killed, `citation_weight` 3 → 12 → 19, `ci_gate_coverage` 4 of 74 → **54 of
+73**. Each needed an EXTRACTION or an INJECTION first — the reach was not
+missing because nobody wrote arms, it was missing because the decisions were
+unreachable by construction.
+
 ## Issue 791 (2026-09-15) — three numbers allocated twice across a 57-commit divergence: CLOSED
 
 Two sessions both read `.issues/.highwater`, both incremented it correctly from
@@ -4131,6 +4215,82 @@ reds when a commit allocates a number its remote parent already allocated needs
 its false-positive rate measured first: a long-lived branch legitimately
 allocates ahead of its remote, and this repo's own divergence was 57 commits.
 The cheap half is procedural and already written down (fetch before allocating).
+
+## Issue 795 (2026-09-15) — 70 numbering collisions the gate could not see, 9 of them live: CLOSED
+
+Issue 791 recorded **three** double-allocated numbers and closed. Pointing the
+instrument it had just built at one more number found a fourth, and a full scan
+says the real figure is **70**, over 1374 numbers, in the four directories
+`numbering_gate` already governs (`.issues` 51 · `.research` 10 · `.plans` 9 ·
+`.proposals` 0).
+
+⛔ **791's "three" was not a count of the problem; it was a count of what the
+instrument could see.** A document closed under the noise-reduction rule is
+DELETED, so a collision where BOTH sides have closed leaves nothing on disk and
+reads as "not a duplicate" — and every number this repo allocates is expected to
+end up removed, so that is the MAJORITY case rather than an edge. Six of the
+nine recent collisions were invisible for exactly that reason, and
+`numbering_gate`'s tracked-duplicate wall — correct about what it measures — had
+never reported one in its life.
+
+All nine at or above 700 (741, 775–782) are one event: two sessions both read
+`.issues/.highwater`, both incremented correctly from their own view, and the
+rebase merged the counter with `max(ours, theirs)` — the only sound rule for a
+monotonic counter, and exactly what makes a double-allocation invisible.
+
+⛔ **The first scan over-reported by 52, and the reason was already written
+down.** Walking every numbered directory found 122; 52 were `.benchmarks/`,
+where the leading number is the OWNING plan or issue and a family per owner is
+the intended convention. `numbering_floors.txt` records that exclusion, measured
+2026-09-04, with the note that checking there *"would have been the cries-wolf
+instrument AGENTS.md warns gets ignored."* **A population derived from the tree
+is not the population the gate governs** — the difference was 74% inflation
+straight into a measured false-positive class.
+
+**The verdict runs in TWO regimes, because one would be wrong in both
+directions** (`scripts/number_collisions_expected.txt`):
+
+- **At or above `era_boundary = 700`: a WALL, pinned by MEMBERSHIP with a reason
+  per row.** A count is green on a swap; the arms assert that exact case. Reds
+  in both directions — a pinned row that is no longer a collision is a finding
+  too, because the pin and its removal belong in the same commit.
+- **Below it: a RATCHET, counted and never pinned.** Those 61 are the pre-gate
+  archive (`.issues/121`'s number-recycling era) and adjudicating them is a
+  backlog; Issue 785's rule forbids ratcheting a bucket that means *unread*. A
+  count that DROPS is a note, not a failure — refusing the commit that resolved
+  a collision would be the gate punishing the repair.
+- The boundary is **measured, not round**: highest legacy 575, lowest divergence
+  741, nothing between them, so no row sits on the wrong side by judgement.
+- Two blindness floors — every verdict above is a ceiling, and a git-history
+  regression empties the population and passes all of them.
+
+⛔ **Six of the nine were adjudicated and deliberately NOT renumbered**: leads of
++1 to +5 over 11–36 decided sites with 21–53% UNRESOLVED, one an outright
+`TIE_FRACTION` tie (778) and one where the tool DECLINED because unresolved
+outnumbered decided (775). Renumbering on a 2-site lead with 47% unresolved is
+the mistake `TIE_FRACTION`'s own docstring names — *"pretending it can arbitrate
+is how a coin flip gets recorded as a measurement."* The margin is on each pin
+row, so the decision is re-readable rather than remembered.
+
+An earlier, allocation-time gate is DEFERRED on its unmeasured false-positive
+rate (a long-lived branch legitimately allocates ahead of its remote; this
+repo's own divergence was 57 commits). ⚠ Note what the wall already buys: the
+collision is caught on the MERGE commit — late, but not silent, and the first
+time anything catches it at all.
+
+⛔ **Both this gate's arms and `citation_weight`'s were written, passing, and
+reaching NOTHING** until they were moved out of `main()` into `selftest()`:
+`arm_reach_audit` invokes an arm only by the names in its vocabulary. Measured
+twice in one session, which is why it is written here and not remembered. Arm
+reach: `numbering_gate` 7 killed of 48 → **22 of 47** (survivors 17 → 2);
+`citation_weight` 12 of 49 → **19** (18 → 11).
+
+**How both 791 and 795 were found, recorded because it repeats:** by pointing an
+instrument at one more case, not by a symptom. 791's table was written from
+three known pairs and nothing asked whether there were others, because the tool
+that would have answered was blind in the direction that mattered. *A census is
+exhaustive over ROWS, not over the ORACLE it checks them against* — Issue 754's
+sentence, holding for a third time.
 
 ## Issue 794 (allocated as 780; renumbered per Issue 791) — a wrong address reads as UNDECIDED when its number is in local range: CLOSED (2026-09-14)
 
