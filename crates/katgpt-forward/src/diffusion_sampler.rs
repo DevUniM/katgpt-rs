@@ -44,6 +44,7 @@
 
 use crate::d2f::D2fDecodeConfig;
 use crate::d2f_context::{D2fContext, forward_block_causal_with};
+use katgpt_core::jsd_topk::jsd_topk_sets;
 use katgpt_transformer::TransformerWeights;
 use katgpt_types::{Config, Rng};
 
@@ -51,6 +52,18 @@ use katgpt_types::{Config, Rng};
 
 /// Number of input features per position.
 pub const N_FEATURES: usize = 6;
+
+/// Top-K set width for the inter-step drift feature (Issue 802 item 3) — the
+/// same three tiers [`SamplerFeatures::from_logits`] already tracks for
+/// `top3_mass`, so the drift set comes free with the feature extraction
+/// (indices added in [`SamplerFeatures::from_logits_into`], masses
+/// untouched).
+pub const TOPK_DRIFT_K: usize = 3;
+
+/// Number of stability features appended by
+/// [`SamplerFeatures::to_array_with_stability`] (Issue 802 item 3):
+/// `stable_age` and `topk_drift`.
+pub const N_STABILITY_FEATURES: usize = 2;
 
 /// Per-position features extracted from D2F denoising step.
 ///
@@ -70,6 +83,19 @@ pub struct SamplerFeatures {
     pub step_norm: f32,
     /// Position within block normalized: pos / block_size.
     pub pos_norm: f32,
+    /// Consecutive-step stability counter (Issue 802 item 3): +1 per
+    /// observed step whose argmax equals the previous armed step's
+    /// (saturating at `u8::MAX`); reset on an argmax change, on an
+    /// observation below the arming mass floor, and on any remask. 0 on the
+    /// first observation. Set by [`StabilityTracker::observe`] — the pure
+    /// [`Self::from_logits`] extraction cannot see across steps and leaves
+    /// both stability fields at their defaults.
+    pub stable_age: u8,
+    /// Inter-step top-K drift (Issue 802 item 3): the restricted JSD
+    /// between this step's and the previous armed step's top-3 sets, via
+    /// `jsd_topk_sets` (bounded by ln 2; disjoint sets → exactly ln 2).
+    /// 0.0 = no measurement (first observation, disarmed step, post-remask).
+    pub topk_drift: f32,
 }
 
 impl SamplerFeatures {
@@ -91,6 +117,28 @@ impl SamplerFeatures {
         pos: usize,
         block_size: usize,
     ) -> Self {
+        Self::from_logits_into(logits_p, vocab, mask, step, max_steps, pos, block_size, None)
+    }
+
+    /// [`Self::from_logits`] plus the top-3 token indices emitted into
+    /// `topk_idx` in probability order — the same tiers the masses track,
+    /// so the [`StabilityTracker`] drift set costs nothing extra (Issue 802
+    /// item 3). The extracted values (`top1_prob`/`margin`/`top3_mass`/
+    /// `entropy`) are bitwise identical to the bare form: the index
+    /// tracking rides the existing branchless shifts and adds no math. A
+    /// degenerate row (zero restricted mass) emits `[0; 3]` and the default
+    /// features (top1_prob 0.0 disarms any sane [`StabilityTracker`] floor).
+    #[allow(clippy::too_many_arguments)] // the 7 from_logits params + the emit out-param
+    pub fn from_logits_into(
+        logits_p: &[f32],
+        vocab: usize,
+        mask: usize,
+        step: usize,
+        max_steps: usize,
+        pos: usize,
+        block_size: usize,
+        topk_idx: Option<&mut [u32; TOPK_DRIFT_K]>,
+    ) -> Self {
         debug_assert_eq!(vocab, logits_p.len(), "vocab size mismatch");
         let max_logit = logits_p.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
@@ -107,6 +155,12 @@ impl SamplerFeatures {
         let mut t1 = f32::NEG_INFINITY;
         let mut t2 = f32::NEG_INFINITY;
         let mut t3 = f32::NEG_INFINITY;
+        // Top-3 token indices, shifted in lockstep with the exps (Issue 802
+        // item 3 — the drift feature's set). Strict-`>` comparisons keep the
+        // FIRST index on exp ties (deterministic).
+        let mut i1 = 0u32;
+        let mut i2 = 0u32;
+        let mut i3 = 0u32;
         for (t, &logit) in logits_p.iter().enumerate() {
             if t == mask {
                 continue;
@@ -117,13 +171,19 @@ impl SamplerFeatures {
             // Compiles to cmov / fmax sequences — no data-dependent branches.
             if e > t1 {
                 t3 = t2;
+                i3 = i2;
                 t2 = t1;
+                i2 = i1;
                 t1 = e;
+                i1 = t as u32;
             } else if e > t2 {
                 t3 = t2;
+                i3 = i2;
                 t2 = e;
+                i2 = t as u32;
             } else if e > t3 {
                 t3 = e;
+                i3 = t as u32;
             }
             // e·log(e): e is non-negative; for e near 0 the product is ~0 (lim x·log(x)=0).
             // Guard with max(1e-10) to avoid log(0). Note: this contributes to the
@@ -134,7 +194,13 @@ impl SamplerFeatures {
         }
 
         if sum_exp <= 0.0 {
+            if let Some(out) = topk_idx {
+                *out = [0; TOPK_DRIFT_K];
+            }
             return Self::default();
+        }
+        if let Some(out) = topk_idx {
+            *out = [i1, i2, i3];
         }
 
         // Normalize top-3 exp values to probabilities.
@@ -165,6 +231,10 @@ impl SamplerFeatures {
             entropy,
             step_norm,
             pos_norm,
+            // Cross-step state: filled by StabilityTracker::observe at the
+            // call site, never by this pure extraction (Issue 802 item 3).
+            stable_age: 0,
+            topk_drift: 0.0,
         }
     }
 
@@ -178,6 +248,147 @@ impl SamplerFeatures {
             self.step_norm,
             self.pos_norm,
         ]
+    }
+
+    /// [`Self::to_array`] plus the two stability features (`stable_age`,
+    /// `topk_drift`) — the fusion-predictor input shape (Issue 802 item 3;
+    /// the trained-predictor fusion over stability features is the surviving
+    /// novelty delta over LESS's fixed rule). [`Self::to_array`] stays the
+    /// 6-feature shape: the trained logistic checkpoint contract and its
+    /// signal-diff pins are unchanged.
+    pub fn to_array_with_stability(&self) -> [f32; N_FEATURES + N_STABILITY_FEATURES] {
+        let mut out = [0.0f32; N_FEATURES + N_STABILITY_FEATURES];
+        out[..N_FEATURES].copy_from_slice(&self.to_array());
+        out[N_FEATURES] = self.stable_age as f32;
+        out[N_FEATURES + 1] = self.topk_drift;
+        out
+    }
+}
+
+// ── Inter-Step Stability (Issue 802 items 3 + 5) ─────────────
+
+/// Per-position inter-step stability state (Issue 802 item 3): the
+/// `stable_age` saturating counter plus the top-K drift measurement, with
+/// the item-5 boundary laws enforced at the single observation seam.
+///
+/// One tracker per (request, position). `observe` runs once per denoising
+/// step at that position; the returned pair fills
+/// [`SamplerFeatures::stable_age`] / [`SamplerFeatures::topk_drift`] and
+/// rides [`SamplerFeatures::to_array_with_stability`] into the fusion
+/// predictor (the trained-predictor fusion is the surviving novelty delta
+/// over LESS's fixed rule — LESS, arXiv:2606.16908, owns the fixed-rule
+/// class; do NOT file the gate class as novel).
+///
+/// # Boundary laws (Issue 802 item 5 — all enforced here, tested below)
+///
+/// - **Mass floor:** an observation with `top1_prob < tau_min` carries no
+///   commitment information (the near-fully-masked argmax is noise): the
+///   counter resets to 0, no drift is measured, and the noisy set is NOT
+///   adopted — the next armed step compares against the last ARMED step,
+///   skipping the noise.
+/// - **Remask reset:** `remasked = true` clears all state (TSD's
+///   unique-commit-time assumption breaks under remasking); the next
+///   observation is a first observation.
+/// - **Measurement cadence** is caller policy: the tracker measures whenever
+///   it is asked; stride-s subsampling stays with the decode loop (TSD's
+///   training-time subsampling does not prove the measurement analog).
+///
+/// First observation (and every post-reset one) returns `(0, 0.0)`: age 0
+/// (no held step yet) and drift 0.0 = "no evidence of drift" — a max-drift
+/// ln 2 reading would poison the stability signal on the first step.
+///
+/// Fixed-size state, zero allocation on every path.
+#[derive(Clone, Copy, Debug)]
+pub struct StabilityTracker {
+    /// Previous ARMED step's top-3 set (indices in probability order) — the
+    /// drift comparison side.
+    prev_idx: [u32; TOPK_DRIFT_K],
+    prev_masses: [f32; TOPK_DRIFT_K],
+    /// Whether `prev_*` carries a comparison side (false from construction
+    /// and after a remask reset; a below-floor step keeps the last armed
+    /// side per the mass-floor law).
+    prev_valid: bool,
+    /// Saturating consecutive-stable-step counter.
+    age: u8,
+}
+
+impl StabilityTracker {
+    /// Fresh tracker: everything at the first-observation state.
+    pub fn new() -> Self {
+        Self {
+            prev_idx: [0; TOPK_DRIFT_K],
+            prev_masses: [0.0; TOPK_DRIFT_K],
+            prev_valid: false,
+            age: 0,
+        }
+    }
+
+    /// Observe one denoising step at this position. `idx` / `masses` are the
+    /// step's top-3 set in probability order (the
+    /// [`SamplerFeatures::from_logits_into`] emit); `idx[0]` is the argmax
+    /// over non-mask tokens. Returns `(stable_age, topk_drift)` for the
+    /// step.
+    pub fn observe(
+        &mut self,
+        idx: &[u32; TOPK_DRIFT_K],
+        masses: &[f32; TOPK_DRIFT_K],
+        top1_prob: f32,
+        tau_min: f32,
+        remasked: bool,
+    ) -> (u8, f32) {
+        if remasked {
+            self.prev_valid = false;
+            self.age = 0;
+            return (0, 0.0);
+        }
+        // `is_nan()` spelled out (not a negated comparison): a NaN
+        // top1_prob must DISARM — through `<` it would silently arm.
+        if top1_prob < tau_min || top1_prob.is_nan() {
+            self.age = 0;
+            return (0, 0.0);
+        }
+
+        // Restricted JSD between the last armed set and this one. Both sets
+        // are copied and index-sorted (the sets arrive in probability
+        // order; `jsd_topk_sets` wants ascending indices). K = 3 → two
+        // fixed-size sorts, no allocation.
+        let drift = if self.prev_valid {
+            let mut a: [(u32, f32); TOPK_DRIFT_K] =
+                std::array::from_fn(|i| (self.prev_idx[i], self.prev_masses[i]));
+            let mut b: [(u32, f32); TOPK_DRIFT_K] =
+                std::array::from_fn(|i| (idx[i], masses[i]));
+            a.sort_unstable_by_key(|t| t.0);
+            b.sort_unstable_by_key(|t| t.0);
+            let mut d = 0.0f32;
+            jsd_topk_sets(&a, &b, &mut d);
+            d
+        } else {
+            0.0
+        };
+
+        self.age = if self.prev_valid && idx[0] == self.prev_idx[0] {
+            self.age.saturating_add(1)
+        } else {
+            0
+        };
+
+        self.prev_idx = *idx;
+        self.prev_masses = *masses;
+        self.prev_valid = true;
+        (self.age, drift)
+    }
+
+    /// Clear all state (the in-band form is `observe(.., remasked = true)`;
+    /// this is the teardown / inter-request form).
+    pub fn reset(&mut self) {
+        self.prev_valid = false;
+        self.age = 0;
+    }
+}
+
+impl Default for StabilityTracker {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1039,6 +1250,8 @@ mod tests {
             top3_mass: 0.95,
             step_norm: 0.5,
             pos_norm: 0.5,
+            stable_age: 0,
+            topk_drift: 0.0,
         };
         let pred = sampler.predict(&features);
         assert!(
@@ -1188,4 +1401,160 @@ mod tests {
     // (Plan 399: test_d2f_decode_with_sampler_produces_valid_output and
     // test_d2f_decode_sampler_differs_from_fixed_threshold stayed in root —
     // they call crate::dllm::{generate_pattern_dataset, train_mini_dllm}.)
+
+    // ── StabilityTracker (Issue 802 items 3 + 5) ──
+
+    const TAU: f32 = 0.1;
+
+    fn set(a: u32, b: u32, c: u32) -> ([u32; 3], [f32; 3]) {
+        ([a, b, c], [0.7, 0.2, 0.05])
+    }
+
+    #[test]
+    fn stability_first_observation_is_neutral() {
+        let mut t = StabilityTracker::new();
+        let (idx, m) = set(4, 7, 9);
+        assert_eq!(t.observe(&idx, &m, 0.7, TAU, false), (0, 0.0));
+    }
+
+    #[test]
+    fn stability_ages_on_unchanged_argmax_and_resets_on_change() {
+        let mut t = StabilityTracker::new();
+        let (idx, m) = set(4, 7, 9);
+        let _ = t.observe(&idx, &m, 0.7, TAU, false);
+        assert_eq!(t.observe(&idx, &m, 0.7, TAU, false).0, 1, "first held step ages to 1");
+        assert_eq!(t.observe(&idx, &m, 0.7, TAU, false).0, 2);
+        let (idx2, m2) = set(5, 7, 9); // argmax changed
+        assert_eq!(t.observe(&idx2, &m2, 0.7, TAU, false).0, 0, "argmax change resets");
+        assert_eq!(t.observe(&idx2, &m2, 0.7, TAU, false).0, 1, "age restarts on the new argmax");
+    }
+
+    #[test]
+    fn stability_saturates_at_u8_max() {
+        let mut t = StabilityTracker::new();
+        let (idx, m) = set(1, 2, 3);
+        let _ = t.observe(&idx, &m, 0.7, TAU, false);
+        let mut last = 0u8;
+        for _ in 0..300 {
+            last = t.observe(&idx, &m, 0.7, TAU, false).0;
+        }
+        assert_eq!(last, u8::MAX, "saturating, never wrapping");
+    }
+
+    #[test]
+    fn stability_mass_floor_disarms_without_adopting_the_noisy_set() {
+        let mut t = StabilityTracker::new();
+        let (idx, m) = set(4, 7, 9);
+        let _ = t.observe(&idx, &m, 0.7, TAU, false);
+        // Below-floor step (the item-5 law): disarm, no drift, no adoption.
+        assert_eq!(t.observe(&idx, &m, TAU * 0.5, TAU, false), (0, 0.0));
+        // A NaN top1_prob must disarm too (not arm through the comparison).
+        assert_eq!(t.observe(&idx, &m, f32::NAN, TAU, false), (0, 0.0));
+        // The next armed step ages against the last ARMED step.
+        let (age, drift) = t.observe(&idx, &m, 0.7, TAU, false);
+        assert_eq!(age, 1);
+        assert!((0.0..=std::f32::consts::LN_2).contains(&drift));
+    }
+
+    #[test]
+    fn stability_remask_resets_to_first_observation() {
+        let mut t = StabilityTracker::new();
+        let (idx, m) = set(4, 7, 9);
+        let _ = t.observe(&idx, &m, 0.7, TAU, false);
+        let _ = t.observe(&idx, &m, 0.7, TAU, false);
+        assert_eq!(t.observe(&idx, &m, 0.7, TAU, true), (0, 0.0), "remask resets everything");
+        assert_eq!(
+            t.observe(&idx, &m, 0.7, TAU, false),
+            (0, 0.0),
+            "post-remask step is a first observation"
+        );
+    }
+
+    #[test]
+    fn stability_drift_bounded_laws() {
+        let mut t = StabilityTracker::new();
+        let (idx, m) = set(4, 7, 9);
+        let _ = t.observe(&idx, &m, 0.7, TAU, false);
+        // Identical set → bitwise 0.
+        assert_eq!(t.observe(&idx, &m, 0.7, TAU, false).1, 0.0);
+        // Fully disjoint set → bitwise ln 2 (the kernel's disjoint law).
+        let (idx2, m2) = set(1, 2, 3);
+        assert_eq!(t.observe(&idx2, &m2, 0.7, TAU, false).1, std::f32::consts::LN_2);
+        // Partial overlap → strictly inside (0, ln 2).
+        let (idx3, m3) = set(4, 2, 3);
+        let drift = t.observe(&idx3, &m3, 0.7, TAU, false).1;
+        assert!(
+            drift > 0.0 && drift < std::f32::consts::LN_2,
+            "partial-overlap drift {drift}"
+        );
+    }
+
+    #[test]
+    fn from_logits_emits_top3_indices_bitwise_same_masses() {
+        let vocab = 8;
+        let mask = 0;
+        let mut logits = [0.0f32; 8];
+        logits[5] = 4.0;
+        logits[2] = 2.0;
+        logits[7] = 1.0;
+        logits[3] = 0.5;
+        let mut idx_out = [9u32; 3];
+        let via_into = SamplerFeatures::from_logits_into(
+            &logits,
+            vocab,
+            mask,
+            0,
+            4,
+            0,
+            4,
+            Some(&mut idx_out),
+        );
+        assert_eq!(idx_out, [5, 2, 7]);
+        // The bare form stays bitwise-identical on the masses — the index
+        // tracking is pure addition (the signal-diff pin).
+        let bare = SamplerFeatures::from_logits(&logits, vocab, mask, 0, 4, 0, 4);
+        assert_eq!(bare.to_array(), via_into.to_array());
+        // Mask token excluded from the set despite being the max logit.
+        // Gap kept at 6 (well inside fast_exp's |x| < 88 accuracy window):
+        // a >87.3 gap underflows EVERY non-mask exp to exactly 0.0 (the
+        // documented fast_exp contract), sum_exp reads 0, and the pre-
+        // existing degenerate branch fires — default features + [0; 3]
+        // emit, which is the coherent safe direction (top1_prob 0.0
+        // disarms the StabilityTracker floor).
+        let mut logits2 = logits;
+        logits2[0] = 10.0;
+        let mut idx2 = [9u32; 3];
+        SamplerFeatures::from_logits_into(&logits2, vocab, mask, 0, 4, 0, 4, Some(&mut idx2));
+        assert_eq!(idx2, [5, 2, 7]);
+        // Beyond the fast_exp floor (>87.3 gap): the degenerate branch —
+        // zeros out the set and the features instead of producing garbage
+        // indices from all-underflowed exps.
+        let mut logits3 = logits;
+        logits3[0] = 100.0;
+        let mut idx4 = [9u32; 3];
+        let degenerate =
+            SamplerFeatures::from_logits_into(&logits3, vocab, mask, 0, 4, 0, 4, Some(&mut idx4));
+        assert_eq!(idx4, [0; 3]);
+        assert_eq!(degenerate.top1_prob, 0.0, "degenerate row reads default features");
+        // Exp ties: first index wins (strict-> tracking, deterministic).
+        let mut tie = [0.0f32; 8];
+        tie[6] = 1.0;
+        tie[2] = 1.0;
+        let mut idx3 = [9u32; 3];
+        SamplerFeatures::from_logits_into(&tie, vocab, mask, 0, 4, 0, 4, Some(&mut idx3));
+        assert_eq!(idx3[0], 2, "first-index-wins on exp ties");
+    }
+
+    #[test]
+    fn stability_array_appends_two_features_and_default_is_zero() {
+        let f = SamplerFeatures::default();
+        assert_eq!(f.stable_age, 0);
+        assert_eq!(f.topk_drift, 0.0);
+        let arr = f.to_array_with_stability();
+        assert_eq!(arr.len(), N_FEATURES + N_STABILITY_FEATURES);
+        // The core six are the unchanged to_array shape (checkpoint
+        // contract), stability appended after.
+        assert_eq!(arr[..N_FEATURES], f.to_array());
+        assert_eq!(&arr[N_FEATURES..], &[0.0, 0.0]);
+    }
 }

@@ -681,8 +681,8 @@ pub use d2f_verifier::{D2fDrafterVerifier, DraftAcceptPolicy};
 pub mod diffusion_sampler;
 #[cfg(all(feature = "dllm", feature = "tri_mode"))]
 pub use diffusion_sampler::{
-    DiffusionSampler, SamplerDecision, SamplerFeatures, SamplerTrajectory, SamplerVariant,
-    collect_trajectories,
+    DiffusionSampler, N_STABILITY_FEATURES, SamplerDecision, SamplerFeatures, SamplerTrajectory,
+    SamplerVariant, StabilityTracker, TOPK_DRIFT_K, collect_trajectories,
 };
 
 // ── Plan 400 (2026-07-05): FlashAR cluster ──

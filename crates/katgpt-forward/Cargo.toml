@@ -272,9 +272,10 @@ d2f_3sr_warm_start = ["rcd_residual", "katgpt-core/d2f_3sr_warm_start"]
 
 # Tri-Mode inference — AR + Diffusion + Self-Speculation (Plan 089).
 # Gates `pub mod d2f_verifier` + `pub mod diffusion_sampler` + the tri_mode-
-# gated soft-decode variants in `d2f.rs`. Empty tracking flag — the gate
-# only controls module registration + a handful of cfg blocks.
-tri_mode = []
+# gated soft-decode variants in `d2f.rs`. Implies katgpt-core/jsd_topk since
+# Issue 802 item 3: the sampler's StabilityTracker measures inter-step
+# top-K drift through the kernel's sets-form (jsd_topk_sets).
+tri_mode = ["katgpt-core/jsd_topk"]
 
 # DMax Soft Parallel Decode — hybrid embedding D2F enhancement (Plan 109).
 # Gates ~10 functions in `d2f.rs`: SoftDecodeConfig, HybridEmbedding,

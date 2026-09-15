@@ -291,6 +291,90 @@ pub fn jsd_topk(p: &[f32], q: &[f32], k: usize) -> f32 {
     out
 }
 
+/// Sets-form of the restricted-JSD kernel: both top-K sets arrive directly
+/// as `(index, mass)` pairs — the caller already tracks each side's set
+/// across steps (the Issue 802 item-3 inter-step drift shape), so the
+/// selection half of [`jsd_topk_into`] is the caller's and only the merge
+/// half runs here. Same bounded law and constants as the full forms:
+/// each side is renormalized over its own set (the restricted-mass step);
+/// disjoint restricted supports → bitwise [`LN_2`]; one-sided → [`LN_2`];
+/// both sides massless → `0.0`; identical restricted mass → bitwise `0.0`
+/// (the same ½-power-of-two exactness as [`jsd_topk_into`]).
+///
+/// # Contract
+///
+/// - `p`/`q` must be **sorted ascending by index, indices unique** — the
+///   two-pointer merge relies on it (debug-asserted; a fixed-size tracker
+///   sorts its sets before calling).
+/// - Masses finite and non-negative (debug-asserted). Nothing panics in
+///   release: a degenerate side sum reads as the one-sided/massless case
+///   via `!(s > 0.0)`, the same NaN-classifying guard as the full form.
+/// - Zero-alloc: writes `*out` on every return path, no heap anywhere.
+pub fn jsd_topk_sets(p: &[(u32, f32)], q: &[(u32, f32)], out: &mut f32) {
+    debug_assert!(
+        p.windows(2).all(|w| w[0].0 < w[1].0) && q.windows(2).all(|w| w[0].0 < w[1].0),
+        "jsd_topk_sets: index sets must be sorted ascending and unique"
+    );
+    debug_assert!(
+        p.iter().chain(q.iter()).all(|t| t.1.is_finite() && t.1 >= 0.0),
+        "jsd_topk_sets: masses must be finite and non-negative"
+    );
+
+    let p_sum: f32 = p.iter().map(|t| t.1).sum();
+    let q_sum: f32 = q.iter().map(|t| t.1).sum();
+    let p_ok = p_sum > 0.0;
+    let q_ok = q_sum > 0.0;
+    match (p_ok, q_ok) {
+        (false, false) => {
+            *out = 0.0;
+            return;
+        }
+        (false, true) | (true, false) => {
+            *out = LN_2;
+            return;
+        }
+        (true, true) => {}
+    }
+
+    // Two-pointer merge over the ascending index sets — the same union
+    // walk as [`jsd_topk_into`]'s merge phase, with the sets given
+    // directly instead of selected.
+    let mut acc = 0.0f32;
+    let mut disjoint = true;
+    let (mut i, mut j) = (0usize, 0usize);
+    while i < p.len() && j < q.len() {
+        match p[i].0.cmp(&q[j].0) {
+            Ordering::Less => {
+                acc += jsd_term(p[i].1 / p_sum, 0.0);
+                i += 1;
+            }
+            Ordering::Greater => {
+                acc += jsd_term(0.0, q[j].1 / q_sum);
+                j += 1;
+            }
+            Ordering::Equal => {
+                let pm = p[i].1 / p_sum;
+                let qm = q[j].1 / q_sum;
+                if pm > 0.0 && qm > 0.0 {
+                    disjoint = false;
+                }
+                acc += jsd_term(pm, qm);
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    while i < p.len() {
+        acc += jsd_term(p[i].1 / p_sum, 0.0);
+        i += 1;
+    }
+    while j < q.len() {
+        acc += jsd_term(0.0, q[j].1 / q_sum);
+        j += 1;
+    }
+    *out = if disjoint { LN_2 } else { acc };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -612,5 +696,73 @@ mod tests {
         let mut out3 = f32::NAN;
         jsd_topk_into(&a, &b, k, &mut sp, &mut sq, &mut out3);
         assert_eq!(out3, f32::ln(2.0));
+    }
+
+    // ── 10. Sets-form: the Issue-802 item-3 inter-step drift shape ────────
+
+    #[test]
+    fn g1_sets_disjoint_one_sided_massless_identical() {
+        let ln2 = f32::ln(2.0);
+        let p = [(3u32, 0.7f32), (5, 0.2), (9, 0.1)];
+        let q = [(1u32, 0.5f32), (4, 0.3), (7, 0.2)];
+        let mut out = f32::NAN;
+        // Disjoint supports → bitwise ln 2.
+        jsd_topk_sets(&p, &q, &mut out);
+        assert_eq!(out, ln2);
+        // Identical restricted mass → bitwise 0.
+        jsd_topk_sets(&p, &p, &mut out);
+        assert_eq!(out, 0.0);
+        // One-sided → ln 2 (empty set carries no restricted mass).
+        jsd_topk_sets(&p, &[], &mut out);
+        assert_eq!(out, ln2);
+        jsd_topk_sets(&[], &q, &mut out);
+        assert_eq!(out, ln2);
+        // Both sides massless → 0 (nothing to diverge).
+        jsd_topk_sets(&[], &[], &mut out);
+        assert_eq!(out, 0.0);
+        // Zero masses on a non-empty set read as massless too.
+        let zero = [(3u32, 0.0f32), (5, 0.0)];
+        jsd_topk_sets(&zero, &q, &mut out);
+        assert_eq!(out, ln2);
+    }
+
+    #[test]
+    fn g1_sets_agree_with_full_kernel_on_the_same_restriction() {
+        // A spiky pair whose top-3 the full kernel selects is exactly the
+        // hand set: both forms measure the same restricted JSD (the
+        // renormalization sums associate differently → tolerance, not
+        // bitwise).
+        let n = 64;
+        let mut p = vec![0.0f32; n];
+        let mut q = vec![0.0f32; n];
+        p[3] = 0.7;
+        p[5] = 0.2;
+        p[9] = 0.1;
+        q[3] = 0.5;
+        q[5] = 0.25;
+        q[11] = 0.25;
+        let full = jsd_topk(&p, &q, 3);
+        let sp = [(3u32, 0.7f32), (5, 0.2), (9, 0.1)];
+        let sq = [(3u32, 0.5f32), (5, 0.25), (11, 0.25)];
+        let mut sets = f32::NAN;
+        jsd_topk_sets(&sp, &sq, &mut sets);
+        assert!(
+            (full - sets).abs() <= TOL,
+            "sets form {sets} vs full kernel {full}"
+        );
+        // Not the disjoint constant: the sets share indices 3 and 5.
+        assert!(sets < f32::ln(2.0));
+    }
+
+    #[test]
+    fn g4_sets_form_is_deterministic_and_never_nan() {
+        let p = [(3u32, 0.7f32), (5, 0.2), (9, 0.1)];
+        let q = [(3u32, 0.5f32), (5, 0.25), (11, 0.25)];
+        let mut a = f32::NAN;
+        let mut b = f32::NAN;
+        jsd_topk_sets(&p, &q, &mut a);
+        jsd_topk_sets(&p, &q, &mut b);
+        assert_eq!(a, b, "deterministic");
+        assert!(a.is_finite() && a >= 0.0 && a <= f32::ln(2.0));
     }
 }
