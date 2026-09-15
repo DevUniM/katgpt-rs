@@ -2572,7 +2572,21 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
   MSYS children and reports essentially nothing for NATIVE ones, so a run whose work
   is all Python reported **1.26s CPU against a 19.7s wall** — built from `sed`/`tail`
   overhead — while AGENTS.md instructs the reader to cite exactly that figure against
-  an M3 series of 13.37s. T1, one child at a time, each burning ~2s of CPU: MSYS
+  an M3 series of 13.37s.
+- **Issue 776 (the OTHER 776 — dual allocation, Issue 791) — contrastive matched-swap + norm-matched noise interventions, CVRR §2.1/§5.3** DONE T1–T7, removed
+  2026-09-15 (research 555, arXiv:2609.06746; commits `be4ff672` + `d936b5fd`; the
+  issue file was the other session's live allocation of 776, and Issue 791
+  adjudicated the number to this document (weight 16 vs 5). Landed: `perturb_matched_swap` / `perturb_norm_matched_noise{_rows}`
+  + `probe_matched_swap{_into}` / `probe_norm_noise{_into}` (zero-alloc, caller
+  scratch) + the battery's sixth `norm_matched` arm + `LatentSpace::norm_matched_noise`
+  ( katgpt-core `interpolation_geometry`, opt-in) + bench cost rows (matched_swap
+  0.37 µs / norm_noise 46.2 µs at n=4096 — both ≪1 ms, 21–2700× headroom); 73 tests
+  green, clippy `-D warnings` clean, default-off unaffected. The norm-matched arm
+  separates norm-readers from structure-readers (magnitude-preserved,
+  structure-destroyed noise). Downstream consumer of the slice form:
+  riir-neuron-db's `KarcWoutSpace` (norm_matched_noise_slice, katgpt-rs `33f77706`).
+
+  T1, one child at a time, each burning ~2s of CPU: MSYS
   `bash -c` loop -> children **1.796s user + 0.468s sys**; `py -c` -> **0.000s +
   0.015s**; python.exe by ABSOLUTE PATH -> **0.000s + 0.045s**. So the interpreter
   shim was NOT the cause and T2 is refuted by measurement — resolving a real
