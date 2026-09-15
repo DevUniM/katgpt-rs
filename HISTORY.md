@@ -5243,3 +5243,69 @@ introspection, not a class audit.
 
 Issue file removed per the noise-reduction rule; the full record lives in git
 history (`git log -- .issues/785_the_wasm32_surface_standing_figure_is_asserted_by_nothing.md`).
+
+## Issue 800 Arm C complete — GraphStablePool site re-points: 1 landed, 1 N.A., 2 declined on evidence (2026-09-16)
+
+Arm C closed the same day it opened. Phase 1 (`877e06eb2`) extracted the type;
+the re-point pass (`bdb1091a4` katgpt-rs, `35108b6a7` riir-ai) settled all four
+sites, and the honest split is the finding: **one re-pointed, one N.A., two
+declined** — each verdict with stated evidence, in the `graph_stable_pool`
+module doc site tables.
+
+- **Site 1 `radix_prefix` — RE-POINTED.** `RadixPrefixTree.nodes` is now
+  `GraphStablePool<RadixNode>`; the inline `Vec<Node>` + `free_nodes` stack is
+  gone (the pool's alloc/free ARE it). Liveness became slot occupancy: eviction
+  `free`s the victim, dropping the node value — token/page buffers release
+  eagerly instead of parking cleared-but-allocated until the next overwrite
+  always dropped them un-read. The pool gained `iter()` (live-slot `(index, &T)`
+  scan) for the three arena scans the tree already ran (LRU eviction victim
+  pick, `total_locks`, `for_each_held_page`); the `!tokens.is_empty()` zombie
+  filter is structural now. Wiring: `radix_prefix_cache` implies
+  `katgpt-core/graph_stable_pool` (the pool module is feature-gated). Gates:
+  bench_762 GOAT release PASS (G1 bit-identity + isolation + address/pool
+  stability; G2 hit-rate 0.184 vs flat 0.075, match latency 0.22 ms vs 2.17 ms
+  flat — the one-`Option`-layer walk overhead is invisible at the 10× margin;
+  G4 0 allocs), radix_prefix_cache_tests 14/14, pool lib 7/7 (incl. the new
+  `iter` contract test), clippy `-D warnings` clean, default + wasm32 checks
+  clean. The LIFO order contract held exactly: pool free-stack order reproduces
+  both the old evict-push and the `clear()`'s `(1..len)` build (highest index
+  pops first).
+- **Site 2 `PagedKVCache` — DECLINED.** Its recycle contract is refill-in-place
+  at a stable index (`alloc_page` pops the free list and `fill(0.0)`s the SAME
+  `Vec<f32>` — the DDTree fork/rollback churn path is why the zero-realloc
+  property is load-bearing, gated by riir-engine's forward_paged G4 tests). A
+  pool re-point must park the recycled buffers OUTSIDE the pool between
+  `free` and `alloc` (the returned-value escape hatch) to keep that property —
+  one bookkeeping structure (`free_pages`) becomes two (pool free-stack +
+  buffer stash). Add: `pages`/`free_pages`/`page_ref_counts` are `pub` and are
+  the deliberate measurement instrument of bench_414's legacy-replica oracle +
+  root transformer tests; and the pool's None-on-freed safety targets a
+  use-after-free class that rollback's table truncation already prevents
+  (tables truncate BEFORE pages free). Contract-matched lineage row stands —
+  the pool was distilled FROM this shape; re-pointing is not what makes the
+  claim true.
+- **Site 3 `Qwen38LaneSet` — N.A.** Reading the code settled what the module
+  doc had predicted: no free list, no slot churn, fixed `n`, flat
+  allocate-once `alloc_zeros` arenas, and the captured-graph cache living
+  INSIDE the set so whole-set replacement drops the baked device pointers
+  with the arenas. The set already IS the lifetime-scoped flat-arena
+  discipline; a pool wrapper adds alloc/free machinery nothing calls. Verdict
+  recorded in the struct doc (riir-ai `35108b6a7`).
+- **Site 4 `BranchBank` — DECLINED.** The wire format pins the exact shape a
+  pool adoption would destroy: slots serialized by value with in-band
+  `Removed` zombie lifecycle slots, plus the EXPLICIT `free_slots` stack in
+  stack order. A pool-backed rebuild cannot reproduce from_bytes byte-identity
+  without exposing the pool's internal free-stack order (an implementation
+  detail), and the bytes feed neuron-db freeze — a wire change is a versioned
+  migration event, not a refactor. The type works and is in-repo; churn
+  unjustified.
+
+The lesson generalizes the Arm B one: **a four-site contract extraction earns
+its keep at the sites whose whole job is the contract; sites where the
+contract is a subset of a bigger load-bearing shape (refcount policy, wire
+pin, graph-pointer scoping) are better left as the lineage the type was
+distilled from.** Decline-with-evidence is the same honest verdict class as
+Bench 800-B's channel tie.
+
+Issue file removed per the noise-reduction rule (HISTORY + the module doc
+site tables + Bench 800-C are the record).
