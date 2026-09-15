@@ -37,9 +37,9 @@ three repos on the repair run, making this the first real-world validation of
 797 against an incident 797 did not know about.
 
 Repaired at the four sibling commits, each now cited by SHA in the record it
-belongs to: riir-ai `8296fe206` + riir-game-sdk `a17117c` (deliberate markers
+belongs to: riir-ai `194cdc9b5` + riir-game-sdk `61f11e7` (deliberate markers
 — both scripts BAKE their own `FROM rust:1.95.0-bookworm` image, so the
-override tracks the container, not the workspace pin), riir-chain `d842200`
+override tracks the container, not the workspace pin), riir-chain `5f814a2`
 (the workflow marker + the `|| true` tail, which restored an unreachable
 `already gone` branch). Both sweeps PASS.
 
@@ -48,6 +48,46 @@ verification and it was red from the moment the record was written. The rule
 adopted instead — *a cross-repo repair is not landed until it is COMMITTED in
 the sibling repo, and a record here claiming one must cite the sibling
 commit* — is in AGENTS.md § Before committing in a shared worktree.
+
+⚠ **The repairs were landed TWICE, concurrently.** A second session landed
+equivalent repairs upstream at the same time; both were discovered only at
+`git push`, rejected non-fast-forward in all three repos. Theirs were already
+on the remote, so this session's duplicates were dropped in favour of them —
+`reset --hard origin/develop` in the two clean repos, and in riir-ai a
+`reset --mixed HEAD~1` + single-file `checkout`, leaving six dirty files and
+six unpushed commits belonging to the other session untouched.
+
+⛔ **This session then committed the very defect it had just filed.**
+`b592a213` cited three SHAs it had created locally, and those commits were
+dropped minutes later — a record citing three hashes resolvable in no remote.
+A SHA is verifiable only if it is PUSHED, so the rule is *cite the sibling
+commit AND check that it resolves*; all three are now verified with
+`git -C ../<repo> cat-file -e`.
+
+**T2 — a sweep reads the WORKTREE, and a worktree can be behind ORIGIN.**
+Dropping the duplicates surfaced a class Issue 797 cannot see: the toolchain
+sweep went RED on riir-ai again, not because the fix was missing but because
+this box's checkout is **109 commits behind origin**, 14 of them touching the
+sweep's population. 797's advisory compares the worktree to LOCAL HEAD, so a
+checkout matching its own HEAD while 109 commits stale is invisible to it —
+the **mirror of MASKED** (a committed defect read clean) and therefore a false
+RED, the cries-wolf outcome this family refuses to pay for. `behind_origin()`
+in `worktree_state.py`, wired into `sweep_advisory()` so all 18 sweeps get it
+with zero call-site changes; four answers never pooled (None / (0,0) / (n,0) /
+(n,k>0)); the three-dot `HEAD...ref` diff keeps a merely-AHEAD repo from
+reading as stale; the sweep deliberately STAYS RED, because a deferral on
+staleness would let a genuinely-unfixed drift hide behind it. `dirty_in_scope`
+and `behind_origin` share one `_match_count`: a git pathspec was the obvious
+implementation for the second and answers differently for a bare `Dockerfile`,
+so the two axes would have disagreed about what a sweep's population is.
+
+**T3 — the selftest's hand-typed assertion count was already wrong.** The line
+read `36 assertion(s)`; counted by AST over its own `*_arms` functions at the
+PARENT commit, before any change, it was **40**. Stale on arrival, in the
+module whose whole subject is records drifting away from what they describe.
+`n_assertions()` derives it now (50 today), counted over `*_arms` only so a
+`check` in production code cannot inflate it, returning 0 rather than raising
+because a selftest that PASSED must not be crashed by its own summary line.
 
 ⚠ Non-finding, recorded so it is not re-investigated: the pipefail sweep's
 PASS line says *"every pinned row firing"* beside `50 FINDING · 51 pinned

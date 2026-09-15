@@ -1625,9 +1625,46 @@ Three verdicts, never interchangeable:
   silent direction and therefore the worse one. **0 today, which is a
   measurement and not an absence of the class** — nothing had ever looked.
 
+⛔ **A fourth, and it is a different AXIS: the worktree can match its own
+HEAD and still be 109 commits behind ORIGIN** (Issue 798). The three verdicts
+above all compare the worktree to LOCAL HEAD, so a stale checkout is invisible
+to them — and a sweep reads the worktree. Measured: riir-ai's
+`toolchain-override-deliberate` marker was committed upstream at `194cdc9b5`
+while this box's riir-ai sat 109 commits back, 14 of them touching the sweep's
+population, so the toolchain sweep reported `drift 1 · ✗ FAILED` on a defect
+that was **already fixed**. It is the **mirror of MASKED** — MASKED is a
+committed defect read clean (false green), this is a committed FIX read dirty
+(false RED) — and it cost a session real time, the row having been
+investigated as unfixed.
+
+- **STALE** — `behind_origin(root, patterns)`, wired into `sweep_advisory()`
+  so all 18 sweeps get it with **zero call-site changes**. Four answers, never
+  pooled: `None` (no upstream, or git could not answer — **never guessed at**,
+  since assuming `origin/main` invents a verdict for a repo that may not have
+  one; five workspace repos have none), `(0, 0)` (up to date, silent), `(n, 0)`
+  (upstream moved outside this sweep's population, silent — otherwise it is the
+  banner nobody reads), `(n, k>0)` (the advisory).
+- ⛔ The **three-dot** `HEAD...ref` diff is load-bearing: a two-dot diff also
+  reports every file this checkout's own *unpushed* commits touched, so a repo
+  merely AHEAD would read as stale. Its arm asserts exactly that.
+- ⚠ The sweep deliberately **stays RED**. Converting a red to a deferral on
+  staleness would let a genuinely-unfixed drift hide behind "you are behind
+  origin", and `max_drift` is a wall at 0. The reader is told how to check;
+  the wall still holds.
+- **One matcher, shared** — `dirty_in_scope` and `behind_origin` both call
+  `_match_count`. A git **pathspec** was the obvious implementation for the
+  second and answers differently (a bare `Dockerfile` pathspec matches only at
+  the repo root), so the two axes would have disagreed about what a sweep's
+  population *is*.
+
 ```bash
-scripts/worktree_state.py            # the 36 arms (exit 1 on failure)
+scripts/worktree_state.py            # the arms (exit 1 on failure)
 ```
+
+⚠ **The arm count is DERIVED, not typed** (`n_assertions()`, Issue 798 T3).
+The line used to read `36 assertion(s)`; counted by AST at the parent commit,
+before any change, it was **40** — stale on arrival, in the module whose whole
+subject is records drifting away from what they describe.
 
 - ⚠ **ADVISORY, never a failure.** A sweep that hard-reds on an ordinary dirty
   worktree is a sweep nobody runs — the cries-wolf outcome this document names
@@ -1687,10 +1724,22 @@ scripts/worktree_state.py            # the 36 arms (exit 1 on failure)
   everything, and the advisory silently reports every dirty file in the repo.
   Caught in this module's own wiring commit, where **8 of 15** call sites had
   written it without the comma. The helper coerces and an arm pins both sides.
-- Arm reach (`--include-all`): **19 of 23**, the three live survivors being
-  `check=True` / `capture_output=True` on the fixture BUILDERS — flipping one
-  makes the fixture wrong rather than a rule wrong, and the reason is written
-  at the line.
+- Arm reach (`--include-all`, measured 2026-09-15 after Issue 798): **33 of
+  39**, five live survivors. Three are `check=True` / `capture_output=True` on
+  the fixture BUILDERS — flipping one makes the fixture wrong rather than a
+  rule wrong. The other two are `behind_origin`'s two `or`s, which no input
+  can distinguish: under real git a failing `rev-parse @{upstream}` exits
+  non-zero AND prints nothing, so `or` and `and` agree everywhere. Resolved
+  the way `dirty_files` resolved its separator normalisation — `premise_arms`
+  asserts git's OUTPUT SHAPE, the thing that could actually change, instead of
+  pretending to test a line no input reaches. Every reason is written at the
+  line.
+- ⛔ **`n_assertions` was four of those survivors until it was EXTRACTED.** It
+  read `__file__`, so its three decisions — the `*_arms` name test, the
+  `ast.Name` test, the `== "check"` test — were unarmable by construction.
+  Injecting `src` made all three testable against known answers, which is the
+  same pattern AGENTS.md records for the three weakest modules in the CHECKS
+  population: the extraction IS the repair.
 
 ## Before committing in a shared worktree — `scripts/staged_set_audit.py`
 

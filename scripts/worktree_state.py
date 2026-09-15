@@ -140,29 +140,100 @@ def split_rows(rows, path_of, dirty: frozenset[str]) -> tuple[list, list]:
     return keep, held
 
 
-def dirty_in_scope(root, patterns) -> int:
-    """How many of a repo's dirty files this sweep's own walk would have read.
+def _coerce(patterns) -> tuple:
+    """A bare string is a FOOTGUN, not a convenience: iterating it yields
+    single characters, `fnmatch(rel, "*")` matches everything, and the advisory
+    silently reports every dirty file in the repo as being in scope. Caught in
+    this module's own wiring commit, where 8 of 15 call sites had written
+    `("*.rs")` without the tuple comma."""
+    if isinstance(patterns, str):
+        return (patterns,)
+    return tuple(patterns)
+
+
+def _match_count(rels, patterns) -> int:
+    """How many repo-relative paths a sweep's own walk would have read.
 
     `patterns` are `fnmatch` globs matched against the repo-relative POSIX path
     AND against the basename, because a sweep's population is usually stated as
     a bare suffix (`*.rs`) while its paths are nested. Matching only the full
     path would report 0 for every sweep in the family and make the advisory
     silently vacuous — the green-zero shape this whole family exists to refuse.
+
+    ONE copy, shared by the dirty-vs-HEAD and behind-vs-origin axes. They must
+    not diverge: a git PATHSPEC was the obvious implementation for the second
+    and has different semantics from `fnmatch` (a bare `Dockerfile` pathspec
+    matches only at the root), so the two axes would have disagreed about what
+    a sweep's population IS.
     """
     from fnmatch import fnmatch
-    # A bare string is a FOOTGUN, not a convenience: iterating it yields single
-    # characters, `fnmatch(rel, "*")` matches everything, and the advisory
-    # silently reports every dirty file in the repo as being in scope. Caught in
-    # this module's own wiring commit, where 8 of 15 call sites had written
-    # `("*.rs")` without the tuple comma.
-    if isinstance(patterns, str):
-        patterns = (patterns,)
+    patterns = _coerce(patterns)
     n = 0
-    for rel in dirty_files(root):
+    for rel in rels:
         base = rel.rsplit("/", 1)[-1]
         if any(fnmatch(rel, pat) or fnmatch(base, pat) for pat in patterns):
             n += 1
     return n
+
+
+def dirty_in_scope(root, patterns) -> int:
+    """How many of a repo's dirty files this sweep's own walk would have read."""
+    return _match_count(dirty_files(root), patterns)
+
+
+def behind_origin(root, patterns) -> tuple[int, int] | None:
+    """`(commits behind upstream, how many of those touch this population)`.
+
+    Issue 798. The dirty-vs-HEAD axis above compares the worktree to LOCAL
+    HEAD, so it is blind to a checkout that matches its own HEAD and is 109
+    commits behind origin — and a sweep reads the WORKTREE. Measured: riir-ai's
+    `toolchain-override-deliberate` marker was committed upstream at
+    `194cdc9b5` while this box's riir-ai sat 109 commits back, so the sweep
+    reported `drift 1 · ✗ FAILED` on a defect that was already FIXED. That is
+    a false RED, and the cries-wolf cost is the one this family refuses to pay.
+    It is the mirror of `MASKED`: MASKED is a committed defect read clean, this
+    is a committed FIX read dirty.
+
+    `None` — no upstream configured, or git could not answer. Never guessed at:
+    assuming `origin/main` would invent a verdict for a repo whose branching
+    model nobody here knows (five of the workspace's repos have no `origin/main`
+    at all — `ci_gate_coverage.py`'s standing finding).
+    `(0, 0)` — up to date, the ordinary case, and SILENT downstream.
+
+    The scoped count uses the three-dot `HEAD...ref` diff — changes on the
+    UPSTREAM side since the merge base. A two-dot diff would also report every
+    file this checkout's own unpushed commits touched, so a repo that is merely
+    AHEAD would read as stale.
+    """
+    root = Path(root)
+    if not (root / ".git").is_dir():
+        return None
+    up = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name",
+              "@{upstream}")
+    ref = up.stdout.strip()
+    # Both halves of this `or` -- and of the one below -- are DEFENSIVE, and
+    # the arm says so. Under real git they always co-occur: a `rev-parse
+    # @{upstream}` with no upstream exits non-zero AND prints nothing to
+    # stdout, so flipping either `or` to `and` reds NOTHING and both show as
+    # live survivors in `arm_reach_audit --include-all`. `dirty_files` met the
+    # identical shape with its separator normalisation and resolved it the
+    # same way: `premise_arms` asserts git's OUTPUT SHAPE, which is the thing
+    # that could actually change under us, instead of pretending to test a
+    # line no input can distinguish.
+    if up.returncode != 0 or not ref:
+        return None
+    cnt = _git(root, "rev-list", "--count", f"HEAD..{ref}")
+    if cnt.returncode != 0 or not cnt.stdout.strip().isdigit():
+        return None
+    total = int(cnt.stdout.strip())
+    if total == 0:
+        return (0, 0)
+    diff = _git(root, "diff", "--name-only", f"HEAD...{ref}")
+    if diff.returncode != 0:
+        return None
+    rels = [ln.strip().strip('"').replace("\\", "/")
+            for ln in diff.stdout.splitlines() if ln.strip()]
+    return (total, _match_count(rels, patterns))
 
 
 def sweep_advisory(repos, patterns, root=None) -> list[str]:
@@ -182,6 +253,7 @@ def sweep_advisory(repos, patterns, root=None) -> list[str]:
     how two gates come to disagree about one quantity.
     """
     scope: dict[str, int] = {}
+    stale: dict[str, tuple[int, int]] = {}
     for r in repos:
         s = str(r)
         if isinstance(r, Path) or '/' in s or chr(92) in s:
@@ -193,12 +265,17 @@ def sweep_advisory(repos, patterns, root=None) -> list[str]:
         if path is None or not path.is_dir():
             continue
         scope[path.name] = dirty_in_scope(path, patterns)
-    return worktree_advisory(scope)
+        beh = behind_origin(path, patterns)
+        if beh is not None and beh[1]:
+            stale[path.name] = beh
+    return worktree_advisory(scope, stale=stale)
 
 
 def worktree_advisory(scope_counts: dict[str, int],
                       uncommitted_rows: int = 0,
-                      masked_rows: int = 0) -> list[str]:
+                      masked_rows: int = 0,
+                      stale: dict[str, tuple[int, int]] | None = None
+                      ) -> list[str]:
     """The lines that ride a sweep's FINAL line. Empty when nothing is dirty.
 
     `scope_counts` — {repo name: count of dirty files INSIDE this sweep's own
@@ -207,7 +284,12 @@ def worktree_advisory(scope_counts: dict[str, int],
     an ordinary clean run, so it is asserted by its own arm.
     """
     inscope = {k: v for k, v in scope_counts.items() if v}
-    if not inscope and not uncommitted_rows and not masked_rows:
+    # A repo whose upstream moved but not within THIS sweep's population is not
+    # stale for this sweep's purposes, and saying so on every run is the banner
+    # nobody reads. Filtered here, like the zero counts above, so no caller has
+    # to remember it.
+    instale = {k: v for k, v in (stale or {}).items() if v[1]}
+    if not inscope and not uncommitted_rows and not masked_rows and not instale:
         return []
     out: list[str] = []
     if inscope:
@@ -217,6 +299,15 @@ def worktree_advisory(scope_counts: dict[str, int],
             f"population differ from HEAD — {detail}. Counts and floors from "
             "this run describe a state NO commit contains; do not re-pin from "
             "it (Issue 797)")
+    if instale:
+        detail = ", ".join(f"{k} ({v[0]} behind, {v[1]} in scope)"
+                           for k, v in sorted(instale.items()))
+        out.append(
+            f"⚠ STALE: {len(instale)} repo(s) sit BEHIND their upstream on "
+            f"commits that touch this sweep's own population — {detail}. A "
+            "finding there may already be FIXED upstream; this box's checkout "
+            "is what the sweep read, so confirm against origin before "
+            "repairing (Issue 798)")
     if uncommitted_rows:
         out.append(
             f"⚠ UNCOMMITTED: {uncommitted_rows} row(s) sit on a file that "
@@ -509,14 +600,236 @@ def advisory_arms() -> list[str]:
     check(len(lines) == 1 and lines[0].startswith("⛔"),
           f"MASKED must be ⛔, not ⚠ — it is a COMMITTED defect: {lines}")
 
-    lines = worktree_advisory({"r": 1}, 2, 3)
-    check(len(lines) == 3, f"the three classes were pooled: {lines}")
+    check(worktree_advisory({}, stale={"r": (5, 0)}) == [],
+          "a STALE row with 0 in-scope commits printed — an upstream that "
+          "moved outside this sweep's population is the banner nobody reads")
+
+    lines = worktree_advisory({}, stale={"r": (109, 1)})
+    check(len(lines) == 1 and "STALE" in lines[0]
+          and "109 behind, 1 in scope" in lines[0],
+          f"STALE did not print BOTH counts: {lines}")
+    check("already be FIXED upstream" in lines[0],
+          f"STALE did not say which DIRECTION the error runs — it is a false "
+          f"RED, the mirror of MASKED: {lines}")
+
+    lines = worktree_advisory({"r": 1}, 2, 3, stale={"r": (9, 4)})
+    check(len(lines) == 4, f"the four classes were pooled: {lines}")
+    return fails
+
+
+def stale_arms() -> list[str]:
+    """`behind_origin`, against real git trees. Four verdicts, never pooled."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+
+        # No `.git` at all — a `git archive` extraction. Not an error, and NOT
+        # a confident (0, 0): nothing is known about an upstream that has no
+        # repository to be configured in.
+        plain = tmp / "plain"
+        plain.mkdir()
+        check(behind_origin(plain, ("*.sh",)) is None,
+              "a non-repo directory did not answer None")
+
+        up = _repo(tmp, "up")
+        (up / "a.sh").write_text("one\n", encoding="utf-8")
+        (up / "keep.md").write_text("doc\n", encoding="utf-8")
+        _run(up, "add", "-A")
+        _run(up, "commit", "-qm", "base")
+
+        dn = tmp / "dn"
+        _run(tmp, "clone", "-q", str(up), str(dn))
+        _run(dn, "config", "user.email", "t@t")
+        _run(dn, "config", "user.name", "t")
+
+        # Up to date is (0, 0) — distinct from None, and SILENT downstream.
+        check(behind_origin(dn, ("*.sh",)) == (0, 0),
+              "an up-to-date clone did not answer (0, 0)")
+
+        # An upstream commit INSIDE the population.
+        (up / "a.sh").write_text("two\n", encoding="utf-8")
+        _run(up, "add", "-A")
+        _run(up, "commit", "-qm", "fix the sh")
+        _run(dn, "fetch", "-q", "origin")
+        check(behind_origin(dn, ("*.sh",)) == (1, 1),
+              f"an in-scope upstream commit was not counted: "
+              f"{behind_origin(dn, ('*.sh',))}")
+
+        # The SAME commit is out of scope for a sweep over another population.
+        check(behind_origin(dn, ("*.lean",)) == (1, 0),
+              "an out-of-scope upstream commit was counted in scope — a sweep "
+              "over .lean must stay silent while somebody fixes shell")
+
+        # A NESTED path against a bare-suffix pattern: the shared matcher's
+        # whole reason for existing. A git pathspec would have been the obvious
+        # implementation and answers differently for a bare `Dockerfile`.
+        (up / "sub").mkdir()
+        (up / "sub" / "Dockerfile").write_text("FROM x\n", encoding="utf-8")
+        _run(up, "add", "-A")
+        _run(up, "commit", "-qm", "nested dockerfile")
+        _run(dn, "fetch", "-q", "origin")
+        check(behind_origin(dn, ("Dockerfile",)) == (2, 1),
+              f"a NESTED Dockerfile was not matched by the bare basename "
+              f"pattern: {behind_origin(dn, ('Dockerfile',))}")
+
+        # AHEAD is not BEHIND. A local commit touching the population must not
+        # register: the three-dot diff is what makes that true, and a two-dot
+        # one would report this file and read as stale.
+        _run(dn, "reset", "-q", "--hard", "origin/main")
+        (dn / "local.sh").write_text("mine\n", encoding="utf-8")
+        _run(dn, "add", "-A")
+        _run(dn, "commit", "-qm", "local only")
+        check(behind_origin(dn, ("*.sh",)) == (0, 0),
+              f"a checkout that is merely AHEAD read as stale: "
+              f"{behind_origin(dn, ('*.sh',))}")
+
+        # No upstream configured — never guessed at.
+        solo = _repo(tmp, "solo")
+        (solo / "a.sh").write_text("x\n", encoding="utf-8")
+        _run(solo, "add", "-A")
+        _run(solo, "commit", "-qm", "base")
+        check(behind_origin(solo, ("*.sh",)) is None,
+              "a branch with no upstream did not answer None — assuming "
+              "origin/main invents a verdict for a repo that may not have one")
+
+    return fails
+
+
+def n_assertions(src: str | None = None) -> int:
+    """How many `check(...)` calls the arms below actually make.
+
+    DERIVED, not typed. The hand-typed "36" in the line this feeds went stale
+    the moment `stale_arms` landed, which is this repo's most-repeated finding
+    about counts in prose — and a count nobody can red is a comment that
+    drifts into a lie. Counted over `*_arms` functions only, so a `check` in
+    production code could never inflate it.
+
+    `src` is injected so the rule is testable against a KNOWN answer; without
+    it the function read `__file__` and its three decisions were unarmable by
+    construction — `arm_reach_audit --include-all` reported all of them as
+    live survivors. The extraction IS the repair.
+
+    Falls back to 0 — printed as `0 assertion(s)`, which is visibly wrong —
+    rather than raising: a selftest that PASSED must not be turned into a
+    crash by its own summary line.
+    """
+    import ast
+    try:
+        if src is None:
+            src = Path(__file__).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+    except (OSError, SyntaxError):
+        return 0
+    n = 0
+    for node in tree.body:
+        if not (isinstance(node, ast.FunctionDef)
+                and node.name.endswith("_arms")):
+            continue
+        for sub in ast.walk(node):
+            if (isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Name)
+                    and sub.func.id == "check"):
+                n += 1
+    return n
+
+
+def counter_arms() -> list[str]:
+    """`n_assertions` counts `check(...)` calls in `*_arms` functions ONLY."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    two = ("def foo_arms():\n"
+           "    check(1, 'a')\n"
+           "    check(2, 'b')\n")
+    check(n_assertions(two) == 2,
+          f"two checks in an _arms function were not counted: "
+          f"{n_assertions(two)}")
+
+    # The `_arms` name test. Without it, a `check` anywhere in the module
+    # inflates the printed figure.
+    other = ("def helper():\n"
+             "    check(1, 'a')\n")
+    check(n_assertions(other) == 0,
+          "a check OUTSIDE an _arms function was counted — production code "
+          "could then inflate the selftest's own headline number")
+
+    # The `ast.Name` test: a METHOD call named check is a different callable.
+    attr = ("def foo_arms():\n"
+            "    obj.check(1, 'a')\n")
+    check(n_assertions(attr) == 0,
+          "an attribute call `obj.check()` was counted as the arm helper")
+
+    # The `== \"check\"` test.
+    named = ("def foo_arms():\n"
+             "    verify(1, 'a')\n")
+    check(n_assertions(named) == 0,
+          "a call to a DIFFERENT function was counted as a check")
+
+    # Unparsable source is 0, never a crash: the summary line must not turn a
+    # PASSING selftest into a traceback.
+    check(n_assertions("def (:::") == 0,
+          "a syntax error did not fall back to 0")
+
+    # Nested: `ast.walk` must reach a check inside a loop or an `if`.
+    nested = ("def foo_arms():\n"
+              "    for x in y:\n"
+              "        if x:\n"
+              "            check(x, 'deep')\n")
+    check(n_assertions(nested) == 1,
+          "a nested check was missed — the walk must not be top-level only")
+
+    return fails
+
+
+def premise_arms() -> list[str]:
+    """git's OUTPUT SHAPE, which `behind_origin`'s two `or`s rely on."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        solo = _repo(tmp, "solo")
+        (solo / "a.sh").write_text("x\n", encoding="utf-8")
+        _run(solo, "add", "-A")
+        _run(solo, "commit", "-qm", "base")
+
+        up = _git(solo, "rev-parse", "--abbrev-ref", "--symbolic-full-name",
+                  "@{upstream}")
+        check(up.returncode != 0,
+              "git rev-parse @{upstream} SUCCEEDED with no upstream — the "
+              "returncode half of behind_origin's guard is no longer the "
+              "signal it was written against")
+        check(up.stdout.strip() == "",
+              f"git rev-parse @{{upstream}} printed a ref to STDOUT with no "
+              f"upstream ({up.stdout.strip()!r}) — the two halves of that "
+              f"`or` no longer co-occur, so the redundancy is now load-bearing "
+              f"and needs a real arm")
+
+        # The second `or`: a failed rev-list prints no count to stdout, so
+        # `.isdigit()` is False exactly when the returncode is non-zero.
+        bad = _git(solo, "rev-list", "--count", "HEAD..nope/nope")
+        check(bad.returncode != 0 and not bad.stdout.strip().isdigit(),
+              f"a failing rev-list did not BOTH exit non-zero and withhold a "
+              f"numeric count (rc={bad.returncode}, out={bad.stdout!r})")
+
     return fails
 
 
 def selftest() -> list[str]:
     return (dirty_arms() + split_arms() + scope_arms()
-            + advisory_arms())
+            + advisory_arms() + stale_arms() + counter_arms()
+            + premise_arms())
 
 
 def main() -> int:
@@ -526,19 +839,24 @@ def main() -> int:
         for f in fails:
             print("  ✗ " + f)
         return 1
-    print("✓ worktree_state selftest — 36 assertion(s): clean tree, unstaged + "
+    print(f"✓ worktree_state selftest — {n_assertions()} assertion(s): clean "
+          "tree, unstaged + "
           "STAGED modification, untouched file not reported, git's POSIX "
           "separator asserted as a PREMISE, untracked excluded, head_text "
           "reads HEAD not the "
           "worktree and invents nothing, the .git probe refuses a PARENT's "
           "dirty set, an extracted tree is clean not an error, a rename "
-          "reports its destination, a ONE-character filename survives the porcelain length guard, a NESTED path matches a bare-suffix "
-          "pattern while a foreign population stays silent (and a BARE STRING is one pattern, not a character sequence), split withholds "
+          "reports its destination, a ONE-character filename survives the "
+          "porcelain length guard, a NESTED path matches a bare-suffix "
+          "pattern while a foreign population stays silent (and a BARE STRING "
+          "is one pattern, not a character sequence), split withholds "
           "exactly the dirty rows "
           "(address-less row kept, separators normalised both sides), a bare "
           "NAME + root resolves as a path does while an unresolvable one "
-          "is SKIPPED, and the "
-          "advisory is SILENT on a clean run with the three classes unpooled")
+          "is SKIPPED, behind_origin separates None (no upstream, never "
+          "guessed) from (0, 0) (up to date) and refuses to read AHEAD as "
+          "behind, and the "
+          "advisory is SILENT on a clean run with the four classes unpooled")
     return 0
 
 

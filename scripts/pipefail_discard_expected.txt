@@ -46,7 +46,7 @@
 # FALSE when written: the row was dropped here on the strength of a fix that
 # did not exist in riir-chain, and this sweep read `✗ UNPINNED finding
 # riir-chain:cloudflare/edge-wallet-container/teardown.sh:cc4d29da#1 · FAILED`
-# until the real fix landed at riir-chain d842200. Dropping a row for an
+# until the real fix landed at riir-chain 5f814a2. Dropping a row for an
 # absent fix is the UNRECOVERABLE direction — nothing then points at the
 # site. The rule adopted in Issue 798: a cross-repo repair is not landed
 # until it is COMMITTED in the sibling repo, and a note here claiming one

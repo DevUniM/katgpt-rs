@@ -47,9 +47,9 @@
 # Markers actually in, each cited (verified 2026-09-15):
 #   katgpt-rs      .github/workflows/full_gate.yml    rule (b)   cb03c8dc
 #   katgpt-rs      .github/workflows/wasm32_gate.yml  rule (b)   cb03c8dc
-#   riir-ai        scripts/g2_netem_docker.sh         rule (c)   8296fe206
-#   riir-game-sdk  scripts/t36_netem_partition_...sh  rule (c)   a17117c
-#   riir-chain     .github/workflows/toolchain_drift.yml rule (b) d842200
+#   riir-ai        scripts/g2_netem_docker.sh         rule (c)   194cdc9b5
+#   riir-game-sdk  scripts/t36_netem_partition_...sh  rule (c)   61f11e7
+#   riir-chain     .github/workflows/toolchain_drift.yml rule (b) 5f814a2
 # Rule (c) = the marker sits above the docker-run head, because a comment
 # line cannot live inside a backslash-continuation arg list. The two docker
 # overrides are deliberate rather than decayed: each script BAKES its own
