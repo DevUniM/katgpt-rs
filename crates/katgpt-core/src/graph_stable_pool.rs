@@ -11,7 +11,7 @@
 //!
 //! | # | Site | Slot store | Free list | Growth | Stability it actually needs |
 //! |---|---|---|---|---|---|
-//! | 1 | [`katgpt-kv` `radix_prefix`] `RadixPrefixTree` — `crates/katgpt-kv/src/radix_prefix/mod.rs` (nodes L155, `free_nodes` L157, LIFO pop `alloc_node` L478-484, push on evict L517) | `Vec<RadixNode>` by value | `Vec<NodeId>`, LIFO | append (`push`) | **index** (node ids stable; node values move on growth) |
+//! | 1 | [`katgpt-kv` `radix_prefix`] `RadixPrefixTree` — `crates/katgpt-kv/src/radix_prefix/mod.rs` (nodes L155, `free_nodes` L157, LIFO pop `alloc_node` L478-484, push on evict L517) — **✅ RE-POINTED 2026-09-16** onto this type (the inline `free_nodes` stack is gone; eviction drops node values instead of parking cleared buffers) | `GraphStablePool<RadixNode>` | (pool free list), LIFO | append | **index** (node ids stable; node values move on growth) — as before |
 //! | 2 | `katgpt-transformer` `PagedKVCache` — `crates/katgpt-transformer/src/kv_cache.rs` (`pages` L506, `free_pages` L510, LIFO pop `alloc_page` L550-562, push on rollback/release L709-711 + L765-767) | `Vec<Vec<f32>>` (heap handle per slot) | `Vec<usize>`, LIFO | append (`push`) | **index**, plus **payload address stability** via the Vec-of-Vec indirection (handles move on growth; the f32 page buffers behind them never do — "the pool never moves pages") |
 //! | 3 | `riir-gpu` `Qwen38LaneSet` — `../riir-ai/crates/riir-gpu/src/qwen38_dense_cudarc.rs` (L2813-2853, `enable_lanes` L5096-5168) | one flat `CudaSlice<f32>` per layer, `n` **fixed** lane slots via zero-copy slice views | **none** | **whole-set replacement** (drops the captured graphs together with the pointers they bake) | **true address stability** — captured CUDA graphs bake DEVICE POINTERS into the arenas (L2843-2848); achieved by allocate-once pre-allocation, not chunking |
 //! | 4 | this crate's `BranchBank<E>` — `src/branching/bank.rs` (`free_slots` L47, LIFO pop L205-210, append L214-222, push on prune L302) | `Vec<CognitiveBranch>` by value | `Vec<u32>`, LIFO | append, capped by `max_branches` (caller policy) | **index** (`BranchId` stable) |
@@ -49,7 +49,7 @@
 //!
 //! | Site | Delta vs this type | Adaptation on re-point |
 //! |---|---|---|
-//! | 1 `radix_prefix` | Nodes carry structured payloads (`tokens`/`pages`/`children` Vecs) and eviction *clears* payloads instead of taking them; free slots are recognized by `tokens.is_empty()` | Store the node struct as `T`; the tree keeps its `free_nodes: Vec<NodeId>` semantics by delegating to `alloc`/`free` (free's returned value can be dropped after payload salvage, or `T` holds the Vecs and `free`'s return recycles their buffers) |
+//! | 1 `radix_prefix` | Nodes carry structured payloads (`tokens`/`pages`/`children` Vecs) and eviction *clears* payloads instead of taking them; free slots are recognized by `tokens.is_empty()` | **✅ DONE 2026-09-16** — node struct stored as `T`; `alloc`/`free` replace the inline pop/push; liveness is pool occupancy (the `tokens.is_empty()` zombie filter is structural now); the arena scans (LRU eviction, `total_locks`, `for_each_held_page`) consume `iter()`
 //! | 2 `PagedKVCache` | Refcount layer decides when a page is freed; `alloc_page` **refills** the existing `Vec<f32>` (`fill(0.0)`) instead of replacing the handle — a buffer-recycling micro-opt | `free(idx)` returns `Option<T>` — the caller takes the `Vec<f32>` back and re-`alloc`s it later; zero realloc churn preserved (the returned-value escape hatch) |
 //! | 3 `Qwen38LaneSet` | No free list; fixed `n`; whole-set replacement invalidating baked pointers | Pre-allocate all lanes at construction (`with_capacity`), never churn; if lanes must resize, drop and rebuild the pool-scoped artifact the way `enable_lanes`/`disable_lanes` do |
 //! | 4 `BranchBank` | Fixed `max_branches` cap enforced caller-side (`debug_assert` before append); flat anchor side-cache keyed by slot | Same free-list machinery with a caller-side `n_active < max` check before `alloc`; the anchor side-cache stays bank-local (keyed by the returned index) |
@@ -211,6 +211,21 @@ impl<T> GraphStablePool<T> {
         self.slots.get_mut(idx).and_then(Option::as_mut)
     }
 
+    /// Iterate live slots as `(index, &value)` pairs in slot order —
+    /// ascending index, freed slots never yielded.
+    ///
+    /// O(total slots): the same shape as the full-arena scans the sites run
+    /// today (the radix LRU eviction scan + held-page audit, BranchBank's
+    /// active sweeps). Zero-alloc (lazy `filter_map` over the slot slice).
+    /// The borrow lives for the loop body only — hold indices, not
+    /// references, across any later `alloc` (the same rule as [`get`](Self::get)).
+    pub fn iter(&self) -> impl Iterator<Item = (usize, &T)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, slot)| slot.as_ref().map(|value| (idx, value)))
+    }
+
     /// Live element count (freed slots excluded).
     pub fn len(&self) -> usize {
         self.live
@@ -241,6 +256,28 @@ mod tests {
 
     /// C2 (1): alloc→free→alloc reuses the freed slot, LIFO order — the
     /// free-list discipline of all three free-list sites.
+    #[test]
+    fn iter_yields_live_slots_in_index_order() {
+        let mut pool = GraphStablePool::new();
+        let a = pool.alloc('a');
+        let b = pool.alloc('b');
+        let c = pool.alloc('c');
+        assert_eq!((a, b, c), (0, 1, 2));
+
+        // A freed slot is skipped, never yielded as None.
+        assert_eq!(pool.free(b), Some('b'));
+        let got: Vec<(usize, char)> = pool.iter().map(|(i, v)| (i, *v)).collect();
+        assert_eq!(got, vec![(0, 'a'), (2, 'c')]);
+
+        // A recycled slot re-enters at its index, order preserved.
+        let b2 = pool.alloc('d');
+        assert_eq!(b2, b);
+        let got: Vec<usize> = pool.iter().map(|(i, _)| i).collect();
+        assert_eq!(got, vec![0, 1, 2]);
+        let values: Vec<char> = pool.iter().map(|(_, v)| *v).collect();
+        assert_eq!(values, vec!['a', 'd', 'c']);
+    }
+
     #[test]
     fn alloc_reuses_freed_slot_lifo() {
         let mut pool = GraphStablePool::new();

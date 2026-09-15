@@ -109,9 +109,11 @@ async_qdq_overlap = []
 # lock-aware eviction. Pure index: owns page INDICES, never buffers (CUDA-
 # graph address stability by construction). The pool seam lives on
 # `katgpt_transformer::PagedKVCache` (chunk_page_tables / retain / release /
-# adopt). Opt-in — GOAT bench_762; promotion candidate when a multi-request
+# adopt). Node arena re-pointed onto katgpt-core's GraphStablePool (Issue
+# 800 C1 — the extracted form of this tree's inline free-list contract).
+# Opt-in — GOAT bench_762; promotion candidate when a multi-request
 # serving lane consumes it.
-radix_prefix_cache = []
+radix_prefix_cache = ["katgpt-core/graph_stable_pool"]
 
 # Plan 583 T3.5 — offline MI quant-fidelity probe (audit-only): forwards
 # katgpt-core's `mi_est` so the I(W; Ŵ) probe measures retained information

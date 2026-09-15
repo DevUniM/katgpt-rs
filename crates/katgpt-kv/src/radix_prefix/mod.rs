@@ -50,11 +50,23 @@
 //!   for the matched prefix, so `MatchHit` node ids stay valid; every locker
 //!   of a split node matched at most the head's span.
 //!
+//! # Node arena (Issue 800 C1)
+//!
+//! Nodes live in a
+//! [`GraphStablePool`](katgpt_core::graph_stable_pool::GraphStablePool) —
+//! the extracted form of the exact free-list contract this tree shipped
+//! inline (`Vec<Node>` + LIFO `free_nodes`): slot ids are stable across any
+//! alloc/free sequence, recycled slots are reused LIFO, and a freed slot
+//! reads `None` — eviction drops the node value, so token/page buffers are
+//! released eagerly instead of parked cleared-but-allocated until the next
+//! overwrite. The root is slot 0, allocated at construction, never freed.
+//!
 //! # Modelless
 //!
 //! Pure index arithmetic over `u32` tokens and `usize` page indices. No
 //! weights, no inference, zero deps beyond std.
 
+use katgpt_core::graph_stable_pool::GraphStablePool;
 use std::fmt;
 
 /// Node handle. `0` is the root (empty span, never evicted).
@@ -152,9 +164,11 @@ struct RadixNode {
 
 /// The radix prefix tree. See the [module docs](self) for the contract.
 pub struct RadixPrefixTree {
-    nodes: Vec<RadixNode>,
-    /// Recycled node slots (evicted nodes).
-    free_nodes: Vec<NodeId>,
+    /// Node arena — the Issue-800-C1 [`GraphStablePool`] re-point: slot
+    /// occupancy IS liveness (freed slots read `None`; the old
+    /// `tokens.is_empty()` zombie marker is structural now). The root is
+    /// slot 0, allocated at construction, never freed.
+    nodes: GraphStablePool<RadixNode>,
     n_layers: usize,
     /// Tokens per chunk (the pool's page size — `PagedKVCache::PAGE_SIZE`).
     page_tokens: usize,
@@ -178,8 +192,8 @@ impl RadixPrefixTree {
     pub fn new(n_layers: usize, page_tokens: usize, page_budget: usize) -> Self {
         assert!(n_layers > 0, "n_layers must be > 0");
         assert!(page_tokens > 0, "page_tokens must be > 0");
-        let mut nodes = Vec::with_capacity(64);
-        nodes.push(RadixNode {
+        let mut nodes = GraphStablePool::with_capacity(64);
+        let root = nodes.alloc(RadixNode {
             tokens: Vec::new(),
             pages: Vec::new(),
             children: Vec::new(),
@@ -187,9 +201,9 @@ impl RadixPrefixTree {
             last_touch: 0,
             lock: 0,
         });
+        debug_assert_eq!(root, ROOT, "root must occupy slot 0");
         Self {
             nodes,
-            free_nodes: Vec::new(),
             n_layers,
             page_tokens,
             page_budget,
@@ -222,7 +236,7 @@ impl RadixPrefixTree {
 
     /// Live node count (root excluded).
     pub fn node_count(&self) -> usize {
-        self.nodes.len() - 1 - self.free_nodes.len()
+        self.nodes.len() - 1
     }
 
     /// Counters.
@@ -232,15 +246,33 @@ impl RadixPrefixTree {
 
     /// Total locks currently held (0 after balanced match/unlock pairs).
     pub fn total_locks(&self) -> u64 {
-        self.nodes.iter().map(|n| n.lock as u64).sum()
+        self.nodes.iter().map(|(_, n)| n.lock as u64).sum()
+    }
+
+    // ── arena access ───────────────────────────────────────────────────────
+
+    /// Borrow a live node. Referenced ids are live by the tree's own
+    /// discipline (locked nodes are never evicted; a split keeps the head in
+    /// place; children are unlinked before their slot is freed) — `None`
+    /// here would be a tree bug, hence the loud witness.
+    fn node(&self, id: NodeId) -> &RadixNode {
+        self.nodes
+            .get(id)
+            .expect("radix node id must reference a live slot")
+    }
+
+    fn node_mut(&mut self, id: NodeId) -> &mut RadixNode {
+        self.nodes
+            .get_mut(id)
+            .expect("radix node id must reference a live slot")
     }
 
     /// Visit every live node's chunk-major page hold (diagnostics /
     /// invariant audits — the pool-free-list disjointness check in the
     /// Issue-771 G1 gate).
     pub fn for_each_held_page(&self, mut f: impl FnMut(&[usize])) {
-        for (id, node) in self.nodes.iter().enumerate() {
-            if id != ROOT && !node.tokens.is_empty() {
+        for (id, node) in self.nodes.iter() {
+            if id != ROOT {
                 f(&node.pages);
             }
         }
@@ -261,23 +293,23 @@ impl RadixPrefixTree {
         let mut matched = 0usize;
         let mut lcp = 0usize;
         while matched < total_chunks {
-            let Some(child) = self.nodes[node]
+            let Some(child) = self.node(node)
                 .children
                 .iter()
                 .copied()
                 .find(|&c| {
-                    let span = &self.nodes[c].tokens;
+                    let span = &self.node(c).tokens;
                     span.len() >= pt
                         && span[..pt] == tokens[matched * pt..(matched + 1) * pt]
                 })
             else {
                 break;
             };
-            let span_chunks = self.nodes[child].tokens.len() / pt;
+            let span_chunks = self.node(child).tokens.len() / pt;
             let avail = total_chunks - matched;
             let mut c = 0usize;
             while c < span_chunks.min(avail)
-                && self.nodes[child].tokens[c * pt..(c + 1) * pt]
+                && self.node(child).tokens[c * pt..(c + 1) * pt]
                     == tokens[(matched + c) * pt..(matched + c + 1) * pt]
             {
                 c += 1;
@@ -292,7 +324,7 @@ impl RadixPrefixTree {
             lcp = c;
             if touch {
                 self.tick += 1;
-                self.nodes[child].last_touch = self.tick;
+                self.node_mut(child).last_touch = self.tick;
             }
             if c < span_chunks {
                 break; // diverged inside the child
@@ -310,7 +342,7 @@ impl RadixPrefixTree {
         self.stats.matches += 1;
         self.stats.matched_chunks_total += matched as u64;
         if matched > 0 {
-            self.nodes[node].lock += 1;
+            self.node_mut(node).lock += 1;
         }
         MatchHit {
             node,
@@ -327,7 +359,7 @@ impl RadixPrefixTree {
         if hit.matched_chunks == 0 {
             return;
         }
-        let node = &mut self.nodes[hit.node];
+        let node = self.node_mut(hit.node);
         debug_assert!(node.lock > 0, "unlock on unlocked node {}", hit.node);
         node.lock = node.lock.saturating_sub(1);
     }
@@ -343,7 +375,7 @@ impl RadixPrefixTree {
         let mut n = hit.node;
         let mut terminal = true;
         while fill > 0 {
-            let node = &self.nodes[n];
+            let node = self.node(n);
             let node_chunks = node.tokens.len() / self.page_tokens;
             let take = if terminal {
                 hit.partial_chunks
@@ -425,7 +457,7 @@ impl RadixPrefixTree {
         // Split the terminal when the walk stopped inside its span.
         let mut split = false;
         if node != ROOT {
-            let span_chunks = self.nodes[node].tokens.len() / pt;
+            let span_chunks = self.node(node).tokens.len() / pt;
             debug_assert!(lcp <= span_chunks);
             if lcp < span_chunks {
                 self.split_node(node, lcp);
@@ -438,7 +470,7 @@ impl RadixPrefixTree {
         let child_tokens = tokens[matched * pt..m * pt].to_vec();
         let child_pages = pages_chunk_major[matched * nl..].to_vec();
         let id = self.alloc_node(child_tokens, child_pages, node);
-        self.nodes[node].children.push(id);
+        self.node_mut(node).children.push(id);
         self.held_pages += new_chunks * nl;
         self.stats.inserts += 1;
         Ok(InsertOutcome { new_chunks, split })
@@ -451,16 +483,16 @@ impl RadixPrefixTree {
     fn split_node(&mut self, id: NodeId, at_chunks: usize) {
         let pt = self.page_tokens;
         let nl = self.n_layers;
-        let tail_tokens = self.nodes[id].tokens.split_off(at_chunks * pt);
-        let tail_pages = self.nodes[id].pages.split_off(at_chunks * nl);
-        let tail_children = std::mem::take(&mut self.nodes[id].children);
+        let tail_tokens = self.node_mut(id).tokens.split_off(at_chunks * pt);
+        let tail_pages = self.node_mut(id).pages.split_off(at_chunks * nl);
+        let tail_children = std::mem::take(&mut self.node_mut(id).children);
         let tail = self.alloc_node(tail_tokens, tail_pages, id);
-        self.nodes[tail].children = tail_children;
-        for i in 0..self.nodes[tail].children.len() {
-            let c = self.nodes[tail].children[i];
-            self.nodes[c].parent = tail;
+        self.node_mut(tail).children = tail_children;
+        for i in 0..self.node(tail).children.len() {
+            let c = self.node(tail).children[i];
+            self.node_mut(c).parent = tail;
         }
-        self.nodes[id].children.push(tail);
+        self.node_mut(id).children.push(tail);
         self.stats.splits += 1;
     }
 
@@ -475,13 +507,7 @@ impl RadixPrefixTree {
             last_touch: self.tick,
             lock: 0,
         };
-        if let Some(id) = self.free_nodes.pop() {
-            self.nodes[id] = node;
-            id
-        } else {
-            self.nodes.push(node);
-            self.nodes.len() - 1
-        }
+        self.nodes.alloc(node)
     }
 
     // ── eviction ───────────────────────────────────────────────────────────
@@ -495,26 +521,31 @@ impl RadixPrefixTree {
     /// is skipped; becoming-childless parents are picked up by later scans.
     pub fn evict_to_budget(&mut self, mut release: impl FnMut(&[usize])) {
         while self.held_pages > self.page_budget {
+            // Slot occupancy is liveness now: freed slots yield nothing from
+            // `iter`, and every live non-root node carries a non-empty span,
+            // so the candidate set is identical to the old
+            // `!tokens.is_empty()` filter.
             let Some(victim) = self
                 .nodes
                 .iter()
-                .enumerate()
-                .filter(|(id, n)| {
-                    *id != ROOT && n.children.is_empty() && n.lock == 0 && !n.tokens.is_empty()
-                })
+                .filter(|&(id, n)| id != ROOT && n.children.is_empty() && n.lock == 0)
                 .min_by_key(|(_, n)| n.last_touch)
                 .map(|(id, _)| id)
             else {
                 self.stats.evict_deadlocks += 1;
                 break;
             };
-            let chunks = self.nodes[victim].tokens.len() / self.page_tokens;
-            let parent = self.nodes[victim].parent;
-            release(&self.nodes[victim].pages);
-            self.nodes[victim].tokens.clear();
-            self.nodes[victim].pages.clear();
-            self.nodes[parent].children.retain(|&c| c != victim);
-            self.free_nodes.push(victim);
+            // Release the page hold while the node is still borrowed, then
+            // take the slot: the pool's free drops the node value, so the
+            // token/page buffers are released here instead of parked
+            // cleared-but-allocated until the next overwrite.
+            let (parent, chunks) = {
+                let node = self.node(victim);
+                release(&node.pages);
+                (node.parent, node.tokens.len() / self.page_tokens)
+            };
+            self.node_mut(parent).children.retain(|&c| c != victim);
+            drop(self.nodes.free(victim));
             self.held_pages -= chunks * self.n_layers;
             self.stats.evictions += 1;
         }
@@ -523,20 +554,18 @@ impl RadixPrefixTree {
     /// Drop every node, releasing all chunk-page holds through `release`.
     /// Locks are ignored (test/teardown path).
     pub fn clear(&mut self, mut release: impl FnMut(&[usize])) {
-        for node in &mut self.nodes[1..] {
-            if !node.tokens.is_empty() {
+        // Free every non-root slot; each node value is dropped (its
+        // token/page buffers go with it) after its page hold is released.
+        // Freed slots read `None`, so `node_count` (len − 1) reads 0 and
+        // future inserts reuse the arena LIFO — highest index first,
+        // matching the old `(1..len)` free-list build.
+        let slots = self.nodes.capacity();
+        for id in 1..slots {
+            if let Some(node) = self.nodes.free(id) {
                 release(&node.pages);
             }
-            node.tokens.clear();
-            node.pages.clear();
-            node.children.clear();
-            node.lock = 0;
         }
-        self.nodes[ROOT].children.clear();
-        // Every non-root slot is now empty — recycle them all so
-        // `node_count` (len − 1 − free) reads 0 and future inserts reuse
-        // the arena.
-        self.free_nodes = (1..self.nodes.len()).collect();
+        self.node_mut(ROOT).children.clear();
         self.held_pages = 0;
     }
 }
