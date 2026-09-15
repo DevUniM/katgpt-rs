@@ -89,6 +89,24 @@ off macOS, where the `target_os = "macos"` device backends compile to nothing
 even with `--all-features`, and checks that this document still quotes the
 command it runs).
 
+⛔ **On a non-macOS workstation, run it as
+`scripts/full_gate.sh --allow-partial-platform` — and it is now the ONLY thing
+on such a box that reads the consequences of a per-crate change** (Issue 803).
+It runs every layer and prints `⚠ full gate PARTIAL` naming, on the FINAL line,
+each axis it could not measure; it never prints the `✓ full gate PASSED` line,
+which stays reserved for a macOS run with every target installed. Standing: a
+workstation SUBSET verdict, the same standing as the eighteen drift sweeps.
+Take that seriously rather than as a formality — measured 2026-09-15, `develop`
+carried **24 `error[E0560]`** (a field deleted in `katgpt-core` with 24 live
+construction sites in the ROOT package's `tests/` and `benches/`) plus **4
+`-D`-listed lint errors**, for ten hours, while `test_gate.sh` (203 · 2060 ·
+249 · 139, every row at its floor) and `wasm32_gate` were both green. The
+per-crate gate that landed it was right for what it changed; nothing read what
+it changed for everyone else. ⚠ The flag existed the whole time and printed a
+final line byte-identical to a full pass — the deferral rode a Layer-2 line six
+hundred lines of build output earlier, which is this repo's own most-repeated
+rule broken by the one instrument that is not a sweep.
+
 **And `wasm32` is a second platform axis, not a variation on the first.**
 Nothing in this repo compiled it until 2026-09-07 — the only script naming the
 triple was `scripts/build-moka-wasm.sh`, which is a deploy build a human runs,

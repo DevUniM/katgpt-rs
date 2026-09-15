@@ -59,7 +59,11 @@
 #
 # Usage:
 #   scripts/full_gate.sh                          # strict
-#   scripts/full_gate.sh --allow-partial-platform # off-macOS: warn, don't fail
+#   scripts/full_gate.sh --allow-partial-platform # off-macOS / no wasm32 target:
+#                                                 #   run every layer anyway and
+#                                                 #   report ⚠ PARTIAL, naming on
+#                                                 #   the FINAL line what was not
+#                                                 #   measured. NEVER a full pass.
 #   scripts/full_gate.sh --wasm32-only            # Layer 2b ONLY (Issue 737 T4):
 #                                                 #   the wasm32 + simd128 lane,
 #                                                 #   which makes no macOS claim,
@@ -76,6 +80,22 @@ set -euo pipefail
 
 ALLOW_PARTIAL=0
 WASM32_ONLY=0
+
+# ── Issue 803: what this run could NOT measure, carried to the FINAL line ────
+# `--allow-partial-platform` has existed since the platform layer did, and it
+# printed `✓ full gate PASSED — 0 errors …` — byte-identical to a real macOS
+# run — with the partial-ness announced only by a Layer-2 `⚠` roughly six
+# hundred lines of build output earlier. That is this repo's own most-repeated
+# rule broken by the one instrument that is not a sweep: a deferral rides the
+# FINAL line, in BOTH directions, because a deferral printed where it scrolls
+# away is one nobody reads on the run that passes. Measured consequence: 24
+# `error[E0560]` and 4 `-D`-listed lint errors sat on develop for ten hours
+# while every lane that CAN run here (test_gate, wasm32_gate) was green.
+#
+# Newline-separated; one line per unmeasured axis.
+PARTIAL_NOTES=""
+note_partial() { PARTIAL_NOTES="${PARTIAL_NOTES:+$PARTIAL_NOTES
+}$1"; }
 for arg in "$@"; do
     case "$arg" in
         --allow-partial-platform) ALLOW_PARTIAL=1 ;;
@@ -222,6 +242,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
         echo "✗ refusing to report a partial run as a pass (--allow-partial-platform to override)"
         exit 1
     fi
+    note_partial "macOS device backends NOT compiled — $APPLE_GATED target_os=\"macos\" file(s), on $(uname -s)"
 else
     echo "✓ macOS — the $APPLE_GATED target_os-gated file(s) are in scope"
 fi
@@ -317,6 +338,7 @@ if ! rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown
         echo "✗ refusing to report a partial run as a pass (--allow-partial-platform to override)"
         exit 1
     fi
+    note_partial "wasm32 lane SKIPPED — $WASM_N wasm32 + $WASM_SIMD_N simd128 file(s) NOT compiled (rustup target add wasm32-unknown-unknown)"
 else
     WASM_P_ARGS=$(printf -- '-p %s ' $WASM_PKGS)
     for arm in on off; do
@@ -635,6 +657,17 @@ if [ "$WASM32_ONLY" -eq 1 ]; then
     fi
     echo "✓ wasm32 gate PASSED — Layer 2b only, both simd128 arms (full gate NOT run)"
 else
-    echo "✓ full gate PASSED — 0 errors, 0 unbuildable targets ($WARNINGS warning finding(s) across $WARN_TALLIES target(s), not gated; $UNITS unit(s) compiled)"
+    if [ -n "$PARTIAL_NOTES" ]; then
+        # NOT "PASSED". Every layer that ran is clean and that is worth saying,
+        # but the run did not see the whole repo and the last line a reader sees
+        # has to say so — the `DEFERRED` / `STALE` / `CPU SUPPRESSED` idiom the
+        # eighteen drift sweeps already use. Exit 0: this is a real, useful
+        # verdict over a named subset, not a failure.
+        echo "⚠ full gate PARTIAL — every layer that RAN is clean (0 errors, 0 unbuildable targets, $WARNINGS warning finding(s) across $WARN_TALLIES target(s), not gated; $UNITS unit(s) compiled), but this run did NOT measure:"
+        printf '%s\n' "$PARTIAL_NOTES" | sed 's/^/    ⚠ /'
+        echo "  A whole-repo claim needs a macOS run with every target installed; this is a SUBSET verdict."
+    else
+        echo "✓ full gate PASSED — 0 errors, 0 unbuildable targets ($WARNINGS warning finding(s) across $WARN_TALLIES target(s), not gated; $UNITS unit(s) compiled)"
+    fi
 fi
 FULL_GATE_COMPLETED=1  # the last line — see full_gate_cleanup above
