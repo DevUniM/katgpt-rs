@@ -23,9 +23,9 @@ The only clearly-absent piece. Today `riir-ai/crates/riir-engine/src/weight_tens
 
 The contract ships **three times under three names**: `katgpt-kv` `radix_prefix` ("captured CUDA graphs that bake buffer addresses stay valid"), `katgpt-transformer` `PagedKVCache` ("the pool never moves pages; alloc reuses free-list slots and only ever appends"), riir-gpu persistent activation arenas. Per substrate-first this is a DRY extraction of an existing, independently-rediscovered substrate — a shared vocabulary type (append-only + free-list + never-move + fixed-address borrow), not new machinery.
 
-- [ ] C1 Extract the type to `katgpt-core`; re-point the three sites incrementally (one repo per commit)
-- [ ] C2 G1: generalize the existing `bench_762 g1_address_stability` test as the type's contract test; G4 zero-alloc by construction
-- [ ] C3 Boundary note: public crate — the type carries no game/chain semantics (passes the katgpt-rs domain test)
+- [x] C2 G1: generalize the existing `bench_762 g1_address_stability` test as the type's contract test; G4 zero-alloc by construction. **DONE 2026-09-16 (phase 1, `877e06eb2`)** — free-list-disjointness invariant generalized + 5 more contract tests (LIFO reuse, 2000-cycle live-index stability, stale/double-free noop discipline, payload-address stability for heap-handle T, G4 0-alloc churn gate); 2066/0 with feature, 2092/0 4-feature combo, wasm32 clean
+- [x] C3 Boundary note: public crate — the type carries no game/chain semantics (passes the katgpt-rs domain test). **DONE 2026-09-16** — carried in the module doc + [Bench 800-C](../.benchmarks/800_graphstablepool_phase1.md): generic `GraphStablePool<T>` slot allocator, no game/chain/shard vocabulary, zero riir deps — public-crate clean
+- [ ] C1 Extract the type to `katgpt-core`; re-point the three sites incrementally (one repo per commit). **PHASE 1 DONE 2026-09-16 (`877e06eb2`)** — `GraphStablePool<T>` extracted (index-stable by contract; payload-address stability holds for heap-indirection T; &T borrows do not survive alloc); the common contract VERIFIED across **4** sites — the issue's 3 + a 4th found in-repo (`BranchBank`, katgpt-core `branching/bank.rs`); per-site adaptation table in the module doc + Bench 800-C. **REMAINING (follow-ups, one repo per commit):** re-point `katgpt-kv` radix_prefix → `katgpt-transformer` PagedKVCache → riir-gpu `Qwen38LaneSet` (via `with_capacity` pre-alloc scoping) + optional in-repo `BranchBank`
 
 ## Cross-refs
 

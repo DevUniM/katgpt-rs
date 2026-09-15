@@ -11,6 +11,24 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 800 Arm C phase 1 (2026-09-16) — GraphStablePool<T> extracted: the common contract verified across 4 sites (a 4th found in-repo)
+
+`877e06eb2` + [Bench 800-C](.benchmarks/800_graphstablepool_phase1.md). The DRY-extraction
+arm verified its premise before extracting — and improved it: the never-move pool
+contract ships not three but FOUR times (the issue's radix_prefix / PagedKVCache /
+riir-gpu arenas + `BranchBank` in katgpt-core's own `branching/bank.rs`, found by the
+substrate-first read). The common contract EXISTS in its narrowest form — index-stable
+slots, LIFO free list, append-only growth — and the type documents the load-bearing
+distinction loudly: INDEX stability is the pool's contract; payload-ADDRESS stability
+belongs to the stored type (heap indirection, PagedKVCache's recipe) or to
+pre-allocation discipline (Qwen38LaneSet bakes device pointers via allocate-once +
+scoping, NOT chunking — which killed the chunked-layout design option). 6 contract
+tests (bench_762's g1_address_stability generalized + LIFO/stability/noop-disclosure/
+address-stability/G4-zero-alloc-churn), 2092/0 four-feature combo, wasm32 clean.
+Re-points remain open as incremental follow-ups (one repo per commit: katgpt-kv →
+katgpt-transformer → riir-gpu + optional BranchBank), each with its per-site adapter
+documented in the module doc.
+
 ## Issue 801 CLOSED (2026-09-16) — T4 PoC: composition-quality REFUTED, disagreement-trace CONFIRMED; T5 routing: meld stays opt-in as a contradiction detector, Super-GOAT Q3 blocked-as-refuted, T2 audit stands
 
 The arc, one session: T1 PDF-transcribed (2026-09-15); T2 audit `ee6993a77` (Research 560
