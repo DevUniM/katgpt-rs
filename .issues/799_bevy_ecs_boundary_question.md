@@ -1,6 +1,6 @@
 # Issue 799 — bevy_ecs 0.15 optional arm: bump to 0.19 or retire (BOUNDARY.md question)
 
-**Status:** OPEN — 2026-09-15
+**Status:** DECIDED 2026-09-15 — **BUMP to 0.19** (T1+T2 below); T3–T6 execution scoped for the landing session. Prior session's API-surface audit spot-check verified same day (zero scheduler/Commands/change-detection hits re-confirmed against `src/pruners/bomber` + `crates/katgpt-pruners/src/monopoly`).
 
 ## Why this issue exists
 
@@ -126,13 +126,38 @@ is part of the gap this issue closes.
 
 ## Tasks
 
-- [ ] Answer the domain test with evidence: is the bomber/monopoly bevy_ecs
+- [x] Answer the domain test with evidence: is the bomber/monopoly bevy_ecs
       usage load-bearing for this repo's modelless-inference mandate (arena =
       GOAT evidence substrate), or would a lighter substrate serve the
       schedule-free World/query/events pattern the arenas actually use?
-- [ ] Decide **bump to 0.19 vs retire the optional arm**, recording the
+      **VERDICT (2026-09-15): the ARENA is load-bearing; bevy_ecs is not —
+      but a replacement does not clear the cost/benefit bar.** The arena is
+      evidence infrastructure (kernel_blend/binned_blend GOAT gates measured
+      on bomber tournaments, Bench 432) — retiring it orphans the feature
+      story and breaks benchmark comparability. bevy_ecs itself serves as a
+      schedule-free data-structure layer (verified: the entire exercised
+      surface is `World` + `world.query{,_filtered}` + `Events` via
+      `resource_mut` + 21 derive sites; zero scheduler/Commands/change-
+      detection), so a lighter substrate COULD serve — but replacing it means
+      rewriting ≈23.5K LOC across two arenas, re-validating every tournament
+      result for byte-comparability, for zero mandate gain (bevy_ecs is
+      optional, costs nothing unless a consumer enables bomber/monopoly, and
+      carries no riir dep). The mandate test passes: an evaluation harness
+      with no riir dep, upstream of everything.
+- [x] Decide **bump to 0.19 vs retire the optional arm**, recording the
       reasoning (domain-test verdict, API-surface audit result, wasm32
-      transitive-tree impact).
+      transitive-tree impact). **DECISION: BUMP to 0.19.** Reasoning: (1)
+      retirement fails cost/benefit (above); leaving at 0.15 fails the
+      drift bar this issue was filed under. (2) The exercised API is the
+      stable core of bevy_ecs — `World::query{,_filtered}`, `Events` drain
+      via `resource_mut`, `Component`/`Resource`/`Event` derives, `Entity` —
+      all present in 0.19 with minimal delta (no scheduler migration, no
+      observer surface, no change-detection migration exists to migrate).
+      (3) Alignment with the workspace's 0.19 wave simplifies cross-repo
+      reasoning (getrandom/ahash transitive tree converges with the game
+      repos' bevy 0.19 pins). (4) The wasm32 transitive-tree impact (root
+      `Cargo.toml` ~158 getrandom backend pins) is the one real risk and is
+      owned by T3's re-verification step.
 - [ ] If bump: audit bevy_ecs 0.15→0.19 API deltas against the ACTUAL usage
       sites above (World::query/query_filtered signatures, Events::drain,
       Component/Resource/Event derive requirements, Entity semantics) and
