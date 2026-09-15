@@ -63,7 +63,6 @@ collision = .issues 775 Issue 795 divergence — platform_dead_code verdict half
 collision = .issues 776 Issue 791 — RESOLVED, this session's side renumbered to 792; the other session's file keeps 776
 collision = .issues 777 Issue 795 divergence — filesystem_walk_population vs modality_additive_belief_superposition; +5 over 36 decided, under the margin worth rewriting 36 citations for
 collision = .issues 778 Issue 795 divergence — subprocess locale vs subspace_intervention layer affinity; citation_weight returns TIE (lead 1 of 18 decided, inside TIE_FRACTION)
-collision = .issues 779 Issue 791 — RESOLVED, this session's side renumbered to 793; the other session's LIVE file keeps 779 despite losing on weight (renumbering open work needs agreement)
 collision = .issues 780 Issue 791 — RESOLVED, this session's side renumbered to 794; citation_weight declined the pair and the coordination-free side moved
 collision = .issues 781 Issue 795 divergence — heading_oracle house style vs slt_wbic_selection; +2 over 17 decided with 47% UNRESOLVED, which is noise, not a verdict
 collision = .issues 782 Issue 795 divergence — pinned-repo-absent vs slt_noise_sweep; +4 over 11 decided with a 3-site loser, below the rewrite threshold

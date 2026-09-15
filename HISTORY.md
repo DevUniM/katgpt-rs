@@ -347,6 +347,45 @@ orthonormality/sanity/G4-alloc), release+alloc_tracking clean, default
 suite 2060 unchanged (opt-in), clippy -D warnings both crates,
 --all-features clean.
 
+## Issue 779 T3 (2026-09-16, M3 session) resolved — real-bank affinity: saturated plateau, NO re-pin; three-arm POSITIVE on real tensors (Bench 767)
+
+The deferred real-model run executed end-to-end once the capture lane
+cleared: riir-ai `future_probe_bank_capture` (commit `aa11cb162`) over
+gemma-2-2b-it f16 — 384 prompts (6 behavior-intent classes × 8 shells × 8
+topics, shells 6+7 held out), all-26-layer last-token residual capture,
+greedy-8 prefix label audit (all 6 classes elicit their labeled behavior).
+**G0 upgraded to a measurement:** the original /tmp bank was wiped between
+sessions; regenerated from the pinned GGUF + tokenizer + committed example
+with BLAKE3 IDENTICAL `99edecca…8b81` — the bit-reproducibility claim is
+now demonstrated, not asserted. Capture 1581 s (4.12 s/prompt; the
+recorded 2053 s was a two-sibling-load run — cite both).
+
+**Affinity axis: NEGATIVE close for the re-pin question (legitimate per the
+issue's outcome criteria).** The curve is a CEILING PLATEAU, not a peak:
+L02–L25 all decode the 6 classes at 1.000 (floors 0.167) at every
+λ_scale ∈ {0.003, 0.01, 0.03, 0.1}; L00 0.990–1.000, L01 0.927–0.969. The
+printed "best layer 25" / "peak L00" are argmax tie-break artifacts (Rust
+`max_by` last-max; first-max per-class tracker), not structure. Coarse
+instruction intents are linearly decodable at ceiling from every layer ≥ L02
+— **FutureBehaviorProbe consumers need no measured layer re-pin; the
+terminal layer (the collectors' existing default) is as good as any.**
+
+**Three-arm axis: POSITIVE (R557 M2's real-tensor half closes).** At L25
+through the frozen ridge head: top-4 probe-SVD dims alone = FULL accuracy
+(aligned 1.000) vs random-4 0.146 (6.8×) and 0.062 at k=6 (16×); projecting
+the top-4 OUT collapses the readout (0.344 → 0.000). The task signal on a
+real residual stream is low-rank and subspace-carried — the freeze-policy
+datum transfers from synthetic banks to real tensors. (k=6 residual 0.000
+is the degenerate 0-dim complement: bias-only classifies every row wrong;
+the projection identity aligned@rank == full holds to 1e-6.)
+
+Instrument verdict: the protocol discriminates in BOTH directions — planted
+peaks recovered (778), real saturation measured AS saturation (767). No
+revival at this scale; a future affinity revival needs a corpus where
+layers plausibly differ (fine-grained / confidence-graded labels, not
+course instruction intents). Issue file removed per the noise-reduction
+rule — Bench 767 + this row are the trail.
+
 ## Issue 782 (2026-09-15, M3 session) resolved — slt_sweep: the noise-sweep λ̂ estimator (781 T4), GOAT G1–G4 ALL PASS, promoted default-on
 
 `katgpt_core::slt::sweep` (feature `slt_sweep = ["slt"]` → **default-on

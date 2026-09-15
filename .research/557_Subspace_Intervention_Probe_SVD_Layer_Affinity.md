@@ -218,3 +218,20 @@ T1+T2 RESOLVED, T3 deferred (real-model run; sibling lanes). Two findings:
    at k=2 (matched budget), AND 0.802 > full 0.656 (projecting onto the
    top-2 eigenspace DENOISES the readout); residual ≈ chance. Whether it
    holds on real activations is exactly T3's capture.
+
+### Issue 779 delta (2026-09-16, Bench 767 — T3 EXECUTED, issue closed)
+
+T3 ran end-to-end on gemma-2-2b-it (bank bit-reproducible: regenerated
+after a /tmp wipe, BLAKE3 identical). Full tables in Bench 767; the deltas
+for this research's M2/M3 ledger:
+
+1. **M3 (layer affinity) closes NEGATIVE on real tensors — saturated, not
+   flat.** All 26 layers decode 6 behavior intents at 1.000 (floors 0.167)
+   from L02 up, at every λ. The hand-picked probe `layer` param is measured
+   fine — no depth-aware routing gain exists for coarse instruction intents
+   on this scale. A future revival needs a corpus where layers plausibly
+   differ (fine-grained / confidence-graded labels).
+2. **M2 (three-arm) closes POSITIVE on real activations** — aligned/random
+   6.8× at k=4, 16× at k=6; top-4 probe-SVD dims = full accuracy; residual
+   collapse confirms the task subspace. The low-rank-core law now has a
+   real-residual-stream datapoint, not only synthetic banks.
