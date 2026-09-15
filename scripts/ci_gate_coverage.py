@@ -136,7 +136,23 @@ def _on_block(wf: Path) -> str:
     return parts[1] if len(parts) > 1 else ""
 
 
-def push_gap(root: Path, repo: str, wf: Path, dflt: str, on_branch=None) -> str:
+def _branch_exists(root: Path, repo: str, branch: str) -> bool:
+    """Does `origin/<branch>` exist at all?
+
+    Split out from `_on_branch` because the two failures need DIFFERENT
+    repairs and `_on_branch` returns False for both. Measured 2026-09-15 over
+    the five repos this report flags hand-only: THREE have no `origin/main` at
+    all (riir-auth, riir-kat, seal-remake) while their `push` filter names it,
+    and the two that do have one (riir-ai, riir-viewbridge) carry no
+    `.github/workflows/` directory there. "Promote the file to main" is the fix
+    for the second and is not even expressible for the first.
+    """
+    return bool(_git(root, repo, "rev-parse", "--verify", "--quiet",
+                     f"refs/remotes/origin/{branch}"))
+
+
+def push_gap(root: Path, repo: str, wf: Path, dflt: str, on_branch=None,
+             branch_exists=None) -> str:
     """Why a declared `push` cannot fire — named, because the fix depends on it.
 
     GitHub evaluates `push` against the workflow file ON THE PUSHED REF, so a
@@ -150,14 +166,23 @@ def push_gap(root: Path, repo: str, wf: Path, dflt: str, on_branch=None) -> str:
         return ""
     rel = wf.relative_to(root / repo).as_posix()
     probe = on_branch or (lambda b: _on_branch(root, repo, b, rel))
+    exists = branch_exists or (lambda b: _branch_exists(root, repo, b))
     brs = re.search(r"branches:\s*\[([^\]]*)\]", m.group(1))
     names = ([b.strip().strip("'\"") for b in brs.group(1).split(",") if b.strip()]
              if brs else [dflt])
     missing = [b for b in names if not probe(b)]
     if not missing:
         return ""
-    return (f"push[{','.join(names)}] inert — "
-            f"{', '.join(missing)} carries no copy of this file")
+    # Name WHICH failure, because the repairs are different and only one of
+    # them is a repair at all. A branch that does not exist cannot be handed
+    # the file; somebody has to decide whether the filter or the branching
+    # model is wrong, and "carries no copy" quietly suggests the former.
+    absent = [b for b in missing
+              if exists is not None and not exists(b)]
+    detail = ", ".join(
+        f"{b} DOES NOT EXIST" if b in absent else f"{b} carries no copy of this file"
+        for b in missing)
+    return f"push[{','.join(names)}] inert — {detail}"
 
 
 def reachable_triggers(root: Path, repo: str, wf: Path, dflt: str,
@@ -624,17 +649,40 @@ def reachability_arms() -> list[str]:
 
         # push_gap NAMES the cause, because two different repairs follow from
         # it and "never fires" alone does not say which.
-        gap = push_gap(tmp, "r", wf, "main", on_branch=lambda b: False)
+        gap = push_gap(tmp, "r", wf, "main", on_branch=lambda b: False,
+                       branch_exists=lambda b: True)
         eq("push_gap names the missing branch", "main" in gap, True)
+        # The two causes, told apart. Measured on the live workspace: three of
+        # the five hand-only repos have no `origin/main` AT ALL while their
+        # filter names it, so "promote the file" is not even expressible.
+        eq("a branch that EXISTS without the file reads as `carries no copy`",
+           ("carries no copy" in gap, "DOES NOT EXIST" in gap), (True, False))
+        gone = push_gap(tmp, "r", wf, "main", on_branch=lambda b: False,
+                        branch_exists=lambda b: False)
+        eq("a branch that does not exist says so instead",
+           ("DOES NOT EXIST" in gone, "carries no copy" in gone), (True, False))
         eq("push_gap is silent when the branch carries the file",
-           push_gap(tmp, "r", wf, "main", on_branch=lambda b: True), "")
+           push_gap(tmp, "r", wf, "main", on_branch=lambda b: True,
+                    branch_exists=lambda b: True), "")
+        # A MIXED filter reports each branch with its own cause, because a
+        # single verdict for `[main, release]` sends the reader to one repair
+        # for two different problems.
+        mixed = _tmp_wf(tmp, "r", "mx.yml",
+                        "on:\n  push:\n    branches: [main, release]\njobs: {}\n")
+        mg = push_gap(tmp, "r", mixed, "develop", on_branch=lambda b: False,
+                      branch_exists=lambda b: b == "main")
+        eq("a mixed filter reports each branch with its own cause",
+           ("main carries no copy" in mg, "release DOES NOT EXIST" in mg),
+           (True, True))
         eq("push_gap is silent on a workflow with no push trigger",
-           push_gap(tmp, "r", wc, "main", on_branch=lambda b: False), "")
+           push_gap(tmp, "r", wc, "main", on_branch=lambda b: False,
+                    branch_exists=lambda b: False), "")
         # No `branches:` filter means the DEFAULT branch, not "every branch".
         bare = _tmp_wf(tmp, "r", "d.yml", "on:\n  push:\njobs: {}\n")
         eq("push_gap falls back to the default branch with no filter",
            "develop" in push_gap(tmp, "r", bare, "develop",
-                                 on_branch=lambda b: False),
+                                 on_branch=lambda b: False,
+                                 branch_exists=lambda b: True),
            True)
         eq("push with no filter is live when the default carries the file",
            reachable_triggers(tmp, "r", bare, "develop",
@@ -1048,8 +1096,16 @@ def git_probe_arms() -> list[str]:
         eq("reachable_triggers through the REAL probe: main-only push is inert",
            reachable_triggers(tmp, "repo", wf, "develop"),
            {"workflow_dispatch", "-push"})
+        real_gap = push_gap(tmp, "repo", wf, "develop")
         eq("push_gap through the REAL probe names the branch lacking the file",
-           "main" in push_gap(tmp, "repo", wf, "develop"), True)
+           "main" in real_gap, True)
+        eq("...and the REAL branch probe sees that main DOES exist",
+           ("carries no copy" in real_gap, "DOES NOT EXIST" in real_gap),
+           (True, False))
+        eq("_branch_exists: a ref that is there", _branch_exists(tmp, "repo", "main"),
+           True)
+        eq("_branch_exists: a ref that is not", _branch_exists(tmp, "repo", "nope"),
+           False)
         # default_branch, both ways. No `origin` REMOTE exists, so its
         # `remote set-head` refresh fails harmlessly and the symbolic-ref is
         # what answers -- present, then deleted.
@@ -1203,7 +1259,12 @@ def main(argv: list[str]) -> int:
               "  no Actions minutes on develop pushes) — read the workflow preamble\n"
               "  before filing. The finding is not that the choice is wrong; it is\n"
               "  that a main-only push cannot fire while main carries no copy of\n"
-              "  the file, so the intended promote-to-main trigger is inert too.")
+              "  the file, so the intended promote-to-main trigger is inert too.\n"
+              "  ⛔ Read the two causes apart. `DOES NOT EXIST` is strictly worse\n"
+              "  than `carries no copy`: the second is repaired by promoting the\n"
+              "  file, and the first cannot be, because the filter names a branch\n"
+              "  the repo does not have. That lane is not reduced, it is ZERO —\n"
+              "  the gate runs only when a human clicks it, forever.")
     else:
         print("\n▸ every repo carrying a compile/lint command has an automatic "
               "trigger for it")

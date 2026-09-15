@@ -399,6 +399,18 @@ the reset verdict half + the report-only unbumped observation live in
 `sibling_docs_drift.yml` (reusable workflow, one caller), and
 `ci_gate_coverage.py` (report, always exit 0: which repos gate their full
 compile+lint surface in CI, and whether anything automatically starts it).
+⛔ **Its standing finding is not that the main-only owner call is wrong — it is
+that the lane it produces is ZERO, not reduced.** Measured 2026-09-15: **12 of
+16** repos carry a real compile/lint command that no schedule and no push ever
+starts, and every one of their `push: branches: [main]` filters is inert. The
+two causes need different repairs and the report names them apart, because
+`carries no copy` quietly suggests a fix that the other case cannot have:
+**five repos have no `origin/main` AT ALL** (riir-auth, riir-kat,
+riir-mmorpg-examples, seal-online-remaster, seal-remake) while their filter
+names it, and the six that do have one carry no `.github/workflows/` directory
+there. Promoting the file repairs the second; the first needs somebody to decide
+whether the filter or the branching model is wrong. Until then those gates run
+only when a human clicks them.
 NOT in docs_gate's CHECKS — CI's single checkout would derive an empty
 population and print a confident green over zero repos. Population derived
 (BOUNDARY.md + `.git`); expectations committed in `scripts/*_floors.txt`.
