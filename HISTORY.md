@@ -4337,8 +4337,11 @@ and the fixture caught it before any rate was recorded. Reach limit, binding
 on every single-box instrument: the 791 divergence itself is not
 reconstructible from this box's reflogs — it lived on the wire between boxes;
 the gate sees what the running box participates in, at fetch/push time.
-Gate NOT joined to docs_gate CHECKS (796 T5): a workstation green first,
-with 4 sibling agents active this session.
+Joined to docs_gate CHECKS (796 T5, same day): a workstation run first, then
+the CHECKS row + the AGENTS.md table row + the prose count-move note in one
+commit. In CI the check green-exits by construction (a main-push checkout has
+HEAD == origin/main, merge base == HEAD) — its live reach is the workstation
+dev loop, where the divergence exists at run time.
 
 ## Issue 794 (allocated as 780; renumbered per Issue 791) — a wrong address reads as UNDECIDED when its number is in local range: CLOSED (2026-09-14)
 

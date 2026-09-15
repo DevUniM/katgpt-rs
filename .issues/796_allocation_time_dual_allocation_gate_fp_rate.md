@@ -52,6 +52,12 @@ repo's recent history); a RED whose intersection is a renumber artifact
   `scripts/dual_allocation_gate.py` implements the classified verdict.
 - [x] T4 — docs: AGENTS.md pointer (instrument reachability) + HISTORY row at
   landing.
+- [x] T5 — join docs_gate CHECKS (the CHECKS array row + the AGENTS.md table
+  row + the prose count-move note), after a workstation run of the 21-check
+  gate. check_validation credits the unguarded `selftest()` arm; in CI the
+  check green-exits by construction (HEAD == origin/main on a push checkout).
+  The two pre-existing reds at landing (cfg_gated SILENT-NOW, markdown fence)
+  are sibling-agent untracked WIP files, unrelated to this change.
 
 ## Status
 

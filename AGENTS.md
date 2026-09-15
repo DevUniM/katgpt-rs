@@ -191,7 +191,15 @@ measured **~0.11s wall** standalone — cheaper still than 787's, because it
 parses each check once and reads no tree at all), so 18, 19 **and** 20 are now
 cells no POSIX run will ever measure. Four consecutive same-day CHECKS moves is
 the argument for the convention, not an embarrassment to it: a bare number in
-this paragraph would have been wrong four times in one day.
+this paragraph would have been wrong four times in one day. It moved to
+**22** on 2026-09-15 (Issue 796's `dual_allocation_gate.py`, a handful of
+git-plumbing calls over this checkout and its upstream, measured **~0.10s
+wall** standalone). The 21-check cell did get one POSIX figure — **22.75s
+CPU** (2026-09-15, loaded M3, sibling agents active; quiet-box class unknown,
+so the loaded-box scope the paragraph below demands applies). In CI the new
+check green-exits by construction — a main-push checkout has HEAD ==
+origin/main, merge base == HEAD — so its live reach is the workstation dev
+loop, where the divergence actually exists at run time.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -262,6 +270,7 @@ develop work. One line per check:
 | `orphaned_attr_gate.py` | a `#[cfg]` separated from its item by a blank line |
 | `percentile_floor_gate.py` | a percentile index that lands on n-1 and so reports the MAX |
 | `numbering_gate.py` | a number allocated twice, or a stale/malformed `.highwater` (Issues 724, 725) — including the majority case where BOTH holders have CLOSED and been removed, so nothing is on disk and the tracked check reads clean: walled by membership above the era boundary, ratcheted below it (Issue 795) |
+| `dual_allocation_gate.py` | this checkout and its upstream both allocated a numbered document since their merge base — TWIN (same stem, the rebased own line) annotates exit-neutral, INDEPENDENT (two documents claiming one number) exits 1 naming both sides' adding commits (Issue 796) |
 | `docs_gate_paths_sync.py` | docs_gate.yml's two hand-duplicated trigger `paths:` lists stay identical |
 | `required_features_static_gate.py` | a required-features row naming a feature its package cannot enable (riir-train Issue 513) |
 | `cfg_row_implication_gate.py` | a required-features row that BUILDS and compiles its target to NOTHING (riir-train Issue 513) |

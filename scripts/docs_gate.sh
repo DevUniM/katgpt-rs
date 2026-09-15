@@ -106,6 +106,7 @@ CHECKS=(
     "scripts/orphaned_attr_gate.py:a #[cfg] separated from its item by a blank line (a08376a0)"
     "scripts/percentile_floor_gate.py:a percentile index that lands on n-1 and so reports the MAX"
     "scripts/numbering_gate.py:a .plans/.issues/.research/.proposals number allocated twice, or a stale/malformed .highwater (Issues 724, 725) — including the majority case where BOTH holders have CLOSED and been removed, so nothing is on disk and the tracked check reads clean: walled by membership above the era boundary, ratcheted below it (Issue 795)"
+    "scripts/dual_allocation_gate.py:this checkout and its upstream both allocated a numbered document since their merge base — TWIN (same stem, the rebased own line) annotates exit-neutral, INDEPENDENT (two documents claiming one number) exits 1 naming both sides' adding commits (Issue 796)"
     "scripts/docs_gate_paths_sync.py:docs_gate.yml's two hand-duplicated trigger paths lists stay identical (Issue 724 T4b)"
     "scripts/required_features_static_gate.py:a required-features row naming a feature its package cannot enable (Issue 513)"
     "scripts/cfg_row_implication_gate.py:a required-features row that BUILDS and compiles its target to NOTHING (Issue 513)"
