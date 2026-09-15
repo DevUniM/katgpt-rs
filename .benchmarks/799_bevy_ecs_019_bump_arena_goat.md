@@ -4,6 +4,10 @@
 measured same session, 2026-09-15, M3 Max (loaded box, sibling agents active —
 absolute numbers carry the loaded-box premise; the A/B is same-box,
 minutes-apart, so the DELTA is the finding).
+**Corroborated 2026-09-16** (independent re-run, same protocol, loaded box:
+0.15.4 = 414.0 / 409.8 µs; 0.19.1 = 777.3 / 748.9 µs — same ~1.8–2.0× delta;
+pure-compute cells agree too: HL select_action 296–317 ns pre vs 283–291 ns
+post, arena generation unchanged within noise).
 
 Provenance: Issue 799 T5/T6 — the arenas are benchmark infrastructure; a
 silent slowdown in `run_tick` poisons every future GOAT gate measured on

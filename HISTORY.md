@@ -11,6 +11,48 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 799 (2026-09-16) — bevy_ecs 0.15→0.19 bump landed: the arenas are load-bearing evidence infrastructure, bevy_ecs is a schedule-free utility layer
+
+The domain-test question the issue posed: is the bomber/monopoly bevy_ecs
+usage load-bearing for a modelless-inference repo, or would a lighter
+substrate serve? Measured answer: the ARENA is load-bearing (kernel_blend /
+binned_blend GOAT evidence — Bench 432's mean delta +78.5, CI [+26.3,
++130.8] — was measured on bomber tournaments; retiring it orphans the
+feature story and breaks benchmark comparability), while bevy_ecs itself is
+NOT load-bearing in any deep sense — the entire exercised surface is
+`World` + `query{,_filtered}` + `Messages` drain + derives, zero
+scheduler/Commands/change-detection (≈23.5K LOC of arena code would need
+rewriting and re-validation for zero mandate gain). DECISION: bump 0.15→0.19.1,
+aligning with the workspace 0.19 wave. Landed at `e0f02ab93`.
+
+Migration surface (the whole 0.15→0.19 delta on the exercised API, three
+mechanical renames + one fallibility fix): `Events<E>`→`Messages<E>`,
+`#[derive(Event)]`→`#[derive(Message)]` (buffered),
+`World::send_event`→`write_message`, `Entity::from_raw(u32)`→
+`from_raw_u32(u32).unwrap()`. Transitive tree: uuid 1.12→1.26 pulls
+**getrandom 0.4** — the third wasm backend pin (root Cargo.toml
+`getrandom_04`), plus `rng-getrandom` on katgpt-spectral's uuid so `v7`
+no longer pulls bare getrandom.
+
+Verified: wasm32 lanes green (`--features bomber` 1m17s, `--features
+bomber-wasm` 24.6s; `secure_vessel` no longer exists here — the stale
+mention in the getrandom comment fixed in the same commit); clippy clean at
+both arena features (one pre-existing `unused_mut` under narrow features
+silenced); tests 353 (bomber lib) / 203 (monopoly lib) / 289 (pruners
+monopoly) / 10+1+1+5 (bench files) all pass. BOUNDARY.md §May depend on now
+names bevy_ecs explicitly (optional-only condition + the domain-test
+verdict) — the dep contract gap the issue was filed under.
+
+GOAT gate: **Bench 799** (`.benchmarks/799_bevy_ecs_019_bump_arena_goat.md`)
+— G1 game-semantics byte-identity PASS (every outcome-asserting diagnostic
+identical before/after: kill attribution 96.4%, ScoreBoards, bomb counts,
+late-game rates); G2 PASS with a DOCUMENTED cost: full-game harness ~2×
+slower on bevy_ecs 0.19 World paths (interleaved A/B median 366→728 µs,
+corroborated by an independent re-run 410/414 vs 749/777), pure-compute
+cells unchanged or faster. Every assertion floor still clears with ≥10×
+headroom; no recorded verdict flips; the cost is re-measurable by re-running
+the A/B.
+
 ## Issue 798 (2026-09-15) — a tracked landing record claimed a sibling-repo repair that was never committed
 
 Two tracked files in `scripts/` recorded cross-repo repairs as landed and
