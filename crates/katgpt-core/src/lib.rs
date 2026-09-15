@@ -1896,6 +1896,20 @@ pub mod committed_field_blend;
 #[cfg(feature = "committed_field_blend")]
 pub use committed_field_blend::{ArchetypeFieldSource, CommittedFieldBlend, TriArchetypeBlend};
 
+// meld — bounded non-associative composition law (Issue 801 T3, Research 560,
+// arXiv:2609.14384 §4.9.1): meld(u,v) = sat(κ·W·[λ⋆u+(1−λ⋆)v]) — pointwise
+// soft-min mixture λ⋆ (offset-corrected Rényi-2 gate argmin; β→0 mean,
+// β→∞ hard min), tied orthogonal non-permutation W (normalized Hadamard —
+// the second-order bracketing separator), tanh saturation κ=2 (+ divisive-
+// normalization and unsaturated law-8 arms). Commutative EXACTLY (swap-
+// symmetric argmin), non-associative by construction, disagreement-coding.
+// Zero-alloc fixed-size [f32; D] (D a power of two). OPT-IN pending the
+// Issue 801 T4 riir-poc PoC verdict.
+#[cfg(feature = "meld")]
+pub mod meld;
+#[cfg(feature = "meld")]
+pub use meld::{MeldCompose, MeldLaw};
+
 // ── Variable-Rank Domain Expert Clusters (Plan 558, Research 453) ─────────
 //
 // Open MIT-licensed composition layer: applies LatentMoE's transferable
@@ -2798,6 +2812,17 @@ pub use salience::{
 };
 #[cfg(feature = "channel_simd_align")]
 pub mod channel_simd;
+
+// bf16_convert — SIMD bf16⇄f32 batch conversion (Issue 800 Arm A). Widening
+// u16→f32 is lossless (bits<<16); narrowing ships RNE (bit-exact vs `half`)
+// with truncation as the explicit fast opt-in arm (pufferlib's scalar >>16
+// shape, biased — we take the kernel shape, not the rounding). NEON + AVX2
+// (target_feature-gated) + scalar fallback; into_buf APIs write into
+// caller-owned buffers, zero alloc. OPT-IN pending the Bench 800 GOAT gate
+// (≥4× the scalar loop at 8 lanes); consumer = riir-engine weight_tensor
+// dequantize_row BF16 arm.
+#[cfg(feature = "bf16_simd")]
+pub mod bf16_convert;
 #[cfg(feature = "skill_opt")]
 pub mod skill_opt;
 #[cfg(feature = "ssd_block")]

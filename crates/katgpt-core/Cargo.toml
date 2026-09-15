@@ -121,6 +121,28 @@ statrs = "0.17"
 
 [features]
 
+# bf16_simd (Issue 800 Arm A, 2026-09-16): SIMD bf16⇄f32 batch conversion
+# kernels — the widening direction (u16→u32<<16→f32) is lossless; the
+# narrowing ships RNE (bit-exact vs the `half` crate) with truncation as the
+# explicit fast opt-in arm (pufferlib's scalar >>16 is biased — we take the
+# kernel SHAPE, not the rounding). NEON (aarch64) + AVX2 (x86_64,
+# target_feature-gated) + scalar fallback; into_buf APIs write into
+# caller-owned buffers, zero alloc. Consumer: riir-engine weight_tensor
+# dequantize_row BF16 arm (wired after the GOAT gate). OPT-IN pending the
+# Bench gate (≥4× the scalar loop at 8 lanes).
+bf16_simd = []
+
+# meld (Issue 801 T3, 2026-09-16): bounded non-associative composition law
+# from Research 560 (arXiv:2609.14384 §4.9.1) — meld(u,v) =
+# sat(κ·W·[λ⋆u+(1−λ⋆)v]) with the pointwise soft-min mixture λ⋆ (offset-
+# corrected Rényi-2 gate argmin; β→0 mean, β→∞ hard min), tied orthogonal
+# non-permutation W (normalized Hadamard, the second-order bracketing
+# separator), tanh saturation κ=2 (+ divisive-normalization and unsaturated
+# law-8 arms). Commutative EXACTLY, non-associative by construction,
+# disagreement-coding. OPT-IN pending the Issue 801 T4 PoC verdict (Super-
+# GOAT Q3 is quality-contingent).
+meld = []
+
 # alloc_tracking (Issue 741, 2026-09-09): compile the `alloc` module (the
 # `TrackingAllocator` + per-thread counters) in a RELEASE build so the G4/G5/G7
 # alloc gates can be run under `--release`, the profile AGENTS.md mandates for
@@ -3053,6 +3075,23 @@ required-features = ["dual_wave"]
 # An ordinary #[test] harness (not criterion) and #[ignore]d — the bank paths
 # arrive via BANK779_BIN/BANK779_JSON. The whole-file #![cfg] protects the
 # COUNT; this row protects the READER (AGENTS.md, the green-zero rule).
+# Issue 800 Arm A — SIMD bf16⇄f32 batch conversion GOAT gate (G1 known-answer
+# vs `half` RNE + NaN/Inf/subnormal survival, G2 ≥4× scalar at 8 lanes,
+# G4 zero-alloc into_buf).
+[[bench]]
+name = "bench_800_bf16_simd"
+harness = false
+required-features = ["bf16_simd"]
+
+# Issue 801 T3 — meld composition-law GOAT gate (G1 bracketing-recovery by
+# depth vs mean/law8/no-W arms + commutativity/non-associativity/boundedness
+# self-tests, G4 zero-alloc fixed-size).
+[[bench]]
+name = "bench_801_meld"
+harness = false
+required-features = ["meld"]
+
+# The 2026-09-06 two-box branch split
 [[test]]
 name = "bench_779_real_bank_affinity"
 required-features = ["subspace_intervention"]
