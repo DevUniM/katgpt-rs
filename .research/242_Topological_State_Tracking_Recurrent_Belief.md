@@ -7,6 +7,7 @@
 > **Related Plans:** 108 (LT2 looped — done), 136 (Training-Free Loop Wrapper — done), 217 (NextLat drafter — done), 255 (ANE-Latent NPC Brain), 262 (Latent Physics Primitives), 275 (SwiR switch-thinking), 276 (this doc's plan)
 > **Cross-ref (riir-ai):** Research 127 (Implicit Microcognition Crowd-NPC Guide — Super-GOAT private guide), Plan 304 (downstream runtime integration, optional)
 > **Classification:** Public — generic math, no game semantics
+> **PASS-Redirects (synthesis):** Ge, Liu, Wang, Garnica et al. [arXiv:2609.11900 "MindTopo: Can Foundation Models Reason in Topological Space?"] — extends this note's thesis from formal-language state tracking to spatial reasoning + planning: every one of 14 MLLMs reasons better than it plans (GPT-5.6-Sol 66.8%→52.8% reasoning→planning), SFT+GRPO improves reasoning (14.2%→51.5%) far more than planning (0.2%→6.3%), and generative image/video rollouts reach plausible endpoints with **0% process-valid topology preservation** across 1,560 CV-audited rollouts — topological state breaks across action transitions, exactly the depth-exhaustion failure mode this note diagnoses. PASS — evidence, not mechanism: our rollouts are deterministic sim replays (valid by construction), and the paper's fix (recurrent architectures, trained) is orthogonal to this note's modelless `MicroRecurrentBeliefState` extraction.
 
 ---
 
