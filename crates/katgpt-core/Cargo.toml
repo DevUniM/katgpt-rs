@@ -132,6 +132,19 @@ statrs = "0.17"
 # Bench gate (≥4× the scalar loop at 8 lanes).
 bf16_simd = []
 
+# graph_stable_pool (Issue 800 Arm C, 2026-09-16): the append-only + free-list
+# + never-invalidate slot pool — the DRY extraction of a contract shipping
+# four times under four names: katgpt-kv radix_prefix nodes
+# (crates/katgpt-kv/src/radix_prefix/mod.rs), katgpt-transformer PagedKVCache
+# pages (crates/katgpt-transformer/src/kv_cache.rs), riir-gpu lane arenas
+# (../riir-ai/crates/riir-gpu/src/qwen38_dense_cudarc.rs), and this crate's
+# BranchBank slots (src/branching/bank.rs). INDEX-stable allocation (live
+# slot indices never change across alloc/free churn); payload address
+# stability via a T-indirection is the documented site-2 recipe. Phase 1:
+# type + contract tests only — the three consumer re-points land incrementally
+# (one repo per commit) as follow-ups. OPT-IN.
+graph_stable_pool = []
+
 # jsd_topk (Issue 802 item 2, 2026-09-16): NaN-safe bounded top-K Jensen–
 # Shannon divergence kernel — JSD = H(M) − ½H(P) − ½H(Q) over renormalized
 # top-K slices; disjoint supports → EXACTLY ln 2 (never the KL +∞/NaN trap

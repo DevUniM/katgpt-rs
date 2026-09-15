@@ -3214,6 +3214,17 @@ pub mod bmr;
 #[cfg(feature = "slt")]
 pub mod slt;
 
+// graph_stable_pool — the append-only + free-list + never-invalidate slot
+// pool (Issue 800 Arm C): the DRY extraction of the contract that ships four
+// times under four names — katgpt-kv `radix_prefix` nodes,
+// katgpt-transformer `PagedKVCache` pages, riir-gpu `Qwen38LaneSet` arenas,
+// and this crate's `BranchBank` slots. INDEX-stable allocation (live slot
+// indices never move); see the module docs for the index-vs-address
+// stability verdict and the per-site re-point deltas. Phase 1: type +
+// contract tests only; consumer re-points are incremental follow-ups.
+#[cfg(feature = "graph_stable_pool")]
+pub mod graph_stable_pool;
+
 // Test-only `#[global_allocator]` so `alloc::tests::*` pass when running
 // `cargo test -p katgpt-core --lib`. Downstream consumers (katgpt-rs root,
 // riir-engine, etc.) install their OWN `#[global_allocator]`; this static is
