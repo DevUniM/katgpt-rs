@@ -346,7 +346,7 @@ def main() -> int:
     pop_lines, deferred, pop_fail = population_verdict(
         [k for k in pins if k != TOTALS], names)
 
-    # Issue 796 — the worktree is not the repo. This run reads files that
+    # Issue 797 — the worktree is not the repo. This run reads files that
     # concurrent sessions are editing, so a finding may sit on a line no
     # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL

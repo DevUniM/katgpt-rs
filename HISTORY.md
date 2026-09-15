@@ -4230,7 +4230,7 @@ its false-positive rate measured first: a long-lived branch legitimately
 allocates ahead of its remote, and this repo's own divergence was 57 commits.
 The cheap half is procedural and already written down (fetch before allocating).
 
-## Issue 796 (2026-09-15) — a sweep reads the WORKTREE, so a finding may exist in NO commit: CLOSED
+## Issue 797 (allocated as 796; renumbered — the other session allocated 796 the same hour and pushed first) (2026-09-15) — a sweep reads the WORKTREE, so a finding may exist in NO commit: CLOSED
 
 Found by trying to close the last standing CROSS row in
 `citation_drift_sweep.py`. It had been carried across a context boundary as
@@ -4298,8 +4298,18 @@ Arm reach for the new module (`--include-all`): **19 of 23**, the three live
 survivors being `check=True` / `capture_output=True` on the fixture BUILDERS,
 with the reason written at the line.
 
+⚠ **Its own number collided, which is the joke and also the evidence.** The
+other session allocated 796 the same hour for the allocation-time
+dual-allocation gate and pushed first, so this renumbered to 797 — and their
+brand-new `dual_allocation_gate.py`, replayed against the real pre-rebase
+divergence, classified it correctly on its first live incident:
+`⛔ INDEPENDENT 796 — two documents claim one number`, exit 1, both adding
+commits named. ⚠ It reads green AFTER a rebase, because the divergence it
+measures is gone; `numbering_gate`'s Issue-795 era-boundary wall is what caught
+the residue, and rewriting the two unpushed commits is what removed it.
+
 Issue file removed per the noise-reduction rule; the full record lives in git
-history (`git log -- .issues/796_worktree_state_sweep_findings.md`).
+history (`git log -- .issues/797_worktree_state_sweep_findings.md`).
 
 ## Issue 795 (2026-09-15) — 70 numbering collisions the gate could not see, 9 of them live: CLOSED
 

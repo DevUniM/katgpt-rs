@@ -328,7 +328,7 @@ evaluated by nothing. **That silent green is the worse direction:** a sweep
 that hard-reds is impossible to misread, and this one survived the 779 census
 *because* it was quieter, not because it was correct. All eleven share the
 verdict now. ⚠ **"Eleven" is that day's measurement and this paragraph keeps
-it deliberately** — the family is **16** as of 2026-09-15 (Issue 796 wired the
+it deliberately** — the family is **16** as of 2026-09-15 (Issue 797 wired the
 worktree advisory into all of them and counted), so read every "eleven" below
 as a dated figure the way this document tells you to read any count in prose. ⚠ A **subset**-population sweep has TWO populations and they are
 not interchangeable: hand `population_verdict` the **contract walk**, never the
@@ -1584,7 +1584,7 @@ itself or to obfuscate its test data, and an exempt gate certifies nothing.
 
 ## A sweep reads the WORKTREE, so a finding may exist in NO commit — `scripts/worktree_state.py`
 
-Issue 796. Every instrument in the sweep family above walks the **working
+Issue 797. Every instrument in the sweep family above walks the **working
 tree**. This workspace runs five-plus concurrent agent sessions against
 **shared worktrees** — `staged_set_audit.py` (below) exists for exactly that
 hazard one axis over — so a row a sweep prints may sit on a line no commit

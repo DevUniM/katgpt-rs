@@ -172,7 +172,7 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
                 and os.path.isdir(os.path.join(root, d, ".git"))]
     pop_lines, deferred, pop_fail = population_verdict(floors, contract)
 
-    # Issue 796 — the worktree is not the repo. This run reads files that
+    # Issue 797 — the worktree is not the repo. This run reads files that
     # concurrent sessions are editing, so a finding may sit on a line no
     # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL

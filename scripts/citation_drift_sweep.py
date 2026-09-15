@@ -350,7 +350,7 @@ def _row_key(row: str) -> tuple[str, str, str]:
     `(document, kind, number)` — deliberately NOT the line number. Comparing
     a worktree row with a HEAD row is the whole point, and any edit above a
     citation shifts its line, so a line-bearing key would report every row in
-    an edited document as both UNCOMMITTED and MASKED at once (Issue 796).
+    an edited document as both UNCOMMITTED and MASKED at once (Issue 797).
     """
     m = _ROW_KEY.match(row)
     return (m.group(1), m.group(3), m.group(4)) if m else ("", "", row[:80])
@@ -368,7 +368,7 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
           patterns: dict[str, re.Pattern], read=_worktree_read) -> dict:
     """One repo -> the three finding classes + BOTH populations under them.
 
-    `read(path) -> str | None` is injected (Issue 796) so the SAME classifier
+    `read(path) -> str | None` is injected (Issue 797) so the SAME classifier
     can be pointed at HEAD's blobs instead of the working tree. `None` means
     "this document does not exist in the source being read", and it is not a
     finding either way — but it must stay distinguishable from empty text, or
@@ -536,7 +536,7 @@ def gate_says() -> tuple[int, int, int]:
 
 
 def worktree_arms() -> list[str]:
-    """Issue 796 — the worktree-vs-HEAD split, against a REAL git repository.
+    """Issue 797 — the worktree-vs-HEAD split, against a REAL git repository.
 
     A known-answer arm in BOTH directions, because either alone certifies the
     wrong thing: UNCOMMITTED alone would pass on an instrument that simply
@@ -1022,7 +1022,7 @@ def main() -> int:
         sibs = [s for s in repos if s != repo]
         got = audit(repo, sibs, alloc, docs, crates, patterns)
 
-        # ── Issue 796: the worktree is not the repo ──────────────────────────
+        # ── Issue 797: the worktree is not the repo ──────────────────────────
         # This workspace runs concurrent sessions against SHARED worktrees, so
         # a row here may sit on a line no commit contains. Measured 2026-09-15:
         # the workspace's ENTIRE standing CROSS finding — 1 of 1 — was an
@@ -1079,7 +1079,7 @@ def main() -> int:
         if row is None:
             flags.append("UNPINNED — add a row (or it can never red)")
         else:
-            # `judge`, not `got` — the pins adjudicate HEAD (Issue 796). On a
+            # `judge`, not `got` — the pins adjudicate HEAD (Issue 797). On a
             # clean repo the two ARE the same object, so this is a no-op in the
             # ordinary case and the distinction costs nothing.
             if judge["n_cites"] < row["min_citations"]:
@@ -1147,7 +1147,7 @@ def main() -> int:
     if pop_fail:
         bad = True
 
-    # Issue 796. Rides the FINAL line in BOTH directions, the `deferred`
+    # Issue 797. Rides the FINAL line in BOTH directions, the `deferred`
     # precedent — a notice printed only on failure is one nobody reads on the
     # run that passes. ADVISORY and not a failure: a sweep that hard-reds on an
     # ordinary dirty worktree is a sweep nobody runs. MASKED is the exception

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A sweep reads the WORKTREE, so a finding may exist in NO commit — ONE copy.
 
-Issue 796. Every instrument in the cross-repo sweep family walks the working
+Issue 797. Every instrument in the cross-repo sweep family walks the working
 tree. This workspace runs five-plus concurrent agent sessions against SHARED
 worktrees — `staged_set_audit.py` exists for exactly that hazard one axis over
 — so a row a sweep prints may sit on a line no commit contains, and a repo a
@@ -216,7 +216,7 @@ def worktree_advisory(scope_counts: dict[str, int],
             f"⚠ WORKTREE: {sum(inscope.values())} file(s) in this sweep's own "
             f"population differ from HEAD — {detail}. Counts and floors from "
             "this run describe a state NO commit contains; do not re-pin from "
-            "it (Issue 796)")
+            "it (Issue 797)")
     if uncommitted_rows:
         out.append(
             f"⚠ UNCOMMITTED: {uncommitted_rows} row(s) sit on a file that "
