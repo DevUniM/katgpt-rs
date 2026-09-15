@@ -166,7 +166,6 @@ fn forward(
     let scale = 1.0 / (d as f32).sqrt();
     let config = ParallaxConfig {
         gate_scale,
-        zero_init: false,
         activation,
         ..Default::default()
     };
@@ -302,7 +301,6 @@ fn experiment_adamw_sigmoid_vs_softmax() {
     // We'll use a slightly different target to give the correction branch something to learn.
     let target_config = ParallaxConfig {
         gate_scale: 0.0, // base attention, no correction
-        zero_init: true,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
@@ -594,7 +592,6 @@ fn experiment_adamw_learnable_gate() {
     // Target: slightly noisy base attention
     let target_config = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
@@ -634,7 +631,6 @@ fn experiment_adamw_learnable_gate() {
         // Forward softmax
         let sm_config = ParallaxConfig {
             gate_scale: gate_sm,
-            zero_init: false,
             activation: ParallaxActivation::Softmax,
             ..Default::default()
         };
@@ -656,7 +652,6 @@ fn experiment_adamw_learnable_gate() {
         // Forward sigmoid
         let sig_config = ParallaxConfig {
             gate_scale: gate_sig,
-            zero_init: false,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
@@ -1024,7 +1019,6 @@ fn experiment_sink_injection() {
     // Target: noisy base attention (no correction, no sinks)
     let target_config = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
@@ -1501,7 +1495,6 @@ fn experiment_structured_cor_boosting() {
         // where the low_rank_signal is a known pattern the correction should learn
         let base_config = ParallaxConfig {
             gate_scale: 0.0, // no correction
-            zero_init: true,
             activation: ParallaxActivation::Softmax,
             ..Default::default()
         };
@@ -1843,7 +1836,6 @@ fn experiment_reverse_cor() {
             // The larger the residual, the more the correction is needed
             let base_config = ParallaxConfig {
                 gate_scale: 0.0,
-                zero_init: true,
                 activation: ParallaxActivation::Softmax,
                 ..Default::default()
             };

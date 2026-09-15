@@ -830,7 +830,7 @@ mod tests {
                         // Oracle in f64 — the f32 quadratic formula loses
                         // the α=0 triangular case (true eigenvalue exactly
                         // 1, computed as 1+ε ⇒ phantom Unstable).
-                        let a = (1.0 - (eta * rho * sigma_sq) as f64) as f64;
+                        let a = 1.0 - (eta * rho * sigma_sq) as f64;
                         let sig = (sigma_sq as f64).sqrt();
                         let b = -(eta as f64) * sig;
                         let c = (alpha as f64) * sig * a;
@@ -1020,8 +1020,8 @@ mod tests {
             &mut scratch,
         );
 
-        for i in 1..=l {
-            let neg_delta: Vec<f32> = delta[i].iter().map(|x| -x).collect();
+        for (i, d_i) in delta.iter().enumerate().take(l + 1).skip(1) {
+            let neg_delta: Vec<f32> = d_i.iter().map(|x| -x).collect();
             let cos = cosine(&scratch.lambda[i], &neg_delta);
             assert!(
                 cos > 0.99,
@@ -1051,7 +1051,7 @@ mod tests {
         // match (stricter than the directional cosine gate); it runs past
         // the transient so the comparison isolates the identity λ = −δ.
         let (l, d) = (3usize, 6usize);
-        let (weights, dims) = random_chain(l, d, 0x775_FD);
+        let (weights, dims) = random_chain(l, d, 0x0007_75FD);
         let wrefs: Vec<&[f32]> = weights.iter().map(|w| w.as_slice()).collect();
         let mut rng = SplitMix64(0x775_FD2);
         let input: Vec<f32> = (0..d).map(|_| rng.next_f32()).collect();
@@ -1079,11 +1079,11 @@ mod tests {
                     let mut hp = h_probe.clone();
                     hp[c] += eps * dir;
                     let mut cur = hp;
-                    for lv in probe_layer..l {
+                    for w in weights.iter().take(l).skip(probe_layer) {
                         let mut next = vec![0.0f32; d];
                         for r in 0..d {
                             for cc in 0..d {
-                                next[r] += weights[lv][r * d + cc] * cur[cc];
+                                next[r] += w[r * d + cc] * cur[cc];
                             }
                         }
                         cur = next;
