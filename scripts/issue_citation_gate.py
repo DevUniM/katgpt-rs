@@ -438,6 +438,30 @@ _NAME = _NameRx()
 _ALIAS_REACH = 40
 
 
+def written_names(lead: str, sibs: list[Path]) -> set[str]:
+    """Repos whose FULL directory name is literally written on this citation.
+
+    The accusation half of `qualifiers()`. `adjacent` pools full names with
+    SHORT-FORM aliases, and that pooling is safe in only one direction: an
+    alias match that QUALIFIES a citation is a leniency (it clears a row), and
+    an alias match that ATTRIBUTES one is an accusation — reported as
+    `⛔MISATTRIBUTED`, a class walled at 0.
+
+    ⛔ Measured 2026-09-15, and the hazard was already written down one
+    function below: *"`chain`, `train` and `shader` are ordinary words in this
+    prose."* riir-game-sdk's `AGENTS.md:160` reads *"the Active-preview mirror
+    client chain (Plan 199 Phase E A5/E3)"*, and the bare word **chain** — 38
+    characters ahead, inside the 40-char lead — produced
+    `⛔MISATTRIBUTED: names riir-chain, which does NOT own 199`. The string
+    `riir-chain` does not appear in that file at all. One false accusation,
+    hard-failing a repo's sweep, on prose that named no repo.
+
+    An accusation that a document wrote the wrong address must be able to QUOTE
+    the address. A short alias is not an address somebody wrote.
+    """
+    return {s.name for s in sibs if _NAME[s.name].search(lead)}
+
+
 def qualifiers(lines: list[str], ln: int, lead: str, sibs: list[Path]) -> tuple[set[str], set[str]]:
     """Repo names the prose offers as this citation's address -> (window, adjacent).
 
@@ -451,7 +475,7 @@ def qualifiers(lines: list[str], ln: int, lead: str, sibs: list[Path]) -> tuple[
     """
     ctx = "\n".join(lines[max(0, ln - 3):ln])
     window = {s.name for s in sibs if _NAME[s.name].search(ctx)}
-    adjacent = {s.name for s in sibs if _NAME[s.name].search(lead)}
+    adjacent = written_names(lead, sibs)
     adjacent |= {s.name for s in sibs for a in aliases(s.name)[1:]
                  if re.search(rf"\b{re.escape(a)}\b", lead)}
     return window | adjacent, adjacent
@@ -654,6 +678,27 @@ def selftest() -> list[str]:
     eq("⚑ an alias is accepted ON the citation",
        quals(["chain Issue 27"], 1, "chain "),
        (["riir-chain"], ["riir-chain"]))
+
+    # ⛔ written_names(): the ACCUSATION half, and the one measured case.
+    # The alias pooling above is a LENIENCY when it qualifies a row and a false
+    # ACCUSATION when it attributes one, and `⛔MISATTRIBUTED` is walled at 0.
+    # riir-game-sdk's "the Active-preview mirror client chain (Plan 199 ...)"
+    # was reported as naming riir-chain; the string `riir-chain` is absent from
+    # that whole file.
+    eq("written_names accepts a full directory name",
+       sorted(written_names("riir-ai Issue 750", sibs)), ["riir-ai"])
+    eq("⛔ written_names REFUSES a bare alias — an accusation must be able "
+       "to quote the address it says was written",
+       sorted(written_names("the mirror client chain ", sibs)), [])
+    eq("...while qualifiers still accepts that same alias (leniency is "
+       "one-directional)",
+       quals(["the mirror client chain Issue 27"], 1,
+             "the mirror client chain "), (["riir-chain"], ["riir-chain"]))
+    eq("written_names honours the segment boundary too",
+       sorted(written_names("in riir-games-mmorpg ", sibs)), [])
+    eq("written_names reads every name on the lead, not just the first",
+       sorted(written_names("riir-ai and riir-train ", sibs)),
+       ["riir-ai", "riir-train"])
     eq("⚑ an alias in the WINDOW qualifies nothing ('train' is ordinary prose)",
        quals(["we train the model", "", "see Issue 750"], 3, "see "),
        ([], []))

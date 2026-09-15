@@ -391,7 +391,15 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
             hint = _crate_hits(ctx, crates, patterns) - {repo.name}
             cls = (IN_RANGE if n <= top[kind] else CROSS if owners else ORPHAN)
             tag = ""
-            bad = adj - set(owners)
+            # ⛔ `written_names`, NOT `adj`. The accusation half must be able
+            # to QUOTE the address it says was written, and `adj` pools full
+            # directory names with short-form ALIASES. An alias match that
+            # qualifies a citation is a leniency; one that attributes it is a
+            # false accusation in a class walled at 0. Measured 2026-09-15:
+            # riir-game-sdk's "the Active-preview mirror client chain (Plan 199
+            # …)" was reported as naming riir-chain, a string absent from that
+            # file, and hard-failed that repo's sweep.
+            bad = icg.written_names(lead, sibs) - set(owners)
             if cls is IN_RANGE and bad:
                 # Issue 794. IN-LOCAL-RANGE is "UNDECIDED, never clean"
                 # because a local referent that was skipped or never committed
