@@ -388,7 +388,20 @@ INSUFFICIENT wherever the captured value is then TESTED: riir-chain's three
 `money_format_gate.sh` reads needed `|| true` **and** an emptiness failure,
 because an empty capture matches no pattern and `|| true` alone converts a
 silent death into a silent PASS on the exact regression the check exists to
-catch (fixed at riir-chain `41e2de8`). Two bash laws are
+catch (fixed at riir-chain `41e2de8`). ⛔ And the sharper specimen is
+riir-neuron-db's leakage-audit guard, where the recipe applied verbatim is
+strictly WORSE than the defect — measured, three arms, on a run producing no
+test-result line: at HEAD `rc 1` silent; with `|| true` alone **`rc 0`, the
+security gate PASSES an unverified run**; with the emptiness check too, the
+fail-loud branch fires. (That line carried a second, independent defect: it
+ended `)":`, a stray colon concatenated outside the quotes, so `[ -z
+"$LEAK_LINE" ]` could never fire and the branch was dead code regardless of
+pipefail. Fixed at riir-neuron-db `9696cc8`.) The whole non-riir-ai population
+is triaged now — 51 findings down to 37, twelve sites fixed in seven sibling
+repos and six adjudicated INERT BY CONSTRUCTION (an earlier `if grep -q` on the
+same pattern and file, or an earlier `[ -z ]` early exit, which a static
+classifier cannot see). What is left unexamined is riir-ai's 26, whose checkout
+on this box is another session's and 109 commits behind. Two bash laws are
 MEASURED, not reasoned: `local x="$(fails)"` does not kill (local masks the
 status — its own LOCAL-MASKED bucket, listed never gated), and a
 `(grep ‖ true) | tail` paren-group is guarded by its interior — which is
