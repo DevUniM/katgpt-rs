@@ -226,6 +226,15 @@ impl InterventionScratch {
 /// `Wᵀ = (G+λI)⁻¹·(XᵀY) = Σⱼ vⱼ·(vⱼᵀ·(XᵀY))/σⱼ` (right vectors only —
 /// the Gram is SPD so its SVD right basis diagonalizes it).
 ///
+/// Dual fast path (n < d — the common activation-bank shape): solves the
+/// mathematically identical `(K+λI)⁻¹Y` system on the n×n kernel
+/// `K = XXᵀ` and back-transforms `W = Yᵀ(K+λI)⁻¹X` — the standard ridge
+/// identity `(XᵀX+λI)⁻¹XᵀY = Xᵀ(XXᵀ+λI)⁻¹Y` with the SAME λ (trace(K) ≡
+/// trace(G)). Strictly cheaper for n < d: n³ + n²·d instead of d³ + d²·n —
+/// the Issue-779-T3 bank (n=288, d=2304) makes this ~500× faster. Pinned
+/// against the primal path by `ridge_primal_dual_agree` (same W within f32
+/// tolerance, identical predictions).
+///
 /// Design record (Issue 779 T1): the 778 POC harness carried an algebra
 /// slip — it formed `G⁺·(XᵀY)` first and then divided by `σⱼ²`, which
 /// collapses to the class-sum readout `W = XᵀY` (a serviceable
@@ -245,6 +254,25 @@ pub fn ridge_probe_fit_into(
     debug_assert_eq!(x.len(), n * d);
     debug_assert_eq!(y.len(), n);
     debug_assert!(w_out.len() >= classes * d);
+    if n < d {
+        ridge_probe_fit_dual_into(x, y, n, d, classes, lambda_scale, scratch, w_out);
+    } else {
+        ridge_probe_fit_primal_into(x, y, n, d, classes, lambda_scale, scratch, w_out);
+    }
+}
+
+/// The n≥d primal of [`ridge_probe_fit_into`] — d×d Gram eigen-solve.
+#[allow(clippy::too_many_arguments)]
+fn ridge_probe_fit_primal_into(
+    x: &[f32],
+    y: &[usize],
+    n: usize,
+    d: usize,
+    classes: usize,
+    lambda_scale: f32,
+    scratch: &mut InterventionScratch,
+    w_out: &mut [f32],
+) {
     let g = &mut scratch.gram[..d * d];
     g.fill(0.0);
     for i in 0..n {
@@ -290,6 +318,87 @@ pub fn ridge_probe_fit_into(
             }
             for a in 0..d {
                 w_out[c * d + a] += vj[a] * s;
+            }
+        }
+    }
+}
+
+/// The n<d dual of [`ridge_probe_fit_into`] — same `w_out` contract, same λ
+/// formula (divided by `d`, matching the primal), n×n kernel factorization.
+/// Uses the `d`-sized scratch buffers' prefixes (n·n ≤ d·d, n·c ≤ d·c).
+#[allow(clippy::too_many_arguments)]
+fn ridge_probe_fit_dual_into(
+    x: &[f32],
+    y: &[usize],
+    n: usize,
+    d: usize,
+    classes: usize,
+    lambda_scale: f32,
+    scratch: &mut InterventionScratch,
+    w_out: &mut [f32],
+) {
+    debug_assert!(n < d);
+    // K = X·Xᵀ + λI (n×n, symmetric PSD)
+    let k = &mut scratch.gram[..n * n];
+    k.fill(0.0);
+    for i in 0..n {
+        let ri = &x[i * d..(i + 1) * d];
+        for j in 0..n {
+            let rj = &x[j * d..(j + 1) * d];
+            let mut s = 0.0_f32;
+            for a in 0..d {
+                s += ri[a] * rj[a];
+            }
+            k[i * n + j] = s;
+        }
+    }
+    // Same λ as the primal: λ_scale · trace(G)/d, and trace(K) ≡ trace(G).
+    let trace: f32 = (0..n).map(|i| k[i * n + i]).sum();
+    let lambda = lambda_scale * trace / d as f32;
+    for i in 0..n {
+        k[i * n + i] += lambda;
+    }
+    // One-hot RHS (n×c), row-major per-sample
+    let yh = &mut scratch.xty[..n * classes];
+    yh.fill(0.0);
+    for i in 0..n {
+        yh[i * classes + y[i]] = 1.0;
+    }
+    // α = (K+λI)⁻¹·Y = Σⱼ vⱼ·(vⱼᵀY)/σⱼ (K+λI is SPD — same one-sided trick)
+    let mut alpha = vec![0.0_f32; n * classes];
+    thin_svd_into(k, n, n, &mut scratch.g_svd_res, &mut scratch.g_svd_work);
+    let len = scratch.g_svd_res.len();
+    let sigma_max = scratch.g_svd_res.singular_value(0).max(1e-12);
+    for j in 0..len {
+        let vj = scratch.g_svd_res.right_singular_vector(j);
+        let inv_s = 1.0 / scratch.g_svd_res.singular_value(j).max(1e-9 * sigma_max);
+        for c in 0..classes {
+            let mut proj = 0.0_f32;
+            for i in 0..n {
+                proj += vj[i] * yh[i * classes + c];
+            }
+            let s = proj * inv_s;
+            if s == 0.0 {
+                continue;
+            }
+            for i in 0..n {
+                alpha[i * classes + c] += vj[i] * s;
+            }
+        }
+    }
+    // W = αᵀ·X (c×d row-major)
+    for wv in w_out[..classes * d].iter_mut() {
+        *wv = 0.0;
+    }
+    for i in 0..n {
+        let row = &x[i * d..(i + 1) * d];
+        for c in 0..classes {
+            let a_ic = alpha[i * classes + c];
+            if a_ic == 0.0 {
+                continue;
+            }
+            for a in 0..d {
+                w_out[c * d + a] += a_ic * row[a];
             }
         }
     }
@@ -635,6 +744,7 @@ mod tests {
     #[test]
     fn probe_sanity_two_class_separable() {
         // Minimal sanity: means ±1 on coord 0, no noise ⇒ accuracy 1.0.
+        // (n=20 < D=24 — this also exercises the dual dispatch.)
         let x: Vec<f32> = (0..20)
             .map(|i| {
                 let mut v = vec![0.0_f32; D];
@@ -650,6 +760,60 @@ mod tests {
         let mut recall = vec![0.0_f32; 2];
         let acc = eval_head_into(&x, &y, 20, D, &w, 2, &mut recall, &mut scratch.eval_hits, &mut scratch.eval_total);
         assert!(acc > 0.99, "sanity acc {acc}");
+    }
+
+    /// The n<d dual must reproduce the n≥d primal EXACTLY (mathematically)
+    /// on the same data — the Issue-779-T3 bank shape (n=288 < d=2304) rides
+    /// this dispatch, so the identity is pinned, not assumed: same W within
+    /// f32 tolerance, identical predictions on a fresh eval set.
+    #[test]
+    fn ridge_primal_dual_agree() {
+        let (n, d, c) = (16_usize, 24, 4); // n < d
+        let mut rng = InterventionRng::new(99);
+        // Class-conditional mean shifts (a linear probe reads MEANS — the
+        // R557 fixture lesson) + noise.
+        let mut x = vec![0.0_f32; n * d];
+        let y: Vec<usize> = (0..n).map(|i| (i / 2) % c).collect();
+        for i in 0..n {
+            for a in 0..d {
+                let mean = if a % c == y[i] { 1.5 } else { 0.0 };
+                x[i * d + a] = mean + 0.2 * rng.next_gaussian();
+            }
+        }
+        let mut eval_x = vec![0.0_f32; n * d];
+        let eval_y: Vec<usize> = (0..n).map(|i| (i / 2) % c).collect();
+        for i in 0..n {
+            for a in 0..d {
+                let mean = if a % c == eval_y[i] { 1.5 } else { 0.0 };
+                eval_x[i * d + a] = mean + 0.2 * rng.next_gaussian();
+            }
+        }
+        let mut scratch = InterventionScratch::new(d, c, n, n);
+        let mut w_primal = vec![0.0_f32; c * d];
+        let mut w_dual = vec![0.0_f32; c * d];
+        ridge_probe_fit_primal_into(&x, &y, n, d, c, 0.01, &mut scratch, &mut w_primal);
+        ridge_probe_fit_dual_into(&x, &y, n, d, c, 0.01, &mut scratch, &mut w_dual);
+        let scale = w_primal
+            .iter()
+            .fold(0.0_f32, |m, v| m.max(v.abs()))
+            .max(1e-12);
+        let max_delta = w_primal
+            .iter()
+            .zip(&w_dual)
+            .fold(0.0_f32, |m, (a, b)| m.max((a - b).abs()));
+        assert!(
+            max_delta < 1e-3 * scale,
+            "primal/dual W disagree: max_delta {max_delta} vs scale {scale}"
+        );
+        let mut recall_p = vec![0.0_f32; c];
+        let mut recall_d = vec![0.0_f32; c];
+        let acc_p = eval_head_into(&eval_x, &eval_y, n, d, &w_primal, c, &mut recall_p, &mut scratch.eval_hits, &mut scratch.eval_total);
+        let acc_d = eval_head_into(&eval_x, &eval_y, n, d, &w_dual, c, &mut recall_d, &mut scratch.eval_hits, &mut scratch.eval_total);
+        assert!(
+            (acc_p - acc_d).abs() <= 1.0 / n as f32,
+            "same W to f32 tolerance must not move more than a borderline sample: {acc_p} vs {acc_d}"
+        );
+        assert!(acc_p > 0.9 && acc_d > 0.9, "the fixture must be separable ({acc_p}/{acc_d})");
     }
 
     /// G1(a) — the projection identity: aligned@k=rank reproduces the full

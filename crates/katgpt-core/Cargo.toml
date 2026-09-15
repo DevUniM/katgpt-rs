@@ -3047,3 +3047,12 @@ required-features = ["lif_graph"]
 name = "bench_775_adjoint_goat"
 harness = false
 required-features = ["dual_wave"]
+
+# bench_779_real_bank_affinity (Issue 779 T3 / Bench doc 767): the real-model
+# layer-affinity measurement over a captured gemma-2-2b residual-stream bank.
+# An ordinary #[test] harness (not criterion) and #[ignore]d — the bank paths
+# arrive via BANK779_BIN/BANK779_JSON. The whole-file #![cfg] protects the
+# COUNT; this row protects the READER (AGENTS.md, the green-zero rule).
+[[test]]
+name = "bench_779_real_bank_affinity"
+required-features = ["subspace_intervention"]
