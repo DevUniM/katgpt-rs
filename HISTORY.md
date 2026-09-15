@@ -31,7 +31,7 @@ found absent from every shipped composer (axis iv), now shipped in `katgpt_core:
 (opt-in feature `meld`). T5 routing per the issue's refuted branch: keep the primitive,
 record the negative (Research 560 addendum §PoC Verdict + status DOWNGRADED), keep the
 audit as the standing finding; fusion rows F1/F2 lose the composition-for-structure
-premise (their disagreement-trace half survives via λ̃); F6's provenance hook (Issue 618
+premise (their disagreement-trace half survives via λ̃); F6's provenance hook (riir-neuron-db Issue 618
 drift ledger) unaffected. Revival path on record (not owed): amplitude-vector 2AFC to
 localize where bracketing info lives + the stochastic-noise readout for the clean
 exp(S₂) identification. Issue file removed per the noise-reduction rule; this row +
