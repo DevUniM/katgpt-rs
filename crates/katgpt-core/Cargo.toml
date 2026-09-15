@@ -132,6 +132,14 @@ statrs = "0.17"
 # Bench gate (≥4× the scalar loop at 8 lanes).
 bf16_simd = []
 
+# jsd_topk (Issue 802 item 2, 2026-09-16): NaN-safe bounded top-K Jensen–
+# Shannon divergence kernel — JSD = H(M) − ½H(P) − ½H(Q) over renormalized
+# top-K slices; disjoint supports → EXACTLY ln 2 (never the KL +∞/NaN trap
+# that poisons gates). Known-answer gates + throughput bench. Prerequisite
+# for Issue 802's commitment-gap calibration tables (1) and the tri_mode
+# graded verdicts (4). OPT-IN.
+jsd_topk = []
+
 # meld (Issue 801 T3, 2026-09-16): bounded non-associative composition law
 # from Research 560 (arXiv:2609.14384 §4.9.1) — meld(u,v) =
 # sat(κ·W·[λ⋆u+(1−λ⋆)v]) with the pointwise soft-min mixture λ⋆ (offset-
@@ -3075,6 +3083,14 @@ required-features = ["dual_wave"]
 # An ordinary #[test] harness (not criterion) and #[ignore]d — the bank paths
 # arrive via BANK779_BIN/BANK779_JSON. The whole-file #![cfg] protects the
 # COUNT; this row protects the READER (AGENTS.md, the green-zero rule).
+# Issue 802 item 2 — NaN-safe bounded top-K JSD kernel gate (G1 known-answer
+# gates: disjoint supports → exactly ln 2, identical dists → 0, the KL-trap
+# vectors; G2 throughput vs full-K reference; G4 zero-alloc).
+[[bench]]
+name = "bench_802_jsd_topk"
+harness = false
+required-features = ["jsd_topk"]
+
 # Issue 800 Arm A — SIMD bf16⇄f32 batch conversion GOAT gate (G1 known-answer
 # vs `half` RNE + NaN/Inf/subnormal survival, G2 ≥4× scalar at 8 lanes,
 # G4 zero-alloc into_buf).
