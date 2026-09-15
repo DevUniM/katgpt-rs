@@ -1406,8 +1406,12 @@ scripts/instrument_reachability_drift_sweep.py           # every repo, ratcheted
   unreachable script and this gate reds there.
 - Verdict half across the workspace:
   `scripts/instrument_reachability_drift_sweep.py` — a **ratchet**, and the
-  reason is measured (95 of 152 unreachable, riir-train 61 of 61 where the
-  predicate over-captures). See the sweep family list above.
+  reason is measured (first run, 2026-09-14: 95 of 152 unreachable, riir-train
+  61 of 61 where the predicate over-captures). ⛔ Take the LIVE figures from
+  the sweep's own summary line, which derives them: the typed pair in that
+  line went stale the day a sibling's tooling was documented and printed a
+  count contradicting the measured total one line above it. See the sweep
+  family list above.
 
 ## A kernel can derive its SHAPE from a buffer's declared size — `scripts/len_derived_binding_audit.py`
 

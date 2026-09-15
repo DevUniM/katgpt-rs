@@ -12,8 +12,8 @@
 # row, in scripts/instrument_unreferenced_expected.txt — that is the per-push
 # gate, over the repo that owns the rows.
 #
-# Workspace-wide the same predicate finds 95 rows over 15 repos, and riir-train
-# is 61 of 61: its scripts/ is almost entirely plan-scoped one-offs
+# Workspace-wide the same predicate finds far more, and riir-train is all of
+# them: its scripts/ is almost entirely plan-scoped one-offs
 # (plan341_band_pool.py, plan346_diversity_gate.py, t504_harvest.py) and its
 # AGENTS.md names none of them. In that repo the predicate OVER-CAPTURES — a
 # plan artifact is not an instrument, and "unfindable from AGENTS.md" is the
@@ -23,6 +23,11 @@
 # unfindable script reds, and the existing rows are their own repos' to
 # adjudicate. That is the strongest claim this repo can honestly make about
 # somebody else's tree.
+#
+# ⛔ The counts are DERIVED and printed by the sweep's own summary line; do not
+# restate one here. The version of this header that did went stale the day a
+# sibling repo's tooling was documented, and the sweep printed a figure that
+# contradicted the measured total one line above it.
 #
 # ⚠ This is deliberately NOT the Issue 785 rule's target. That rule forbids
 # ratcheting a bucket meaning *unanswered* — a backlog with no owner. This
@@ -72,7 +77,7 @@ riir-neuron-db                   0          2                0
 riir-shader                      1          1                2
 riir-train                      36          1               61
 riir-viewbridge                  0          1                0
-seal-game-editor                 1          1                2
+seal-game-editor                 1          1                1
 seal-online-remaster             0          1                0
 seal-remake                      3          1                6
 #

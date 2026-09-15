@@ -25,8 +25,9 @@ Read that honestly: in riir-train the predicate **over-captures**. A plan
 artifact is not an instrument, and "nobody can find it from AGENTS.md" is the
 expected, correct state for a script whose whole life was one plan task. The
 per-repo gate's membership pin — a row and a REASON for each — is right for the
-repo that owns it and 7 rows; it is not right for 95 rows across 15 repos whose
-judgement calls are not this repo's to make.
+repo that owns it; it is not right for the rows in the other fifteen repos,
+whose judgement calls are not this repo's to make. (Both counts are printed by
+the run — take them from its summary line, never from this paragraph.)
 
 So the sweep is a **RATCHET**, not a membership set:
 
@@ -46,14 +47,14 @@ backlog with no owner. This bucket means *unfindable*, every row has an owner,
 and the ratchet is on the DERIVATIVE — it constrains what lands next, not what
 already landed.
 
-Two floors, and in 5 of 16 repos neither bites
+Two floors, and in 6 of 16 repos neither bites
 -----------------------------------------------
 `min_scripts` catches the walk going blind. `min_roots` catches the permissive
 direction: with fewer roots, MORE scripts read as unreachable — so a shrinking
 root set inflates the finding count rather than hiding it, and the floor is
 about the instrument, not the tree.
 
-⚠ Five repos have **0 tracked `scripts/*.py`** (riir-auth, riir-game-sdk,
+⚠ Six repos have **0 tracked `scripts/*.py`** (riir-auth, riir-game-sdk,
 riir-kat, riir-neuron-db, riir-viewbridge, seal-online-remaster), so both
 quantities are 0 there and neither detects anything — Issue 783's population
 shape, stated as a measurement rather than assumed. What rescues those rows is
@@ -85,6 +86,9 @@ sys.path.insert(0, str(HERE))
 # DRY: the closure is the per-push gate's, so the sweep and the gate can never
 # disagree about what "reachable" means.
 import instrument_reachability_gate as irg  # noqa: E402
+
+# The repo that owns the membership pin — derived, never typed.
+SELF = irg.REPO_ROOT.name
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
@@ -277,6 +281,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
 
     bad = False
     tot_s = tot_r = tot_u = 0
+    per_repo: dict[str, tuple[int, int]] = {}
 
     for name in names:
         repo = WORKSPACE / name
@@ -284,6 +289,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
         tot_s += len(scripts)
         tot_r += len(roots)
         tot_u += len(unreached)
+        per_repo[name] = (len(scripts), len(unreached))
 
         row = pins.get(name)
         flags = []
@@ -331,12 +337,27 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
 
     print(f"\n{len(names)} contract repo(s) · {tot_s} tracked scripts/*.py · "
           f"{tot_r} root(s) · {tot_u} unreachable")
-    print("  the ceiling is a RATCHET, not a wall, and only here: this repo's "
-          "own 7 rows are pinned by MEMBERSHIP with a reason each in "
-          "instrument_reachability_gate.py. 95 rows across 15 repos are not "
-          "this repo's judgement calls to make, and in riir-train (61 of 61) "
-          "the predicate OVER-CAPTURES — a plan-scoped one-off is not an "
-          "instrument. The ratchet constrains what lands NEXT.")
+    # ⛔ Every figure in this paragraph is DERIVED from the run above. The
+    # first version typed them, and on 2026-09-15 it printed "95 rows across
+    # 15 repos" directly beneath its own measured "94 unreachable" — a number
+    # contradicting the line above it, in a sweep whose whole subject is
+    # records drifting away from what they describe. The typed pair was
+    # never right either: it read the workspace TOTAL as the
+    # everyone-else count and 16-minus-self as the number of repos actually
+    # carrying rows.
+    own = per_repo.get(SELF, (0, 0))[1]
+    others = [(n, sc, u) for n, (sc, u) in per_repo.items() if n != SELF and u]
+    n_other_rows = sum(u for _, _, u in others)
+    top = max(others, key=lambda t: t[2], default=None)
+    top_txt = (f", and in {top[0]} ({top[2]} of {top[1]}) the predicate "
+               f"OVER-CAPTURES — a plan-scoped one-off is not an instrument"
+               if top else "")
+    print(f"  the ceiling is a RATCHET, not a wall, and only here: this "
+          f"repo's own {own} row(s) are pinned by MEMBERSHIP with a reason "
+          f"each in instrument_reachability_gate.py. {n_other_rows} row(s) "
+          f"across {len(others)} other repo(s) carrying any are not this "
+          f"repo's judgement calls to make{top_txt}. The ratchet constrains "
+          f"what lands NEXT.")
 
     if bad:
         print("✗ instrument-reachability sweep FAILED — see the ✗ rows above")
