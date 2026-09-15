@@ -999,15 +999,31 @@ blaming the gates for its own boundary.
   CHECKS population and **not** as a comparable number: these arms cover a
   *classifier*, and the whole 652 is an unread backlog — exactly the shape
   Issue 785 forbids ratcheting, and deliberately NOT in the gate's population.
-- ⚠ **Two of the three weakest were armed on the measurement, and the third is
-  the standing worst.** `feature_isolation_gate` went **4 killed of 62 → 24**
-  and `citation_weight` **3 of 41 → 12**; each needed an EXTRACTION first,
-  which is T4's finding yet again — `parse_changed_flags` was welded to its
+- ⚠ **The three weakest were armed on the measurement, and every one needed
+  an EXTRACTION before an arm could be written at all** — T4's finding three
+  more times. `feature_isolation_gate` went **4 killed of 62 → 24** and
+  `citation_weight` **3 of 41 → 12**: `parse_changed_flags` was welded to its
   `git diff` call, and `attribute()`, the scoring function § Numbering
   Discipline sends you to, had **no arm at all** while its module's arm covered
   only the two INPUTS that feed it. Both are pure over plain data and neither
-  needed a fixture repo. `ci_gate_coverage` (**4 killed of 74**, 5% reach) is
-  now the weakest instrument in the workspace and is untouched.
+  needed a fixture repo. `ci_gate_coverage` was the standing worst at **4
+  killed of 74** (5% reach) and is **54 of 73** (1 live survivor); it needed
+  both halves of the pattern — four verdicts extracted out of `main()` and a
+  branch probe injected out of `git ls-tree`.
+  - ⛔ **The extraction found a live defect, which is the argument for doing it
+    even where the arms are the goal.** `main()` classified for DISPLAY with one
+    ladder and COUNTED with independent predicates, so a repo carrying both a
+    partial command and a data-borne signal was counted **twice**: the summary
+    read `6 full; 1 dynamic; 9 partial; 1 no CI` over **16** repos. A verdict
+    and a tally that disagree about how many states a repo is in is the same
+    class as a count that is not a checksum.
+  - ⚠ **An injected probe asserts the ABSTRACTION, so the production path is
+    then free to disagree with it.** Measured: the injection that made every
+    reachability rule reachable left `_git`, `_on_branch` and `default_branch`
+    as the module's last three unreached decisions. They get a REAL git tree
+    (`update-ref` into `refs/remotes/origin/*` — no network, no bare remote),
+    and it reports **UNSEEN** rather than passing where git is absent. Budget
+    the cost: the module's run went **3.2s → 33.4s** for those nine arms.
 - ⚠ **Expensive is not wedged, and the report cannot tell you which.**
   `platform_dead_code_audit` (393s, 132/269) and `len_derived_drift_sweep`
   (1039s, 37/48) both blew a 300s budget and both completed cleanly when given
