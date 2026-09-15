@@ -93,6 +93,18 @@
 # never fire and the fail-loud branch was dead code independently of pipefail.
 # Where a captured value is TESTED, read the test before neutralizing the
 # capture.)
+# (dropped 2026-09-15, batch 3 — the eyes list is now TRIAGE-COMPLETE: every
+# LIVE kill-shape fixed; only the 4 DELIBERATE proof_gate tripwires and the 6
+# INERT BY CONSTRUCTION adjudications remain pinned. All COMMITTED and pushed,
+# 0/0 vs origin — the riir-ai 25-row block (22 ci_feature_guard layer-summary
+# extractions + the tcc nvidia-smi read + the two rove ppl reads; the rows
+# themselves were dropped at 737694817 without this citation), riir-deployer
+# b3c7bbd (control-do test.sh TS_PAIR — the empty var reaches the existing
+# [ -z ] fail branch one line below), riir-mmorpg-examples 0688254
+# (warm-tier-do test.sh SEQ1+SEQ2 — the empty vars reach the existing
+# -n/-ge and -gt || fail checks; every downstream already owned the empty
+# case, so no site needed more than the neutralizer).
+#
 katgpt-rs:scripts/proof_gate.sh:b6c4ffde#1   DELIBERATE tripwire: death on an empty PrintAxioms.lean is the precondition assert - an axiom-free proof must fail loud here, not pass. Drop the row only in the commit that re-homes the assert.   #= directives="$(grep -c '^#print axioms' PrintAxioms.lean)"
 riir-ai:scripts/proof_gate.sh:b6c4ffde#1   DELIBERATE tripwire: death on an empty PrintAxioms.lean is the precondition assert - an axiom-free proof must fail loud here, not pass. Drop the row only in the commit that re-homes the assert.   #= directives="$(grep -c '^#print axioms' PrintAxioms.lean)"
 
@@ -100,9 +112,6 @@ riir-chain:scripts/katgpt_lock_freshness_gate.sh:c8fcede9#1   INERT BY CONSTRUCT
 riir-chain:scripts/katgpt_lock_freshness_gate.sh:4b17da6b#1   INERT BY CONSTRUCTION (adjudicated 2026-09-15, not unexamined): same `[ -z "$PAIRS" ]` early exit as the row above; awk's $1 is the rev field of a line the producer guarantees non-blank, so sort -u | grep -c . is >= 1 whenever this line is reached.   #= N_REVS="$(printf '%s\n' "$PAIRS" | awk '{print $1}' | sort -u | grep -c .)"
 riir-chain:scripts/money_bytes_gate.sh:25550db3#1   INERT BY CONSTRUCTION (adjudicated 2026-09-15, not unexamined): $hit is produced by `grep -lwF -- "$fn"` in the same loop's process substitution, so the -owF re-scan of that file with that pattern must match. ⚠ The residue is REAL but is a different class: a concurrent editor deleting the call, or the file, between the two greps - this workspace runs five-plus sessions against shared worktrees (Issue 797). Not repairable with a neutralizer; a `|| true` here would silently record n=0 occurrences for a file that has them.   #= n="$(grep -owF -- "$fn" "$hit" | wc -l | tr -d ' ')"
 riir-chain:scripts/proof_gate.sh:b6c4ffde#1   DELIBERATE tripwire: death on an empty PrintAxioms.lean is the precondition assert - an axiom-free proof must fail loud here, not pass. Drop the row only in the commit that re-homes the assert.   #= directives="$(grep -c '^#print axioms' PrintAxioms.lean)"
-riir-deployer:cloudflare/control-do/test.sh:b7a83d21#1   LIVE kill-shape: a table with no ts_ms rows kills the e2e before its retry loop; unexamined - fix drops the row.   #= TS_PAIR="$(sq_retry "$DB" "SELECT CAST(value AS TEXT) FROM \"$TABLE\"" | LC_ALL=C grep -o '"ts_ms":[0-9]*' | head -1)"
-riir-mmorpg-examples:cloudflare/warm-tier-do/test.sh:16f74227#1   LIVE kill-shape: a header with no next_segment_seq kills the e2e mid-assert; unexamined - fix drops the row.   #= SEQ1=$(printf '%s' "$H1" | grep -o '"next_segment_seq":[0-9]*' | cut -d: -f2)
-riir-mmorpg-examples:cloudflare/warm-tier-do/test.sh:3c9eaaee#1   LIVE kill-shape: a header with no next_segment_seq kills the e2e mid-assert; unexamined - fix drops the row.   #= SEQ2=$(printf '%s' "$H2" | grep -o '"next_segment_seq":[0-9]*' | cut -d: -f2)
 riir-mmorpg-examples:scripts/ci_boundary_guard.sh:1383d9e5#1   INERT BY CONSTRUCTION (adjudicated 2026-09-15, not unexamined): the enclosing `if grep -qE '^fn distance_2d|^pub.*fn distance_2d' "$file"` is the SAME pattern on the SAME file, so this line is reached only when the symbol is present and the -nE re-scan cannot miss. The pin's original reason had it backwards - the missing-symbol case never reaches here.   #= line=$(grep -nE '^fn distance_2d|^pub.*fn distance_2d' "$file" | head -1 | cut -d: -f1)
 riir-mmorpg-examples:scripts/ci_boundary_guard.sh:286bc90c#1   INERT BY CONSTRUCTION (adjudicated 2026-09-15, not unexamined): same shape as the row above - guarded by an `if grep -qE` on the identical pattern and file.   #= line=$(grep -nE '^fn distance.*sq|^pub.*fn distance.*sq' "$file" | head -1 | cut -d: -f1)
 riir-mmorpg-examples:scripts/ci_boundary_guard.sh:eda57629#1   INERT BY CONSTRUCTION (adjudicated 2026-09-15, not unexamined): same shape again - guarded by an `if grep -qE` on the identical const alternation and file.   #= line=$(grep -nE 'const\s+(FEAR_KICK|FLEE_FEAR|NPC_FEAR_DECAY|EMOTION_KICK|THREAT_KICK)' "$file" | head -1 | cut -d: -f1)

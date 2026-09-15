@@ -38,25 +38,27 @@
 #
 # ── measured basis (2026-09-15, first run, all 20 repos — COMMENTED, the
 #    live rows below are the pins; keeping both as rows would double-key
-#    the parser) ─────────────────────────────────────────────────────────
+#    the parser; findings cells re-measured post-triage 2026-09-15 — the
+#    eyes-list campaign fixed every LIVE kill-shape, so each fixed repo's
+#    ceiling now sits AT its measured pinned count) ─────────────────────
 #                     scripts  sites  findings  unparsed
 # katgpt-rs                   9     71         1         0
 # katgpt-web                  0      0         0         0
-# riir-ai                    24    288        26         0
-# riir-auth                   2     10         1         0
-# riir-chain                 33    193         7         0
+# riir-ai                    24    288         1         0
+# riir-auth                   2     10         0         0
+# riir-chain                 33    193         4         0
 # riir-clippy                11     78         0         0
 # riir-dao                    2     13         0         0
-# riir-dapps                  6    185         3         0
-# riir-deployer               4     69         1         0
+# riir-dapps                  6    185         0         0
+# riir-deployer               4     69         0         0
 # riir-esp32                  3      1         0         0
 # riir-game-sdk               5     21         0         0
 # riir-kat                    2     11         0         0
-# riir-mmorpg-examples       14     85         8         0
-# riir-neuron-db              5     25         2         0
+# riir-mmorpg-examples       14     85         3         0
+# riir-neuron-db              5     25         1         0
 # riir-shader                 7     15         0         0
-# riir-train                 48    172         1         0
-# riir-viewbridge             3     17         1         0
+# riir-train                 48    172         0         0
+# riir-viewbridge             3     17         0         0
 # seal-game-editor            4     11         0         0
 # seal-online-remaster        7     26         0         0
 # seal-remake                 5     68         0         0
@@ -64,21 +66,21 @@
 #                     scripts  sites  findings  unparsed
 katgpt-rs                   5     42         1         0
 katgpt-web                  0      0         0         0
-riir-ai                    14    172        26         0
-riir-auth                   1      6         1         0
-riir-chain                 19    115         7         0
+riir-ai                    14    172         1         0
+riir-auth                   1      6         0         0
+riir-chain                 19    115         4         0
 riir-clippy                 6     46         0         0
 riir-dao                    1      7         0         0
-riir-dapps                  3    111         3         0
-riir-deployer               2     41         1         0
+riir-dapps                  3    111         0         0
+riir-deployer               2     41         0         0
 riir-esp32                  1      0         0         0
 riir-game-sdk               3     12         0         0
 riir-kat                    1      6         0         0
-riir-mmorpg-examples        8     51         8         0
-riir-neuron-db              3     15         2         0
+riir-mmorpg-examples        8     51         3         0
+riir-neuron-db              3     15         1         0
 riir-shader                 4      9         0         0
-riir-train                 28    103         1         0
-riir-viewbridge             1     10         1         0
+riir-train                 28    103         0         0
+riir-viewbridge             1     10         0         0
 seal-game-editor            2      6         0         0
 seal-online-remaster        4     15         0         0
 seal-remake                 3     40         0         0
