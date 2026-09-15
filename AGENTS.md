@@ -348,6 +348,39 @@ floors are not interchangeable and neither is redundant — `min_calls` is **0
 in 10 of 16 repos**, because they have `.py` files and no `subprocess` at all,
 so in exactly those repos `min_py_files` is the only blindness detector there
 is),
+`pipefail_discard_audit.py` + `pipefail_discard_drift_sweep.py` (every
+contract repo, on demand — the shell class where a `var="$(pipeline)"`
+assignment under `set -euo pipefail` is killed by a legitimately-empty grep
+(e exit 1 on no-match) AFTER the measured work ran and BEFORE the result was
+written — the riir-ai `perf_rematch.sh` incident that lost five benchmark
+cells (fix `512b74939`, the sweep's `--prove-fires` known answer; `-S`
+cannot locate it — the fix added `|| true` without changing occurrence
+counts — so the sweep locates it via `git log -L`). First-run census
+(2026-09-15): 194 tracked `.sh` / 1,359 substitution sites / **51 findings,
+0 UNPARSED**, every row pinned with a reason in `pipefail_discard_expected.txt`
+as an EYES LIST (4 deliberate `grep -c` tripwires in the four `proof_gate.sh`
+copies + 47 live kill-shapes awaiting owner triage — the 21-row
+`riir-ai/scripts/ci_feature_guard.sh` layer-summary cluster is the
+highest-value block: a failing layer's missing `ok` line kills the gate
+mid-summary instead of letting the comparison report it). Two bash laws are
+MEASURED, not reasoned: `local x="$(fails)"` does not kill (local masks the
+status — its own LOCAL-MASKED bucket, listed never gated), and a
+`(grep ‖ true) | tail` paren-group is guarded by its interior — which is
+what moved 6 dapps `setup.sh` rows to GUARDED),
+`toolchain_override_audit.py` + `toolchain_override_drift_sweep.py` (every
+contract repo, on demand — the class where a hardcoded `RUSTUP_TOOLCHAIN`
+override outlives the workspace pin it contradicts (intake P14 (k): a
+`1.95.0` netem-script override survived the 09-04 bump to 1.98.1 and built a
+sibling at the box default). Scans tracked `.sh/.yml/.yaml/.toml/.py` +
+Dockerfiles comment-aware; verdicts MATCH / DELIBERATE (the in-source
+`toolchain-override-deliberate` marker — same line, contiguous comment run
+above the line, or above the HEAD of the backslash-continuation command,
+because a comment cannot live inside a continuation chain) / DRIFT (walled
+at 0) / UNRESOLVED (TOKEN values, counted ceiling) / NO-PIN-OVERRIDE +
+repo-level UNPINNED-REPO (both INFO — 13 of 20 repos carry no
+`rust-toolchain.toml` against the owner's every-workspace-pins directive;
+the real repair is pin files, owner-owned). First green run: 0 DRIFT, 3
+DELIBERATE, 1 UNRESOLVED-MARKED, 1 NO-PIN-OVERRIDE),
 `orphaned_attr_drift_sweep.py` (every contract repo, on demand — the Issue 784
 verdict half of `orphaned_attr_gate.py`, and the **eighth** instance of this
 shape. The one that found **no** new offenders, which is the honest outcome to

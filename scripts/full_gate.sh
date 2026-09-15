@@ -285,7 +285,11 @@ fi
 #   sys::position` / `cannot find function enable_raw_mode in module sys`:
 #   crossterm has no wasm32 backend. A TUI arena cannot target a browser;
 #   this is a fact about the dependency, not a gap to close.
-WASM_RESIDUE=$(printf '%s\n' "$WASM_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' | sort)
+# `|| true` at the tail: under `set -euo pipefail`, grep -v exits 1 when it
+# outputs NOTHING (every site filtered), which would kill the gate on exactly
+# the changed-set case the comparison below exists to report. The residue
+# variable then reads empty and the != comparison prints its own verdict.
+WASM_RESIDUE=$(printf '%s\n' "$WASM_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' | sort || true)
 WASM_RESIDUE_EXPECTED='crates/katgpt-core/benches/bench_432_simd_lut_dequant_goat.rs
 crates/katgpt-core/examples/simd_wasm32_goat.rs
 examples/bomber_21_sonlt_arena.rs
