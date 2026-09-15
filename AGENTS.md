@@ -379,7 +379,16 @@ as an EYES LIST (4 deliberate `grep -c` tripwires in the four `proof_gate.sh`
 copies + 47 live kill-shapes awaiting owner triage — the 21-row
 `riir-ai/scripts/ci_feature_guard.sh` layer-summary cluster is the
 highest-value block: a failing layer's missing `ok` line kills the gate
-mid-summary instead of letting the comparison report it). Two bash laws are
+mid-summary instead of letting the comparison report it). ⛔ That is a dated
+CENSUS, not a standing figure, and it started moving the same day — take the
+live counts from the sweep's own summary line, and the per-row standing from
+the pin file, where a row now says INERT BY CONSTRUCTION or LIVE. ⛔ And the
+one-line repair recipe in that file's header — "one neutralizer" — is
+INSUFFICIENT wherever the captured value is then TESTED: riir-chain's three
+`money_format_gate.sh` reads needed `|| true` **and** an emptiness failure,
+because an empty capture matches no pattern and `|| true` alone converts a
+silent death into a silent PASS on the exact regression the check exists to
+catch (fixed at riir-chain `41e2de8`). Two bash laws are
 MEASURED, not reasoned: `local x="$(fails)"` does not kill (local masks the
 status — its own LOCAL-MASKED bucket, listed never gated), and a
 `(grep ‖ true) | tail` paren-group is guarded by its interior — which is
