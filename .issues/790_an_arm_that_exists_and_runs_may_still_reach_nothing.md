@@ -505,6 +505,44 @@ Candidate repair, NOT landed here because the mechanism is unverified: a label
 FLOOR, the same blindness detector every sweep in this family carries. Worth
 one measurement before writing.
 
+#### RESOLVED 2026-09-15 — the measurement, and it refutes both halves above
+
+One forced failure mode at a time, against this repo's real tree:
+
+| forced failure              | verdict printed                    | exit |
+|-----------------------------|------------------------------------|------|
+| every `.md` read raises     | `checked 0 labels, 0 mismatches`   |  0   |
+| every manifest read raises  | `checked 0 labels, 0 mismatches`   |  0   |
+| 10% of manifest reads raise | `checked 97 labels, 1 mismatches`  |  1   |
+| 50% of manifest reads raise | `checked 97 labels, 24 mismatches` | 24   |
+
+⛔ **The manifest direction is not loud.** An empty default closure makes every
+label UNRESOLVABLE rather than mismatched, so it prints the same confident green
+the docs direction does — two silent zeros, not one and one.
+
+⛔ **And the proposed floor would not have caught the run that was observed.**
+A PARTIAL read keeps the label count at its full 97 and corrupts only the model
+the labels are judged against; the observed verdict sits above any floor
+calibrated on 97, every time. The floor bounds the TOTAL failures and is
+necessary; it is not sufficient, and writing it alone would have closed this
+finding while leaving the actual failure standing.
+
+Landed (`30f6c523`): `BlindRead` aborts on an `OSError` over a file the walk
+just listed — exit **2**, never 1, because `1` means "mismatches were found"
+and an instrument that could not read has found nothing. A `TOMLDecodeError`
+keeps its warning; that is real content to walk past. Plus the two floors
+(`MIN_DOCS` the walk, `MIN_LABELS` the read+tokenizer over a full-size walk),
+and the verdict line now carries its population: `checked 97 labels over 439
+doc(s)`.
+
+⚠ The census hazard bit while MEASURING, which is worth more than the finding:
+the first pass patched `Path.read_text`, reported the manifest direction CLEAN,
+and had never touched it — manifests are read with `cargo.open("rb")` +
+tomllib. A measurement over one representation is blind to whatever that
+representation omits (Issue 787's lesson, in a two-line harness).
+
+Arm reach on the module: 9 live survivors → 3.
+
 ### ⛔ Finding 4 — the gate caught the commit that changed it
 
 The `if r.get("baseline", …) != A.BASE_OK:` branch added to `measure()` read

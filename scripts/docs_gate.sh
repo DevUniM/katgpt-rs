@@ -98,7 +98,7 @@ cd "$REPO_ROOT"
 
 CHECKS=(
     "scripts/count_features.py:flag counts in README + examples/README vs every manifest"
-    "scripts/bench_doc_audit.py:(default-on|opt-in) labels in .benchmarks + .docs vs Cargo defaults"
+    "scripts/bench_doc_audit.py:(default-on|opt-in) labels in .benchmarks + .docs vs Cargo defaults — plus two blindness floors and BlindRead, exit 2: an OSError on a file the walk just listed means the tree is unreadable, and a PARTIAL manifest read fabricates mismatches ABOVE any floor (Issue 790 F9)"
     "scripts/cargo_comment_audit.py:inline Cargo.toml comments vs the default closure"
     "scripts/skill_repo_set_gate.py:hand-typed repo sets in SKILL.md command blocks (Issue 703)"
     "scripts/agents_repo_set_gate.py:AGENTS.md §Repo count membership vs scripts/repo_set.txt"
