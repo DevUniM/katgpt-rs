@@ -1179,6 +1179,11 @@ def audit_repo(repo_root: Path) -> int:
             print(f"    feat: {qual + '/' if qual else ''}{feat}  raw_status: {raw!r}")
             print(f"    line: {line}")
     LABELS_CHECKED.append(checked)
+    # ⛔ This line is an INTERFACE, not a message. `docs_drift_sweep.py` and
+    # `.github/workflows/sibling_docs_drift.yml` both PARSE it, and adding the
+    # `over N doc(s)` clause here broke the first — 0 labels in every repo, 9
+    # false findings — while the second's looser `.*labels.*` survived.
+    # Grep for `checked .* labels` before editing it.
     tail = (f"  -> checked {checked} labels over "
             f"{DOCS_WALKED.get(str(repo_root), 0)} doc(s), "
             f"{mismatches} mismatches")

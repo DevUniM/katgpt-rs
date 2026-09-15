@@ -57,7 +57,14 @@ FLOORS_FILE = Path(__file__).resolve().parent / "docs_drift_floors.txt"
 
 # (script, regex capturing the per-repo count, human name of the unit)
 AUDITORS = [
-    ("bench_doc_audit.py", re.compile(r"checked (\d+) labels?, (\d+) mismatch"), "labels"),
+    # ⚠ `.*?` between the two numbers, not a comma. This regex PARSES another
+    # instrument's prose, and on 2026-09-15 that instrument grew a population
+    # clause — `checked 97 labels over 439 doc(s), 0 mismatches` — which took
+    # this sweep to 0 labels in every repo and produced NINE findings, all
+    # false. The lazy gap survives a word being inserted; a comma did not.
+    # Caught by this sweep's own "the auditor is dead, not the docs clean"
+    # floor, which is the floor working exactly as designed.
+    ("bench_doc_audit.py", re.compile(r"checked (\d+) labels?.*?(\d+) mismatch"), "labels"),
     ("cargo_comment_audit.py", re.compile(r"checked (\d+) inline comments?, (\d+) mismatch"), "comments"),
 ]
 AUDITING_RE = re.compile(r"^=== Auditing (.+?) ===")
