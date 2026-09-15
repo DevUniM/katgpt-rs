@@ -127,3 +127,11 @@ required-features = ["mi_probe"]
 [[test]]
 name = "radix_prefix_cache_tests"
 required-features = ["radix_prefix_cache"]
+
+# Issue 800 Arm B1 — lock-free slot-flip PoC bench. harness = false: the PoC
+# prints its own results table + the B2 decision-gate verdict (it is not a
+# criterion bench). Standalone: uses only std, no new deps, and does not
+# touch src/async_qdq.rs (the upgrade is decision-gated as a follow-up).
+[[bench]]
+name = "slot_flip_poc"
+harness = false
