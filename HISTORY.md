@@ -11,6 +11,55 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 801 T1–T3 (2026-09-16) — NAP audit + `meld` primitive: the census survives code-level scrutiny; the algebra holds, the quality ladder did NOT transfer (T4 is the sole adjudicator)
+
+Three landings, one session: Research 560 addendum `ee6993a77` (T2 audit — all 6
+shipped composers scored against the 5 NAP invariants + the paper's three theorem
+screens; 4 INADMISSIBLE / 1 PARTIAL (tpr — structure via role bookkeeping, not the
+law) / 1 N.A. (wedge `retrieve_diverse` — exposes, never fuses); two census location
+corrections (`frozen_attractor` and `retrieve_diverse` ship in riir-neuron-db) and
+one upgrade (the gauge composition LAW lives upstream here,
+`katgpt-sparse/src/sparse_task_vector.rs:318-396` — riir-engine's
+`GaugeInvariantComposer` is a thin bridge). `meld` primitive `43f15f7c8` + wiring
+`f314d5006` (T3, opt-in feature `meld`): closed-form soft-min λ⋆ (quadratic, disc =
+4(4−t²), stable root, candidate enumeration) with BIT-EXACT commutativity via
+canonical (hi,lo) daughter ordering; normalized-Hadamard W; tanh/DN/law-8 arms;
+self-tests: commutativity 4800 cases bitwise, non-associativity 512/512, λ⋆ ≤3.24e-7
+from brute force, boundedness depth-64, disagreement-coding limits. **Bench 801's
+honest red flag: the paper's bracketing-recovery ladder did not reproduce on our D=32
+fixture** — tanh-meld 0.380 at d=5 vs law-8 0.870 (paper: meld ≥ law-8 everywhere);
+mean-pooling does NOT collapse on full-vector nearest-centroid for ordered leaves
+(per-leaf depth weights are tree-dependent — the blindness theorem is about the
+S₂/D_eff readout, which is exactly T4(b)'s mandated PR discipline); no-W collapses
+HARDER than the paper. T4's spec in the issue is sharpened accordingly (tanh
+operating-point sweep first; statistics readout mandatory; law-8 kept in the
+comparison). Super-GOAT Q3 stays blocked pending T4 — the §3.6 discipline (never
+claim quality from architecture) is what caught this at bench time instead of at
+consumer time. Deviation on record: DN form is `y/√(ε+Σy²)` (hard |out|≤1), not the
+`/D` variant the task sketched — that form is bounded by √D and cannot meet the
+depth-64 gate.
+
+## Issue 800 Arm A (2026-09-16) — bf16⇄f32 SIMD kernels: G2 FAIL-honest — the pufferlib kernel-shape premise does not exist on M3+rustc
+
+`f314d5006` + [Bench 800](.benchmarks/800_bf16_simd_goat.md). The lead arm of the
+pufferlib distill shipped and was measured: NEON/AVX2/scalar bf16⇄f32 batch kernels,
+RNE bit-exact vs `half` INCLUDING the NaN class (the branch-free add-form maps
+sNaN-payload-1 to +Inf — special-cased; half's qNaN-forcing `|0x0040` convention
+matched), truncation as the documented-bias opt-in arm, `into_buf` zero-alloc APIs,
+G1 exhaustive + 2²⁰-pattern oracle + NEON-vs-scalar parity executing on the M3.
+**G2 verdict: FAIL at 1.00× widen/trunc, 1.19–1.23× RNE vs the ≥4× gate.** Root
+cause with evidence (identical medians): LLVM auto-vectorizes the scalar reference
+loops into the same NEON code — rustc on aarch64 already delivers the pufferlib
+kernel shape to any plain scalar loop of this class, so hand intrinsics buy ~nothing
+on this platform. Consequences per the feature-flag discipline: `bf16_simd` stays
+opt-in, NOT promoted; **A4 consumer wiring deferred** (the dequantize_row consumer
+path already receives auto-vectorized codegen; no measured win to buy). Kept
+anyway: G1-passing correct kernels + the ISA-guarantee argument (explicit intrinsics
+are exempt from optimizer heuristics — the RNE+NaN arm is the one place the
+auto-vectorizer measurably trails, 1.19×). AVX2 arm compile-verified only
+(no x86_64 hardware this session); closing that caveat needs one run on the 4090
+box. Arms B (slot-flip vs mpsc) and C (GraphStablePool DRY) remain open.
+
 ## Issue 799 (2026-09-16) — bevy_ecs 0.15→0.19 bump landed: the arenas are load-bearing evidence infrastructure, bevy_ecs is a schedule-free utility layer
 
 The domain-test question the issue posed: is the bomber/monopoly bevy_ecs
