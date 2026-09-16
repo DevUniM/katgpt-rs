@@ -67,21 +67,33 @@
 # Floors are ~60% of measured (the house slack convention); the ratchet is AT
 # the measurement.
 #
-# ⛔ TWO rows are measured against ORIGIN, not against this box's checkout, and
-# the first version of this file got them wrong — pinned from a worktree the
-# sweep's own Issue-798 advisory was already calling STALE on the same run.
-# riir-ai (152 behind, origin/develop 14bf628f6) reads 4 undefended here and
-# **5** upstream; seal-remake (22 behind, origin/develop c918f31) reads 4 here
-# and **6**. A ratchet pinned from a stale checkout reds on the SYNC — an event
-# that adds no defect — and the reader then learns the sweep is noise. The pin
-# describes the REPO, whose current state is origin, not this checkout: the
-# commit a ratchet exists to catch lands THERE. The cost is real and is the
-# lesser one: those two rows are loose by 1 and 2 on this box until it syncs.
-# Re-measure both from a synced checkout and tighten.
+# ⛔ EVERY row is measured at LOCAL HEAD, including the two whose repos this box
+# is behind on — riir-ai (152 behind) and seal-remake (22 behind). An earlier
+# version of this file pinned those two from ORIGIN instead, reasoning that "the
+# pin describes the REPO, whose current state is origin". That is wrong, and
+# measuring it is what showed why: at origin riir-ai carries 5 undefended and
+# seal-remake 6, against 4 and 4 here — so the margin is not a bookkeeping
+# artifact, it is THREE genuinely new undefended instruments that landed
+# upstream. Pinning from origin absorbs them into the baseline with nobody ever
+# adjudicating them, which destroys the only claim a ratchet makes: *the commit
+# that adds ANOTHER undefended instrument reds*. Those commits ARE that commit.
+#
+# Issue 797 states the rule in one line — the DISPLAY reads the worktree, the
+# PINS read HEAD — and HEAD means local HEAD. So this file reds on the sync, and
+# that red is a TRUE positive with an owner and a one-line action, not noise.
+# `instrument_reachability_floors.txt` is pinned the same way and reds the same
+# way on the same sync (riir-ai 7 → 8, seal-remake 6 → 8, measured); that
+# agreement is the check that this convention is the house one.
+#
+# ⚠ What the STALE advisory IS for is the opposite direction: a red here that
+# upstream has already FIXED. Measured the same day — the pipefail and toolchain
+# sweeps are both RED on this box and both are staleness artifacts (riir-ai's
+# ci_feature_guard.sh scans 22 findings at local HEAD and 0 at origin/develop).
+# Confirm against origin before REPAIRING; never before PINNING.
 #
 #                       min_scripts  min_population  max_undefended
 katgpt-rs                       44              55               0
-riir-ai                          4               3               5
+riir-ai                          4               3               4
 riir-auth                        0               0               0
 riir-chain                       1               0               0
 riir-clippy                      3               3               0
@@ -95,7 +107,7 @@ riir-train                      34              31              53
 riir-viewbridge                  0               0               0
 seal-game-editor                 1               1               3
 seal-online-remaster             0               0               0
-seal-remake                      4               3               6
+seal-remake                      3               2               4
 #
 # ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
 # riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).
