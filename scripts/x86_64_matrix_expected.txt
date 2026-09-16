@@ -1,0 +1,32 @@
+# Failing tests PINNED BY NAME for scripts/x86_64_execution_matrix.sh — Issue 806.
+#
+# Format: `<test name>  # reason`. A row with NO reason is REFUSED, not
+# accepted — a row nobody had to justify is a backlog wearing a pin (Issue
+# 785's rule). Reds in BOTH directions: a pinned test that PASSES now is
+# STALE and reds too, because a pin file that only ever loosens is not a wall.
+#
+# ── Why a membership set and not a count ────────────────────────────────────
+# *A set is gateable where its cardinality is not* — this repo's own rule, from
+# cfg_gated_floor_gate. A count is green on a swap: one row closing while
+# another opens reads as no change.
+#
+# ── Why there are rows here at all ──────────────────────────────────────────
+# The first full x86_64 run of the root integration cell (2026-09-16, 232
+# targets, 1509 assertions) was **0 correctness failures and 7 failing tests**,
+# and six of the seven are PERF BARS calibrated on the M3. Fixing them is not
+# this matrix's job and not a decision one machine can make; a gate that always
+# reds is a gate nobody runs (AGENTS.md's cries-wolf rule). The seventh is a
+# fixture-identity pin that needs the M3 to adjudicate.
+#
+# ⛔ Read the box conditions with every one of these: the run was taken while
+# four other agent sessions had cargo and clippy resident. AGENTS.md says a
+# gate whose verdict the box can invalidate should REFUSE — these rows are the
+# honest alternative for a cell that is 99% correctness assertions and 1%
+# latency bars, and the latency bars are the part to distrust.
+
+proof_g3b_swar_speedup  # ≥5.0× gate, 4.37× here. Its own name is "Issue 298 SWAR+FMLA+4acc" — FMLA is an aarch64 instruction, so the bar is a NEON number and the x86_64 arm has never been calibrated. Not a regression: a bar that was never set for this ISA.
+g5_roaring_batch_speedup  # "≥2×, got 0.0× (roaring=0.00μs, linear=0.00μs)" — the ratio is 0/0. Both arms measured BELOW the clock granularity in release; this is a timer-resolution artifact, not a speedup that vanished. Needs an iteration count, not a fix to roaring.
+g7_throughput_gain_over_plan_218_baseline  # -69.9% (lsh 6.22ms vs baseline 3.66ms). Sibling of the row above in the same target; same release+x86_64 first execution. A real ratio, on an uncalibrated ISA and a loaded box.
+t09_throughput_inv_sqrt_16x16  # 88.7 µs against a 10 µs absolute target. Absolute-latency targets do not transfer between machines at all, and this is 9× over — the one row here worth re-measuring on a quiet box before believing either way.
+bench_176_router_forward_cpu  # router overhead 27.7% against a bar set on the M3; the routed path is 1.35 µs vs a 1.06 µs baseline, i.e. 0.29 µs of absolute overhead on a box running four other cargo processes.
+t698_t5_kv_mean_gates  # fixture identity: measured 4d0b592740db9358 here, pinned 23d0daab3f087159 at landing (892657c1, 2026-08-30 — the commit message records the measurement). ⛔ UNADJUDICATED, and the test itself says "never re-base silently", so it is pinned rather than re-based. Triage so far: the hash is stable across debug/release and with/without +avx2 on this box, so it is not a codegen artifact; issue_698 t1/t2/t6/t7 hash the SAME TransformerWeights::new stream at n_layer=1 and their pins DO reproduce here, so it is not a blanket cross-platform weight-init divergence; `gated_mlp` (the only RNG-DRAWING cfg-gated field in that constructor) is opt-in and off in this build; config.rs has not changed since the test landed. Measured on this box: f32::ln and f32::cos differ from an f64-then-round reference on ~0.26% / ~0.20% of inputs, so Rng::normal's Box-Muller is libm-dependent in principle — but t1 agrees over ~4k draws, which a 0.5%-per-draw divergence could not survive. Resolving it needs one M3 run of this target; see Bench 806.

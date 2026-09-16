@@ -68,6 +68,11 @@ REPO = os.path.dirname(HERE)
 PINNED_SENTINELLED = {
     "scripts/full_gate.sh",
     "scripts/proof_negative_test.sh",
+    # Issue 806 — the x86_64 execution matrix. Joins for the same reason the
+    # other two are here: it is a gate whose abort must not read as a pass, and
+    # it runs cargo for tens of minutes, which is exactly the window in which a
+    # SIGTERM or a `set -e` trip lands.
+    "scripts/x86_64_execution_matrix.sh",
 }
 POPULATION_FLOOR = 2  # a FLOOR: the classifier going blind must RED, not pass
 

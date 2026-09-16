@@ -165,6 +165,67 @@ push lane: `.github/workflows/wasm32_gate.yml` runs `full_gate.sh
 host-independent and `--lib`-only; dispatch it manually after a run of develop
 work, since no automatic lane covers develop pushes anymore.
 
+### The x86_64 half of the EXECUTE row — `scripts/x86_64_execution_matrix.sh`
+
+Every axis above is a COMPILE axis, and the table's last row says why that is
+not enough. One platform over, it says something sharper: `full_gate` is
+macOS/aarch64 **and** is compile+lint rather than execute, `wasm32_gate` builds
+a third triple, and `test_gate` — the only executing lane — is four `--lib`
+suites with its schedule suspended. So every `#[cfg(target_arch = "x86_64")]`
+arm in this repo was executed by **nothing** until 2026-09-16. The first two
+cells ever run caught **15** latent AVX2-transcription defects (Bench 800
+addendum); the next seven caught **two more** (a new maximum silently
+discarded by `argtopk`, and an out-of-bounds 8-wide load past the end of a
+slice), a router defect red on every non-macOS platform, and a release-profile
+benchmark that LLVM constant-folded away so it reported 0 ns/call
+([Bench 806](.benchmarks/806_x86_64_execution_matrix.md)).
+
+```bash
+scripts/x86_64_execution_matrix.sh              # the matrix
+scripts/x86_64_execution_matrix.sh --libs-only  # skip the root integration cell
+scripts/x86_64_execution_matrix.sh --canary     # prove the floors fire
+X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
+```
+
+- **Workstation verdict**, the standing of the drift sweeps. No CI lane and
+  none is requested — the Actions spending call stands.
+- **REFUSES off x86_64**, exactly as `full_gate.sh` refuses off macOS: every
+  arm it exists for compiles to nothing there, and a green run would be a
+  green ZERO wearing a matrix. Carries the Issue-734 completion sentinel.
+- `RUSTFLAGS="-C target-feature=+avx2"` is **not a tuning knob** — an arm gated
+  `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` compiles to
+  nothing without it, and the run then exercises the scalar fallback and proves
+  nothing. `katgpt-attn`'s `channel_aware.rs` carries exactly that shape.
+- Population **derived** (any package owning a tracked `*.rs` that mentions
+  `target_arch = "x86_64"`), so a new such crate joins by EXISTING. Issue 806's
+  own hand-typed cell list named three packages; the tracked tree has six.
+  A package reaching those kernels only through a DEP owns no matching source
+  — `katgpt-dec` is the measured case — and is added by a **pinned row**, the
+  wasm32 audit's BY-DEP distinction rather than a widened grep.
+- **Both halves of the profile row, in one run:** the `--lib` cells are debug
+  (`debug_assertions` ON is half the reason to execute at all) and the root
+  integration cell is `--release --no-fail-fast`. Measured, not preferred:
+  `goat_574_clustered_lm_head` ran >20 min in debug without finishing and 39.8s
+  in release, and `bench_164_gepa_reflective` fails its own 10% bar at 15.5%
+  purely because both sides are unoptimised.
+- **Failing tests are adjudicated by MEMBERSHIP**
+  (`scripts/x86_64_matrix_expected.txt`, a reason per row, refused without
+  one), because the first full integration run was **0 correctness failures
+  and six perf-bar failures** — a `≥5×` gate whose own name says `SWAR+FMLA`
+  (an aarch64 instruction) scoring 4.37× here, two speedup ratios computed
+  from two timings that both read `0.00 µs`, and a router-overhead bar taken on
+  a box running four other agents' cargo. A gate that always reds is a gate
+  nobody runs; a pin that only ever loosens is not a wall, so a stale row (its
+  test passes now) reds too.
+- Floors in `scripts/x86_64_matrix_floors.txt` — `min_passed` per package plus
+  the integration cell's **two** (targets AND assertions: a target that
+  compiles to an empty binary stops printing a line, and the target count can
+  hold while every binary inside it empties out). `--canary` runs the first row
+  with an impossible floor through the same comparison path and requires the
+  failure.
+- ⚠ It does NOT cover the macOS device backends, wasm32, or `--all-features`
+  for the integration targets.
+
 ## Docs gate + drift sweeps
 
 `scripts/docs_gate.sh` runs the manifest/doc/skill drift assertions and

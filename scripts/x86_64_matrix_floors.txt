@@ -1,0 +1,62 @@
+# Floors for scripts/x86_64_execution_matrix.sh — Issue 806.
+#
+# Format, 2 whitespace-separated fields:
+#
+#   <package|__row>  <min_passed>
+#
+# ── They are FLOORS, not pins ───────────────────────────────────────────────
+# A ceiling cannot fail once the instrument goes blind, and these cells fail
+# blind in a very specific way: a `#![cfg(feature = …)]` target compiles to an
+# EMPTY binary and prints `test result: ok. 0 passed`, exit 0 — byte-for-byte a
+# real pass. A `--all-features` resolution that quietly stops resolving does
+# the same thing across a whole package. So the quantity gated is the number of
+# assertions that actually RAN.
+#
+# Raising a floor is a deliberate act in the commit that raises the
+# measurement; it must never be LOWERED to make a red run green. A cell whose
+# count legitimately drops (a test deleted, a target renumbered) re-pins with
+# the reason in the commit message — test_gate.sh's convention, and the same
+# one the drift sweeps use.
+#
+# ⚠ ~60% of measured (the house slack convention). These suites are not
+# deterministic in COUNT across feature resolutions — a sibling's default
+# switching on can add arms — so a floor AT the measurement reds on somebody
+# else's unrelated commit, which is the cries-wolf outcome AGENTS.md names.
+#
+# ── A row here also ADDS a package to the population ────────────────────────
+# The script derives its packages from the tracked tree (anything owning a
+# *.rs that mentions `target_arch = "x86_64"`), so a new x86_64-bearing crate
+# joins by EXISTING. `katgpt-dec` is the exception and the reason this file
+# unions in: its operators reach these kernels only through `katgpt-types`, so
+# it owns no matching source and the grep cannot see it — while Issue 806
+# names it as a cell. The wasm32 audit calls that bucket BY-DEP and refuses to
+# fold it into the derived one; adding it here keeps the same line visible
+# instead of widening the grep until it accidentally catches it.
+#
+# ── The measurement these came from ─────────────────────────────────────────
+# 2026-09-16, the 4090 (i7-13700K, Windows 11, x86_64 native), repo
+# @ 8da93896 + the two fixes that run found, `RUSTFLAGS="-C
+# target-feature=+avx2"`, `-j 6`, debug for the `--lib` cells:
+#
+#   katgpt-attn 422 · katgpt-core 4957 · katgpt-dec 282 · katgpt-pruners 3011
+#   katgpt-rs 569 · katgpt-tokenizer 74 · katgpt-types 261
+#
+# Full record: .benchmarks/806_x86_64_execution_matrix.md.
+#
+#                     min_passed
+katgpt-attn                  250
+katgpt-core                 2900
+katgpt-dec                   165
+katgpt-pruners              1800
+katgpt-rs                    340
+katgpt-tokenizer              44
+katgpt-types                 155
+#
+# ── The root integration cell (release, default features) ───────────────────
+# TWO floors, and they break separately — the same reason every drift sweep
+# carries a walk floor under its ceiling. `__root_tests_targets` catches the
+# BUILD going blind (a target that stops being discovered is a line that stops
+# being printed); `__root_tests_passed` catches the binaries EMPTYING while the
+# target count holds, which is exactly what a `#![cfg]` regression does.
+__root_tests_targets         100
+__root_tests_passed          600
