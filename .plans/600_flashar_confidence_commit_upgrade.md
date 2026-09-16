@@ -18,7 +18,7 @@ Issue 811's three-arm head-to-head on the trained mini-D2F (24 sequences, block=
 - [x] T7 Round-1 walk change: `predict_anchors` records (argmax, max-softmax q) per position via optional out-params (`None` = incumbent, byte-identical — pinned by the parity test) — LANDED 2026-09-16
 - [ ] T8 Real-text GOAT gates before any default promotion: G1 quality on a non-saturated corpus (the toy is anchor-dominated — accuracy does not separate arms; use the eval set from the Plan-381/116 lane), G2 steps-to-converge + wall per block at matched quality, G3 no-regression on the strided incumbent (byte-identical with the config off), G4 alloc-free fill path (the candidate Vec is pre-allocated + reused)
 - [ ] T9 UGC KL cross-check (Issue 811 T5) measured on the same corpus as T8-G1
-- [ ] T10 Docs: `.docs/` entry + AGENTS feature-list line for the new config knob (opt-in; no default change without T8+T9 green)
+- [ ] T10 Docs: `.docs/` entry + AGENTS feature-list line for the new config knob (opt-in; no default change without T8+T9 green) — DONE 2026-09-16: `.docs/02_inference/speculative_decoding.md` §Confidence-Commit Variant + `.docs/09_feature_catalog/opt_in_features.md` row + Cargo.toml feature comment
 
 ## Acceptance
 

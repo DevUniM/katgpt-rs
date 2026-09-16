@@ -957,6 +957,19 @@ By constraining the D2F block with high-confidence anchor tokens at regular inte
 - Small S → more anchors → less D2F work, more AR work
 - Large S → fewer anchors → more D2F work, less AR work
 
+### Confidence-Commit Variant (opt-in, Plan 600 — DBTM κ ∪ floor)
+
+`anchor_then_fill_with(&ConfidenceAnchorConfig { kappa, floor })` replaces the
+stride rule with content-adaptive selection over the walk's own max-softmax
+confidence (Issue 811, arXiv:2609.15903 Eq 26): anchor positions with q ≥ κ
+(argmax proposal committed), and with `floor: true` the DBTM per-round commit
+floor (`dbtm_floor`) guarantees the block empties within the step budget.
+
+Measured on the mini-D2F PoC (Issue 811): 3.1–4.7× fewer fill steps than the
+matched-threshold stride arm at κ ∈ {0.9, 0.99} at quality parity;
+termination property-proven. Opt-in — the stride rule stays the default;
+promotion requires the real-text gates (Plan 600 T8/T9).
+
 ---
 
 ## FlashAR Consensus Tri-Mode (`src/speculative/flashar_consensus.rs`, behind `"flashar_consensus"` feature)
