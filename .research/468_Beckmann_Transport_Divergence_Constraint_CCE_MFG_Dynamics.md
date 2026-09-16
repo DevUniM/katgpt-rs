@@ -1,6 +1,6 @@
 # Research 468: Beckmann Transport Models — Divergence Constraint for CCE MFG Dynamics
 
-> **Source:** Lee, Coeurdoux, Potaptchik, Du, Albergo, Vanden-Eijnden — *Beckmann Transport Models: From Autonomous Flows to One-Step Maps* [arXiv:2608.01692](https://arxiv.org/abs/2608.01692), May 2026
+> **Source:** Lee (Cheuk-Kit), Coeurdoux, Chen, Tang, Potaptchik, Du, Albergo, Vanden-Eijnden — *Beckmann Transport Models: From Autonomous Flows to One-Step Maps* [arXiv:2608.01692](https://arxiv.org/abs/2608.01692), May 2026 (author line corrected 2026-09-16 against the arXiv v3 listing — it previously omitted Chen + Tang)
 > **Date:** 2026-08-06
 > **Status:** Active — **Gain** (not Super-GOAT; PoC-gated for GOAT promotion)
 > **Related Research:** 296 (Stokes/DEC — codifferential IS the divergence operator), 271 (MIT 6.S184 flow-matching crosswalk), 219 (TNO → DEC parent), 274 (Optimal CCE in MFGs via LP), 371 (Mean-Field Regime Classifier — crowd-scale order parameters)

@@ -109,7 +109,7 @@ DBTM's refinement-in-loop ("train on the commit sets the sampler actually visits
 
 Paths 1–3 (freeze/thaw, deterministic LoRA, latent correction) do not apply to the training rows: the residual is a property of a *learned map's* Jacobian — no deterministic construction supplies it. Path 0.5 → Plan 411.
 
-**Panel disclosure:** the three-track adversarial panel was run coordinator-side in this session (the parallel `spawn_agent` batch was canceled by the user); the §2.2 table + discard reasons above are the consolidated output. Every discard cites the mechanism-level diff (measured Issue-573/574 for the divergence row; published FMLM+ + shipped DSpark/DiffusionSampler for the refinement row).
+**Panel disclosure:** the adversarial panel (the skill's two advocate roles — No-GD extraction + model-based recipe) was consolidated coordinator-side in this session rather than spawned as independent subagents (the parallel `spawn_agent` batch was canceled by the user); the §2.2 table + discard reasons above are the consolidated output, and the independence a spawned panel would have provided is only partially mitigated by the measured-evidence citations per discard. Every discard cites the mechanism-level diff (measured Issue-573/574 for the divergence row; published FMLM+ + shipped DSpark/DiffusionSampler for the refinement row).
 
 ---
 
@@ -137,7 +137,7 @@ Paths 1–3 (freeze/thaw, deterministic LoRA, latent correction) do not apply to
 ## 5. References
 
 - Tang & Wang, arXiv:2609.15903v2 (this paper)
-- Lee, Coeurdoux, Potaptchik, Du, Albergo, Vanden-Eijnden, arXiv:2608.01692 — Research 468
+- Lee (Cheuk-Kit), Coeurdoux, Chen, Tang, Potaptchik, Du, Albergo, Vanden-Eijnden, arXiv:2608.01692 — Research 468 (author overlap verified against the arXiv v3 listing: Sophia Tang is 4th author here and first author of 2609.15903)
 - Yoo et al., arXiv:2607.00714 — Research 366
 - Wainwright, arXiv:2608.13520 — Research 485 (UGC)
 - Agarwal et al., arXiv:2606.24773 — FMLM+ posterior refinement
