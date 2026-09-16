@@ -104,6 +104,41 @@ impl ConfidenceAnchorConfig {
 /// max-softmax confidence `q` ≥ `kappa`, committing the argmax proposal.
 /// Positions whose argmax IS the mask token are never anchored.
 ///
+/// Writes the anchor buffer into `out` (`mask_token` at unselected
+/// positions) and returns the number of anchors selected. Allocation-free
+/// form of [`select_confidence_anchors`] — the production
+/// [`anchor_then_fill_with`] runs this on its pre-allocated Round-1 buffer
+/// instead of replacing it with a fresh `Vec`.
+///
+/// # Panics
+/// If `out.len() != argmax.len()` or the argmax/probs lengths mismatch.
+pub fn select_confidence_anchors_into(
+    argmax: &[usize],
+    probs: &[f32],
+    mask_token: usize,
+    kappa: f32,
+    out: &mut [usize],
+) -> usize {
+    assert_eq!(
+        argmax.len(),
+        probs.len(),
+        "argmax/probs length mismatch"
+    );
+    assert_eq!(out.len(), argmax.len(), "out buffer length mismatch");
+    out.fill(mask_token);
+    let mut n = 0usize;
+    for (p, (&tok, &q)) in argmax.iter().zip(probs.iter()).enumerate() {
+        if q >= kappa && tok != mask_token {
+            out[p] = tok;
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Allocating form of [`select_confidence_anchors_into`] — public API kept
+/// stable for the Issue 811 PoC harness and external callers.
+///
 /// Returns the anchor buffer (`block_size` entries, `mask_token` at
 /// unselected positions) and the number of anchors selected.
 pub fn select_confidence_anchors(
@@ -112,19 +147,8 @@ pub fn select_confidence_anchors(
     mask_token: usize,
     kappa: f32,
 ) -> (Vec<usize>, usize) {
-    assert_eq!(
-        argmax.len(),
-        probs.len(),
-        "argmax/probs length mismatch"
-    );
     let mut buf = vec![mask_token; argmax.len()];
-    let mut n = 0usize;
-    for (p, (&tok, &q)) in argmax.iter().zip(probs.iter()).enumerate() {
-        if q >= kappa && tok != mask_token {
-            buf[p] = tok;
-            n += 1;
-        }
-    }
+    let n = select_confidence_anchors_into(argmax, probs, mask_token, kappa, &mut buf);
     (buf, n)
 }
 
@@ -299,9 +323,11 @@ fn fill_with_anchors(
     // halves the `.exp()` calls per token in the hot path.
     let mut exp_scratch = vec![0.0f32; vocab];
     // DBTM floor candidates (Issue 811): (position, prob, token) for every
-    // masked position that produced a proposal this round. Reused across
-    // steps — the push/retain/clear cycle never re-allocates after warmup.
-    let mut round_candidates: Vec<(usize, f32, usize)> = Vec::new();
+    // masked position that produced a proposal this round. Pre-allocated to
+    // the block size (the provable per-round upper bound: one proposal per
+    // masked position) and reused across steps — the push/retain/clear
+    // cycle never allocates, in any round, ever (Plan 600 G4).
+    let mut round_candidates: Vec<(usize, f32, usize)> = Vec::with_capacity(block_size);
 
     for step in 0..max_steps {
         let _seq_len_actual = crate::d2f_context::forward_block_causal_with(
@@ -577,8 +603,13 @@ pub fn anchor_then_fill_with(
         Some(&mut argmax_buf),
         Some(&mut probs_buf),
     );
-    let (anchor_buf, n_anchors) =
-        select_confidence_anchors(&argmax_buf, &probs_buf, mask, confidence_config.kappa);
+    let n_anchors = select_confidence_anchors_into(
+        &argmax_buf,
+        &probs_buf,
+        mask,
+        confidence_config.kappa,
+        &mut anchor_buf,
+    );
 
     // ── Round 2: D2F fill (threshold + optional DBTM floor) ──
     let fill_result = fill_with_anchors(

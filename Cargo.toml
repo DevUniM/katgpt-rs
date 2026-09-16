@@ -3091,6 +3091,14 @@ name = "bench_291_d2f_3sr_warm_start_goat"
 required-features = ["d2f_3sr_warm_start"]
 
 [[test]]
+name = "bench_600_flashar_confidence_commit_goat"
+required-features = ["flashar_anchor"]
+
+[[test]]
+name = "bench_600_flashar_fill_alloc_gate"
+required-features = ["flashar_anchor"]
+
+[[test]]
 name = "bench_committee_boost_goat"
 required-features = ["committee_boost"]
 

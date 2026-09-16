@@ -12,6 +12,7 @@
 pub use katgpt_forward::flashar_anchor::{
     AnchorConfig, AnchorFillResult, ConfidenceAnchorConfig, anchor_fill_with_prefilled,
     anchor_then_fill, anchor_then_fill_with, dbtm_floor, select_confidence_anchors,
+    select_confidence_anchors_into,
 };
 
 // ---------------------------------------------------------------------------
