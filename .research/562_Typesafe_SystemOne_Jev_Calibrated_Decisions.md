@@ -2,7 +2,7 @@
 
 > **Source:** "Introducing System One Models & Jev" — TypeSafe AI blog, Diogo Almeida, 2026-09-15 — https://typesafe.ai/blog/introducing-system-one-models-and-jev (secondary: HN thread 49717558, The Register 2026-09-16, docs.typesafe.ai)
 > **Date:** 2026-09-16
-> **Status:** Done — Gain verdict, filed katgpt-rs Issue 810
+> **Status:** Done — Gain verdict, filed katgpt-rs Issue 810 · addendum 2026-09-16: arena head-to-head (11 W / 2 L / 2 SPLIT)
 > **Related Research:** 322 (Report-the-Floor UQ rule), 311 (conformal line)
 > **Related Plans:** Plan 340 (ConformalIntervalCalibrator, default-on)
 > **Cross-ref (riir-ai / riir-chain / riir-neuron-db):** riir-ai `arg_runtime/pipeline.rs` (ActionBridge ABSTAIN), `integrity/injection.rs` (5 affect scalars), `.proofs/RiirAiProof/Hla/Bounded.lean`
@@ -103,3 +103,40 @@ A generic katgpt-core primitive: record `(sigmoid_output, outcome)` pairs per di
 **Files:** katgpt-rs `.issues/810_calibrated_sigmoid_gate_poc.md` (poc/proof task). No plan until the PoC proves the gain.
 
 **Reopen triggers:** Jev architecture paper or independent replication with numbers (the hours-later Qwen-2.5-1B-RLCD clone is the one to watch); any plan that trains a decision head (→ RLCR arXiv:2507.16806 as the recipe source); if decision-level calibration proves GOAT, promote primitive and wire riir-clippy's `W_EVO/W_RATE` fit as consumer #2.
+
+---
+
+## Addendum (2026-09-16): Game-arena head-to-head — claim by claim
+
+Question posed by owner: *can we beat it in the game arena?* Verdict: **yes in our arena, structurally; no head-on in their zero-shot-judgment niche, today.** Their unit of work is a network call (70–500 ms); ours is a tick (50 ms / 20 Hz, shared by thousands of agents). Every row below is measured on our side and quoted from their own blog on theirs.
+
+### Scoreboard — every TypeSafe promotion vs shipped substrate
+
+| # | TypeSafe promotes | Their number | Our shipped equivalent (measured) | Verdict |
+|---|---|---|---|---|
+| 1 | Speed ("40×–200× faster than LLMs") | 70–500 ms/call | 1000-NPC tick = **0.90 ms** (0.90 µs/NPC, Bench 152); functor apply **62.8 ns** (Bench 263) → **10⁵–10⁷× per decision** | **WIN** |
+| 2 | Real-time apps ("100 ms speeds, UX-critical") | 70–500 ms exceeds our *entire 50 ms tick* — cannot serve one NPC per tick | plasma-tier ns–µs decisions inside the 400 µs/NPC serial ceiling (Bench 324) | **WIN** |
+| 3 | Output tokens FREE | free via parallel sampling | decision = 1 action idx + 5 raw scalars; **bit-deterministic → compatible with quorum replay + anti-cheat** (a cloud model can never sit on the raw-sync path) | **WIN** |
+| 4 | Cost: $0.042/MTok in | $7/hr at *10 qps, one bot* (their Doom figure) | $0 marginal, local; state never leaves the process (sovereignty/privacy). 20k q/s crowd ≈ **$14k/hr** by linear extrapolation of their own figure | **WIN** |
+| 5 | Parallel sampler (all outputs, one pass) | architecture undisclosed, one pass | one SIMD matvec + argmax = one pass; batched. Parity at 1 query; decisive at 20k q/s aggregate | **SPLIT** (parity × scale-win) |
+| 6 | Type-safe, "can't hallucinate" (types) | schema-guarantee, no paper | typed outputs by construction (`RoutingVerdict`, action enums) + `ConstraintPruner` + **14 Lean theorems** proving scalar bounds (`.proofs/RiirAiProof/Hla/Bounded.lean`) — we *prove* what they *assert*; they ship zero FV | **WIN** |
+| 7 | Calibrated probabilities (their headline) | RLCD-trained, claimed frontier-grade | bounded ≠ calibrated; only CLR ECE-gated (0.0087 vs ≤0.10 gate). **Issue 810 filed** (Platt refit from outcomes, decision-level ECE gate) | **LOSS today** (closeable, G1–G4 defined) |
+| 8 | Consistency (similar in → similar out) | claimed, no determinism guarantee | modelless heads are **bit-deterministic** — replayable, quorum-safe, regression-testable | **WIN** (determinism > consistency) |
+| 9 | Doom demo | 1 bot, 10 qps, text state, occlusion-blind ("sees through walls") | 1000-NPC swarm at 20 Hz (Bench 152/263/324) + fog-of-war think-brain (`sigmoid(-λ·Δt)` stale-belief decay) + ABSTAIN → System-2 (CLR/KARC/MCTS) | **WIN** |
+| 10 | Wikiracing: cardinality ≤ 255, 2-stage score-then-choose | 10 native, 255 via 2-stage, occasional slowdown | `argtopk_with_scratch` (NEON+AVX2) + `pick_domains_top_k` + `RerankMode::Structural` — same mechanism, ns-tier, no 255 ceiling | **WIN** |
+| 11 | Workflows / "smart if-statements" (classify, route, score, branch) | their core use case | sigmoid gates everywhere: zone attention, curiosity, VerifyBudgetGate tiers, ActionBridge **with ABSTAIN** — a capability they structurally lack (forced answer) | **WIN** |
+| 12 | "Verify everything" (judge/guardrail LLM outputs) | Jev-as-judge | CLR vote + SalienceTriGate + rubric L1/L2/L3 + `llmexec_guard` + **real-tool oracles** (clippy/rustc/compile/git) | **WIN** (ground truth beats model-judges-model) |
+| 13 | Map-reduce over big data | cheap zero-shot scoring at scale | batched ternary SIMD + local serving (Metal decode parity/lead vs llama.cpp; 4090 tg128 **1.131×**, pp2048 **1.046×** row-best) | **SPLIT** (cost/privacy win; zero-shot quality loss) |
+| 14 | Workflow evals (agreement with mean of Astra+Fable) | fixed graph, reference-agreement | GOAT gates **execute**: known-answer tables, real oracles, count floors, Report-the-Floor UQ rule — executable methodology > agreement-with-a-model-average | **WIN** |
+| 15 | Frontier-distilled zero-shot judgment (the implicit core claim behind RLCD) | "frontier intelligence on System One tasks" | modelless heads know only what we authored or fit from runtime — narrow by design | **LOSS today** (track-c closeable, below) |
+
+**Score: 11 WIN · 2 SPLIT · 2 LOSS.** The wins are structural (latency class, determinism, sovereignty, FV, abstain); the splits are fair; the losses share one root cause — their heads are *trained* and ours are not yet *calibrated*.
+
+### The two losses, and how they close
+
+- **Calibration (#7)** → Issue 810. Our simulator is already the labeled-outcome data engine RLCR-style calibration needs; the 2-param refit is track-b legal. This is weeks, not quarters, and it converts #7 from LOSS to competitive.
+- **Zero-shot breadth (#15)** → track-c, if it ever matters: post-train a small decision head on our own game outcomes (riir-train GRPO reward-shaping exists; RLCR arXiv:2507.16806 is the recipe; the hours-later Qwen-2.5-1B "RLCD" HF clone is the feasibility proof). The moat is not the head — it is the outcome data + tick-scale serving, which is exactly what TypeSafe does not have.
+
+### What they cannot enter at any price
+
+The benchmark class "thousands of calibrated decision-makers at 20 Hz with fog-of-war, memory, and quorum-verifiable raw sync" requires: per-decision latency ≪ one tick share (µs), bit-determinism, and zero network round-trip on the sync path. Jev fails all three by construction — 70 ms > the whole 50 ms tick, no determinism guarantee, cloud-only. Their own demos (one Doom bot at 10 qps) are the correct size of their unit of work. **The game arena is not a fight they can show up to; the fight they *can* show up to — zero-shot fuzzy judgment on novel text-state tasks — is the one niche where they win today.**
