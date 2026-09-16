@@ -11,6 +11,20 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## riir-ai Issue 964 C2 LANDED (2026-09-16) — `CalibratedActionBridge`: decision-level confidence calibration for the ABSTAIN threshold (Bench 808)
+
+The second `sigmoid_calibration` consumer. `ActionBridge`'s `sigmoid_confidence` gates the ABSTAIN threshold — a threshold on an
+uncalibrated score is a threshold on a number whose meaning is proven nowhere. `bridge::calibrated::CalibratedActionBridge<A, D>` (rides the
+`sigmoid_calibration` feature, no new flag) wraps the bridge with the Platt calibrator: observe (raw confidence, action_succeeded) at outcome
+time, refit off-hot-path, calibrated confidence in front of the threshold. **Argmax invariant**: selection stays on raw scores; one strictly
+monotone transform on a shared score scale cannot reorder it — calibration never changes WHICH action wins, only what the confidence MEANS.
+GOAT (Bench 808, planted overconfidence `sigmoid(1.4·logit − 0.3)`, 4096/4096 split): decision-level ECE 0.0220 → 0.0088 (2.5×); log-loss + Brier
+beat raw AND the base-rate floor; cold start bit-identical (confidences + abstain decisions); 0 winner mismatches after real refit; the ABSTAIN
+operating point at τ=0.75 moved 4.4× toward oracle (0.3315 → 0.2764 vs oracle 0.2866, the katgpt-rs G3 fire-rate shape); observe+select 0 allocs
+(per-thread counting_allocator). Honest caveats in the bench doc: mild corpus-level drift (thin G2 margins — the ABSTAIN movement is the
+load-bearing result), fitted-b recovery 0.043 wide (little low-confidence mass at A=4), and the riir-ai `arg_runtime` Step-8/9 wiring is the
+unblocked follow-on. Bridge tests 21/21, lib 2060/0, isolation clean, clippy clean.
+
 ## riir-ai Issue 964 C1 LANDED (2026-09-16) — `clr_calibration`: the CLR verifier becomes the first `sigmoid_calibration` consumer (Bench 807)
 
 The CLR verifier's verdicts were bounded (Bench 284 G2, ECE 0.0087 on a fixture whose ground

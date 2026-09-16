@@ -3156,6 +3156,22 @@ name = "bench_802_jsd_topk"
 harness = false
 required-features = ["jsd_topk"]
 
+# Bench 808 — ActionBridge confidence-calibration GOAT (riir-ai Issue 964
+# C2 — the second sigmoid_calibration consumer; substrate Issue 810).
+# CalibratedActionBridge: observe (raw confidence, action_succeeded), refit
+# off-hot-path, calibrated confidence in front of the ABSTAIN threshold.
+# Gates: G1 decision-level ECE on a planted-overconfidence corpus + planted
+# recovery; G2 log-loss/Brier beat raw AND the base-rate floor; G3 cold-start
+# bit-identity (selections + abstain decisions), argmax invariant after real
+# refit, abstain operating point moves toward oracle; G4 zero-alloc
+# observe+select. Run: cargo bench -p katgpt-core --features
+# sigmoid_calibration --no-default-features --bench
+# bench_808_action_bridge_calibration_goat -- --nocapture
+[[bench]]
+name = "bench_808_action_bridge_calibration_goat"
+harness = false
+required-features = ["sigmoid_calibration", "action_bridge"]
+
 # Issue 800 Arm A — SIMD bf16⇄f32 batch conversion GOAT gate (G1 known-answer
 # vs `half` RNE + NaN/Inf/subnormal survival, G2 ≥4× scalar at 8 lanes,
 # G4 zero-alloc into_buf).

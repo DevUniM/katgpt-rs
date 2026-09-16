@@ -4026,9 +4026,11 @@ Platt-smoothed targets, bit-identical under replay.
   predicate).
 
 Consumers (riir-ai Issue 964, in order): **CLR verifier — LANDED as
-`clr_calibration` (§114, Bench 807)**, ActionBridge `sigmoid_confidence` +
-ABSTAIN threshold, the 5 affect scalars (local monotone transform; raw sync
-boundary untouched).
+`clr_calibration` (§114, Bench 807)**; **ActionBridge — LANDED as
+`bridge::calibrated::CalibratedActionBridge` (rides this feature, no new
+flag; Bench 808 — decision-level ECE 0.0220 → 0.0088, ABSTAIN operating
+point 4.4× closer to oracle, argmax invariant exact)**; the 5 affect scalars
+(local monotone transform; raw sync boundary untouched) remain.
 
 Issue 810 (resolved 2026-09-16, git history) ·
 Substrate: `crates/katgpt-core/src/sigmoid_calibration.rs`.

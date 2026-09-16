@@ -10,6 +10,12 @@
 
 #![allow(clippy::needless_range_loop)]
 
+// Calibrated confidence for the bridge (riir-ai Issue 964 C2 — the second
+// sigmoid_calibration consumer; GOAT Bench 808). Needs both the bridge and
+// the calibration substrate.
+#[cfg(feature = "sigmoid_calibration")]
+pub mod calibrated;
+
 /// Bridges latent Q-values to raw game actions via sigmoid-gated projection.
 ///
 /// Generic over action space size (`A`) and latent dimension (`D`).
