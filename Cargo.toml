@@ -714,6 +714,15 @@ required-features = ["recos"]
 name = "transformer_inversion_01_forensics"
 required-features = ["grad_policy"]
 
+# Issue 808 T3 — this target opens `#![cfg(feature = "vortex_flow")]` and had
+# no row, so `cargo test --test bench_256_simd_topk` at default features
+# compiled an EMPTY binary and printed `ok. 0 passed`, exit 0. It is the only
+# thing in the workspace that executes the AVX2 `argtopk` kernel, and two
+# correctness defects lived in that kernel behind this green zero (Issue 806).
+[[test]]
+name = "bench_256_simd_topk"
+required-features = ["vortex_flow"]
+
 [[test]]
 name = "bench_280_cs_kv_probe_goat"
 required-features = ["cs_kv_probe"]

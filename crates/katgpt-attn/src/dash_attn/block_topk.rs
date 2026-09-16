@@ -499,33 +499,11 @@ fn argtopk_simd(scores: &[f32], k: usize, indices: &mut Vec<usize>) {
             pos += 8;
         }
 
-        // Handle remaining elements that didn't fill a full 8-wide chunk
-        let remaining4 = (n - pos) / 4;
-        for _ in 0..remaining4 {
-            // Process 4 at a time using SSE-like approach via AVX2
-            let v = unsafe { _mm256_loadu_ps(scores.as_ptr().add(pos)) };
-            let thresh = _mm256_set1_ps(heap_vals[k - 1]);
-            let cmp = _mm256_cmp_ps(v, thresh, _CMP_GT_OS);
-            let mask_bits = (_mm256_movemask_ps(cmp) as u32) & 0x0F; // Only first 4 lanes
-
-            if mask_bits != 0 {
-                let vals_arr: [f32; 8] = unsafe { core::mem::transmute(v) };
-                for lane in 0..4 {
-                    if mask_bits & (1 << lane) != 0 {
-                        unsafe {
-                            insert_sorted_simd_avx2(
-                                &mut heap_vals,
-                                &mut heap_idxs,
-                                k,
-                                vals_arr[lane],
-                                pos + lane,
-                            );
-                        };
-                    }
-                }
-            }
-            pos += 4;
-        }
+        // No partial-chunk SIMD step: the AVX2 port had one that loaded a FULL
+        // 8-wide vector from a position with fewer than 8 scores left (it ran
+        // only when `n - pos` was 4..7, so it over-read on every execution) and
+        // then masked lanes 4..7 away — UB for a result it discarded. The NEON
+        // sibling goes straight to the scalar tail; so does this now (Issue 806).
 
         // Scalar tail
         while pos < n {
@@ -569,6 +547,11 @@ unsafe fn insert_sorted_simd_avx2(
     // SIMD-parallel search: compare val against up to 8 heap elements at a time
     let val_vec = _mm256_set1_ps(val);
     let mut lo = 0usize;
+    // The NEON sibling carries this flag and the AVX2 port replaced it with a
+    // `lo == 0` test — which cannot tell "no lane qualified" from "lane 0
+    // qualified", i.e. from `val` being a new MAXIMUM. That reset `lo` to `k`
+    // and returned, DISCARDING every new top-1 (Issue 806). Keep the flag.
+    let mut found_in_simd = false;
 
     // Process 8 elements at a time via AVX2
     let chunks8 = k / 8;
@@ -581,12 +564,14 @@ unsafe fn insert_sorted_simd_avx2(
         if mask_bits != 0 {
             // Find first set bit = first position where val > heap element
             lo = base + mask_bits.trailing_zeros() as usize;
+            found_in_simd = true;
             break;
         }
     }
 
-    // If not found in AVX2 chunks, scan the remainder
-    if lo == 0 && chunks8 > 0 {
+    // If not found in AVX2 chunks, scan the remainder (0 when chunks8 == 0,
+    // which is the k < 8 case the scalar walk below handles on its own).
+    if !found_in_simd {
         lo = chunks8 * 8;
     }
     while lo < k && heap_vals[lo] >= val {
@@ -1078,6 +1063,65 @@ mod tests {
                 simd_indices, ref_indices,
                 "k={k}: SIMD result {simd_indices:?} != reference {ref_indices:?}"
             );
+        }
+    }
+
+    /// Issue 806 regression — a candidate that is a NEW MAXIMUM must land at
+    /// position 0.
+    ///
+    /// The AVX2 insertion-point search used `lo == 0` as its "no lane
+    /// qualified" sentinel, which cannot be told apart from "lane 0 qualified".
+    /// Every new top-1 arriving after the first `k` elements was reset to `k`
+    /// and DISCARDED. The NEON sibling carries an explicit `found_in_simd`
+    /// flag and never had it.
+    ///
+    /// `test_argtopk_simd_matches_scalar` above cannot express this: its
+    /// fixture's maximum (4.2) sits at index 7, inside the first `k`, so no
+    /// later element is ever a new maximum and the branch is unreachable. A
+    /// strictly ascending ramp makes EVERY post-init element one.
+    #[test]
+    fn test_argtopk_new_maximum_after_init_is_kept() {
+        for n in [24usize, 32, 40, 64, 100] {
+            for k in [1usize, 4, 8, 12, 16] {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| i as f32).collect();
+                let mut indices = Vec::new();
+                let mut pairs = Vec::new();
+                argtopk_with_scratch(&scores, k, &mut indices, &mut pairs);
+                // Strictly ascending ⇒ the top-k is the LAST k indices, in
+                // reverse order, with no ties to arbitrate.
+                let expected: Vec<usize> = (n - k..n).rev().collect();
+                assert_eq!(indices, expected, "n={n} k={k}");
+            }
+        }
+    }
+
+    /// Issue 806 regression — the tail past the last full SIMD chunk.
+    ///
+    /// The AVX2 port had a "remaining 4" step that loaded a FULL 8-wide vector
+    /// from a position with 4..7 scores left and masked lanes 4..7 away: an
+    /// out-of-bounds read on every execution, for a result it discarded. These
+    /// lengths put 1..7 elements past the last full chunk for k = 8.
+    #[test]
+    fn test_argtopk_partial_tail_lengths_match_reference() {
+        for n in [17usize, 18, 19, 20, 21, 22, 23, 25, 31, 33] {
+            for k in [4usize, 8, 16] {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| ((i * 37 % 101) as f32) * 0.25).collect();
+                let mut indices = Vec::new();
+                let mut pairs = Vec::new();
+                argtopk_with_scratch(&scores, k, &mut indices, &mut pairs);
+
+                let mut ref_pairs: Vec<(usize, f32)> =
+                    scores.iter().copied().enumerate().collect();
+                ref_pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
+                let expected: Vec<usize> = ref_pairs[..k].iter().map(|(i, _)| *i).collect();
+                assert_eq!(indices, expected, "n={n} k={k}");
+            }
         }
     }
 
