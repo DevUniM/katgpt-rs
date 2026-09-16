@@ -264,6 +264,40 @@ Resolving it needs **one M3 run of this target**, which this box cannot do.
 Until then the correct state is a named pin with the measurement written down,
 not a re-based constant.
 
+## What the SECOND run found, which is the argument for the script
+
+The matrix was run again against the same commit on the same box an hour
+later, as validation of the script itself. Three things moved, and none of them
+was a code change:
+
+1. **Two of the six pinned perf bars PASSED** — `bench_176_router_forward_cpu`
+   and `g7_throughput_gain_over_plan_218_baseline`. Fewer sibling agent
+   sessions had cargo resident. They are **LOAD-SENSITIVE**, not
+   x86_64-uncalibrated, and pinning them would have written a box condition
+   into a tracked file as if it were a property of the code. **The stale-pin
+   wall caught it** — a pin file that only ever loosens would have kept both
+   forever. Both rows removed; read any future red on them as a
+   box-conditions question first.
+
+2. **`katgpt-pruners` went 3011 → 3010 passed, 1 failed**, on a
+   deterministic-looking assertion:
+   `test_decompose_neuron_discovers_channels`, *"Token 2 should be the top
+   token, got [3, 2, 1, 0]"*. `VocabChannelDecomposer` drew its Householder
+   symmetry-breaker from `fastrand`'s **unseeded thread-local global**, so
+   `decompose_neuron` was not a function of its arguments — and two tokens tie
+   in that fixture, so the perturbation decided the order. Measured across the
+   repo: **555 `Rng::with_seed` sites against 11 global-`fastrand` ones**, two
+   of them in a shipped pruner's hot path. Fixed (seed derived from the input)
+   and filed as
+   [Issue 809](../.issues/809_unseeded_global_rng_in_shipped_primitives.md),
+   which keeps the other nine as an unread census rather than batch-converting
+   them.
+
+⛔ **Read what actually caught (2): not the platform — a SECOND EXECUTION of
+the same commit.** This class is invisible to any gate that runs once per
+commit, and it could have flipped on the M3's weekly `--lib` lane at any time.
+The two runs happened here only because the first was validating a script.
+
 ## Reproduce
 
 The matrix is a **script** now — `scripts/x86_64_execution_matrix.sh`, landed

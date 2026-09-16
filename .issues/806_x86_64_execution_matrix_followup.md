@@ -30,7 +30,7 @@ Nine cells, ~11,000 assertions executed on x86_64 for the first time.
 | 8 | `katgpt-rs --lib --all-features` | 565 / **4** → **569 / 0** after the fix |
 | 9 | `katgpt-rs --tests --release --no-fail-fast` | 232 targets · 1509 passed · **7** failed |
 
-**Four defects, all fixed:**
+**Five defects, all fixed:**
 
 1. `argtopk`'s AVX2 insertion search discarded every **new maximum** (`lo == 0`
    used as a "no lane qualified" sentinel, where the NEON sibling has an
@@ -44,6 +44,12 @@ Nine cells, ~11,000 assertions executed on x86_64 for the first time.
 4. `bench_llmexec_guard_overhead`'s measured loop had no `black_box` on its
    inputs and was **constant-folded away in release**, publishing a fabricated
    `0 ns/call` — `703bb70b`.
+5. `VocabChannelDecomposer` drew its Householder symmetry-breaker from
+   `fastrand`'s **unseeded thread-local global**, so `decompose_neuron` was not
+   a function of its arguments and `test_decompose_neuron_discovers_channels`
+   was a coin flip — caught by running the matrix TWICE, not by the platform.
+   Fixed at `2081138f`, filed as
+   [Issue 809](809_unseeded_global_rng_in_shipped_primitives.md).
 
 **The issue's own cell list was narrower than the surface.** It named three
 packages; a grep for `target_arch = "x86_64"` over the tracked tree finds
@@ -78,13 +84,18 @@ and adjudicates failing tests by MEMBERSHIP in
       an arch-conditional form plus a recorded delta; if it prints
       `4d0b5927…`, something re-keyed it after landing and the pin is simply
       stale.
-- [ ] **T7 — six perf bars are pinned, not fixed.** Every one is a bar
+- [ ] **T7 — FOUR perf bars are pinned, not fixed.** Every one is a bar
       calibrated on the M3 (one, `proof_g3b_swar_speedup`, is named
       `SWAR+FMLA` — an *aarch64* instruction) or an absolute-latency target
-      that does not transfer between machines, and the run was taken on a box
-      with four other agent sessions' cargo resident. Each needs an x86_64
+      that does not transfer between machines. Each needs an x86_64
       calibration on a QUIET box before it means anything. Rows and reasons:
-      `scripts/x86_64_matrix_expected.txt`.
+      `scripts/x86_64_matrix_expected.txt`. ⚠ It was SIX until the second run:
+      `bench_176_router_forward_cpu` and
+      `g7_throughput_gain_over_plan_218_baseline` both passed an hour later
+      with fewer sibling sessions resident, so they are LOAD-SENSITIVE rather
+      than uncalibrated, and the stale-pin wall removed them. That is the
+      measurement to carry: on this box a latency bar's verdict is partly a
+      property of who else is building.
 - [ ] **T8 — `argtopk`'s AVX2 arm is a measured LOSS** post-fix (12 of 15
       (k, n) cells slower than the scalar fallback). Filed separately as
       [Issue 808](808_avx2_argtopk_is_a_measured_loss_vs_scalar.md); owner's
