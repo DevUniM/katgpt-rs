@@ -88,6 +88,44 @@ pub struct LayerWeights {
     pub attn_wg: Vec<f32>, // [kv_dim] gate projection per KV head dimension
 }
 
+impl LayerWeights {
+    /// Base-6 construction with every optional (cfg-gated) field at its inert
+    /// value. Lives HERE because the optional-field set is this crate's
+    /// feature set as unified across the graph — a consumer-crate struct
+    /// literal cannot know it and breaks under feature unification (Issue
+    /// 558's `into_generic` conversion was the measured casualty).
+    ///
+    /// The optional fields are left EMPTY (not ones-init): callers that enable
+    /// their features construct them through this crate's own paths.
+    pub fn from_parts(
+        attn_wq: Vec<f32>,   // [outs, ins]
+        attn_wk: Vec<f32>,   // [kv_dim, ins]
+        attn_wv: Vec<f32>,   // [kv_dim, ins]
+        attn_wo: Vec<f32>,   // [ins, outs]
+        mlp_w1: Vec<f32>,    // [mlp_hidden, ins]
+        mlp_w2: Vec<f32>,    // [ins, mlp_hidden]
+    ) -> Self {
+        Self {
+            attn_wq,
+            attn_wk,
+            attn_wv,
+            attn_wo,
+            mlp_w1,
+            mlp_w2,
+            #[cfg(feature = "gated_mlp")]
+            mlp_w_up: Vec::new(),
+            #[cfg(feature = "kog_cpu_fusion")]
+            attn_norm_gamma: Vec::new(),
+            #[cfg(feature = "kog_cpu_fusion")]
+            mlp_norm_gamma: Vec::new(),
+            #[cfg(feature = "kog_cpu_fusion")]
+            attn_qkv_fused: None,
+            #[cfg(feature = "wall_attention")]
+            attn_wg: Vec::new(),
+        }
+    }
+}
+
 /// All transformer weights: embeddings, per-layer weights, and LM head.
 /// Layout preserves init order for backward compat: wte, wpe, layers…, lm_head.
 ///
@@ -140,6 +178,45 @@ pub struct TransformerWeights {
 }
 
 impl TransformerWeights {
+    /// Non-gated construction with every optional (cfg-gated) field at its
+    /// inert value, from the required base parts (Issue 558's `into_generic`
+    /// conversion). Lives HERE for the same reason as
+    /// [`LayerWeights::from_parts`]: the optional-field set is this crate's
+    /// feature set as unified across the graph — a consumer-crate literal
+    /// cannot know it and breaks under feature unification (measured:
+    /// `delta_routing` on at infer-core's default via another consumer's
+    /// forwarding while the consumer's own arm compiled the field out).
+    ///
+    /// `cfg!` (runtime-const) rather than `#[cfg]` keeps this ONE code path —
+    /// the inert defaults are empty/zeroed regardless of which half compiles.
+    #[allow(clippy::field_reassign_with_default)]
+    pub fn from_parts(
+        wte: Vec<f32>,             // [vocab_size, n_embd]
+        wpe: Vec<f32>,             // [block_size, n_embd] (or a placeholder)
+        lm_head: Vec<f32>,         // [vocab_size, n_embd]
+        layers: Vec<LayerWeights>, // [n_layer]
+        n_embd: usize,
+        n_layer: usize,
+    ) -> Self {
+        Self {
+            wte,
+            wpe,
+            lm_head,
+            layers,
+            mtp_activation_proj: None,
+            mtp_cluster_classifier: None,
+            mtp_cluster_map: None,
+            // This crate's own cfg arms — they match the struct layout by
+            // construction (the unification-proof form).
+            #[cfg(feature = "delta_routing")]
+            delta_routing_query: vec![vec![0.0; n_embd]; n_layer],
+            #[cfg(feature = "delta_routing")]
+            delta_routing_norm: vec![vec![1.0; n_embd]; n_layer],
+            // Identity gain — Issue 538's ones-init convention.
+            final_norm_gamma: vec![1.0; n_embd],
+        }
+    }
+
     pub fn new(config: &Config, rng: &mut Rng) -> Self {
         let n = config.n_embd;
         let kvd = types::kv_dim(config);
