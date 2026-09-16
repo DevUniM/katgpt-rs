@@ -67,9 +67,21 @@
 # Floors are ~60% of measured (the house slack convention); the ratchet is AT
 # the measurement.
 #
+# ⛔ TWO rows are measured against ORIGIN, not against this box's checkout, and
+# the first version of this file got them wrong — pinned from a worktree the
+# sweep's own Issue-798 advisory was already calling STALE on the same run.
+# riir-ai (152 behind, origin/develop 14bf628f6) reads 4 undefended here and
+# **5** upstream; seal-remake (22 behind, origin/develop c918f31) reads 4 here
+# and **6**. A ratchet pinned from a stale checkout reds on the SYNC — an event
+# that adds no defect — and the reader then learns the sweep is noise. The pin
+# describes the REPO, whose current state is origin, not this checkout: the
+# commit a ratchet exists to catch lands THERE. The cost is real and is the
+# lesser one: those two rows are loose by 1 and 2 on this box until it syncs.
+# Re-measure both from a synced checkout and tighten.
+#
 #                       min_scripts  min_population  max_undefended
 katgpt-rs                       44              55               0
-riir-ai                          4               3               4
+riir-ai                          4               3               5
 riir-auth                        0               0               0
 riir-chain                       1               0               0
 riir-clippy                      3               3               0
@@ -83,7 +95,7 @@ riir-train                      34              31              53
 riir-viewbridge                  0               0               0
 seal-game-editor                 1               1               3
 seal-online-remaster             0               0               0
-seal-remake                      3               2               4
+seal-remake                      4               3               6
 #
 # ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
 # riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).
