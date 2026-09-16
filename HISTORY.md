@@ -141,7 +141,7 @@ The cross-repo half was written down as "⚠ unmeasured, deliberately" on the
 the exposure is local*, it says **re-measure the population before answering**, and 789
 earned its "no sweep" with a measurement that returned ONE. Taken (`bc98dc6b`): 16 repos,
 159 tracked `scripts/*.py`, 144 in population, 73 defended, **71 undefended across SEVEN
-repos** — riir-train 53/53, riir-clippy 5/5, riir-ai 4/5, seal-remake 4/4, seal-game-editor
+repos** — riir-train 53/53, riir-clippy 5/5, riir-ai 4/5, mmorpg-remake 4/4, mmorpg-editor
 3/3, riir-dapps 1/1, riir-mmorpg-examples 1/1, against katgpt-rs's 0 of 72. ⚠ The exposure
 caveat SURVIVES the measurement and is what sets the pin design rather than what cancels
 the sweep: a cp874 console is this box's property, and riir-train's 53 rows are the same
@@ -1136,7 +1136,7 @@ halves, rather than waiting for one of them to say something false.
 
 It had also **already gone blind once** without its output betraying it. Issue
 777 found it walking the filesystem behind a hand-typed skip set, crediting
-seal-online-remaster's gitignored nested `mmorpg/` repository and riir-train's
+mmorpg-remaster's gitignored nested `mmorpg/` repository and riir-train's
 cargo `OUT_DIR` sources to their enclosing repos, and migrated it to
 `tracked_walk` in that commit. A floored sweep would have made the population
 shift (11,132 → 8,694 `.rs`) an assertion instead of a paragraph.
@@ -1365,7 +1365,7 @@ list compiles its path-dep closure exactly like a literal one.
 
 `--self-test` (five canaries in a throwaway git repo, sharing the ONE
 `verdict_for` classifier with main — two copies would be the
-two-parsers-disagree trap): named / by-dep / uncovered (the seal-remake
+two-parsers-disagree trap): named / by-dep / uncovered (the mmorpg-remake
 `.issues/010` lineage the upgrade must NOT collapse) / optional-not-credited
 / workspace-table-resolved. All five hold; the workspace-table arm is the
 one that caught the root-relative path bug.
@@ -1374,9 +1374,9 @@ Landing measurement (2026-09-14, post-774): **26 NAMED · 2 BY-DEP · 0
 UNRESOLVED · 1 UNCOVERED** over 216 files / 29 packages / 20 repos (was
 26/0/3 pre-upgrade; the 2026-09-08 standing of 23 NAMED / 0 UNCOVERED over
 191 files / 23 packages was stale — siblings had added wasm32 surface).
-The 1 remaining UNCOVERED is `seal-poc-submodule` (seal-online-remaster):
-deliberately excluded from that repo's CI (`--exclude seal-poc-submodule`,
-needs protoc), depended on by nothing (it deps on seal-core, not the
+The 1 remaining UNCOVERED is `mmorpg-poc-submodule` (mmorpg-remaster):
+deliberately excluded from that repo's CI (`--exclude mmorpg-poc-submodule`,
+needs protoc), depended on by nothing (it deps on mmorpg-core, not the
 reverse) — the standing negative control for the new verdict, and an
 arm-vs-row decision that stays with that repo's owner (read-only here).
 Notes are sorted at print now too: the resolver's note sets iterate in
@@ -1520,13 +1520,13 @@ parent (one `git cat-file --batch`; the response stream's blank separator
 after each blob had to be consumed explicitly — skipping it desynced half
 the reads, caught by the fixtures), and the event is judged against
 `max(parent values)` only. Merge commits are ordinary rows: riir-ai Issue
-`627→614` at a Merge commit and seal-game-editor Plan `152→150` ×3 at
+`627→614` at a Merge commit and mmorpg-editor Plan `152→150` ×3 at
 merges are now visible and correctly blamed. Corrected count: **27 resets
 workspace-wide** (katgpt-rs 5, riir-ai 9, riir-clippy 5, riir-train 2,
-seal-game-editor 4, riir-mmorpg-examples 1, riir-shader 1; riir-chain 0).
+mmorpg-editor 4, riir-mmorpg-examples 1, riir-shader 1; riir-chain 0).
 The floors re-pinned from the corrected walk (format 5→6 fields; the
 7-field max_unbumped column lasted one landing — the worktree-below-history
-quantity is CHECKOUT state (seal-game-editor's bevy worktree vs other refs'
+quantity is CHECKOUT state (mmorpg-editor's bevy worktree vs other refs'
 194), ref-set dependent, and is now REPORT-ONLY, printed like the citation
 sweep's undecided rows, never gated). The walk is HEAD-reachable only,
 never `--all`, for the same reproducibility reason. The selftest's inert
@@ -1569,7 +1569,7 @@ re-implemented):
   column proves no live file duplicates. Pinned at measured (ratchet): a NEW
   reset reds at its pin.
 - **unbumped** — the WORKTREE counter below its committed history max
-  (a checkout state, not a commit): seal-game-editor ×3 (150<152, 191<194,
+  (a checkout state, not a commit): mmorpg-editor ×3 (150<152, 191<194,
   1<2) — REPORT-to-owner class, the repo is read-only to these sessions.
 
 Pin format 5→7 fields (`max_resets`, `max_unbumped`); the selftest grew a
@@ -1600,7 +1600,7 @@ counter's own committed transition walk) answers NO, workspace-wide:
   `577→25` lineage reset; riir-ai
   Issue: 38 gaps + 2 resets; riir-neuron-db Issue jumped `33→589` (a
   deliberate rebaseline — 34..588 were never allocated there);
-  seal-game-editor/Plan carries 46 gaps; riir-shader's Issue counter moved
+  mmorpg-editor/Plan carries 46 gaps; riir-shader's Issue counter moved
   `11→9`. riir-auth's `.benchmarks` counter is COUNT-BASED by its own
   AGENTS.md (records, not numbers) — excluded from witness semantics by
   design.
@@ -1617,7 +1617,7 @@ counter's own committed transition walk) answers NO, workspace-wide:
 The 766-class protection stands on the already-landed repair instead: the
 canonical `## Issue NNN (date)` heading form IS the allocation record
 `heading_allocated()` reads (Issue 754). Standing counter-hygiene findings
-from the audit (the resets are number-reuse-shaped; seal-game-editor's
+from the audit (the resets are number-reuse-shaped; mmorpg-editor's
 worktree counter sits BELOW its committed history max) are re-runnable per
 repo via the script; the reset class as a NUMBERING sweep check is filed as
 Issue 769.
@@ -2069,7 +2069,7 @@ paragraph said "the three" for one commit after the fourth was added):
 - `agents_repo_set_gate.py` pins §"Repo count" above against
   `scripts/repo_set.txt` — membership FIRST, cardinality second. It exists
   because on 2026-09-03 that paragraph named a retired repo
-  (`riir-armageddon`) and omitted a new one (`seal-remake-unity`) **while its
+  (`riir-armageddon`) and omitted a new one (`mmorpg-remake-unity`) **while its
   count stayed correct**: one left, one arrived, total unchanged at 19. Every
   count in sight agreed and the set was wrong anyway, which is why the
   paragraph's own warning ("read a count in prose as a claim, not a fact") was
@@ -2303,7 +2303,7 @@ red it.**
 instrument, 2026-09-05 (`.issues/725`).** `numbering_gate.py` also accepts a
 repo path and had also never been pointed anywhere but here — and katgpt-rs,
 the one gated repo, was the only clean one: **35 tracked duplicate numbers
-across riir-train (13), seal-game-editor (12), riir-ai (6) and riir-clippy
+across riir-train (13), mmorpg-editor (12), riir-ai (6) and riir-clippy
 (4)**, in allocator-serial directories where `Plan N` now resolves to two
 documents. Plus a defect class the local gate could not have: **five
 `.highwater` files that are not integers at all**, every one of them `echo -n
@@ -2322,7 +2322,7 @@ UNRESOLVED bucket and a zero-is-not-zero guard measured on `.plans/229`;
 175→568, 182→567, 229→566, 313→569, R020→362, R148→363), **riir-clippy 4 → 0**
 (its Issue 069, `58e7c1d`), **riir-train 13 → 0** (its Issue 514, `103ed351`
 — hand reads overturned the four UNDECIDABLE rows). The remaining **12 are
-all in read-only seal-game-editor**, ratcheted at the measured count; the
+all in read-only mmorpg-editor**, ratcheted at the measured count; the
 lesson over the pessimism: the instrument is advisory — the corpus does not
 distinguish near-synonyms, but reading the actual sites does.
 
@@ -2901,7 +2901,7 @@ walk #6).
 
 **UQ-bearing primitive GOAT gate extension (the "Report the Floor" rule, adopted 2026-06-28 per Research 322 / Plan 340).** Any primitive that claims a probability distribution, predictive interval, quantile, coverage guarantee, confidence score, or calibrated uncertainty (collectively: **UQ-bearing**) MUST benchmark against the **conformal-naive floor** — `ConformalIntervalCalibrator<SeasonalNaiveForecaster>` (Plan 340 with `m=1`, plain split conformal) — on CRPS / coverage / Winkler score. If the primitive cannot beat the floor, the GOAT gate FAILS. Existing UQ-bearing primitives (BoMSampler Plan 281, Sleep-Time Anticipator Plan 334, Best-Belief Beta Selector Plan 336, KARC+overlay) are grandfathered but must include the floor at their next re-gate; future UQ primitives must include it from the initial gate. Tracked in `.issues/010`. The floor shipped in Plan 340 Phase 1 (2026-06-30); the rule is now enforceable. **Issue 010 is FULLY CLOSED (T1-T7 all complete)** — see `.benchmarks/010_report_the_floor_consolidated.md` for the cross-primitive summary. **T7 (2026-07-20)** added the KARC+overlay dedicated floor test (`conformal_floor_karc_overlay.rs`) — the composite is SCOPE-LIMITED to chaotic regimes (BEATS on Lorenz-x at crps_ratio 0.0047 with K=4; LOSES on stationary seasonal at crps_ratio 5.74 with K=4), but coverage stays calibrated on both — no false-confidence signature. **T7 K-sweep (2026-07-20)** refuted the prior "K=4 too shallow" hypothesis: K=12 (matching the period) LOSES WORSE on seasonal (CRPS 5.74 → 20.26) and WINS HARDER on Lorenz (CRPS 0.0047 → 0.0018) — the scope-limit is **structural** (KARC's Chebyshev basis + ridge-fit doesn't fit periodic data regardless of K), not parametric. Production guidance: pick K by chaotic-regime memory needs; for periodic data use the floor directly.
 
-**Plan 467 / Proposal 007 (2026-07-18):** Shipped `DualLeoOracle` as QGF's 3rd `QGradientOracle` impl — fuses a LEO teacher head + UVFA student head via `DualLeoMixer::combine_into` at the gradient level. Sibling to `LeoHeadOracle` (Plan 268) + `FlowFieldOracle`. G1–G4 PASS mechanistically; **G5 measured FAIL on synthetic data (riir-ai Bench 553, 2026-07-18): dual 0.00% vs single 0.50% on T7 Go puzzles, but the correctness invariant (QGF+LeoHeadOracle ≡ baseline) held bit-identically — mechanism correct, quality gate FAILs because synthetic data produces near-flat Q-fields.** **G5 also measured FAIL on civ real networks (riir-ai Bench 558, 2026-07-19): dual +2.69% vs single 35.68% → 36.64% on civ action-prediction, ≥3% gate — fourth-axis stop rule.** The civ dual-LEO investigation is fully closed per riir-ai Research 322 (the "alternative critic" escape hatch was category-confused — UQ primitives produce state forecasts, not per-action Q-gradients). The Plan 460 max-pool washout lesson is encoded as a design invariant (no operator between mix and consumer). Stays opt-in (`qgf_oracle + dual_leo`) with documented unproven G5 across both synthetic and civ real-network regimes; reopens only on seal integration gain, new game domain positive G5, or Q-vs-forecast research breakthrough.
+**Plan 467 / Proposal 007 (2026-07-18):** Shipped `DualLeoOracle` as QGF's 3rd `QGradientOracle` impl — fuses a LEO teacher head + UVFA student head via `DualLeoMixer::combine_into` at the gradient level. Sibling to `LeoHeadOracle` (Plan 268) + `FlowFieldOracle`. G1–G4 PASS mechanistically; **G5 measured FAIL on synthetic data (riir-ai Bench 553, 2026-07-18): dual 0.00% vs single 0.50% on T7 Go puzzles, but the correctness invariant (QGF+LeoHeadOracle ≡ baseline) held bit-identically — mechanism correct, quality gate FAILs because synthetic data produces near-flat Q-fields.** **G5 also measured FAIL on civ real networks (riir-ai Bench 558, 2026-07-19): dual +2.69% vs single 35.68% → 36.64% on civ action-prediction, ≥3% gate — fourth-axis stop rule.** The civ dual-LEO investigation is fully closed per riir-ai Research 322 (the "alternative critic" escape hatch was category-confused — UQ primitives produce state forecasts, not per-action Q-gradients). The Plan 460 max-pool washout lesson is encoded as a design invariant (no operator between mix and consumer). Stays opt-in (`qgf_oracle + dual_leo`) with documented unproven G5 across both synthetic and civ real-network regimes; reopens only on mmorpg-remake integration gain, new game domain positive G5, or Q-vs-forecast research breakthrough.
 
 ## Substrate-First Gate — original section
 
@@ -2940,10 +2940,10 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 > workspace is **16 repos**, all of which carry a root `BOUNDARY.md`
 > (add `riir-mmorpg-examples`, `riir-clippy`, `riir-viewbridge`,
 > `riir-auth`, `katgpt-web`, `riir-dao`, `riir-deployer`,
-> `seal-game-editor`, `seal-remake`).
+> `mmorpg-editor`, `mmorpg-remake`).
 >
 > **19 → 16 on 2026-09-04 00:01**, by the same owner act that retired
-> `riir-armageddon`: `riir-burner`, `riir-unity` and `seal-remake-unity` were
+> `riir-armageddon`: `riir-burner`, `riir-unity` and `mmorpg-remake-unity` were
 > moved to `/Users/katopz/git/obsolete/`. Nothing was lost — the directories
 > are intact there and `riir-burner`'s last sweep was pushed (`ce54122`) 19
 > minutes before the move. They are named here as **lineage only; do not route
@@ -2964,7 +2964,7 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 >
 > **This paragraph said 8 and 18 until 2026-09-03, and the way it was wrong
 > is worse than a stale number.** `riir-armageddon` was de-enrolled by an
-> owner act — the directory is GONE — and `seal-remake-unity` was enrolled
+> owner act — the directory is GONE — and `mmorpg-remake-unity` was enrolled
 > in the same window (boundary-guard's 18th run: 19 repos / 225 edges, the
 > 227→225 delta being exactly armageddon's two allowlist edges leaving with
 > the directory, the new repo adding zero). **One repo left and one arrived,
@@ -2980,7 +2980,7 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
 > run recorded here before; the count moved because contracts were added, not
 > because repos were, and **this paragraph did not** — which is the failure it
 > warns about, committed by the paragraph itself. **19 later the same day**,
-> and this time because a repo genuinely was added: `seal-remake` was
+> and this time because a repo genuinely was added: `mmorpg-remake` was
 > scaffolded at 23:41 with a root BOUNDARY.md (derived, not re-run through
 > `ci_boundary_contract.sh` — so the 211-edge figure above is NOT re-measured
 > and should be read as of the earlier run). `scripts/repo_set.txt` was
@@ -3532,7 +3532,7 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
   Issue 069 `58e7c1d`, 17 citation rewrites), **riir-train 13 → 0** (its Issue 514 `103ed351`, 14 commits —
   hand reads overturned the UNDECIDABLE verdicts; known cost: number-baked test filenames + ~30 source comments
   stay stale for the next code-touching session). The issue's own author was the ratchet's first catch (a
-  `513_` allocation from a stale highwater read went red in minutes; renumbered 514). Remaining: **seal-game-editor
+  `513_` allocation from a stale highwater read went red in minutes; renumbered 514). Remaining: **mmorpg-editor
   12, READ-ONLY** to these sessions — ratchet at the measured count, report only. T5 (siblings run the per-push
   gate themselves) deferred `[-]` — `numbering_gate.py`'s pins file is katgpt-rs-scoped; reopen when a second repo
   wants its own per-push gate. Record: the three scripts + `numbering_drift_floors.txt` + this paragraph.
@@ -3542,7 +3542,7 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
   riir-train `.issues/511` dual-allocated (the genrm-corpus issue took 511 from a stale highwater read while the
   Sep-04 all-features census held it; citation weight keeps the census — AGENTS.md test-gate row + Issue 513 vs
   zero refs — and the genrm file moved 511→518, highwater bumped — `e938cdc0`). Sweep PASSES at closeout:
-  12 tracked duplicates (all seal-game-editor) · 0 stale · 0 malformed.
+  12 tracked duplicates (all mmorpg-editor) · 0 stale · 0 malformed.
   **Next run (2026-09-06, the 4090 box) — one instrument fix + one live divergence, neither a pins change.**
   (1) INSTRUMENT: the sweep exited 2 on Windows — `parse_rows`/`parse_pins` read their pins files with the locale
   codec (cp1252) and died on UTF-8 punctuation (byte 0x86); both now read `encoding="utf-8"` explicitly. The M3's
@@ -3561,8 +3561,8 @@ GOAT gate, and the mandatory modelless-unblock protocol (§3.5).
   stale=0 malformed=0** (the `-n 374`/`-n 441` corrupt allocators and the 13 duplicates are gone on develop;
   all six `.highwater` files are tracked integers). riir-train's AGENTS.md does NOT claim 'no develop branch
   exists' — that parenthetical was itself stale (the Branch section has documented develop as the default
-  working branch since 09-04); `origin/main` stays frozen at `1a6d128c` as lineage, strictly behind develop. (3) ENVIRONMENTAL: katgpt-web / riir-dao / riir-deployer / seal-game-editor are pinned but not
-  cloned on this box — absence rows are box-scoped, not drift; the 12 seal-game-editor duplicates are
+  working branch since 09-04); `origin/main` stays frozen at `1a6d128c` as lineage, strictly behind develop. (3) ENVIRONMENTAL: katgpt-web / riir-dao / riir-deployer / mmorpg-editor are pinned but not
+  cloned on this box — absence rows are box-scoped, not drift; the 12 mmorpg-editor duplicates are
   unmeasurable here. riir-mmorpg-examples `-n 97` remains the known 069 left-for-owner row.
   **Later the same day (second 4090 pass) — the mmorpg row REPAIRED and a second instrument axis caught.**
   (4) INSTRUMENT AGAIN, print side: with the reads fixed the sweep died MID-REPORT on Windows — the status
@@ -4114,15 +4114,15 @@ keeps it that way. Issue file removed per the noise-reduction rule; the
 full record lives in git history
 (`git log -- .issues/750_checks_array_vs_its_own_documentation.md`).
 
-## Issue 760 — seal-online-remaster joined the workspace but not `scripts/repo_set.txt`: CLOSED as resolved (2026-09-12)
+## Issue 760 — mmorpg-remaster joined the workspace but not `scripts/repo_set.txt`: CLOSED as resolved (2026-09-12)
 
 Filed from the 4090 box (14 live repos) after a docs-gate run surfaced real
-drift amid topology artifacts: `seal-online-remaster/` was a NEW contract
+drift amid topology artifacts: `mmorpg-remaster/` was a NEW contract
 repo (own root BOUNDARY.md + .git) missing from the canonical repo set. The
 katgpt-rs-side drift was fixed in the filing commit `bfccffea` (repo_set.txt
 evidence-backed typed line + AGENTS.md §Repo count 19→20 + research/
 substrate-first SKILL.md prose counts). The M3-side half completed
-2026-09-12: the repo is cloned at `/Users/katopz/git/seal-online-remaster`
+2026-09-12: the repo is cloned at `/Users/katopz/git/mmorpg-remaster`
 (synced, `99064c5`); the full-workstation `./scripts/docs_gate.sh` run at
 `5773a614` is **17/17 green** — the three 4090 reds were all partial-clone
 topology (6 canonical repos absent on that box), and the M3 walk — the only
@@ -4134,7 +4134,7 @@ workspace run caught the new repo's one unterminated fence
 (`.plans/005_layer3_reducer.md:600`, repaired `99064c5`) and floored it at
 50 (`5773a614`). Issue file removed per the noise-reduction rule; the full
 record lives in git history
-(`git log -- .issues/760_seal_online_remaster_missing_from_repo_set.md`).
+(`git log -- .issues/760_mmorpg_remaster_missing_from_repo_set.md`).
 
 ## Issue 757 — linking_fold detector Option B (the 50 ms @ n=2×1000 remainder): CLOSED as resolved (2026-09-12)
 
@@ -4332,9 +4332,9 @@ walked the filesystem behind a hand-typed directory-name skip set
 (`{"target", ".git", "node_modules", ".venv"}`). A name list cannot express
 "not ours", and it was wrong three independent ways, all measured:
 
-1. **A gitignored NESTED REPOSITORY.** `seal-online-remaster/mmorpg/` is
+1. **A gitignored NESTED REPOSITORY.** `mmorpg-remaster/mmorpg/` is
    `.gitignore:82 /mmorpg/` and carries its own `.git`. Its 1404 `.rs` files
-   were credited to seal-online-remaster (2015 walked vs 611 tracked), and
+   were credited to mmorpg-remaster (2015 walked vs 611 tracked), and
    supplied 19 of the 23 percentile sites attributed to that repo —
    **including the sweep's only finding**, a TRUNC-VAR at
    `mmorpg/crates/mmorpg-bot/src/metrics.rs:129`. A correctly-shaped defect at
@@ -4527,7 +4527,7 @@ that no run on this box had ever reached:
 | repo | row | owner |
 |---|---|---|
 | katgpt-rs | `HISTORY.md:112` "Issue 513's T2 sweep" | riir-train — fixed `25b7bf6b` |
-| riir-clippy | `HISTORY.md:6161` "Issue 150 removed per the noise rule" | seal-game-editor — fixed `c5c30fee` |
+| riir-clippy | `HISTORY.md:6161` "Issue 150 removed per the noise rule" | mmorpg-editor — fixed `c5c30fee` |
 | riir-train | `HISTORY.md:28` "chunk-size invariance, Issue 671" | riir-ai (`a8c3aec4a`) — fixed `96041bf6` |
 | riir-ai | `HISTORY.md:250` "the Research 453 session" | riir-train — **deliberately untouched** |
 
@@ -4713,7 +4713,7 @@ its HEAD blob, 16 of 20 repos):
 | repo | dirty tracked | in scope | worktree | HEAD |
 |---|---|---|---|---|
 | riir-ai | 6 | `HISTORY.md` | **CROSS = 1** | **CROSS = 0** |
-| seal-remake | 1 | — | — | — |
+| mmorpg-remake | 1 | — | — | — |
 
 The workspace's **entire** standing CROSS finding was an artifact. HEAD carries
 `Filed … from the riir-train Research 453 session`; an uncommitted edit by
@@ -4910,10 +4910,10 @@ one-sided (the feared long-lived-branch shape — green BY CONSTRUCTION), 164
 RED pair-instants = 39 distinct incidents = 31 TWIN + 8 INDEPENDENT.**
 
 The twin/independent split is structural, by filename STEM per colliding
-number — the subject-equality test MISLABELS (measured: seal-remake `2`'s twin
+number — the subject-equality test MISLABELS (measured: mmorpg-remake `2`'s twin
 commits carry different subjects; the stems are identical). The 8 INDEPENDENT,
 all stem-verified: riir-ai 722/780/935, riir-chain 30+72/34, riir-clippy
-79/83, seal-game-editor 192–195.
+79/83, mmorpg-editor 192–195.
 
 Verdict: the deferral's fear is MOOT (one-sided allocation never fires) and
 its caution RIGHT (a naive hard gate cries wolf 31/39 on twins — one incident
@@ -5044,7 +5044,7 @@ AGENTS.md+HISTORY.md: **64 of 152 read, 88 unread**, and the split is by
 | repo | shaped | read | unread |
 |---|---|---|---|
 | riir-mmorpg-examples | 43 | **43** | 0 |
-| seal-remake | 15 | 14 | 1 |
+| mmorpg-remake | 15 | 14 | 1 |
 | katgpt-rs | 29 | 7 | **22** |
 | riir-ai | 25 | **0** | 25 |
 | riir-clippy | 25 | **0** | 25 |
@@ -5228,7 +5228,7 @@ whole time.
 | riir-clippy | 5 | 12 | **9** | **1** |
 | riir-ai | 8 | 8 | **6** | 0 |
 | riir-dapps | 1 | 1 | **1** | 0 |
-| seal-game-editor | 2 | 2 | **1** | 0 |
+| mmorpg-editor | 2 | 2 | **1** | 0 |
 | katgpt-rs + 10 others | 79 | 44 | 0 | 0 |
 | **total** | **163** | **82** | **29** | **2** |
 
@@ -5319,7 +5319,7 @@ same day (`820bf8b6`), and the hand-typed warrant did not follow:
 | orphaned | 0 | **0** | — |
 
 The verdict never moved. **23,026 of the sites offered as its warrant were in
-trees no repo owns** — seal-online-remaster's gitignored `mmorpg/` nested
+trees no repo owns** — mmorpg-remaster's gitignored `mmorpg/` nested
 repository, riir-ai's vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR`
 sources under `.runs/target-*`.
 
@@ -5388,7 +5388,7 @@ kind of total went 46% stale.
 
 **Why this class earns a wall.** An UNCOVERED package is code that has never
 compiled and that nothing will ever tell you about, because the arch it is gated
-on is one no lane passes. Measured: seal-remake's positive
+on is one no lane passes. Measured: mmorpg-remake's positive
 `#[cfg(target_arch = "wasm32")]` block (`.issues/010` T2, katgpt-rs Issue 738)
 was **uncompilable from the day it was written** — it called a
 `cfg(not(wasm32))` function — and nothing said so for months.
@@ -5431,7 +5431,7 @@ raising `TOTALS` min_files to 500 reds on the only floor that catches a grep
 regression; deleting the `TOTALS` row exits 2. Restored state re-verified at
 rc=0.
 
-`seal-online-remaster: seal-poc-submodule` is the single pinned row and is a
+`mmorpg-remaster: mmorpg-poc-submodule` is the single pinned row and is a
 deliberate NEGATIVE CONTROL — excluded from its repo's CI, depended on by
 nothing, that repo read-only from here. It is also what proves the Issue-774
 by-dep credit did not become a blanket amnesty.

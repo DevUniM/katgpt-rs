@@ -1,6 +1,6 @@
 # Issue 809 — a shipped pruner drew from the UNSEEDED global RNG, so it returned a different answer every process
 
-**Status:** CLOSED — T1 + T2 LANDED 2026-09-16 (the census is read, the class is gated); T3 `[-]` DEFERRED (the `Rng::new()` census, ~95 sites — a separate adjudication, unread rows are a backlog wearing a pin). Found while running [Issue 806](806_x86_64_execution_matrix_followup.md)'s execution matrix.
+**Status:** CLOSED — T1 + T2 LANDED 2026-09-16 (the census is read, the class is gated); T3 LANDED 2026-09-16 (the `Rng::new()` census is read and the constructor class joined the gate). Found while running [Issue 806](806_x86_64_execution_matrix_followup.md)'s execution matrix.
 
 ## Provenance
 
@@ -94,13 +94,45 @@ sibling passed 8 consecutive fresh processes after the fix.
       was found by the canary and is the correct per-push population, not a defect). arm_reach
       measured 22 killed / 2 EQUIVALENT survivors (the in-string EOL-backslash flips — the
       multi-line-string class mask_line documents out of scope; pinned at the arms header).
-- [-] **T3 — the `fastrand::Rng::new()` census (DEFERRED with reason).** ~95 sites across 34 files
-      in production paths (`crates/*/src`, root `src`), dominated by sampling-by-design paths
-      (drafters, players, tournament loops, tests) where fresh entropy per run is the intended
-      semantics — but at least one shipped primitive sits in the set (`katgpt-core/curator.rs`
-      `CuratorBandit::new` seeds exploration from the global). Each site needs the same per-site
-      read T1 did; batch-converting is forbidden by the same rule T1 followed. Unblock: a session
-      picks the census as its unit; the gate's out-of-population note already names it.
+- [x] **T3 — the `fastrand::Rng::new()` census LANDED (2026-09-16).** Measured population: **131
+      `Rng::new()` sites across 50 tracked `*.rs` at HEAD** (95 in production paths — the estimate in
+      this issue's original text — plus the tests/benches/examples tail; `Rng::default()` measured 0).
+      Every site adjudicated per-site (three parallel read passes, verdicts quote the decisive fact);
+      **0 defect-shaped in production logic beyond the three fixed below; the rest are sampling-by-design**
+      (test-gated statistical margins, injector-designed production APIs that take `&mut Rng` from the
+      caller, players/drafters/generators whose entropy is the semantics, bench harnesses where the
+      draw IS the timed workload, doc-comment examples, dead-plumbing rng forwarded to mocks that
+      ignore it). The class joined the gate: `global_rng_gate.py` now matches `\bRng::new\(\)|
+      \bRng::default\(\)` under the key `new` (the `\b` keeps `StdRng::new()` out; over-detection lands
+      loud), the pin file carries a reasoned row per (file, call) — **147 sites / 55 files, every row
+      pinned**, floors re-based to the merged population (60/20). Canary re-proven both directions.
+      FIXED (3):
+      - `katgpt-pruners/src/lsh_cache.rs` — `LshApproximateCache::new` seeded the ±1 SimHash
+        projection — the LSH hash function itself — from OS entropy, so the same constructor arguments
+        produced different fingerprints every process and the GOAT-recorded capture rate
+        (`tests/bfcf_lsh_cms_goat.rs` g2, `l1_rate >= 0.10`) was not comparable across runs. Now
+        `seed_from_config` (FNV-1a over the four constructor scalars — the Issue-809 house pattern),
+        guarded by `test_lsh_projection_is_config_deterministic` (bit identity + a different config
+        must NOT reproduce it). LSH GOAT gate 10/10 green post-fix.
+      - `katgpt-pruners/src/bt_rank.rs` — `bt_fit_from_fn` drew its K-regular pairings from an internal
+        unseeded `Rng::new()` while its own tests seed `bt_pair_random` — the shipped wrapper denied
+        callers the reproducibility the crate treats as the convention. Takes a `seed: u64` parameter
+        now (zero callers at fix time — the free-API moment).
+      - `katgpt-spectral/src/peira.rs` — `alignment_converges_on_synthetic_data` asserted a numeric
+        floor (`alignment > 0.1`) that the unseeded draws genuinely DRIVE; a failing run would have
+        been irreproducible — this issue's exact symptom class. `Rng::with_seed(42)` (the sibling-test
+        convention). The `no_collapse` sibling stays unseeded (all-zero sample has measure ~zero).
+      BORDERLINE adjudicated BY-DESIGN (2):
+      - `katgpt-core/src/curator.rs` `CuratorBandit::new` — Thompson-sampling exploration noise; no
+        test/bench pins the trajectory and arm selection crosses no sync/replay boundary today. The
+        recorded trigger for adding a `with_seed` seam is either of those materializing (the pin row
+        carries it).
+      - root `src/benchmark/{distillation,heuristic}.rs` — read directly: the draws ARE the timed
+        workload (`bt_pair_random`, `TemplateProposer::propose`); recorded numbers are wall-clock
+        throughput. Same class as the GOAT benches.
+      Hygiene note recorded, deliberately NOT fixed here (not this issue's class): `traits/mod.rs`
+      includes `mod tests_leo;` ungated (its sibling `tests_spec_gen` carries `#[cfg(test)]`) — the
+      `#[test]` fns are inert in production builds, but the asymmetry is real.
 
 ## Why nothing caught it
 

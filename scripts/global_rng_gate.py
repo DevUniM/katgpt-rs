@@ -34,15 +34,21 @@ Population: every tracked `*.rs` free-function `fastrand::<primitive>()` call
 i32|i64|u8|u16|u32|u64|usize|isize|rng|global_rng`). Deliberately OUT of
 population:
 
-- `fastrand::Rng::with_seed(..)` — the correct pattern (555 sites, Issue 809's
-  measured baseline).
-- `fastrand::Rng::new()` — an unseeded LOCAL instance, same entropy source,
-  but a different and much larger population (~95 sites) dominated by
-  sampling-by-design paths (drafters, players, tests). Adjudicating it is
-  Issue 809's T3 census; pinning it unread would be a backlog wearing a pin
-  (the issue's own T2 rule).
+- `fastrand::Rng::with_seed(..)` — the correct pattern (555+ sites, Issue
+  809's measured baseline).
 - Non-fastrand RNGs — fastrand is this repo's RNG crate; another crate would
   be a new dependency fact, not a new call site.
+
+T3 (2026-09-16) folded the unseeded-constructor class IN: `Rng::new()` /
+`Rng::default()` build an unseeded LOCAL instance from the same entropy
+source, and the T3 census read every site (95 in production paths + the
+test/bench/example population, ~47 files). Two DEFECT-shaped sites were
+FIXED (`lsh_cache` — the SimHash projection is the LSH hash function and now
+derives from the configuration; `bt_fit_from_fn` — takes a seed parameter);
+`peira`'s entropy-driven convergence test seeds explicitly; the rest are
+sampling-by-design with the per-file reason on the row. `Rng::default()`
+measured 0 sites at the T3 census and is folded into the same predicate so a
+future one cannot slip in unadjudicated.
 
 Comment and string literals are masked before matching (a doc comment naming
 the function is prose, not a call). The masker is regex-grade, not lexer-grade
@@ -74,8 +80,12 @@ GLOB = "*.rs"
 #              them — the silence direction.
 #   MIN_FILES  the WALK. A tracked_files regression that returns few files
 #              shrinks the population underneath the same green verdict.
-MIN_SITES = 8
-MIN_FILES = 4
+# Merged-population floors (T3 folded the constructor class in): the T3
+# landing measured ~170 sites across ~50 files. A floor far below the live
+# figure still catches a walk/predicate collapse; membership STALE rows
+# catch the partial directions.
+MIN_SITES = 60
+MIN_FILES = 20
 
 # The free-function surface of the fastrand global. `Rng::` is excluded by
 # construction (the alternation names only primitives, and `Rng` is not one).
@@ -83,6 +93,13 @@ GLOBAL_CALL = re.compile(
     r"fastrand::(bool|char|alphabetic|alphanumeric|lowercase|uppercase|digit"
     r"|f32|f64|i8|i16|i32|i64|u8|u16|u32|u64|usize|isize|rng|global_rng)\("
 )
+
+# The unseeded-constructor class (Issue 809 T3). `\b` keeps `StdRng::new()` /
+# `MyRng::new()` out (no word boundary inside an identifier) while matching
+# both the bare-imported and the fully-qualified `fastrand::Rng::new()`
+# spellings. Over-detection (a foreign type genuinely named `Rng`) lands as a
+# loud UNPINNED red — the documented failure direction.
+RNG_NEW = re.compile(r"\bRng::new\(\)|\bRng::default\(\)")
 
 # ── the masker ──────────────────────────────────────────────────────────────
 # Regex-grade, per line: cut at the first `//` outside a string literal, then
@@ -128,10 +145,16 @@ def mask(src: str) -> str:
 
 
 def sites(src: str) -> dict[str, int]:
-    """Per-call-name counts of global free-function draws in one source."""
+    """Per-call-name counts of global free-function draws AND unseeded
+    constructors in one source. Constructors count under the key `new` — no
+    primitive is named `new`, so the two classes share the pin namespace
+    without colliding."""
     counts: dict[str, int] = {}
-    for m in GLOBAL_CALL.finditer(mask(src)):
+    masked = mask(src)
+    for m in GLOBAL_CALL.finditer(masked):
         counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    for _m in RNG_NEW.finditer(masked):
+        counts["new"] = counts.get("new", 0) + 1
     return counts
 
 
@@ -238,12 +261,33 @@ def classifier_arms() -> list[str]:
         sites("let mut r = fastrand::Rng::with_seed(42);\nlet x = r.f32();") == {},
         "with_seed + method must NOT classify",
     )
-    check(
-        sites("let mut r = fastrand::Rng::new();") == {},
-        "Rng::new is out of population",
-    )
     check(sites("let x = rng.f32();") == {}, "seeded method call must NOT classify")
     check(sites("use fastrand::Rng;") == {}, "an import must NOT classify")
+    # ── the constructor class (Issue 809 T3) ────────────────────────────
+    check(
+        sites("let mut r = fastrand::Rng::new();") == {"new": 1},
+        "fully-qualified Rng::new must classify as `new`",
+    )
+    check(
+        sites("let mut r = Rng::new();") == {"new": 1},
+        "bare-imported Rng::new must classify as `new`",
+    )
+    check(
+        sites("let mut r = Rng::default();") == {"new": 1},
+        "Rng::default is the same unseeded constructor and must classify",
+    )
+    check(
+        sites("let mut r = StdRng::new();") == {},
+        "another crate's *Rng::new must NOT classify (no word boundary)",
+    )
+    check(
+        sites("// Rng::new() in prose") == {},
+        "commented constructor must NOT classify",
+    )
+    check(
+        sites('let s = "Rng::new()";') == {},
+        "string-literal constructor must NOT classify",
+    )
     # masking
     check(
         sites("// fastrand::f32() in a doc comment") == {},

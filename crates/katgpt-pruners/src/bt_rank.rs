@@ -234,6 +234,9 @@ pub fn bt_fit(comparisons: &[BtComparison], n_candidates: usize, config: &BtConf
 /// * `k_per_candidate` — Number of peers each candidate is compared against
 /// * `compare_fn` — Function returning comparison outcome for a pair (a, b)
 /// * `config` — Fitting hyperparameters
+/// * `seed` — Seed for the pairing draw: the fitted [`BtScores`] are a
+///   function of `(inputs, seed)` (Issue 809 T3 — the pairing draw previously
+///   came from an unseeded constructor, so the ranking was not reproducible).
 ///
 /// # Returns
 ///
@@ -243,11 +246,15 @@ pub fn bt_fit_from_fn<F>(
     k_per_candidate: usize,
     compare_fn: F,
     config: &BtConfig,
+    seed: u64,
 ) -> BtScores
 where
     F: Fn(usize, usize) -> BtOutcome,
 {
-    let mut rng = Rng::new();
+    // Seeded, not `Rng::new()` (Issue 809 T3): the crate's own tests seed
+    // `bt_pair_random` — this shipped wrapper denied callers the same
+    // reproducibility for zero benefit.
+    let mut rng = Rng::with_seed(seed);
     let pairs = bt_pair_random(n_candidates, k_per_candidate, &mut rng);
     let mut comparisons = Vec::with_capacity(pairs.len() * 2);
 

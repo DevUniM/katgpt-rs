@@ -362,7 +362,10 @@ mod tests {
         let k = 4;
         let mut distiller =
             PeiraDistiller::new(PeiraConfig::new(k).with_lambda(0.1).with_ema_rate(0.5));
-        let mut rng = fastrand::Rng::new();
+        // Seeded (Issue 809 T3): the draws DRIVE the asserted numeric floor, so
+        // an unlucky unseeded draw could fail this test — and the failure
+        // would be irreproducible, the exact symptom class the issue records.
+        let mut rng = fastrand::Rng::with_seed(42);
 
         // Train on synthetic CCA data
         for _ in 0..200 {
