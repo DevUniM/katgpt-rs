@@ -9,7 +9,9 @@
 
 #![allow(clippy::too_many_arguments)]
 
-pub use katgpt_forward::flashar_anchor::{AnchorConfig, AnchorFillResult, anchor_then_fill};
+pub use katgpt_forward::flashar_anchor::{
+    AnchorConfig, AnchorFillResult, anchor_fill_with_prefilled, anchor_then_fill, dbtm_floor,
+};
 
 // ---------------------------------------------------------------------------
 // Tests — 2 training-coupled tests that cannot move to katgpt-forward.
@@ -136,5 +138,339 @@ mod tests {
             result.baseline_steps_used,
             result.step_reduction,
         );
+    }
+
+    // =========================================================================
+    // Issue 811 PoC — DBTM confidence-commit anchor rule (κ ∪ floor)
+    // vs the strided incumbent, on ONE trained mini-D2F. Research 563 §2.3.
+    // =========================================================================
+    //
+    // All arms share ONE Round-1 AR walk per (sequence, row): the walk is
+    // identical to the production `predict_anchors` shape (same rng stream,
+    // sampled-token context propagation), and additionally records the
+    // per-position argmax proposal + its max-softmax confidence q — the
+    // signal DBTM's rule consumes and the stride rule ignores. Selection
+    // differs per arm; the fill runs through the SHARED production path
+    // (`anchor_fill_with_prefilled`), which is what makes the comparison
+    // apples-to-apples. `test_issue811_harness_matches_production` pins the
+    // harness walk to byte-identical parity with the production decode.
+
+    use super::anchor_fill_with_prefilled;
+    use crate::dllm::generate_pattern_dataset;
+    use katgpt_core::simd::simd_argmax_f32;
+    use katgpt_core::softmax_scaled;
+    use katgpt_core::speculative::sampling::sample_from_distribution;
+
+    const N_EVAL_SEQUENCES: usize = 24;
+    const BLOCK: usize = 8;
+
+    /// Round-1 AR walk (production `predict_anchors` shape) + the
+    /// confidence record the DBTM rule consumes.
+    #[allow(clippy::too_many_arguments)]
+    fn round1_walk(
+        ctx: &mut ForwardContext,
+        cache: &mut MultiLayerKVCache,
+        weights: &TransformerWeights,
+        config: &Config,
+        seed_token: usize,
+        block_size: usize,
+        sampled: &mut [usize],
+        argmax: &mut [usize],
+        probs: &mut [f32],
+        rng: &mut Rng,
+    ) {
+        let vocab = config.vocab_size;
+        let mut logits = vec![0.0f32; vocab];
+        let mut cur = seed_token;
+        for pos in 0..block_size {
+            let l = katgpt_forward::forward(ctx, weights, cache, cur, pos, config);
+            logits.copy_from_slice(l);
+            softmax_scaled(&mut logits, 1.0 / config.temperature);
+            sampled[pos] = sample_from_distribution(&logits, rng);
+            let (best, best_prob) = simd_argmax_f32(&logits);
+            argmax[pos] = best;
+            probs[pos] = best_prob;
+            cur = sampled[pos];
+        }
+    }
+
+    struct ArmRow {
+        label: &'static str,
+        /// Selection rule for Round-1 anchors.
+        stride: Option<usize>,
+        kappa: f32,
+        /// DBTM per-round commit budget (None = threshold-only fill).
+        floor_budget: Option<usize>,
+    }
+
+    fn select_anchors(row: &ArmRow, sampled: &[usize], argmax: &[usize], probs: &[f32], mask: usize) -> Vec<usize> {
+        let mut buf = vec![mask; BLOCK];
+        match row.stride {
+            Some(s) => {
+                for p in 0..BLOCK {
+                    if (p + 1) % s == 0 {
+                        buf[p] = sampled[p];
+                    }
+                }
+            }
+            None => {
+                for p in 0..BLOCK {
+                    if probs[p] >= row.kappa && argmax[p] != mask {
+                        buf[p] = argmax[p];
+                    }
+                }
+            }
+        }
+        buf
+    }
+
+    struct ArmOutcome {
+        accuracy: f32,
+        mean_fill_steps: f32,
+        mean_anchors: f32,
+        mean_wall_us: f32,
+        all_terminated: bool,
+    }
+
+    fn run_row(
+        row: &ArmRow,
+        config: &Config,
+        weights: &TransformerWeights,
+        test_data: &[Vec<usize>],
+        budget: usize,
+    ) -> ArmOutcome {
+        let mask = config.mask_token;
+        let decode_config = D2fDecodeConfig {
+            denoise_steps: budget,
+            confidence_threshold: row.kappa,
+            block_size: BLOCK,
+            ..D2fDecodeConfig::default()
+        };
+        let (mut acc_sum, mut step_sum, mut anchor_sum, mut wall_sum) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let mut all_terminated = true;
+        let mut trials = 0usize;
+        for (si, seq) in test_data.iter().take(N_EVAL_SEQUENCES).enumerate() {
+            // Paired runs: every row draws the identical rng stream per
+            // sequence, so the walk (and thus the selection input) is
+            // byte-identical across rows and only the rule differs.
+            let mut rng = Rng::new(9_000 + si as u64);
+            let mut ctx = ForwardContext::new(config);
+            let mut cache = MultiLayerKVCache::new(config);
+            let mut dctx = D2fContext::new(config);
+
+            let mut sampled = [0usize; BLOCK];
+            let mut argmax = [0usize; BLOCK];
+            let mut probs = [0.0f32; BLOCK];
+            round1_walk(
+                &mut ctx, &mut cache, weights, config, seq[0], BLOCK,
+                &mut sampled, &mut argmax, &mut probs, &mut rng,
+            );
+            let anchors = select_anchors(row, &sampled, &argmax, &probs, mask);
+            let n_anchors = anchors.iter().filter(|&&t| t != mask).count();
+
+            let t0 = std::time::Instant::now();
+            let result = anchor_fill_with_prefilled(
+                &mut dctx, weights, config, &decode_config, &anchors, &mut rng, row.floor_budget,
+            );
+            wall_sum += t0.elapsed().as_secs_f32() * 1e6;
+
+            // Ground truth: slot p carries the successor of position p,
+            // i.e. seq[p + 1] (the pattern is [a, b, a, b, ...]).
+            let mut correct = 0usize;
+            let mut terminated = true;
+            for (p, &got) in result.tokens.iter().enumerate() {
+                if got == mask {
+                    terminated = false;
+                }
+                if got == seq[p + 1] {
+                    correct += 1;
+                }
+            }
+            all_terminated &= terminated;
+            acc_sum += correct as f32 / BLOCK as f32;
+            step_sum += result.steps_used as f32;
+            anchor_sum += n_anchors as f32;
+            trials += 1;
+        }
+        ArmOutcome {
+            accuracy: acc_sum / trials as f32,
+            mean_fill_steps: step_sum / trials as f32,
+            mean_anchors: anchor_sum / trials as f32,
+            mean_wall_us: wall_sum / trials as f32,
+            all_terminated,
+        }
+    }
+
+    fn build_rows() -> Vec<ArmRow> {
+        let ks = [0.5f32, 0.9, 0.99];
+        // usize::MAX stride never divides (p+1) — the all-mask baseline.
+        const ALL_MASK: usize = usize::MAX;
+        let mut rows = vec![ArmRow {
+            label: "all-mask D2F baseline",
+            stride: Some(ALL_MASK),
+            kappa: 0.7,
+            floor_budget: None,
+        }];
+        rows.push(ArmRow {
+            label: "stride1 (pure AR anchors)",
+            stride: Some(1),
+            kappa: 0.7,
+            floor_budget: None,
+        });
+        rows.push(ArmRow {
+            label: "stride2 tau0.70 (incumbent)",
+            stride: Some(2),
+            kappa: 0.7,
+            floor_budget: None,
+        });
+        rows.push(ArmRow {
+            label: "stride4 tau0.70",
+            stride: Some(4),
+            kappa: 0.7,
+            floor_budget: None,
+        });
+        // Matched-threshold stride reference: isolates the SELECTION delta
+        // (stride vs confidence) at each swept kappa.
+        for &k in &ks {
+            rows.push(ArmRow {
+                label: "stride2 tau=kappa (matched ref)",
+                stride: Some(2),
+                kappa: k,
+                floor_budget: None,
+            });
+        }
+        // The two DBTM arms.
+        for &k in &ks {
+            rows.push(ArmRow {
+                label: "conf kappa (no floor)",
+                stride: None,
+                kappa: k,
+                floor_budget: None,
+            });
+        }
+        for &k in &ks {
+            rows.push(ArmRow {
+                label: "conf kappa + floor (DBTM)",
+                stride: None,
+                kappa: k,
+                floor_budget: Some(0), // patched per budget at run time
+            });
+        }
+        rows
+    }
+
+    #[test]
+    fn test_issue811_harness_matches_production() {
+        // Parity guard: the harness stride-arm at incumbent defaults must
+        // reproduce the production decode byte-identically (same walk, same
+        // anchor buffer, same fill path).
+        let (config, weights) = make_trained_weights();
+        let seq = {
+            let mut rng = Rng::new(555);
+            generate_pattern_dataset(&mut rng, 1, config.block_size, config.vocab_size - 1)
+                .pop()
+                .unwrap()
+        };
+        let decode_config = D2fDecodeConfig::with_block_size(BLOCK);
+
+        let mut rng_prod = Rng::new(9_000);
+        let mut ctx = ForwardContext::new(&config);
+        let mut cache = MultiLayerKVCache::new(&config);
+        let mut dctx_prod = D2fContext::new(&config);
+        let prod = anchor_then_fill(
+            &mut ctx, &mut cache, &mut dctx_prod, &weights, &config, &decode_config,
+            &AnchorConfig::with_stride(2), seq[0], 0, &mut rng_prod,
+        );
+
+        let row = ArmRow { label: "parity", stride: Some(2), kappa: 0.7, floor_budget: None };
+        let mut rng = Rng::new(9_000);
+        let mut ctx2 = ForwardContext::new(&config);
+        let mut cache2 = MultiLayerKVCache::new(&config);
+        let mut dctx = D2fContext::new(&config);
+        let mut sampled = [0usize; BLOCK];
+        let mut argmax = [0usize; BLOCK];
+        let mut probs = [0.0f32; BLOCK];
+        round1_walk(&mut ctx2, &mut cache2, &weights, &config, seq[0], BLOCK, &mut sampled, &mut argmax, &mut probs, &mut rng);
+        let anchors = select_anchors(&row, &sampled, &argmax, &probs, config.mask_token);
+        let mine = anchor_fill_with_prefilled(
+            &mut dctx, &weights, &config, &decode_config, &anchors, &mut rng, None,
+        );
+
+        assert_eq!(prod.tokens, mine.tokens, "harness stride arm must equal production");
+    }
+
+    #[test]
+    fn test_issue811_arm_table() {
+        let (config, weights) = make_trained_weights();
+        let mut train_rng = Rng::new(777);
+        let test_data =
+            generate_pattern_dataset(&mut train_rng, N_EVAL_SEQUENCES, config.block_size, config.vocab_size - 1);
+        let budgets = [1usize, 2, 4, 8];
+        let mut rows = build_rows();
+        println!(
+            "\n== Issue 811 arm table ({} seqs, block={}) ==",
+            N_EVAL_SEQUENCES, BLOCK
+        );
+        println!(
+            "{:<32} {:>6} {:>8} {:>7} {:>8} {:>7} {:>9}",
+            "arm", "kappa", "NFE", "acc", "steps", "anchors", "wall_us"
+        );
+        for &budget in &budgets {
+            for row in rows.iter_mut() {
+                if row.label.contains("DBTM") {
+                    row.floor_budget = Some(budget);
+                }
+                let out = run_row(row, &config, &weights, &test_data, budget);
+                assert!(out.all_terminated || !row.label.contains("DBTM"),
+                    "DBTM arm must terminate within budget: {} k={}", row.label, budget);
+                println!(
+                    "{:<32} {:>6.2} {:>8} {:>7.3} {:>8.2} {:>7.2} {:>9.1}",
+                    row.label, row.kappa, budget, out.accuracy,
+                    out.mean_fill_steps, out.mean_anchors, out.mean_wall_us
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_issue811_termination_property() {
+        // The DBTM floor's termination guarantee, on the real model: at
+        // EVERY (kappa, budget) cell the block must be fully unmasked within
+        // `budget` fill rounds — including adversarial kappas the sweep does
+        // not visit.
+        let (config, weights) = make_trained_weights();
+        let mut train_rng = Rng::new(777);
+        let test_data =
+            generate_pattern_dataset(&mut train_rng, 6, config.block_size, config.vocab_size - 1);
+        let mask = config.mask_token;
+        for &kappa in &[0.5f32, 0.9, 0.99, 0.999] {
+            for budget in 1..=8usize {
+                let decode_config = D2fDecodeConfig {
+                    denoise_steps: budget,
+                    confidence_threshold: kappa,
+                    block_size: BLOCK,
+                    ..D2fDecodeConfig::default()
+                };
+                for (si, seq) in test_data.iter().enumerate() {
+                    let mut rng = Rng::new(9_000 + si as u64);
+                    let mut ctx = ForwardContext::new(&config);
+                    let mut cache = MultiLayerKVCache::new(&config);
+                    let mut dctx = D2fContext::new(&config);
+                    let mut sampled = [0usize; BLOCK];
+                    let mut argmax = [0usize; BLOCK];
+                    let mut probs = [0.0f32; BLOCK];
+                    round1_walk(&mut ctx, &mut cache, &weights, &config, seq[0], BLOCK, &mut sampled, &mut argmax, &mut probs, &mut rng);
+                    let row = ArmRow { label: "term", stride: None, kappa, floor_budget: Some(budget) };
+                    let anchors = select_anchors(&row, &sampled, &argmax, &probs, mask);
+                    let result = anchor_fill_with_prefilled(
+                        &mut dctx, &weights, &config, &decode_config, &anchors, &mut rng, Some(budget),
+                    );
+                    assert!(
+                        result.tokens.iter().all(|&t| t != mask),
+                        "DBTM floor left a mask at kappa={kappa} budget={budget} seq={si}"
+                    );
+                }
+            }
+        }
     }
 }

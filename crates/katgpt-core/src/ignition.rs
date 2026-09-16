@@ -127,6 +127,38 @@ pub fn ignition_time(zeta: f32, eps: f32) -> f32 {
     (-eps.ln()) / zeta
 }
 
+/// The REM commitment-time law `t* = 1 − (1 + σ·√(2 ln V))^(−1/a)` (DBTM,
+/// arXiv:2609.15903 Thm 4.1 — Issue 811 / Research 563).
+///
+/// Same family as [`ignition_time`] (a closed-form "when is commitment
+/// safe?" boundary) but derived from Random-Energy-Model statistics instead
+/// of GLV patience: the posterior over the `V` simplex vertices is Gibbs at
+/// inverse temperature β(t); the argmax is correct iff the target's energy
+/// ρ² beats the max of `V−1` competing Gaussians ≈ ρ·√(2 ln V). Anchoring
+/// (committing tokens / applying the anchor loss) **before** t* collapses
+/// modes; **after** t* slows convergence (DBTM Table 12).
+///
+/// Reference points from the paper: LM1B (V=30 522) → t*≈0.82;
+/// Sudoku (V=12) → t*≈0.69. Nearly flat in V — commitment safety scales
+/// √(log V).
+///
+/// `sigma` is the noise scale σ (> 0); `a` the noise-growth exponent (> 0);
+/// `vocab` the choice-set size V (≥ 2 so the log is defined). Closed form:
+/// one `ln`, one `sqrt`, one `powf` — no iteration, no allocation.
+///
+/// # Panics
+/// Unless `vocab >= 2`, `sigma > 0`, `a > 0` (constructor contract, not hot
+/// path).
+#[inline]
+pub fn commit_time_star(vocab: usize, sigma: f32, a: f32) -> f32 {
+    assert!(vocab >= 2, "vocab must be >= 2 so ln(V) > 0, got {vocab}");
+    assert!(sigma > 0.0, "sigma must be positive, got {sigma}");
+    assert!(a > 0.0, "a must be positive, got {a}");
+    let v = vocab as f64;
+    let spread = sigma as f64 * (2.0 * v.ln()).sqrt();
+    1.0 - (1.0 + spread).powf(-1.0 / a as f64) as f32
+}
+
 /// Order mode indices by ignition order: **ζ-descending** (highest alignment
 /// ignites first), ties broken by ascending index (deterministic).
 ///
@@ -392,5 +424,73 @@ mod tests {
     #[should_panic(expected = "eps must be in (0, 1)")]
     fn patience_law_rejects_unit_eps() {
         let _ = ignition_time(1.0, 1.0);
+    }
+
+    // ── DBTM commitment-time law (Issue 811 / Research 563) ──
+
+    #[test]
+    fn commit_time_star_matches_paper_reference_points() {
+        // The paper's own task constants: LM1B (V=30 522) t*≈0.82 and
+        // Sudoku (V=12) t*≈0.69. The paper does not pin (σ, a) per task in
+        // the text we distilled, so this pins the FORMULA at the paper's
+        // σ=1-style operating point and asserts the shape (larger V → later
+        // t*, both in (0,1), near-flat in V) rather than exact decimals.
+        let lm1b = commit_time_star(30_522, 1.0, 1.0);
+        let sudoku = commit_time_star(12, 1.0, 1.0);
+        assert!((0.0..1.0).contains(&lm1b));
+        assert!((0.0..1.0).contains(&sudoku));
+        assert!(lm1b > sudoku, "larger V must push t* later");
+        // Near-flat in V: a 2500× vocab increase moves t* by well under 0.2
+        // (the √(log V) scaling the paper emphasizes).
+        assert!(lm1b - sudoku < 0.2, "t* must be near-flat in V ({lm1b} vs {sudoku})");
+        // Sanity anchor at the closed form, hand-computed: V=12, σ=1, a=1 →
+        // t* = 1 − 1/(1 + √(2 ln 12)) = 1 − 1/(1 + 2.3830…).
+        let expected = 1.0 - 1.0 / (1.0 + (2.0f64 * 12f64.ln()).sqrt());
+        assert!((sudoku as f64 - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn commit_time_star_monotone_in_sigma_and_vocab() {
+        // More noise or more competitors ⟹ later safe commitment.
+        for &v in &[12usize, 100, 30_522] {
+            let mut prev = 0.0f32;
+            for &s in &[0.25f32, 0.5, 1.0, 2.0] {
+                let t = commit_time_star(v, s, 1.0);
+                assert!(t > prev, "t* must increase in σ (v={v}, σ={s})");
+                prev = t;
+            }
+        }
+        let mut prev = 0.0f32;
+        for &v in &[2usize, 12, 100, 1000, 30_522] {
+            let t = commit_time_star(v, 1.0, 1.0);
+            assert!(t > prev, "t* must increase in V (v={v})");
+            prev = t;
+        }
+    }
+
+    #[test]
+    fn commit_time_star_degenerate_limits() {
+        // σ → 0⁺: no competing energy, commitment safe immediately (t* → 0).
+        assert!(commit_time_star(1000, 1e-6, 1.0) < 1e-4);
+        // a → ∞: noise grows infinitely slowly — same immediate-safe limit.
+        assert!(commit_time_star(1000, 1.0, 1e6) < 1e-4);
+    }
+
+    #[test]
+    #[should_panic(expected = "vocab must be >= 2")]
+    fn commit_time_star_rejects_unit_vocab() {
+        let _ = commit_time_star(1, 1.0, 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "sigma must be positive")]
+    fn commit_time_star_rejects_zero_sigma() {
+        let _ = commit_time_star(12, 0.0, 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "a must be positive")]
+    fn commit_time_star_rejects_zero_a() {
+        let _ = commit_time_star(12, 1.0, 0.0);
     }
 }

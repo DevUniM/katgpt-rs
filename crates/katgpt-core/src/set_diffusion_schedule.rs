@@ -348,6 +348,40 @@ pub fn uniform_order(l: usize, rng: &mut fastrand::Rng) -> Vec<usize> {
     uniform_order_with(l, |n| rng.u32(0..n))
 }
 
+/// Confidence-descending ordering: positions revealed **most-confident
+/// first** (DBTM attractor law, arXiv:2609.15903 §10.1.2 — Issue 811 /
+/// Research 563).
+///
+/// The dominant token's attractor forms at t = 0 and **no non-dominant
+/// attractor forms before t = 1/2** — so high-confidence positions are the
+/// safe early reveals and low-confidence positions belong late in the
+/// schedule (after the DBTM `commit_time_star` boundary when one is
+/// available; same crate, `ignition_schedule` feature). Ties keep ascending
+/// index order (deterministic; no RNG), and NaN confidences sort last.
+///
+/// Pairs with [`order_to_gen_steps`] for the set-causal kernel.
+pub fn probability_order(confidence: &[f32]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..confidence.len()).collect();
+    order.sort_by(|&a, &b| {
+        // Descending confidence; total order even under NaN (NaN → last).
+        let (ca, cb) = (confidence[a], confidence[b]);
+        match (ca.partial_cmp(&cb), ca.is_nan(), cb.is_nan()) {
+            (Some(ord), false, false) => ord.reverse(),
+            _ => {
+                if ca.is_nan() && !cb.is_nan() {
+                    std::cmp::Ordering::Greater
+                } else if cb.is_nan() && !ca.is_nan() {
+                    std::cmp::Ordering::Less
+                } else {
+                    // Both NaN (or incomparable): fall back to index order.
+                    a.cmp(&b)
+                }
+            }
+        }
+    });
+    order
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Gen-step conversion (for the set-causal attention kernel)
 // ═══════════════════════════════════════════════════════════════════
@@ -783,6 +817,40 @@ mod tests {
             let order = uniform_order(l, &mut rng);
             assert_permutation(&order, l);
         }
+    }
+
+    #[test]
+    fn test_probability_order_descending_and_permutation() {
+        let conf = [0.2f32, 0.9, 0.5, 0.9, 0.1];
+        let order = probability_order(&conf);
+        assert_permutation(&order, 5);
+        // Descending confidence: ties (positions 1, 3) keep ascending index.
+        assert_eq!(order, vec![1, 3, 2, 0, 4]);
+        // Gen-steps round-trip: most-confident position gets step 0.
+        let steps = order_to_gen_steps(&order);
+        assert_eq!(steps[1], 0);
+        assert_eq!(steps[4], 4);
+    }
+
+    #[test]
+    fn test_probability_order_deterministic_and_degenerate() {
+        // No RNG anywhere: two calls, one order.
+        let conf = [0.3f32, 0.8, 0.3];
+        assert_eq!(probability_order(&conf), probability_order(&conf));
+        // Equal confidences ⟹ ascending index order.
+        assert_eq!(probability_order(&[0.5f32; 4]), vec![0, 1, 2, 3]);
+        // Empty and singleton.
+        assert!(probability_order(&[]).is_empty());
+        assert_eq!(probability_order(&[0.7f32]), vec![0]);
+    }
+
+    #[test]
+    fn test_probability_order_nan_sorts_last() {
+        let conf = [f32::NAN, 0.6f32, f32::NAN, 0.2];
+        let order = probability_order(&conf);
+        assert_permutation(&order, 4);
+        assert_eq!(&order[..2], &[1, 3]); // finite first, descending
+        assert!(order[2..].contains(&0) && order[2..].contains(&2)); // NaN last
     }
 
     #[test]

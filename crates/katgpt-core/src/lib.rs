@@ -246,7 +246,7 @@ pub use tether::{
 #[cfg(feature = "ignition_schedule")]
 pub mod ignition;
 #[cfg(feature = "ignition_schedule")]
-pub use ignition::{IgnitionSchedule, ignition_time, order_by_ignition_into};
+pub use ignition::{IgnitionSchedule, commit_time_star, ignition_time, order_by_ignition_into};
 // Conformal Predictive Intervals — modelless UQ overlay (Plan 340, Research
 // 322, arXiv:2605.03789 CSP + arXiv:2606.09473 "Report the Floor"). Wraps any
 // PointForecaster with a per-channel × per-horizon-bucket exp-recency-
@@ -445,7 +445,7 @@ pub use elasticity_gated_update::{
 pub mod set_diffusion_schedule;
 pub use set_diffusion_schedule::{
     PositionOffsetSchedule, ar_order, block_causal_gen_steps, mdlm_gen_steps, order_to_gen_steps,
-    uniform_order, uniform_order_with,
+    probability_order, uniform_order, uniform_order_with,
 };
 // UGC — Unmasking Growth Complexity certified schedules for masked diffusion
 // (arXiv:2608.13520, Research 485 / Issue 664). Always-on: pure math + a

@@ -139,6 +139,26 @@ pub(crate) fn predict_anchors(
 }
 
 // ---------------------------------------------------------------------------
+// DBTM confidence-commit floor (Issue 811 / Research 563)
+// ---------------------------------------------------------------------------
+
+/// Per-round commit floor `n_r = ⌈|R_r| / (k − r + 1)⌉` (DBTM Eq 26, round
+/// `r` of budget `k`, 1-indexed).
+///
+/// Committing at least `n_r` positions each round guarantees the block
+/// empties in exactly `k` rounds: at `r = k` the denominator is 1, so the
+/// floor is the whole remainder. Pure arithmetic — the caller owns the
+/// selection (highest-confidence first).
+///
+/// Rounds beyond `budget` (a loop that outlived the budget) clamp to a
+/// denominator of 1, i.e. "commit everything remaining".
+#[inline]
+pub fn dbtm_floor(remaining: usize, round: usize, budget: usize) -> usize {
+    let denom = budget.saturating_sub(round.saturating_sub(1)).max(1);
+    remaining.div_ceil(denom)
+}
+
+// ---------------------------------------------------------------------------
 // Round 2: D2F Fill with Anchors Pre-filled
 // ---------------------------------------------------------------------------
 
@@ -146,6 +166,14 @@ pub(crate) fn predict_anchors(
 ///
 /// This is a modified version of `d2f_decode_block_with_prompt_with` that
 /// accepts pre-filled anchor tokens instead of starting from all-mask.
+///
+/// `commit_budget = Some(k)` arms the DBTM commit rule (Issue 811): after
+/// the usual `τ_conf` threshold commits of round `r`, the
+/// `n_r = dbtm_floor(remaining, r, k)` highest-confidence still-masked
+/// positions are committed regardless of threshold — the
+/// `Δ𝒞_r = {q ≥ κ} ∪ top_{n_r}(q)` union. `None` keeps the incumbent
+/// threshold-only semantics unchanged.
+#[allow(clippy::too_many_arguments)]
 fn fill_with_anchors(
     dctx: &mut D2fContext,
     weights: &TransformerWeights,
@@ -156,6 +184,7 @@ fn fill_with_anchors(
     pruner: &dyn katgpt_core::traits::ConstraintPruner,
     screener: &dyn katgpt_core::traits::ScreeningPruner,
     rng: &mut Rng,
+    commit_budget: Option<usize>,
 ) -> D2fBlockResult {
     // Use the prompt + anchor-initialized block
     let mask = config.mask_token;
@@ -184,6 +213,10 @@ fn fill_with_anchors(
     // not a slice). Allocating once here and overwriting per-position
     // halves the `.exp()` calls per token in the hot path.
     let mut exp_scratch = vec![0.0f32; vocab];
+    // DBTM floor candidates (Issue 811): (position, prob, token) for every
+    // masked position that produced a proposal this round. Reused across
+    // steps — the push/retain/clear cycle never re-allocates after warmup.
+    let mut round_candidates: Vec<(usize, f32, usize)> = Vec::new();
 
     for step in 0..max_steps {
         let _seq_len_actual = crate::d2f_context::forward_block_causal_with(
@@ -268,11 +301,37 @@ fn fill_with_anchors(
                 0.0
             };
 
+            // Record the proposal for the DBTM floor before the threshold
+            // gate — the floor must see every candidate, committed or not.
+            // Gated so the incumbent (budget-less) path does no extra work.
+            if commit_budget.is_some() && best_token != mask {
+                round_candidates.push((p, best_prob, best_token));
+            }
+
             if best_prob >= tau_conf && best_token != mask {
                 tokens[p] = best_token;
                 n_confident += 1;
             }
         }
+
+        // ── DBTM commit floor (Issue 811): Δ𝒞_r = {q ≥ κ} ∪ top_{n_r}(q) ──
+        // The threshold commits above are the {q ≥ κ} half; the floor adds
+        // the n_r highest-confidence remaining proposals so the block is
+        // guaranteed to empty within the budget (at r = k the floor is the
+        // whole remainder).
+        if let Some(budget) = commit_budget {
+            let round = step + 1;
+            round_candidates.retain(|&(p, _, _)| tokens[p] == mask);
+            let n_floor = dbtm_floor(round_candidates.len(), round, budget);
+            if n_floor > 0 {
+                round_candidates
+                    .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+                for &(p, _, tok) in round_candidates.iter().take(n_floor) {
+                    tokens[p] = tok;
+                }
+            }
+        }
+        round_candidates.clear();
 
         let confidence = n_confident as f32 / block_size as f32;
         confidence_history.push(confidence);
@@ -359,6 +418,7 @@ pub fn anchor_then_fill(
         &NoPruner,
         &NoScreeningPruner,
         rng,
+        None,
     );
 
     // ── Baseline: D2F without anchors (for comparison) ──
@@ -382,6 +442,44 @@ pub fn anchor_then_fill(
             .steps_used
             .saturating_sub(fill_result.steps_used),
     }
+}
+
+/// Fill round with arbitrary pre-filled anchor tokens (Issue 811 PoC seam).
+///
+/// The production [`anchor_then_fill`] fixes Round-1 anchor selection to a
+/// position stride. This seam hands the caller the anchor buffer instead —
+/// a confidence-commit rule (or any other selector) can be measured against
+/// the incumbent through the SAME fill path, which is what makes the
+/// comparison apples-to-apples. Pass an all-`mask_token` buffer to run the
+/// plain D2F baseline.
+///
+/// `commit_budget = Some(k)` arms the DBTM per-round floor
+/// ([`dbtm_floor`]); `None` is the incumbent threshold-only fill.
+///
+/// No default-path behavior change: `anchor_then_fill` keeps its stride
+/// selection and threshold-only fill.
+#[allow(clippy::too_many_arguments)]
+pub fn anchor_fill_with_prefilled(
+    dctx: &mut D2fContext,
+    weights: &TransformerWeights,
+    config: &Config,
+    decode_config: &D2fDecodeConfig,
+    anchor_tokens: &[usize],
+    rng: &mut Rng,
+    commit_budget: Option<usize>,
+) -> D2fBlockResult {
+    fill_with_anchors(
+        dctx,
+        weights,
+        config,
+        decode_config,
+        &[],
+        anchor_tokens,
+        &NoPruner,
+        &NoScreeningPruner,
+        rng,
+        commit_budget,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -413,6 +511,40 @@ mod tests {
     }
 
     // NOTE: `make_trained_weights` stayed in the root shim (TRAIN-coupled).
+
+    // ── DBTM floor arithmetic (Issue 811) ──
+
+    #[test]
+    fn test_dbtm_floor_known_values() {
+        assert_eq!(dbtm_floor(10, 1, 3), 4); // ⌈10/3⌉
+        assert_eq!(dbtm_floor(6, 2, 3), 3); // ⌈6/2⌉
+        assert_eq!(dbtm_floor(3, 3, 3), 3); // last round = whole remainder
+        assert_eq!(dbtm_floor(0, 1, 4), 0); // nothing remaining
+        assert_eq!(dbtm_floor(7, 1, 1), 7); // single-round budget commits all
+    }
+
+    #[test]
+    fn test_dbtm_floor_terminates_within_budget() {
+        // The DBTM termination guarantee, simulated at the floor's worst case
+        // (each round commits exactly the floor, never more): the remainder
+        // must hit zero by round == budget, for every (remaining, budget).
+        for remaining in 0..=96usize {
+            for budget in 1..=12usize {
+                let mut r = remaining;
+                for round in 1..=budget {
+                    let commit = dbtm_floor(r, round, budget).min(r);
+                    r -= commit;
+                    if r == 0 {
+                        break;
+                    }
+                }
+                assert_eq!(
+                    r, 0,
+                    "floor must empty {remaining} within {budget} rounds"
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_anchor_config_default_stride() {
