@@ -6,6 +6,7 @@
 > **Related Research:** 296 (Stokes/DEC — codifferential IS the divergence operator), 271 (MIT 6.S184 flow-matching crosswalk), 219 (TNO → DEC parent), 274 (Optimal CCE in MFGs via LP), 371 (Mean-Field Regime Classifier — crowd-scale order parameters)
 > **Related Plans:** 295 (LP-CCE Moderator — the shipped primitive with the documented MFG gap), 314 (Stokes Calculus Wrappers — `belief_mass_divergence`), 325-riir-ai (Latent CCE Runtime — shipped COMPLETE without closing the MFG gap)
 > **Classification:** Public (katgpt-rs)
+> **Cross-ref (discrete sibling, 2026-09-16):** Tang & Wang [arXiv:2609.15903 "Discrete Beckmann Transport Models for One-Step Language Modeling and Reasoning"] — the DISCRETE/simplex instantiation of this paper (same group; Tang on both), applied to language. The divergence-constraint adjudication here STANDS (Issue 573 Beckmann FAIL on CCE / Issue 574 transition-kernel PASS → Plan 569). The discrete paper's new content — the t\* REM commitment law, the confidence-commit refinement rule, the distillation-free recipe — is distilled in [Research 563](563_DBTM_Discrete_Beckmann_One_Step_Language.md).
 
 ---
 
