@@ -331,11 +331,18 @@ fn proof_g3b_swar_speedup() {
     // Hard SWAR gate — only meaningful in release builds. In debug, intrinsics
     // are unoptimized and the SWAR/FMLA advantage disappears (typically ~1.0×).
     // Pattern mirrors proof_g3_throughput_1024's loose sanity floor + verdict.
+    //
+    // The bar is per-ISA (Issue 806 T7, first x86_64 execution 2026-09-16):
+    // 5.0× is the NEON number (Issue 298 SWAR+FMLA+4acc — FMLA fuses on
+    // aarch64). Quiet-box i7-13700K measures 4.49×/4.52× at +avx2, and 4.38×
+    // at +avx2,+fma — FMA does NOT close the gap — so the x86_64 bar is
+    // calibrated at 4.0×. Arch-conditional dual pin, the t698 T6 precedent.
     #[cfg(not(debug_assertions))]
     {
+        let gate = if cfg!(target_arch = "x86_64") { 4.0 } else { 5.0 };
         assert!(
-            speedup >= 5.0,
-            "SWAR speedup regression: {speedup:.2}× (gate: ≥ 5.0× — see Issue 298)"
+            speedup >= gate,
+            "SWAR speedup regression: {speedup:.2}× (gate: ≥ {gate}× — see Issue 298 / Issue 806 T7)"
         );
     }
 

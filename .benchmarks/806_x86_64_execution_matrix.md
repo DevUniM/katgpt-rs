@@ -414,3 +414,68 @@ x86_64. Floor raised to 2e-3 (budget 5e-5, a 1.8× margin over measured noise);
 
 Landing: the fix commit (dual pins + floor + stale-row removal) + this
 addendum; issue T6 ticked.
+
+## Addendum II (same day, T7) — both remaining rows were ISA-real; the
+second one also carried a stale instrument
+
+Quiet-box calibration on the 4090 (load 3–5% at measurement start, i7-13700K,
+`origin/develop` shipped via `git archive` + scp — the box's own `git fetch`
+was hung on credentials, and the checkout's HEAD is an ancestor of the
+measured commit, so the archive route satisfied both the not-the-sibling's-
+checkout rule and the exact-commit rule):
+
+| row | quiet +avx2 | quiet +avx2,+fma | verdict |
+|---|---|---|---|
+| `proof_g3b_swar_speedup` | **4.49× / 4.52×** | **4.38×** | ISA-real — FMA does NOT close it |
+| `t09_throughput_inv_sqrt_16x16` | **80.5 µs** (loaded cell: 88.7) | **11.3 µs** | ISA-real — FMA closes most of it, but see below |
+
+**G3b: the 5.0× bar was a NEON number this ISA never calibrates to.** The
+cross-ISA table (M3 column measured same-day, loaded box):
+
+| | M3 (aarch64) | 4090 (x86_64, +avx2) |
+|---|---|---|
+| scalar ternary | 775.1 µs | 543.0–548.2 µs |
+| SIMD ternary | 130.9 µs | 121.4–123.8 µs |
+| speedup | **5.92×** (passes 5.0) | **4.15×–4.52×** (fails 5.0 always) |
+
+Landed as an arch-conditional dual pin: aarch64 keeps 5.0× (Issue 298's
+FMLA-fused value claim), x86_64 calibrates at **4.0×** (~10% under the quiet
+mean 4.45; the worst observed loaded reading 4.15 at load 33 still clears it,
+and a busier box's transient red is the confirm-alone step's job, not the
+gate's). The +fma arm is recorded as REFUTED for this kernel — 4.38× — so
+no future session re-asks the FMA question for G3b.
+
+**t09 carried TWO defects, and the instrument one was load-bearing.** The
+old bar still used the file-local `bench_us(3, 20)` — under-warmed,
+under-sampled — and on the M3 (loaded, 3 sibling sessions) it oscillated
+**6.96 ↔ 14.8 µs** across runs of the same binary: the aarch64 gate was
+already a coin-flip on a busy box, invisible to every lane because this is
+an integration test no scheduled gate executes. Switched to
+`ab_timing::best_of_us(200, 200)` — the Issue-723-T7 load-invariant
+instrument t08 (its sibling) already uses — plus the sink discipline. Same
+box, same load:
+
+| instrument | M3 runs | spread |
+|---|---|---|
+| `bench_us(3, 20)` (old) | 6.96 / 14.7 / 14.8 µs | 2.1× |
+| `best_of_us(200, 200)` (new) | 5.83 / 5.79 / 5.92 µs | **2.2%** |
+
+Then the bar itself: absolute µs targets do not transfer between machines,
+and this one never existed on x86_64. Landed as an arch-conditional dual
+pin: aarch64 keeps 10 µs (5.9 µs measured, 42% headroom, now stable),
+x86_64 calibrates at **100 µs** (80.5–85.5 µs quiet measured post-fix,
+clears the 88.7 µs loaded-cell reading so a busy box does not red the cell).
+
+⚠ The **+fma evidence is recorded, not acted on**: 11.3 µs on x86_64 shows
+FMA fusion recovers most of the Newton–Schulz gap, but `RUSTFLAGS` is
+pinned at `+avx2` by this matrix's own contract — an arm gated
+`cfg(target_feature = "avx2")` compiles to nothing without it, while `+fma`
+changes floating-point rounding and is therefore a **bit-identity hazard for
+every other kernel in the population**. Turning that knob is an owner
+decision with a workspace-wide blast radius, not a calibration footnote.
+
+Both `x86_64_matrix_expected.txt` rows removed in the same commit (the
+stale-pin rule); the file's membership set is EMPTY again — every confirmed
+x86_64 failure is unexpected. Verified green on both platforms at the new
+gates (4090: G3b 4.15×/4.45×, t09 81.0/85.5 µs; M3: G3b 5.92×, t09
+5.83/5.79/5.92 µs). T7 ticked; T8 remains (Issue 808, owner's call).

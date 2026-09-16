@@ -63,5 +63,16 @@
 # ratio, so a future elision reports "this measured nothing" instead of a
 # plausible 0.0× that sends the reader after the wrong thing.
 #
-proof_g3b_swar_speedup  # ≥5.0× gate, 4.37× here. Its own name is "Issue 298 SWAR+FMLA+4acc" — FMLA is an aarch64 instruction, so the bar is a NEON number and the x86_64 arm has never been calibrated. Not a regression: a bar that was never set for this ISA.
-t09_throughput_inv_sqrt_16x16  # 88.7 µs against a 10 µs absolute target. Absolute-latency targets do not transfer between machines at all, and this is 9× over — the one row here worth re-measuring on a quiet box before believing either way.
+# RESOLVED 2026-09-16 (T7, quiet-box calibration on the 4090 — both rows were
+# ISA-real, not load): proof_g3b_swar_speedup measured 4.49×/4.52× at +avx2
+# (load 3%) and 4.38× at +avx2,+fma — FMA does NOT close the gap, so the 5.0×
+# bar was a NEON number this ISA never calibrates to; landed as an
+# arch-conditional dual pin (aarch64 5.0×, x86_64 4.0×) in the same commit
+# that removed this row. t09_throughput_inv_sqrt_16x16 measured 80.5 µs quiet
+# at +avx2 (11.3 µs at +avx2,+fma — FMA closes most of the gap, but +fma
+# changes rounding, a bit-identity hazard for every other kernel, and is not
+# this matrix's knob to turn); landed as an arch-conditional absolute gate
+# (aarch64 10 µs, x86_64 100 µs — also clears the 88.7 µs loaded reading, so
+# a busy box does not red the cell). Both are the t698 T6 precedent. The
+# two-sided table lives in Bench 806's addendum.
+#

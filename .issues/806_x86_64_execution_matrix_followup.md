@@ -1,8 +1,9 @@
 # Issue 806 — x86_64 execution matrix: the 4090 AVX2 run closed two cells; the rest of the katgpt-rs surface is still executed by nothing
 
-**Status:** OPEN — the matrix RAN (2026-09-16), and what is left is one cell
-that needs the M3. Workstation/4090-owned, no CI lane exists for this axis
-(and none is requested; Actions spending call stands).
+**Status:** OPEN — T6+T7 DONE 2026-09-16 (both via quiet-box calibration,
+Bench 806 Addenda I+II); the only remaining task is **T8 → Issue 808,
+owner's call** between four options. Workstation/4090-owned, no CI lane
+exists for this axis (and none is requested; Actions spending call stands).
 
 ## Provenance
 
@@ -76,19 +77,24 @@ re-runs each failure ALONE and then adjudicates by MEMBERSHIP in
       the recorded delta landed (band bits one ulp apart; behavior gates pass
       on both platforms); the stale pin row removed in the same commit. The
       addendum at the tail of Bench 806 has the full two-sided table.
-- [ ] **T7 — TWO perf bars are pinned, not fixed.** Both are a bar
-      calibrated on the M3 (one, `proof_g3b_swar_speedup`, is named
-      `SWAR+FMLA` — an *aarch64* instruction) or an absolute-latency target
-      that does not transfer between machines. Each needs an x86_64
-      calibration on a QUIET box before it means anything. Rows and reasons:
-      `scripts/x86_64_matrix_expected.txt`. ⚠ It was SIX. Four runs of the one
-      commit produced four different failing sets — `bench_176`, `g7`,
-      `g5_roaring`, `t08_throughput_rebalance_256x16` and
-      `goat_6_context_scaling_flat_o1` all came and went with the box's load —
-      so the script now RE-RUNS each failure alone and only rows that fail
-      twice are adjudicated. That is the measurement to carry: on this box a
-      latency bar's verdict is partly a property of who else is building, and
-      the instrument has to say so rather than pin it.
+- [x] **T7 — TWO perf bars are pinned, not fixed.** DONE 2026-09-16, quiet-box
+      calibration on the 4090 (load 3–5%): both rows were **ISA-real, not
+      load**. `proof_g3b_swar_speedup` measured 4.49×/4.52× quiet (and 4.38×
+      at +avx2,+fma — FMA does NOT close it; M3 reference 5.92×) → arch-
+      conditional dual pin (aarch64 5.0×, x86_64 4.0×).
+      `t09_throughput_inv_sqrt_16x16` measured 80.5 µs quiet at +avx2 (11.3 µs
+      at +avx2,+fma — FMA closes most of it, but +fma changes rounding, a
+      bit-identity hazard for every other kernel, and is not this matrix's
+      knob to turn) → arch-conditional absolute gate (aarch64 10 µs, x86_64
+      100 µs). En route, t09's instrument was repaired FIRST (the Issue-723
+      law): the file-local `bench_us(3, 20)` oscillated 6.96↔14.8 µs on the
+      loaded M3 — the aarch64 gate was already a busy-box coin-flip — and now
+      uses `ab_timing::best_of_us(200, 200)` (5.83/5.79/5.92 µs, 2.2%
+      spread, same load). Both rows removed from `x86_64_matrix_expected.txt`
+      in the same commit (empty membership set again); verified green on both
+      platforms at the new gates. Full two-sided table: Bench 806 Addendum II.
+      It was SIX before the confirm-alone step existed; the discipline that
+      remains is: a future red on either is a BOX-CONDITIONS question first.
 - [ ] **T8 — `argtopk`'s AVX2 arm is a measured LOSS** post-fix (12 of 15
       (k, n) cells slower than the scalar fallback). Filed separately as
       [Issue 808](808_avx2_argtopk_is_a_measured_loss_vs_scalar.md); owner's
