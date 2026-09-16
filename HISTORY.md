@@ -11,6 +11,79 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 805 CLOSED (2026-09-16) — `numbering_gate.py --help` printed ten "remove the row" lines about a repo it could not read
+
+`--help` was read as a repo PATH, and `tracked_paths` converts a git failure into an EMPTY
+set — so every pin read STALE and the gate printed ten `remove the row` remedies plus
+`re-pin DOWN`, with the floor breach LAST. Exit was always 1, so nothing was silently
+wrong; the ORDER and the REMEDIES were, and the top-of-output remedy is destructive
+(Issue 795: a pin row is the only record left once both holders are removed). Repair:
+`unmeasurable(repo)` → exit **2**, and the check is toplevel EQUALITY, not "did
+`rev-parse` succeed" — `git -C` walks UP, so a non-repo directory inside a repo answers
+with its PARENT's paths. ⛔ The first Scope claim was WRONG and the census caught it:
+handed a nonexistent path, 14 repo-path instruments misbehave, and one of them —
+`orphaned_attr_gate.py`, a docs_gate CHECK — printed `✓ PASSED … in nonexistent-repo` at
+**exit 0**. Fixed with a DIFFERENT predicate, because it goes through `tracked_files`,
+which deliberately falls back to a filesystem walk with no `.git` (a `git archive` tree is
+a legitimate population): not-a-directory → UNSEEN, a sibling walking to 0 `.rs` → UNSEEN
+rather than FAILED, since a TS-only repo walks to 0 legitimately. `unmeasured()` was
+EXTRACTED because `main` calls `selftest` and an inline decision cannot be armed without
+recursing — the same extraction-is-the-repair pattern AGENTS.md records for the three
+weakest CHECKS modules. `arm_reach_gate` then found **4 survivors hand perturbation
+missed** (`and2or`, `dropnot`, `eq2ne`); final 25 modules / 691 mutants / 465 killed / 38
+pinned survivors / 0 UNREACHED / 0 NO-ARM / 0 BASELINE. Ten report-only instruments left
+alone deliberately. Landed `d1f9be27`. Issue file removed per the noise-reduction rule.
+
+## Issue 804 CLOSED (2026-09-16) — 28 instruments crashed when run the way AGENTS.md says to run them; the cross-repo axis is seven repos, not one
+
+Every instrument in `scripts/` prints `✓`/`✗`/`⛔`/`⚠`. On a non-UTF-8 console — this
+workstation is **cp874** — `print()` raises `UnicodeEncodeError` and the process dies with
+NO verdict. `docs_gate.sh` exports `PYTHONIOENCODING=utf-8`, so a per-push CHECK survives
+*when the gate runs it*; nothing protects an instrument run DIRECTLY, which is how AGENTS.md
+documents most of them. So the class concentrated in exactly the instruments with no
+automatic lane. ⛔ The cost is not a crash, it is UNREAD FINDINGS:
+`restatement_drift_sweep.py` was the one member of the sweep family without the defence, so
+its 4 repos / 255 theorems were not *unknown* but *unlooked at* while the family was
+reported green. Repair: `scripts/console_safe.py` (`errors="backslashreplace"` — the
+console encoding is not ours to choose, and forcing UTF-8 gives mojibake instead of an
+exception), the 28 call it, the 42 that already inlined it are left alone (the gate credits
+both forms, because the property is *the streams are defended*), and
+`console_encoding_gate.py` joined the docs-gate CHECKS.
+
+The cross-repo half was written down as "⚠ unmeasured, deliberately" on the
+`check_validation_gate` Issue 789 T4 precedent — which does not say *decline a sweep when
+the exposure is local*, it says **re-measure the population before answering**, and 789
+earned its "no sweep" with a measurement that returned ONE. Taken (`bc98dc6b`): 16 repos,
+159 tracked `scripts/*.py`, 144 in population, 73 defended, **71 undefended across SEVEN
+repos** — riir-train 53/53, riir-clippy 5/5, riir-ai 4/5, seal-remake 4/4, seal-game-editor
+3/3, riir-dapps 1/1, riir-mmorpg-examples 1/1, against katgpt-rs's 0 of 72. ⚠ The exposure
+caveat SURVIVES the measurement and is what sets the pin design rather than what cancels
+the sweep: a cp874 console is this box's property, and riir-train's 53 rows are the same
+plan-scoped over-capture `instrument_reachability` measures on this identical walk. So
+`console_encoding_drift_sweep.py` ratchets the DERIVATIVE (Issue 787 T6's answer to the
+identical shape), with katgpt-rs's row asserted at `max_undefended = 0` and
+`min_population == console_encoding_gate.MIN_POPULATION`. Issue file removed per the
+noise-reduction rule.
+
+## Issue 803 CLOSED (2026-09-16) — the off-macOS partial gate printed the SAME final line as a full pass
+
+Two halves. `develop` was RED under the exact command AGENTS.md quotes as the whole-repo
+claim — 24 × `error[E0560]` (a field deleted in `katgpt-core` with 24 live construction
+sites in the ROOT package's `tests/` and `benches/`) plus 4 `-D`-listed lint errors — for
+ten hours, while `test_gate.sh` (every row at its floor) and `wasm32_gate` were both green.
+The per-crate gate that landed it was right for what it changed; nothing read what it
+changed for everyone else. And the instrument that would have —
+`full_gate.sh --allow-partial-platform`, the ONLY thing on a non-macOS workstation that
+reads the consequences of a per-crate change — existed the whole time and printed a final
+line byte-identical to a full pass, so the deferral rode a Layer-2 line six hundred lines of
+build output earlier. That is this repo's own most-repeated rule broken by the one
+instrument that is not a sweep. Repaired: the final line now carries the partial verdict and
+names each unmeasured axis, and the lane is documented in AGENTS.md next to `test_gate.sh`.
+⛑ Renumbered 799 → 803 before the push by the Issue-796 rule — `dual_allocation_gate.py`
+reported INDEPENDENT, adjudicated 5 inbound vs 1 by Issue 724 T2; the gate is the reason it
+was caught before the push rather than at merge time. Landed `3ceb541b` (T1+T2) and the
+follow-up (T3+T4). Issue file removed per the noise-reduction rule.
+
 ## Issue 802 CLOSED (2026-09-16) — commitment-gap calibration rig: residue DEAD-BY-DOMINATION at micro scale; stability features (item 3) shipped earlier in the day
 
 [Bench 802 calibration-rig record](.benchmarks/802_commitment_gap_calibration_rig.md), rig at
