@@ -11,7 +11,7 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
-## Issue 807 CLOSED (2026-09-16) — `lthash`: incremental homomorphic multiset hash, the shared substrate for the Agave-mined commitment/state-hash proposals
+## Issue 807 (2026-09-16) CLOSED — `lthash`: incremental homomorphic multiset hash, the shared substrate for the Agave-mined commitment/state-hash proposals
 
 Mined from the Agave validator snapshot (`riir-clippy/.raw/agave @ c95d8706`, the eprint
 2019/227 / Facebook LtHash instantiation Agave ships for account-state commitment) via four
@@ -57,7 +57,7 @@ caveat that "rests on the shared-algorithm argument" is a conjecture until the p
 compile-time `target_feature` gate means even a plain x86_64 `cargo test` exercises nothing —
 record the flags with every such run.
 
-## Issue 805 CLOSED (2026-09-16) — `numbering_gate.py --help` printed ten "remove the row" lines about a repo it could not read
+## Issue 805 (2026-09-16) CLOSED — `numbering_gate.py --help` printed ten "remove the row" lines about a repo it could not read
 
 `--help` was read as a repo PATH, and `tracked_paths` converts a git failure into an EMPTY
 set — so every pin read STALE and the gate printed ten `remove the row` remedies plus
@@ -80,7 +80,7 @@ missed** (`and2or`, `dropnot`, `eq2ne`); final 25 modules / 691 mutants / 465 ki
 pinned survivors / 0 UNREACHED / 0 NO-ARM / 0 BASELINE. Ten report-only instruments left
 alone deliberately. Landed `d1f9be27`. Issue file removed per the noise-reduction rule.
 
-## Issue 804 CLOSED (2026-09-16) — 28 instruments crashed when run the way AGENTS.md says to run them; the cross-repo axis is seven repos, not one
+## Issue 804 (2026-09-16) CLOSED — 28 instruments crashed when run the way AGENTS.md says to run them; the cross-repo axis is seven repos, not one
 
 Every instrument in `scripts/` prints `✓`/`✗`/`⛔`/`⚠`. On a non-UTF-8 console — this
 workstation is **cp874** — `print()` raises `UnicodeEncodeError` and the process dies with
@@ -111,7 +111,7 @@ identical shape), with katgpt-rs's row asserted at `max_undefended = 0` and
 `min_population == console_encoding_gate.MIN_POPULATION`. Issue file removed per the
 noise-reduction rule.
 
-## Issue 803 CLOSED (2026-09-16) — the off-macOS partial gate printed the SAME final line as a full pass
+## Issue 803 (2026-09-16) CLOSED — the off-macOS partial gate printed the SAME final line as a full pass
 
 Two halves. `develop` was RED under the exact command AGENTS.md quotes as the whole-repo
 claim — 24 × `error[E0560]` (a field deleted in `katgpt-core` with 24 live construction
@@ -131,7 +131,7 @@ was caught before the push rather than at merge time. Landed `3ceb541b` (T1+T2) 
 Landed `3ceb541b` (T1+T2) and the
 follow-up (T3+T4). Issue file removed per the noise-reduction rule.
 
-## Issue 802 CLOSED (2026-09-16) — commitment-gap calibration rig: residue DEAD-BY-DOMINATION at micro scale; stability features (item 3) shipped earlier in the day
+## Issue 802 (2026-09-16) CLOSED — commitment-gap calibration rig: residue DEAD-BY-DOMINATION at micro scale; stability features (item 3) shipped earlier in the day
 
 [Bench 802 calibration-rig record](.benchmarks/802_commitment_gap_calibration_rig.md), rig at
 `../riir-ai/crates/riir-poc/benches/commitment_gap_calibration.rs`. Items 2/3/5 shipped earlier
@@ -170,7 +170,7 @@ Re-points remain open as incremental follow-ups (one repo per commit: katgpt-kv 
 katgpt-transformer → riir-gpu + optional BranchBank), each with its per-site adapter
 documented in the module doc.
 
-## Issue 801 CLOSED (2026-09-16) — T4 PoC: composition-quality REFUTED, disagreement-trace CONFIRMED; T5 routing: meld stays opt-in as a contradiction detector, Super-GOAT Q3 blocked-as-refuted, T2 audit stands
+## Issue 801 (2026-09-16) CLOSED — T4 PoC: composition-quality REFUTED, disagreement-trace CONFIRMED; T5 routing: meld stays opt-in as a contradiction detector, Super-GOAT Q3 blocked-as-refuted, T2 audit stands
 
 The arc, one session: T1 PDF-transcribed (2026-09-15); T2 audit `ee6993a77` (Research 560
 addendum — the census survives code-level scrutiny: 4 INADMISSIBLE / 1 PARTIAL / 1 N.A.);

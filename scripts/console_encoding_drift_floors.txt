@@ -51,6 +51,12 @@
 # can reproduce. Lower it in the commit that advances the checkout. riir-ai's
 # four are untouched — that repo is owner-gated (154 behind, sibling WIP).
 #
+# ⛑ riir-ai re-pinned 4 → 0 the same day, at riir-ai `089f08109`. Its WIP
+# landed mid-session and the checkout came into sync, which is what un-gated
+# it; the sync also raised its undefended count from 4 to 5 and REDDED this
+# file — `watch_coverage_gate.py` is exactly the commit a ratchet exists to
+# catch, and the action was one line, as the paragraph above claims.
+#
 # ⚠ Deliberately NOT the Issue 785 rule's target. That rule forbids ratcheting
 # a bucket meaning *unanswered* — a backlog with no owner. This bucket means
 # *undefended*: every row has an owner, and every row is one line from closed.
@@ -109,7 +115,7 @@
 #
 #                       min_scripts  min_population  max_undefended
 katgpt-rs                       44              55               0
-riir-ai                          4               3               4
+riir-ai                          4               3               0
 riir-auth                        0               0               0
 riir-chain                       1               0               0
 riir-clippy                      3               3               0
