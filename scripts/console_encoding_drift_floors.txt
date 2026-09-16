@@ -13,8 +13,9 @@
 # scripts/console_encoding_expected.txt — the per-push gate, over the repo that
 # owns the rows, with a pin file that is deliberately EMPTY.
 #
-# Workspace-wide the same predicate finds 71 more across seven repos, and
-# riir-train is 53 of them: its scripts/ is almost entirely plan-scoped
+# Workspace-wide the same predicate finds more in other repos — take the live
+# figure from the sweep's own summary line, never from here — and riir-train
+# dominates it at 53: that repo's scripts/ is almost entirely plan-scoped
 # one-offs (plan335_t7_decide.py, plan346_doc_pool.py), 61 of 61 unreachable
 # from its own AGENTS.md by instrument_reachability's measurement on this
 # identical walk. Retro-fitting a stream defence to a script whose whole life
@@ -34,6 +35,21 @@
 # The SHA is cited because a repair measured green in a worktree and never
 # committed is Issue 798's exact class: two tracked files here once recorded
 # sibling repairs as landed while both sweeps were red for six hours.
+#
+# ⛑ FOUR more repos re-pinned on 2026-09-16, under Issue 806's session, at
+# riir-dapps `dd5a027`, riir-mmorpg-examples `96029e5` and seal-game-editor
+# `07ecbc4d` — 1 + 1 + 3 rows, all latent (none of the three is known to be run
+# on a non-UTF-8 console), closed because the action is one line and a ratchet
+# row only ever tightens on a repair.
+#
+# ⛔ seal-remake's four were repaired too — upstream, at seal-remake `d5ad55c`,
+# committed against `origin/develop` by plumbing because this box's checkout is
+# 29 behind and carries another session's dirty `Cargo.lock`. Its row STAYS AT
+# 4, and that is the rule working rather than an oversight: the pins read LOCAL
+# HEAD, this checkout's HEAD still carries all four undefended, and a row
+# lowered to 0 here would be a tracked file asserting a state no run on this box
+# can reproduce. Lower it in the commit that advances the checkout. riir-ai's
+# four are untouched — that repo is owner-gated (154 behind, sibling WIP).
 #
 # ⚠ Deliberately NOT the Issue 785 rule's target. That rule forbids ratcheting
 # a bucket meaning *unanswered* — a backlog with no owner. This bucket means
@@ -97,15 +113,15 @@ riir-ai                          4               3               4
 riir-auth                        0               0               0
 riir-chain                       1               0               0
 riir-clippy                      3               3               0
-riir-dapps                       0               0               1
+riir-dapps                       0               0               0
 riir-game-sdk                    0               0               0
 riir-kat                         0               0               0
-riir-mmorpg-examples             0               0               1
+riir-mmorpg-examples             0               0               0
 riir-neuron-db                   0               0               0
 riir-shader                      1               0               0
 riir-train                      34              31              53
 riir-viewbridge                  0               0               0
-seal-game-editor                 1               1               3
+seal-game-editor                 1               1               0
 seal-online-remaster             0               0               0
 seal-remake                      3               2               4
 #
