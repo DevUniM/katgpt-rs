@@ -4074,3 +4074,46 @@ zero-alloc (2048-call loop, dev AND `--release --features alloc_tracking`).
 riir-ai Issue 964 C1 (2026-09-16) · substrate Issue 810 / §113 ·
 Module: `crates/katgpt-claim/src/clr/calibration.rs` ·
 Gate: `tests/bench_807_clr_calibration_goat.rs`.
+
+## 115. set_admission — counter-anchored set admission operator (Plan 599)
+
+> **Added:** 2026-09-17 (Phase 0+1 landed `023d78f1`). Source: arXiv:2603.06397
+> "Efficient, Property-Aligned Fan-Out Retrieval via RL-Compiled Diffusion" (R4T,
+> ICML 2026) — the counter-anchor reward extracted as a **selection-time set
+> operator**, no RL, no trained weights (the trained twin is riir-train Plan 412
+> and stays SECONDARY by the serving-envelope rule) ·
+> Research: [`.research/564_R4T_Counter_Anchored_Fanout_Retrieval.md`](../../.research/564_R4T_Counter_Anchored_Fanout_Retrieval.md) ·
+> Plan: [`.plans/599_counter_anchored_set_admission.md`](../../.plans/599_counter_anchored_set_admission.md) ·
+> Code: `katgpt-core/src/set_admission.rs`
+
+Greedy admission over a candidate pool scoring
+`g(x) + α·cos(x, q₀) + κ·log(1 + x̂ᵀM⁻¹x̂)` — quality + counter-anchor alignment
++ a log-det diversity term — under a colinearity cap (the
+`ColinearityBatchGate` 0.95 precedent). `M ≡ I + G` ridge-dual so the log term
+is the exact marginal log-det gain; `M⁻¹` maintained by Sherman–Morrison rank-1
+update (O(d²)/admission at d=8). The classical-DPP honest scoping: the
+(1−1/e) bound applies to the surrogate; exact Vendi certifies post-hoc.
+
+- **Certificate is EXACT, not sampled**: the maintained d×d dual Gram
+diagonalizes through `spectral_pencil::dense::jacobi_eigen` (pinned) →
+`certified_frontier::vendi_diversity` — both substrates consumed, neither
+forked; the K×K Gram is never built (cosine-kernel eigenduality makes it
+redundant). Reports `saturated = (vendi ≥ 0.95·min(K,d))` beside `collapsed` —
+the d=8 Vendi ceiling is a first-class output, never silent.
+- **Collapse tripwire**: incremental participation-ratio estimator
+(`(tr G)²/tr(G²)`, rank-1 trace updates, no eigensolve) as the
+between-certifications fast path.
+- **L1/L2 property tests (Plan 599 T0.2, 10/10 green)**: modular-only objective
+over a duplicate-tolerant pool admits an effective-rank-1 set (the disease);
+zeroing each anchor weight makes its degenerate family reachable
+(paraphrase-collapse via κ, semantic-drift via α, coordinate-gaming detection
+via ρ); the full triple excludes all three interiors. Identical set ⇒ Vendi =
+PR = 1; orthonormal ⇒ both = min(K,d); Spearman 0.9875 over 10⁴ seeded sets.
+Feature-on lib 2125/0, clippy `-D warnings` both states,
+`--no-default-features --features set_admission` composes.
+- **Phase 2+ (pending)**: latent fan-out construction (tangent-cap direction
+bank + collapse→re-fan-out θ-ladder, local-PCA variant), GOAT G1–G4 perf/alloc
+pins, consumers (riir-neuron-db diverse retrieval, riir-clippy issue 121
+set-rerank). Opt-in, default-off — promotion only on a measured consumer win,
+per the plan's GOAT rule (the conformal Report-the-Floor rule recorded as NOT
+triggered: no distribution/interval/coverage is claimed).
