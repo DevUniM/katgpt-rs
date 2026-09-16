@@ -329,6 +329,21 @@ fixture hash, above). `g5_roaring_batch_speedup` left on run 4 and its own
 message said why all along: `0.0× (roaring=0.00μs, linear=0.00μs)` is **0/0** —
 under load both arms fall below the clock granularity, and alone they do not.
 
+## End state
+
+```
+✓ x86_64 execution matrix PASSED — 8 cell(s), 11093 assertion(s)
+  EXECUTED on x86_64 at a1d124a4 with RUSTFLAGS='-C target-feature=+avx2'.
+```
+
+Seven runs to get there, and the seven are the record: five product defects
+found and fixed, one instrument defect in the matrix itself (it read its SOURCE
+from `git archive HEAD` and its PINS from the live worktree — Issue 797's rule
+one level over), four latency bars adjudicated out as load artifacts by the
+confirm-alone step, one GOAT proof repaired at its own 0/0, and two pinned rows
+left: `proof_g3b_swar_speedup` and `t09_throughput_inv_sqrt_16x16`, both bars
+that were never calibrated for this ISA.
+
 ## Reproduce
 
 The matrix is a **script** now — `scripts/x86_64_execution_matrix.sh`, landed
