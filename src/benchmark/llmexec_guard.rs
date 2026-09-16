@@ -40,7 +40,17 @@ pub fn bench_llmexec_guard_overhead(iters: usize) -> (f64, f64, [usize; 3]) {
     let mut tier_counts = [0usize; 3]; // Skip, Screening, FullVerify
     for _ in 0..iters {
         for &(e, d) in BENCH_INPUTS {
-            let tier = verify_tier(e, d, &config);
+            // ⛔ `black_box` on the INPUTS, not just the output. BENCH_INPUTS is
+            // a const and the config is a default, so without it LLVM
+            // constant-folds every `verify_tier` call in release, precomputes
+            // `tier_counts`, and deletes the loop — `elapsed_guard` then reads
+            // **0 ns** and this function reports a fabricated 0 ns/call. The
+            // warmup and the no-op baseline below already did this; the
+            // measured loop, the only one whose number is published, did not.
+            // Caught by the first release-profile execution of this suite
+            // (Issue 806): `assert!(ns_guard > 0.0)` is the ONLY assertion here
+            // that a folded-away loop fails — `ns_guard < 1000.0` passes on 0.
+            let tier = verify_tier(black_box(e), black_box(d), &config);
             tier_counts[tier as usize] += 1;
         }
     }
