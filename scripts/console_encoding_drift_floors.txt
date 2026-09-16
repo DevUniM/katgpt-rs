@@ -1,0 +1,87 @@
+# Pins for scripts/console_encoding_drift_sweep.py — EVERY contract repo.
+# Issue 804, the cross-repo half.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_scripts> <min_population> <max_undefended>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── max_undefended is a RATCHET everywhere but here ─────────────────────────
+# katgpt-rs's own undefended set is walled at 0 by MEMBERSHIP in
+# scripts/console_encoding_expected.txt — the per-push gate, over the repo that
+# owns the rows, with a pin file that is deliberately EMPTY.
+#
+# Workspace-wide the same predicate finds 71 more across seven repos, and
+# riir-train is 53 of them: its scripts/ is almost entirely plan-scoped
+# one-offs (plan335_t7_decide.py, plan346_doc_pool.py), 61 of 61 unreachable
+# from its own AGENTS.md by instrument_reachability's measurement on this
+# identical walk. Retro-fitting a stream defence to a script whose whole life
+# was one plan task is churn.
+#
+# And the EXPOSURE is this box's property, not theirs: the defect needs a
+# non-UTF-8 console (cp874 here) and no other box in the workspace is known to
+# have one. That caveat survives the measurement — it is why the ceiling
+# constrains the DERIVATIVE rather than demanding 71 repairs in seven trees
+# this repo does not own. The commit that adds ANOTHER undefended instrument
+# reds; the action is one line.
+#
+# ⚠ Deliberately NOT the Issue 785 rule's target. That rule forbids ratcheting
+# a bucket meaning *unanswered* — a backlog with no owner. This bucket means
+# *undefended*: every row has an owner, and every row is one line from closed.
+#
+# ⛔ The counts are DERIVED and printed by the sweep's own summary line. Do not
+# restate one below a pin — the sibling sweep's header that did went stale the
+# day a repo's tooling changed, printing a figure that contradicted the
+# measured total one line above it.
+#
+# ── the three floors, and where none of them bites ──────────────────────────
+#   min_scripts      the WALK. A glob that matches nothing.
+#   min_population   the PREDICATE (`__main__` + a non-ASCII STRING literal).
+#                    Separate from the walk because they break separately: an
+#                    ast.parse regression takes the population to 0 over an
+#                    unchanged walk, and then every ceiling passes.
+#   max_undefended   the RATCHET.
+#
+# ⚠ HALF the repos here have an EMPTY population (riir-auth, riir-chain, riir-game-sdk,
+# riir-kat, riir-neuron-db, riir-shader, riir-viewbridge, seal-online-remaster
+# — riir-chain and riir-shader do have scripts/*.py, they just print nothing
+# non-ASCII). Every ceiling is vacuous there and only min_scripts detects
+# anything, in the two that have scripts at all. Issue 783's population shape,
+# pinned as a measurement rather than assumed away.
+#
+# katgpt-rs's min_population is NOT free — it must equal
+# console_encoding_gate.MIN_POPULATION, and the sweep's selftest ASSERTS that
+# rather than trusting it. Its max_undefended must be 0, for the same reason:
+# a ratchet here would let a row land that the per-push gate refuses.
+#
+# Floors are ~60% of measured (the house slack convention); the ratchet is AT
+# the measurement.
+#
+#                       min_scripts  min_population  max_undefended
+katgpt-rs                       44              55               0
+riir-ai                          4               3               4
+riir-auth                        0               0               0
+riir-chain                       1               0               0
+riir-clippy                      3               3               5
+riir-dapps                       0               0               1
+riir-game-sdk                    0               0               0
+riir-kat                         0               0               0
+riir-mmorpg-examples             0               0               1
+riir-neuron-db                   0               0               0
+riir-shader                      1               0               0
+riir-train                      34              31              53
+riir-viewbridge                  0               0               0
+seal-game-editor                 1               1               3
+seal-online-remaster             0               0               0
+seal-remake                      3               2               4
+#
+# ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
+# riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).
+# They report DEFERRED under DOCS_GATE_PARTIAL_CLONE=1 and will report
+# UNPINNED on the canonical full workstation — pin them from one full-checkout
+# run, alongside the same four rows owed by instrument_reachability_floors,
+# platform_dead_code_drift_floors, subprocess_encoding_drift_floors,
+# orphaned_attr_drift_floors, wasm32_surface_drift_floors and
+# len_derived_drift_floors.

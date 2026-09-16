@@ -384,6 +384,20 @@ floors are not interchangeable and neither is redundant — `min_calls` is **0
 in 10 of 16 repos**, because they have `.py` files and no `subprocess` at all,
 so in exactly those repos `min_py_files` is the only blindness detector there
 is),
+`console_encoding_drift_sweep.py` (every contract repo, on demand — the
+Issue 804 verdict half of `console_encoding_gate.py`, and the **tenth**
+instance of the never-generalised shape. Its issue wrote the cross-repo axis
+down as “⚠ unmeasured, deliberately” on the `check_validation_gate` 789 T4
+precedent — *re-measure the population before answering*. The measurement was
+then never taken; taken, it returns **seven** repos and **71** undefended
+instruments against katgpt-rs's 0 of 72, so 789's “no sweep” does NOT carry
+across. ⚠ The exposure caveat SURVIVES it — a cp874 console is this box's
+property and riir-train's 53 rows are the same plan-scoped over-capture
+`instrument_reachability` measures on this identical walk — which is why the
+ceiling is a **RATCHET on the derivative**, not a demand for 71 repairs in
+seven trees this repo does not own. Three floors, and the WALK and the
+PREDICATE are separate because they break separately: an `ast.parse` regression
+takes the population to 0 over an unchanged walk),
 `pipefail_discard_audit.py` + `pipefail_discard_drift_sweep.py` (every
 contract repo, on demand — the shell class where a `var="$(pipeline)"`
 assignment under `set -euo pipefail` is killed by a legitimately-empty grep

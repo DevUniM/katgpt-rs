@@ -1,6 +1,7 @@
 # Issue 804 (2026-09-16) — 28 instruments CRASH when run the way AGENTS.md says to run them
 
-**Status:** OPEN
+**Status:** RESOLVED 2026-09-16 — repair landed, and the cross-repo axis is
+MEASURED and gated (see the bottom section), not deferred
 **Severity:** MEDIUM — loud, not silent; but the consequence is that a whole
 sweep's findings go **unread** on the only box that can run them
 **Population:** tracked `scripts/*.py` with a `__main__` entry point that
@@ -111,13 +112,69 @@ That an instrument's output is *readable* on a non-UTF-8 console — it is not,
 reports its verdict** rather than dying, which is the difference between a
 finding being read and a finding not existing.
 
-## Cross-repo
+## Cross-repo — MEASURED 2026-09-16, and the answer is a sweep
 
-⚠ **Unmeasured, deliberately.** The population question ("does this repo have
-instruments that print non-ASCII?") plainly generalises, but the *exposure*
-does not: it needs a non-UTF-8 console, and this workstation is the only box
-in the workspace known to have one. Whether a sweep half is worth having is a
-measurement somebody should take (`scripts/*.py` counts: riir-train 58+,
-riir-ai 7, riir-clippy several) and not an answer to assume from symmetry —
-`check_validation_gate`'s Issue 789 T4 precedent, where re-measuring the
-population is what said "no sweep".
+~~⚠ **Unmeasured, deliberately.**~~ The paragraph this replaces was right
+about the *reason to hesitate* and wrong to stop there. Its own citation —
+`check_validation_gate`'s Issue 789 T4 — does not say *decline a sweep when
+the exposure is local*; it says **re-measure the population before
+answering**, and 789 earned its "no sweep" with a measurement that returned
+ONE repo. That measurement was never taken here.
+
+Taken, over the 16 repos on this box:
+
+```text
+16 contract repos · 159 tracked scripts/*.py · 144 in population
+                   ·  73 defended · 71 UNDEFENDED
+
+  riir-train            53 of 53 undefended
+  riir-clippy            5 of  5
+  riir-ai                4 of  5
+  seal-remake            4 of  4
+  seal-game-editor       3 of  3
+  riir-dapps             1 of  1
+  riir-mmorpg-examples   1 of  1
+  katgpt-rs              0 of 72   ← the gate landed here and nowhere else
+```
+
+Seven repos, not one. So 789's answer does **not** carry across, and the
+asymmetry was the tenth instance of the shape this issue's own text names.
+
+⚠ **The exposure caveat SURVIVES the measurement**, and it is what sets the
+pin design rather than what cancels the sweep. A cp874 console is this box's
+property, not riir-train's; and riir-train's 53 rows are the same over-capture
+`instrument_reachability_drift_sweep` measures on this *identical* walk — that
+repo's `scripts/` is 61 of 61 unreachable plan-scoped one-offs
+(`plan335_t7_decide.py`, `plan346_doc_pool.py`), and retro-fitting a stream
+defence to a script whose whole life was one plan task is churn in a tree this
+repo does not own.
+
+So `scripts/console_encoding_drift_sweep.py` ratchets the **derivative**,
+exactly as Issue 787 T6 resolved the identical shape:
+
+- `max_undefended` pinned at each repo's measured count — the commit that adds
+  ANOTHER undefended instrument reds, and the action is one line.
+- katgpt-rs is the exception and the selftest ASSERTS it: `max_undefended`
+  must be **0** there, because a ratchet would let a row land that the
+  per-push gate's MEMBERSHIP wall refuses, and `min_population` must equal
+  `console_encoding_gate.MIN_POPULATION` — same quantity, two files.
+- Three floors, because the WALK and the PREDICATE break separately: an
+  `ast.parse` regression takes the population to 0 over an unchanged walk and
+  every ceiling then passes vacuously. ⚠ Both are vacuous in the eight repos
+  with an empty population, which the run PRINTS rather than assumes away.
+- The classifier is the gate's — `tracked_scripts`, `in_population`,
+  `is_defended`, imported and never restated — and the sweep INVOKES
+  `ceg.selftest()`, which is what makes "shared classifier" an assertion
+  rather than an import statement.
+- 9 canary arms, all red under perturbation: the ratchet, both floors, a new
+  undefended row, an UNPARSED row (never folded into the pass column), an
+  unpinned repo, an empty pin file, a malformed row.
+
+**Not repaired here:** the 71 rows in seven sibling repos. Each is one line,
+each has an owner, and none of those trees is this repo's to churn — the
+ratchet is the strongest claim katgpt-rs can honestly make about somebody
+else's tree. `riir-clippy/scripts/gen_dashboard.py` is the one worth doing
+first by anyone reading this: it reads `git log --pretty=%s` across the
+siblings and **every commit subject in this workspace uses an em-dash**, so it
+is the one row already known to be live rather than latent (it was Issue 783's
+specimen one axis over).
