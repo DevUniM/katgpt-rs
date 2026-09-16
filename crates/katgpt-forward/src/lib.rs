@@ -701,7 +701,8 @@ pub use diffusion_sampler::{
 pub mod flashar_anchor;
 #[cfg(all(feature = "dllm", feature = "flashar_anchor"))]
 pub use flashar_anchor::{
-    AnchorConfig, AnchorFillResult, anchor_fill_with_prefilled, anchor_then_fill, dbtm_floor,
+    AnchorConfig, AnchorFillResult, ConfidenceAnchorConfig, anchor_fill_with_prefilled,
+    anchor_then_fill, anchor_then_fill_with, dbtm_floor, select_confidence_anchors,
 };
 
 #[cfg(all(feature = "dllm", feature = "flashar_consensus"))]

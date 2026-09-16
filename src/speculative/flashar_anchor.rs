@@ -10,7 +10,8 @@
 #![allow(clippy::too_many_arguments)]
 
 pub use katgpt_forward::flashar_anchor::{
-    AnchorConfig, AnchorFillResult, anchor_fill_with_prefilled, anchor_then_fill, dbtm_floor,
+    AnchorConfig, AnchorFillResult, ConfidenceAnchorConfig, anchor_fill_with_prefilled,
+    anchor_then_fill, anchor_then_fill_with, dbtm_floor, select_confidence_anchors,
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,9 @@ mod tests {
     // harness walk to byte-identical parity with the production decode.
 
     use super::anchor_fill_with_prefilled;
+    use super::anchor_then_fill_with;
+    use super::select_confidence_anchors;
+    use super::ConfidenceAnchorConfig;
     use crate::dllm::generate_pattern_dataset;
     use katgpt_core::simd::simd_argmax_f32;
     use katgpt_core::softmax_scaled;
@@ -397,6 +401,57 @@ mod tests {
         );
 
         assert_eq!(prod.tokens, mine.tokens, "harness stride arm must equal production");
+    }
+
+    #[test]
+    fn test_issue600_entry_matches_poc_conf_arm() {
+        // The production confidence-commit entry must reproduce the PoC
+        // harness's conf+floor arm exactly: same walk (the observation
+        // out-params are behavior-neutral, pinned by the parity test above),
+        // same selector, same fill path, same budget.
+        let (config, weights) = make_trained_weights();
+        let test_data = {
+            let mut rng = Rng::new(777);
+            generate_pattern_dataset(&mut rng, 4, config.block_size, config.vocab_size - 1)
+        };
+        let decode_config = D2fDecodeConfig {
+            denoise_steps: 8,
+            confidence_threshold: 0.9,
+            block_size: BLOCK,
+            ..D2fDecodeConfig::default()
+        };
+        let ccfg = ConfidenceAnchorConfig::new(0.9, true);
+        let mask = config.mask_token;
+        for (si, seq) in test_data.iter().enumerate() {
+            // Production entry.
+            let mut rng_entry = Rng::new(9_000 + si as u64);
+            let mut ctx = ForwardContext::new(&config);
+            let mut cache = MultiLayerKVCache::new(&config);
+            let mut dctx_entry = D2fContext::new(&config);
+            let entry = anchor_then_fill_with(
+                &mut ctx, &mut cache, &mut dctx_entry, &weights, &config, &decode_config,
+                &ccfg, seq[0], 0, &mut rng_entry,
+            );
+
+            // PoC harness arm (walk + selector + fill seam).
+            let mut rng = Rng::new(9_000 + si as u64);
+            let mut ctx2 = ForwardContext::new(&config);
+            let mut cache2 = MultiLayerKVCache::new(&config);
+            let mut dctx = D2fContext::new(&config);
+            let mut sampled = [0usize; BLOCK];
+            let mut argmax = [0usize; BLOCK];
+            let mut probs = [0.0f32; BLOCK];
+            round1_walk(&mut ctx2, &mut cache2, &weights, &config, seq[0], BLOCK, &mut sampled, &mut argmax, &mut probs, &mut rng);
+            let (anchors, n_anchors) =
+                select_confidence_anchors(&argmax, &probs, mask, ccfg.kappa);
+            let mine = anchor_fill_with_prefilled(
+                &mut dctx, &weights, &config, &decode_config, &anchors, &mut rng, Some(8),
+            );
+
+            assert_eq!(entry.tokens, mine.tokens, "entry vs PoC arm diverged at seq {si}");
+            assert_eq!(entry.n_anchors, n_anchors);
+            assert_eq!(entry.fill_steps_used, mine.steps_used);
+        }
     }
 
     #[test]

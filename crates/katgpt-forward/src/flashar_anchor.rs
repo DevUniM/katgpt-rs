@@ -65,6 +65,69 @@ impl AnchorConfig {
     }
 }
 
+/// Configuration for the DBTM confidence-commit anchor rule (Issue 811 /
+/// Plan 600 — arXiv:2609.15903 Eq 26).
+///
+/// Replaces the stride rule's positional anchor selection with
+/// content-adaptive selection over the Round-1 AR walk's own confidence:
+/// a position is anchored when its max-softmax q ≥ `kappa` (the committed
+/// token is the argmax proposal). `floor = true` additionally arms the
+/// [`dbtm_floor`] per-round commit floor in the fill round, which
+/// guarantees the block empties within the step budget.
+///
+/// Measured (Issue 811 PoC): 3.1–4.7× fewer fill steps than the
+/// matched-threshold stride arm at κ ∈ {0.9, 0.99} at quality parity on the
+/// mini-D2F; termination property-proven at every (κ, k) cell.
+///
+/// Opt-in — [`AnchorConfig`] (stride) stays the default.
+#[derive(Clone, Copy, Debug)]
+pub struct ConfidenceAnchorConfig {
+    /// Confidence threshold κ ∈ (0, 1]: anchor positions with q ≥ kappa.
+    pub kappa: f32,
+    /// Arm the DBTM per-round commit floor in the fill round.
+    pub floor: bool,
+}
+
+impl ConfidenceAnchorConfig {
+    /// # Panics
+    /// Unless `0 < kappa <= 1` (constructor contract, not hot path).
+    pub fn new(kappa: f32, floor: bool) -> Self {
+        assert!(
+            kappa > 0.0 && kappa <= 1.0,
+            "kappa must be in (0, 1], got {kappa}"
+        );
+        Self { kappa, floor }
+    }
+}
+
+/// Confidence-commit anchor selection: anchor every position whose
+/// max-softmax confidence `q` ≥ `kappa`, committing the argmax proposal.
+/// Positions whose argmax IS the mask token are never anchored.
+///
+/// Returns the anchor buffer (`block_size` entries, `mask_token` at
+/// unselected positions) and the number of anchors selected.
+pub fn select_confidence_anchors(
+    argmax: &[usize],
+    probs: &[f32],
+    mask_token: usize,
+    kappa: f32,
+) -> (Vec<usize>, usize) {
+    assert_eq!(
+        argmax.len(),
+        probs.len(),
+        "argmax/probs length mismatch"
+    );
+    let mut buf = vec![mask_token; argmax.len()];
+    let mut n = 0usize;
+    for (p, (&tok, &q)) in argmax.iter().zip(probs.iter()).enumerate() {
+        if q >= kappa && tok != mask_token {
+            buf[p] = tok;
+            n += 1;
+        }
+    }
+    (buf, n)
+}
+
 /// Result of the two-round anchor-then-fill decode.
 #[derive(Clone, Debug)]
 pub struct AnchorFillResult {
@@ -89,6 +152,13 @@ pub struct AnchorFillResult {
 /// Returns the number of anchor tokens written into `token_buf`.
 /// Anchor positions are `stride-1, 2*stride-1, 3*stride-1, ...` (0-indexed
 /// within the block). Positions between anchors remain `mask_token`.
+///
+/// `argmax_out` / `probs_out` (Plan 600 T7): when `Some`, the walk also
+/// records the per-position (argmax proposal, max-softmax confidence q) —
+/// the signal the DBTM confidence-commit rule consumes. Pure observation:
+/// the sampled context propagation and rng stream are byte-identical to the
+/// `None` walk, which the parity tests pin.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn predict_anchors(
     ctx: &mut ForwardContext,
     cache: &mut MultiLayerKVCache,
@@ -101,10 +171,15 @@ pub(crate) fn predict_anchors(
     mask_token: usize,
     token_buf: &mut [usize],
     rng: &mut Rng,
+    argmax_out: Option<&mut [usize]>,
+    probs_out: Option<&mut [f32]>,
 ) -> usize {
+    use katgpt_core::simd::simd_argmax_f32;
     let vocab = config.vocab_size;
     let temperature = config.temperature;
     let mut n_anchors = 0usize;
+    let mut argmax_buf = argmax_out;
+    let mut probs_buf = probs_out;
 
     // Initialize all block positions to mask
     for t in token_buf.iter_mut().take(block_size) {
@@ -125,6 +200,16 @@ pub(crate) fn predict_anchors(
         // Sample from logits
         softmax_scaled(&mut ar_logits_buf, 1.0 / temperature);
         let next_token = sample_from_distribution_weighted(&ar_logits_buf, rng);
+
+        // Observation only (Plan 600 T7): no extra forward, no rng draw —
+        // the sampled-context walk stays byte-identical to the None walk.
+        let (best, best_prob) = simd_argmax_f32(&ar_logits_buf);
+        if let Some(b) = argmax_buf.as_deref_mut() {
+            b[pos_in_block] = best;
+        }
+        if let Some(p) = probs_buf.as_deref_mut() {
+            p[pos_in_block] = best_prob;
+        }
 
         // Anchor: store at stride positions (stride-1, 2*stride-1, ...)
         if (pos_in_block + 1) % stride == 0 {
@@ -405,6 +490,8 @@ pub fn anchor_then_fill(
         mask,
         &mut anchor_buf,
         rng,
+        None,
+        None,
     );
 
     // ── Round 2: D2F fill with anchors ──
@@ -419,6 +506,96 @@ pub fn anchor_then_fill(
         &NoScreeningPruner,
         rng,
         None,
+    );
+
+    // ── Baseline: D2F without anchors (for comparison) ──
+    let baseline_result = crate::d2f::d2f_decode_block_with_prompt_with(
+        dctx,
+        weights,
+        config,
+        decode_config,
+        &[],
+        &NoPruner,
+        &NoScreeningPruner,
+        rng,
+    );
+
+    AnchorFillResult {
+        tokens: fill_result.tokens,
+        n_anchors,
+        fill_steps_used: fill_result.steps_used,
+        baseline_steps_used: baseline_result.steps_used,
+        step_reduction: baseline_result
+            .steps_used
+            .saturating_sub(fill_result.steps_used),
+    }
+}
+
+/// Run two-round confidence-commit decoding (DBTM κ ∪ floor, Issue 811 /
+/// Plan 600).
+///
+/// Same two-round shape as [`anchor_then_fill`], with the anchor selection
+/// driven by the walk's own confidence ([`select_confidence_anchors`])
+/// instead of a position stride, and — with [`ConfidenceAnchorConfig::floor`]
+/// — the [`dbtm_floor`] per-round commit floor in the fill round.
+///
+/// The incumbent [`anchor_then_fill`] is untouched (byte-identical path and
+/// behavior); this entry exists so the two rules can race behind the same
+/// `flashar_anchor` feature until the GOAT gates decide the default.
+#[allow(clippy::too_many_arguments)]
+pub fn anchor_then_fill_with(
+    ctx: &mut ForwardContext,
+    cache: &mut MultiLayerKVCache,
+    dctx: &mut D2fContext,
+    weights: &TransformerWeights,
+    config: &Config,
+    decode_config: &D2fDecodeConfig,
+    confidence_config: &ConfidenceAnchorConfig,
+    seed_token: usize,
+    start_pos: usize,
+    rng: &mut Rng,
+) -> AnchorFillResult {
+    let block_size = decode_config.block_size;
+    let mask = config.mask_token;
+
+    // ── Round 1: AR walk with confidence observation ──
+    let mut anchor_buf = vec![mask; block_size];
+    let mut argmax_buf = vec![0usize; block_size];
+    let mut probs_buf = vec![0.0f32; block_size];
+    predict_anchors(
+        ctx,
+        cache,
+        weights,
+        config,
+        seed_token,
+        start_pos,
+        block_size,
+        1, // stride value irrelevant: every position observed, selection below
+        mask,
+        &mut anchor_buf,
+        rng,
+        Some(&mut argmax_buf),
+        Some(&mut probs_buf),
+    );
+    let (anchor_buf, n_anchors) =
+        select_confidence_anchors(&argmax_buf, &probs_buf, mask, confidence_config.kappa);
+
+    // ── Round 2: D2F fill (threshold + optional DBTM floor) ──
+    let fill_result = fill_with_anchors(
+        dctx,
+        weights,
+        config,
+        decode_config,
+        &[],
+        &anchor_buf,
+        &NoPruner,
+        &NoScreeningPruner,
+        rng,
+        if confidence_config.floor {
+            Some(decode_config.denoise_steps)
+        } else {
+            None
+        },
     );
 
     // ── Baseline: D2F without anchors (for comparison) ──
@@ -546,6 +723,38 @@ mod tests {
         }
     }
 
+    // ── Confidence-commit selector + entry point (Plan 600 T6/T7) ──
+
+    #[test]
+    fn test_select_confidence_anchors_semantics() {
+        let mask = 26usize;
+        // q high at 0/2, q low at 1/3; argmax at 2 IS the mask (never anchored).
+        let argmax = [5usize, 7, mask, 9];
+        let probs = [0.95f32, 0.2, 0.99, 0.4];
+        let (buf, n) = select_confidence_anchors(&argmax, &probs, mask, 0.5);
+        assert_eq!(n, 1);
+        assert_eq!(buf, vec![5, mask, mask, mask]);
+        // κ=0 anchors everything except mask-argmax positions.
+        let (buf1, n1) = select_confidence_anchors(&argmax, &probs, mask, f32::MIN_POSITIVE);
+        assert_eq!(n1, 3);
+        assert_eq!(buf1, vec![5, 7, mask, 9]);
+        // κ=1 anchors only at certainty.
+        let (_, n2) = select_confidence_anchors(&argmax, &probs, mask, 1.0);
+        assert_eq!(n2, 0); // 0.99 < 1.0
+    }
+
+    #[test]
+    #[should_panic(expected = "kappa must be in (0, 1]")]
+    fn test_confidence_config_rejects_zero_kappa() {
+        let _ = ConfidenceAnchorConfig::new(0.0, true);
+    }
+
+    #[test]
+    #[should_panic(expected = "kappa must be in (0, 1]")]
+    fn test_confidence_config_rejects_kappa_above_one() {
+        let _ = ConfidenceAnchorConfig::new(1.5, false);
+    }
+
     #[test]
     fn test_anchor_config_default_stride() {
         let cfg = AnchorConfig::default();
@@ -583,6 +792,8 @@ mod tests {
             mask,
             &mut token_buf,
             &mut rng,
+            None,
+            None,
         );
 
         // With stride=2 and block_size=8, anchors at positions 1, 3, 5, 7 → 4 anchors
@@ -622,6 +833,8 @@ mod tests {
             mask,
             &mut token_buf,
             &mut rng,
+            None,
+            None,
         );
 
         // stride=4: anchors at positions 3, 7 → 2 anchors
@@ -754,6 +967,8 @@ mod tests {
                 mask,
                 &mut token_buf,
                 &mut rng,
+                None,
+                None,
             );
 
             let expected = block_size / stride;
