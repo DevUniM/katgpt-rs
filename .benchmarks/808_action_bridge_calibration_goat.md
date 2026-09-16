@@ -65,3 +65,18 @@ what its confidence means. Pinned by gate, not just argued.
 - `cargo check -p katgpt-core --no-default-features` clean (isolation);
   default + `sigmoid_calibration` clean.
 - clippy `-D warnings --all-targets` at `sigmoid_calibration` clean.
+
+## Addendum — the live-consumer selection (2026-09-16, Issue 964 C2 wiring)
+
+`select_action_with_raw` added to `CalibratedActionBridge`: ONE selection
+returning `(action_idx, raw_confidence, calibrated_confidence)`. The live
+loop needs both halves from one call — the decision consumes the
+calibrated confidence while the RAW confidence must be retained for the
+later `observe` (the Platt fit is over raw sigmoid outputs; observing a
+calibrated value would double-map it). Verified by
+`with_raw_matches_both_halves_exactly`: bit-equality with both existing
+selection methods after a real refit, plus a vacuity guard that the fit
+actually moved the params somewhere on the grid. The riir-ai wiring this
+unblocked landed same-day in riir-ai (`arg_runtime/pipeline.rs` Step-8/9
+wrappers + spec gates — riir-ai Issue 964). Bridge test count at
+`sigmoid_calibration,action_bridge`: 22 (21 + this method's).

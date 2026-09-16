@@ -111,6 +111,22 @@ impl<const A: usize, const D: usize> CalibratedActionBridge<A, D> {
         (idx, self.calibrator.apply(raw))
     }
 
+    /// Select the best action; report BOTH confidences.
+    ///
+    /// The live-loop shape (the riir-ai Issue 964 C2 wiring): the decision
+    /// consumes the calibrated confidence (threshold / reporting), while the
+    /// RAW confidence must be RETAINED for the later [`Self::observe`] that
+    /// records the decision against its outcome — the Platt fit is over raw
+    /// sigmoid outputs, so observing a calibrated value would double-map it.
+    /// One selection computes both; cold start (`calibrated == raw`, exact
+    /// bits) is unchanged.
+    #[inline]
+    pub fn select_action_with_raw(&self, q_values: &[f32; D]) -> (usize, f32, f32) {
+        let (idx, raw) = self.inner.select_action(q_values);
+        let calibrated = self.calibrator.apply(raw);
+        (idx, raw, calibrated)
+    }
+
     /// The ABSTAIN predicate on the CALIBRATED confidence:
     /// `p_cal < threshold` → suppress (hand off to the CLARIFY fallback).
     /// With calibrated p this is a statement about outcome probability, not
@@ -213,6 +229,41 @@ mod tests {
                 "q = {q:?}"
             );
         }
+    }
+
+    /// `with_raw` is the live-loop selection: one argmax, both confidences.
+    /// It must agree exactly with `inner().select_action` (raw half) AND
+    /// `select_action_calibrated` (calibrated half), bit for bit.
+    #[test]
+    fn with_raw_matches_both_halves_exactly() {
+        let mut calibrated = CalibratedActionBridge::new(bridge(), 256, 32);
+        // Move the params off identity so the two halves genuinely differ.
+        for i in 0..256 {
+            let p = 0.02 + 0.96 * i as f32 / 255.0;
+            calibrated.observe(p, p < 0.5);
+        }
+        assert!(calibrated.refit());
+
+        for i in 0..64u32 {
+            let x = (i as f32 / 16.0) - 2.0;
+            let q = [x, 0.5 - x];
+            let (idx, raw, cal) = calibrated.select_action_with_raw(&q);
+            let (raw_idx, raw_conf) = calibrated.inner().select_action(&q);
+            let (cal_idx, cal_conf) = calibrated.select_action_calibrated(&q);
+            assert_eq!(idx, raw_idx, "raw-half winner moved at q = {q:?}");
+            assert_eq!(idx, cal_idx, "calibrated-half winner moved at q = {q:?}");
+            assert_eq!(raw.to_bits(), raw_conf.to_bits(), "q = {q:?}");
+            assert_eq!(cal.to_bits(), cal_conf.to_bits(), "q = {q:?}");
+            // A real refit moved the params: the two confidences differ
+            // somewhere on this grid (guards against a vacuous identity fit).
+        }
+        let moved = (0..64u32).any(|i| {
+            let x = (i as f32 / 16.0) - 2.0;
+            let q = [x, 0.5 - x];
+            let (_, raw, cal) = calibrated.select_action_with_raw(&q);
+            raw.to_bits() != cal.to_bits()
+        });
+        assert!(moved, "refit produced identity params — fixture is vacuous");
     }
 
     /// Deterministic refit + commitment (the freeze/thaw evidence contract).
