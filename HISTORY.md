@@ -11,6 +11,23 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 806 T6 CLOSED (2026-09-16, the M3 side) — t698_t5_kv_mean adjudicated arch-dependent with dual pins; kda grad-check floor was below its own noise
+
+[Bench 806 addendum](.benchmarks/806_x86_64_execution_matrix.md), landed from the M3 the same
+day as the 4090 matrix. The one M3 run T6 asked for: the test PASSES on aarch64 — the pin
+`23d0daab3f087159` reproduces — so T6's first branch holds and the fixture is genuinely
+arch-dependent (x86_64 measures `4d0b592740db9358`; band bits one ulp apart, `0x3e5f_d968`
+vs `0x3e5f_d970`; argmax 0/12 and every behavior gate green on both). Arch-conditional dual
+pins with the recorded delta; the stale `t698_t5_kv_mean_gates` row removed from
+`x86_64_matrix_expected.txt` in the same commit per the file's ratchet. Plus, not in any
+upstream cell: `kda_backward_grad_check`'s magnitude floor × tolerance (1.25e-5) was below
+its own measured FD noise (2.8e-5, matching the `EPSILON·|loss|/ε` bound) — M3-tuned test
+constants, not a derivation defect (the L=1 check and the exact token-vs-sequence identity
+pass on x86_64); floor 5e-4 → 2e-3, 7/7 both platforms. The local session that landed this
+had independently found the argtopk sentinel bug and was fixed for it the honest way: its
+block_topk hunk was DROPPED in favor of upstream `086dd9127` (which additionally removed the
+remaining4 OOB read) when the collision surfaced at cherry-pick.
+
 ## Issue 807 (2026-09-16) CLOSED — `lthash`: incremental homomorphic multiset hash, the shared substrate for the Agave-mined commitment/state-hash proposals
 
 Mined from the Agave validator snapshot (`riir-clippy/.raw/agave @ c95d8706`, the eprint

@@ -365,3 +365,37 @@ is used here as a WIDENING instrument and every failure it produced was
 re-run under the single feature that gates it before being called a finding.
 That narrowing is what separated cell 8's four from an interaction artifact —
 and nothing else in nine cells needed it.
+
+## Addendum (same day, the M3 side) — T6 resolved: the fixture IS arch-dependent
+
+The one M3 run T6 asked for happened hours later (M3 Max, aarch64, same commit
+line). Both halves of the measurement now exist:
+
+| quantity | M3 (aarch64) | 4090 (x86_64) |
+|---|---|---|
+| `issue_698_t5_kv_mean` full test | **PASSES** — pin reproduces | fixture hash `4d0b592740db9358` ≠ pin |
+| band bits (Mean vs First max_abs) | `0x3e5f_d968` (2.186028e-1) | `0x3e5f_d970` (2.186029e-1) — one ulp |
+| argmax flips (the behavior gate) | 0/12 | 0/12 |
+| G1 same-run bit-identity, k=1 Mean≡First bit-exact | pass | pass |
+
+So T6's first branch holds: the pin `23d0daab3f087159` is the aarch64 value and
+`4d0b592740db9358` is the x86_64 value of the SAME deterministic-per-platform
+fixture — arch-conditional dual pins with the recorded delta, not a re-base.
+The n_layer=1 t1 counterargument stands as measured but doesn't reach this
+fixture: whether the mechanism is Box–Muller libm ulps at specific draws in the
+larger stream (the 0.26%/0.20% per-call divergence the probe above measured is
+compatible with ~260k draws producing a different hash while ~4k draws agree) or
+something else, the arch-conditional pin is correct under either reading. The
+test passes on both platforms post-fix; the `t698_t5_kv_mean_gates` pin row in
+`x86_64_matrix_expected.txt` went STALE and was removed in the same commit.
+
+Also from the M3 side (not in any upstream cell): `kda_backward_grad_check`'s
+magnitude floor × tolerance (5e-4 × 2.5e-2 = 1.25e-5) was below the test's own
+measured FD noise (2.8e-5 absolute on `f_b_proj[127]`, matching the
+`f32::EPSILON·|loss|/ε ≈ 2.9e-5` bound) — M3-tuned constants, not a derivation
+defect: the L=1 grad check AND the exact token-vs-sequence identity both pass on
+x86_64. Floor raised to 2e-3 (budget 5e-5, a 1.8× margin over measured noise);
+7/7 on both platforms.
+
+Landing: the fix commit (dual pins + floor + stale-row removal) + this
+addendum; issue T6 ticked.

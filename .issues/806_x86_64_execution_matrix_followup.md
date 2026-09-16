@@ -70,20 +70,12 @@ and adjudicates failing tests by MEMBERSHIP in
 
 ## What is still OPEN
 
-- [ ] **T6 — `t698_t5_kv_mean_gates` needs ONE M3 run.** Its fixture-identity
-      hash is `4d0b592740db9358` on x86_64 (stable across profile and
-      `+avx2`) against a pin of `23d0daab3f087159` measured at landing on the
-      M3. `issue_698` t1/t2/t6/t7 hash the same `TransformerWeights::new`
-      stream at `n_layer = 1` and **their** pins reproduce here, so it is not
-      a blanket cross-platform divergence; the full triage is in Bench 806.
-      The test's own message says *"never re-base silently"*, so it is pinned,
-      not re-based. **What to run on the M3:**
-      `cargo test -p katgpt-rs --test issue_698_t5_kv_mean -- --nocapture` and
-      compare the printed hash with both values. If the M3 still prints
-      `23d0daab…`, the fixture is genuinely arch-dependent and the pin needs
-      an arch-conditional form plus a recorded delta; if it prints
-      `4d0b5927…`, something re-keyed it after landing and the pin is simply
-      stale.
+- [x] **T6 — `t698_t5_kv_mean_gates` needs ONE M3 run.** DONE same day: the
+      M3 run reproduces the pin `23d0daab…` (test green) — T6's first branch,
+      the fixture is genuinely arch-dependent. Arch-conditional dual pins with
+      the recorded delta landed (band bits one ulp apart; behavior gates pass
+      on both platforms); the stale pin row removed in the same commit. The
+      addendum at the tail of Bench 806 has the full two-sided table.
 - [ ] **T7 — FOUR perf bars are pinned, not fixed.** Every one is a bar
       calibrated on the M3 (one, `proof_g3b_swar_speedup`, is named
       `SWAR+FMLA` — an *aarch64* instruction) or an absolute-latency target
