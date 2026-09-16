@@ -233,6 +233,18 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
 
 ## Docs gate + drift sweeps
 
+**Repo names in instruments are CONTRACT names** (`scripts/repo_alias.py`).
+The ten `derive_repos` / `derive_population` predicates return the live
+workspace's directory names passed through a machine-local codec: an optional,
+gitignored `scripts/repo_alias.local.txt` (rows `on-disk=contract`) translates
+a box's on-disk sibling names into the contract spellings every tracked pin,
+floor, and snapshot is keyed on. Absent file → identity mapping (CI, fresh
+clones, and the population-sync canaries are untouched by construction); the
+count of active mappings is disclosed on stderr, never the names, because run
+logs get pasted into tracked docs. Instruments that OPEN sibling files by the
+contract name need the on-disk spelling back — `repo_alias.disk()` is the
+reverse half (the skill-census glob uses it).
+
 `scripts/docs_gate.sh` runs the manifest/doc/skill drift assertions and
 **prints its own timing** — a hand-typed duration drifts exactly like a
 hand-typed count, and it was also the wrong quantity. Measured three times:
@@ -375,7 +387,7 @@ develop work. One line per check:
 | `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
 | `sweep_advisory_membership_gate.py` | a `*_drift_sweep.py` that does not call the Issue-797 worktree advisory — its findings and floors then describe whatever the working tree happened to say; gated by MEMBERSHIP, because a count is green on a swap and went stale two hours after it was typed (Issue 797 T5) |
 | `console_encoding_gate.py` | a tracked `scripts/*.py` that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with **no verdict**, so a sweep's findings are not *unknown* but *unlooked at*; `docs_gate.sh`'s `PYTHONIOENCODING` only covers runs that go through the wrapper, and every workstation audit is documented as a DIRECT invocation (Issue 804). The shared defence is `scripts/console_safe.py`: `errors="backslashreplace"`, because the console encoding is not ours to choose, and forcing it gives mojibake instead of an exception |
-| `global_rng_gate.py` | a free-function global-fastrand draw with no pin row — the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809) |
+| `global_rng_gate.py` | an unseeded-global draw with no pin row — free-function `fastrand::<prim>()` OR the unseeded `Rng::new()`/`Rng::default()` constructor (T3 folded the constructor class in): the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809) |
 | `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
@@ -445,7 +457,7 @@ Workstation-only cross-repo sweep family — `docs_drift_sweep.py`,
 on demand), `markdown_fence_drift_sweep.py` (every contract repo, on demand —
 the Issue 756 unterminated-fence verdict workspace-wide, two-axis pins
 (`min_md_files` walk floor + `max_unterminated = 0` wall); its FIRST workspace
-run caught the then-new `seal-online-remaster`'s `.plans/005:600`, 14 swallowed
+run caught the then-new `mmorpg-remaster`'s `.plans/005:600`, 14 swallowed
 lines, repaired there at `99064c5`),
 `platform_dead_code_drift_sweep.py` (every contract repo, on demand — the
 Issue 775 verdict half of `platform_dead_code_audit.py`, and the one sweep
@@ -591,7 +603,7 @@ starts, and every one of their `push: branches: [main]` filters is inert. The
 two causes need different repairs and the report names them apart, because
 `carries no copy` quietly suggests a fix that the other case cannot have:
 **five repos have no `origin/main` AT ALL** (riir-auth, riir-kat,
-riir-mmorpg-examples, seal-online-remaster, seal-remake) while their filter
+riir-mmorpg-examples, mmorpg-remaster, mmorpg-remake) while their filter
 names it, and the six that do have one carry no `.github/workflows/` directory
 there. Promoting the file repairs the second; the first needs somebody to decide
 whether the filter or the branching model is wrong. Until then those gates run
@@ -837,7 +849,7 @@ own docstring.
 **The POPULATION is what git TRACKS — `scripts/tracked_walk.py`, one copy
 (Issue 777).** A filesystem walk behind a hand-typed directory-name skip set
 is not the same set, and a name list cannot express "not ours". Measured, on
-the run of this sweep that found it: seal-online-remaster's `mmorpg/` is
+the run of this sweep that found it: mmorpg-remaster's `mmorpg/` is
 gitignored AND its own git repository, so its 1404 `.rs` files were credited
 to the outer repo — and produced this audit's only TRUNC-VAR finding at an
 address where the repair cannot be made. That is worse than a false positive;
@@ -1026,11 +1038,11 @@ and with `-o all` its only remark on the fatal line is `SC2250` — brace
 style. SC2154 does not fire, because the variables *are* assigned, just too
 late.
 
-Canonical failure: seal-remake's `ci_feature_guard.sh` — the script its
+Canonical failure: mmorpg-remake's `ci_feature_guard.sh` — the script its
 `rust.yml` runs — could not fail past layer 13 for months, because its
 layer-13 trap named two variables assigned ~20 and ~45 lines later. It stayed
 hidden because a ratchet ceiling had been red for three commits and stopped
-every run *before* the bad line (seal-remake `26a18191`).
+every run *before* the bad line (mmorpg-remake `26a18191`).
 
 Verdict half: `scripts/trap_sentinel_gate.py` (in the docs gate). It pins this
 repo's two by **membership**, floors the population (a classifier that goes
@@ -1046,7 +1058,7 @@ tie them by block structure or the pin certifies nothing.
 
 Every axis in the wasm32 family (Issue 737) is about *how* a lane compiles
 what it names. The seventh is one level up: **is what it names the whole
-surface?** A row cannot notice a package it does not select, and seal-remake
+surface?** A row cannot notice a package it does not select, and mmorpg-remake
 had a positive `#[cfg(target_arch = "wasm32")]` block that no row built and
 that had been **uncompilable since it was written** — it called a
 `cfg(not(wasm32))` function (`.issues/010` T2, `.issues/738`).
@@ -1111,7 +1123,7 @@ scripts/wasm32_surface_audit.py ../riir-ai # or one, by path
   exits 0). The `✓ by-dep` verdict credits exactly those edges —
   non-optional, plain + wasm32-target tables, `workspace = true` resolved
   through the root table, in-repo targets only; dev/build, optional,
-  native-target, and cross-repo edges credit nothing. `seal-poc-submodule`
+  native-target, and cross-repo edges credit nothing. `mmorpg-poc-submodule`
   is the standing negative control — deliberately excluded from its repo's
   CI and depended on by nothing, it stays UNCOVERED (that repo is read-only
   here; arm-vs-row is its owner's call). Standing (measured 2026-09-14,
@@ -1709,7 +1721,7 @@ other verdict classes here carry both, and the asymmetry was not a judgement
 call that was made; it was a step that was skipped. `scan()` already took a
 repo path, so the question was answerable the whole time, and the answer was
 **29 DECODE + 2 CHILD-ENCODER over 5 of 16 repos** — riir-train 12+1,
-riir-clippy 9+1, riir-ai 6, riir-dapps 1, seal-game-editor 1. Two were not
+riir-clippy 9+1, riir-ai 6, riir-dapps 1, mmorpg-editor 1. Two were not
 latent: `riir-clippy/scripts/gen_dashboard.py:552` reads `git log --pretty=%s`
 across the siblings, and **every commit subject in this workspace uses an
 em-dash**. Read that as the standing failure mode, now recorded five times
@@ -2026,8 +2038,8 @@ distillation, novelty + GOAT gates, modelless-unblock protocol §3.5):
 > workspace is **20 repos**, all of which carry a root `BOUNDARY.md`
 > (add `riir-mmorpg-examples`, `riir-clippy`, `riir-viewbridge`,
 > `riir-auth`, `katgpt-web`, `riir-dao`, `riir-deployer`,
-> `riir-esp32`, `seal-game-editor`, `seal-remake`,
-> `seal-online-remaster`, `riir-kat`, `riir-shader`).
+> `riir-esp32`, `mmorpg-editor`, `mmorpg-remake`,
+> `mmorpg-remaster`, `riir-kat`, `riir-shader`).
 >
 > Read a count in prose as a claim, not a fact — and read a count that
 > MATCHES as a claim too: a count is not a checksum over a set. Drift
