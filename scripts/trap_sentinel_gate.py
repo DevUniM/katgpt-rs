@@ -242,6 +242,14 @@ def gate_selftest(audit=None) -> list[str]:
     eq("…and it also reds the missing pin, not only the floor",
        any("no longer SENTINELLED" in p for p in probs), True)
 
+    # The boundary cell the `< -> <=` mutant asks for: a population EXACTLY
+    # at the floor is NOT a problem — the floor fires DOWNWARD only (the
+    # same two-sided cell global_rng_gate.floor_arms runs).
+    at_floor = dict(list(clean.items())[:POPULATION_FLOOR])
+    probs, _ = verdict_problems(at_floor, v)
+    eq("a population exactly at the floor is clean",
+       any("floor" in p for p in probs), False)
+
     # Each bucket, one at a time. None may be pooled: UNPARSED hides exposure
     # (a runaway body reads as a false SENTINELLED) and PRECAUTIONARY is one
     # added `-e` from laundering.
