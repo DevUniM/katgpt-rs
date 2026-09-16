@@ -2003,6 +2003,17 @@ never pinned, because those 61 are the pre-gate archive and Issue 785's rule
 forbids ratcheting a bucket that means *unread*. The boundary is measured, not
 round: the highest legacy collision is 575 and the lowest divergence one is 741.
 
+⛔ **CLOSING a holder does not retire its row — it is when the row starts
+being the only record.** Measured 2026-09-16: an issue was closed and removed
+under the noise-reduction rule and its collision pin deleted in the same
+commit as "stale", and `develop` went red for every later run. The holder was
+gone; the collision was not — `removed_by_number()` recovers BOTH sides from
+`git log -M --diff-filter=D`, which is the majority case Issue 795 exists for.
+The pin file's own header already said so and the header's count word said
+NINE against eight rows, so two independent signals were available and the
+removal happened anyway. A row comes out only when the *number* stops being
+doubly held, which a deletion never achieves.
+
 ⛔ **And do not renumber on a margin the instrument did not award.** Six of
 the nine were adjudicated and deliberately left alone — leads of +1 to +5 with
 21–53% UNRESOLVED, one an outright `TIE_FRACTION` tie and one where the tool
