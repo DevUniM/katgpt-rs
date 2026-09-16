@@ -21,6 +21,14 @@
 #
 #  repo                  package
 seal-online-remaster     seal-poc-submodule
+# 2026-09-16: the seal-core migration (12a4ce3) left the OLD copy behind. Every
+# dependent in this repo now path-deps `../../../seal-remake/crates/seal-core`,
+# so the local `crates/seal-core` is orphaned — it used to be covered BY-DEP
+# through those dependents and is UNCOVERED the moment they stopped pointing at
+# it. Not a lane gap to close: whether the duplicate should exist at all is the
+# deprecated repo's owner's call, and adding a wasm32 row for a crate that is
+# probably about to be deleted is the wrong repair.
+seal-online-remaster     seal-core
 
 # seal-poc-submodule is the standing NEGATIVE CONTROL, recorded as such in
 # AGENTS.md since 2026-09-14: deliberately excluded from its repo's CI and
