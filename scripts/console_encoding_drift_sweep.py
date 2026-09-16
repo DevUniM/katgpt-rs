@@ -126,6 +126,11 @@ def parse_pins(path: Path) -> dict[str, dict[str, int]]:
             continue
         parts = line.split()
         if len(parts) != 1 + len(FIELDS):
+            # ⚠ arm_reach: the `1 + len(FIELDS)` in the MESSAGE is this
+            # module's only live survivor (`+ -> -`, measured 16 killed / 1
+            # survived of 22). EQUIVALENT — message-formatting arithmetic
+            # changes no verdict, which is one of the three legitimate survivor
+            # classes AGENTS.md names. The one in the TEST above is killed.
             raise ValueError(
                 f"malformed pin row (want {1 + len(FIELDS)} fields): {raw!r}")
         rows[parts[0]] = dict(zip(FIELDS, (int(v) for v in parts[1:])))
