@@ -1384,9 +1384,11 @@ mod tests {
             // The sample-wall probe: 16× draws moves the ladder's mass
             // window two decades deeper (i0 stays at absolute count 2).
             {
-                let mut deep = NoiseSweepSpec::default();
-                deep.draws = 16_384;
-                deep.scales = 3;
+                let deep = NoiseSweepSpec {
+                    draws: 16_384,
+                    scales: 3,
+                    ..Default::default()
+                };
                 let mut scratch = NoiseSweepScratch::new(TOY_DIM, &deep);
                 let lam = noise_sweep_lambda(&deep, &truth, |w| toy_loss_n(w, &truth, 32), &mut scratch, 0x5EED_0782);
                 println!("relu toy d=21 N=32 m=16384  λ̂={lam:8.4}  (wall probe)");
