@@ -44,3 +44,7 @@ CLAUDE.md
 # from intent (AGENTS.md §shared worktree), and several sessions write here at
 # once — an untracked nohup.out is a landmine, not a file anyone means to keep.
 nohup.out
+
+# Machine-local on-disk → contract repo-name map for the derived workspace
+# walk (scripts/repo_alias.py). Content is private by design — never committed.
+scripts/repo_alias.local.txt

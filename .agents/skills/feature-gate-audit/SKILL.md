@@ -266,8 +266,8 @@ After running an audit, produce a per-feature verdict table:
 
 This section used to be a typed 8-row table headed "the 7 workspace repos".
 It disagreed with its own header, omitted 11 repos that carry a `BOUNDARY.md`,
-and listed `seal-online-remaster/`, **which does not exist** (the directory is
-`seal-online-remaster-unity/`; the editor lives in `seal-game-editor/`). A
+and listed `mmorpg-remaster/`, **which does not exist** (the directory is
+`mmorpg-remaster-unity/`; the editor lives in `mmorpg-editor/`). A
 feature-gate audit scoped by that table audits a workspace that is not this one.
 
 Derive it. The canonical count and the two axes (product set vs workspace) live

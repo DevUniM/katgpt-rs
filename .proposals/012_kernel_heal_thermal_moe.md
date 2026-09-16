@@ -59,10 +59,10 @@ The validator is the ONE genuinely new substrate. Everything else is the clippy 
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Kernel corpus (BLAKE3-committed freeze/thaw, mirrors SealQuestCorpus) │
+│  Kernel corpus (BLAKE3-committed freeze/thaw, mirrors RpgQuestCorpus) │
 │  Source: popcorn's 96 kernels × ~100 optimized impls, distilled         │
 │  Shape: (kernel_signature, ref_impl, opt_impl, why_rule, hw_class)      │
-│  Substrate: mirror SealQuestCorpus → KernelCorpus (new repo)            │
+│  Substrate: mirror RpgQuestCorpus → KernelCorpus (new repo)            │
 └──────────────────────────┬────────────────────────────────────────────┘
                            │
             ┌──────────────┴──────────────┐
@@ -230,7 +230,7 @@ Popcorn (the user's fork of `tilde-research/popcorn`) ships 96 kernels × ~100 i
 | The (ref, opt) pair shape — clippy's (buggy, fixed) for kernels | — |
 | Reference-check validation methodology | — |
 
-The L0 distillation job: read each popcorn kernel + its 100 impls, extract the **named rule** ("coalesced_row_read beats strided when n ≥ 1024 on Metal"), encode it as a `KernelRule { signature, rule_text, ref_impl, opt_impl_template }` row in `KernelCorpus` (mirror of `SealQuestCorpus` BLAKE3-committed freeze/thaw). **~2 weeks of reading work, no GPU required.** Output: ~500–1000 named rules covering the kernel-optimization space.
+The L0 distillation job: read each popcorn kernel + its 100 impls, extract the **named rule** ("coalesced_row_read beats strided when n ≥ 1024 on Metal"), encode it as a `KernelRule { signature, rule_text, ref_impl, opt_impl_template }` row in `KernelCorpus` (mirror of `RpgQuestCorpus` BLAKE3-committed freeze/thaw). **~2 weeks of reading work, no GPU required.** Output: ~500–1000 named rules covering the kernel-optimization space.
 
 ### Domain classification (per AGENTS.md sync boundary rule)
 
@@ -307,7 +307,7 @@ The combination produces what none alone can: a **modelless-first** kernel-heali
 > **Caveat:** if a later re-scope narrows the healer to *only* healing `riir-gpu`'s own kernels (never katgpt-core SIMD, never external CUDA), an opt-in `riir-gpu/kernel_heal` feature is defensible. The proposal's default stance is new repo because the user's stated goal is "help write/optimize/heal my own kernel code" across multiple consumers.
 
 ### Ships now — `riir-kernel-heal` (NEW REPO — the pipeline composition)
-- `KernelCorpus` — BLAKE3-committed freeze/thaw of (signature, ref, opt, rule, hw_class) tuples. Mirror of `SealQuestCorpus`.
+- `KernelCorpus` — BLAKE3-committed freeze/thaw of (signature, ref, opt, rule, hw_class) tuples. Mirror of `RpgQuestCorpus`.
 - `KernelTernaryDrafter` — modelless ternary drafter (mirror of `TernaryDraftModel`). Frozen per-rule direction vectors.
 - `KernelValidator` trait — the new substrate. compile + run + numeric-compare-vs-reference.
 - `KernelValidatorPruner` adapter — wraps `KernelValidator` as a `ConstraintPruner` for use in drafter DDTrees (mirrors `WasmPruner` adapter pattern from Proposal 011).
@@ -344,7 +344,7 @@ The combination produces what none alone can: a **modelless-first** kernel-heali
 ### Phase 0 — L0 corpus distillation (MODELLESS, ~2 weeks reading job)
 - [ ] T0.1 Audit popcorn's 96 kernels; classify as (portable-to-CubeCL, portable-to-WGSL, portable-to-CUDA, FLA/Liger-specific-not-applicable).
 - [ ] T0.2 For each portable kernel: extract the named rule, the reference impl shape, the optimization heuristic. Encode as `KernelRule` row in `KernelCorpus`.
-- [ ] T0.3 BLAKE3-commit the corpus. Mirror `SealQuestCorpus`'s freeze/thaw.
+- [ ] T0.3 BLAKE3-commit the corpus. Mirror `RpgQuestCorpus`'s freeze/thaw.
 - [ ] T0.4 Cross-reference against `riir-gpu`'s existing ~30 kernels — which popcorn rules apply to which existing impls?
 
 ### Phase 1 — Plasma-tier composition (MODELLESS, PRIMARY)

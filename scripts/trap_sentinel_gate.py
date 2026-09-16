@@ -40,7 +40,7 @@ What this gate pins, and why each arm exists:
 
 6. **Zero EXPOSED and zero LIVE-FORWARD.** A NEW script that arrives with a
    cleanup trap and no sentinel reds this gate on the commit that adds it —
-   which is the whole point, since the seal-remake defect took months to
+   which is the whole point, since the mmorpg-remake defect took months to
    surface precisely because nothing objected at the time.
 
 A new script legitimately joining the population is a one-line pin update in

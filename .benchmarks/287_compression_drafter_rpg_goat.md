@@ -1,7 +1,7 @@
-# Benchmark 287: CompressionDrafter on REAL Seal 17k Corpus — GOAT **FAILED** (latency)
+# Benchmark 287: CompressionDrafter on REAL RPG 17k Corpus — GOAT **FAILED** (latency)
 
 **Date:** 2026-06-17
-**Plan:** `287_compression_drafter_seal.md` *(not created — negative result)*
+**Plan:** `287_compression_drafter_rpg.md` *(not created — negative result)*
 **Prior:** [285_compression_drafter_goat.md](285_compression_drafter_goat.md) (synthetic 2KB corpus, also FAILED)
 **Feature gates:** `compression_drafter` (katgpt-core), `quest_compression_draft` (riir-games)
 **Status:** ❌ **GOAT FAILED** — real corpus exposes latency & quality problems the synthetic bench hid.
@@ -10,7 +10,7 @@
 
 ## TL;DR
 
-User correctly pushed back on Plan 285: "do bench from 17k seal, it's our prod target." Re-ran CompressionDrafter on the **real Seal English quest corpus** (13,780 lines, 1.3MB — 615× larger than synthetic).
+User correctly pushed back on Plan 285: "do bench from 17k RPG, it's our prod target." Re-ran CompressionDrafter on the **real RPG English quest corpus** (13,780 lines, 1.3MB — 615× larger than synthetic).
 
 **Real corpus helped G1 diversity massively** (12 → 77 unique outputs, 9.62× over the 8-template baseline). But it **exposed three fatal problems the synthetic bench hid**:
 
@@ -22,9 +22,9 @@ User correctly pushed back on Plan 285: "do bench from 17k seal, it's our prod t
 
 ---
 
-## GOAT Gate Results (real Seal corpus)
+## GOAT Gate Results (real RPG corpus)
 
-| Gate | Target | Synthetic (Plan 285) | **Real Seal (Plan 287)** | Verdict |
+| Gate | Target | Synthetic (Plan 285) | **Real RPG (Plan 287)** | Verdict |
 |------|--------|----------------------|--------------------------|---------|
 | **G1 Diversity** | ≥24 unique (3× of 8) | 12 unique ❌ | **77 unique** ✅ | ✅ **PASS** (9.62× over 8-template) |
 | **G2 Latency (warm)** | ≤1ms (Warm-tier) | 313µs ❌ | **153ms** ❌ | ❌ **CATASTROPHIC FAIL** (153× over budget) |
@@ -34,7 +34,7 @@ User correctly pushed back on Plan 285: "do bench from 17k seal, it's our prod t
 ```bash
 cd riir-ai
 cargo test -p riir-games-quest --features quest_compression_draft \
-  --test bench_287_compression_drafter_seal --release -- --nocapture
+  --test bench_287_compression_drafter_rpg --release -- --nocapture
 ```
 
 ---
@@ -189,8 +189,8 @@ This is the "adaptive" answer: **load N templates from the corpus at startup, ha
 
 ## Action items
 
-- [x] Extract real Seal English corpus to `crates/riir-games/data/seal_quest_dialogue_eng.txt` (13,780 lines, 1.3MB)
-- [x] Write `bench_287_compression_drafter_seal.rs` with G1/G2/G3 on real corpus
+- [x] Extract real RPG English corpus to `crates/riir-games/data/rpg_quest_dialogue_eng.txt` (13,780 lines, 1.3MB)
+- [x] Write `bench_287_compression_drafter_rpg.rs` with G1/G2/G3 on real corpus
 - [x] Run bench — G1 PASS, G2 CATASTROPHIC FAIL (153ms), G3 PASS (caveat)
 - [x] Document honest negative result (this file)
 - [x] Close `.issues/029` Path A and Path B — both definitively ruled out by real-corpus latency (issue removed in commit `6221be53`)
@@ -200,4 +200,4 @@ This is the "adaptive" answer: **load N templates from the corpus at startup, ha
 
 ## TL;DR
 
-Real 17k Seal corpus re-bench: **G1 diversity PASSES (77 unique, 9.62× over 8-template baseline), but G2 latency is CATASTROPHIC (153ms — 500× worse than synthetic, 153× over Warm-tier budget).** The `MatchLengthScorer` inverted-index algorithm is O(matching_positions) per call, which doesn't scale beyond ~10KB corpora. **Adaptive template selector (N templates from corpus + hash) beats beam search on BOTH diversity (95 vs 77) and latency (42ns vs 153ms) — by 3.6 million times on latency.** Compression-based generation is definitively not viable for quest grammar. The user's "adaptive" insight is correct; compression is the wrong implementation. Honest negative result, documented.
+Real 17k RPG corpus re-bench: **G1 diversity PASSES (77 unique, 9.62× over 8-template baseline), but G2 latency is CATASTROPHIC (153ms — 500× worse than synthetic, 153× over Warm-tier budget).** The `MatchLengthScorer` inverted-index algorithm is O(matching_positions) per call, which doesn't scale beyond ~10KB corpora. **Adaptive template selector (N templates from corpus + hash) beats beam search on BOTH diversity (95 vs 77) and latency (42ns vs 153ms) — by 3.6 million times on latency.** Compression-based generation is definitively not viable for quest grammar. The user's "adaptive" insight is correct; compression is the wrong implementation. Honest negative result, documented.

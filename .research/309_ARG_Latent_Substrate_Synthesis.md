@@ -107,7 +107,7 @@ Q1 grep (this session, all five repos): zero hits for `InfoRegistry | InfoKey | 
 | G1 | `PolicyEnvelope` (`policy_state` + `PolicyConstraints`) | Step 1 hard gate. We have many gates but no unified envelope crossing binding/traversal/writes. | Pure enum + small constraint record. |
 | G2 | `TaxonomyValidator` (deterministic validator) | Step 3 produces `L_final` via strict validation. We have `DualSignalGate` (emission gate) but no label-set validator producing `L_valid` from `L_union`. | Pure tree-walk over `TaxonomyNode` records. |
 | G3 | `TypedOfflineCandidate` enum | Step B mandates typed candidates. Our consolidation produces a weight delta, not typed structural changes with before/after intents. | Enum + intent record. |
-| G4 | `LifecycleState` + `RedirectTable` | Step E mandates `ACTIVE→DEPRECATED→REMOVED` with redirect/alias preserving episodic interpretability under split/merge. `MerkleFrozenEnvelope` versions but no per-leaf lifecycle. | Enum + hashmap. (Existing `seal-online-remaster` `LifecycleState{Spawned,Owned,...}` is game-state, NOT ontology evolution — different concept, no conflict.) |
+| G4 | `LifecycleState` + `RedirectTable` | Step E mandates `ACTIVE→DEPRECATED→REMOVED` with redirect/alias preserving episodic interpretability under split/merge. `MerkleFrozenEnvelope` versions but no per-leaf lifecycle. | Enum + hashmap. (Existing `mmorpg-remaster` `LifecycleState{Spawned,Owned,...}` is game-state, NOT ontology evolution — different concept, no conflict.) |
 | G5 | `InfoRegistry` (`InfoKey` canonicalization + two-phase dedup + grey-zone compare) | Step 10 mandates canonicalization with stable key + two-phase match + grey-zone. `ShardIndex` is zone→shard lookup, not dedup. | Pure registry over `InfoUnit` records. |
 
 ---

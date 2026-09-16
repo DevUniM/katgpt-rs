@@ -51,6 +51,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_population import population_verdict  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -80,11 +81,13 @@ def derive_population(root: Path | None = None) -> list[Path]:
     in CI. Two of the ten were unparameterised and therefore untestable there.
     """
     ws = WORKSPACE if root is None else Path(root)
-    return sorted(
-        (d for d in ws.iterdir()
-         if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()),
-        key=lambda p: p.name,
-    )
+    # Names pass through the machine-local alias codec (`repo_alias.py`) so
+    # the returned paths carry the CONTRACT spelling every tracked pin is
+    # keyed on.
+    return [ws / n for n in repo_alias.apply(
+        d.name for d in ws.iterdir()
+        if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
+    )]
 
 
 def read_floors() -> dict[str, tuple[int, int]]:

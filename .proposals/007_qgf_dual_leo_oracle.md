@@ -231,7 +231,7 @@ After Bench 558's fourth-axis stop rule, [Research 322](../../riir-ai/.research/
 
 The only realistic alternative is paired-trained UVFA (the unmeasured cell): ~360 LOC freeze/thaw extension (Path A in Research 322). Tractable but **not-worth-it-now** — the three prior civ axes cluster at 3–4% gain, Bench 553's only paired-trained data point was −100%, and Bench 557's §"Honest caveat" already judged the expected gain as "likely 3–5%, not the 30% the postmax axis was targeting".
 
-**The civ dual-LEO investigation is genuinely closed.** Proposal 007's stance ("ship as opt-in, document G5 as unproven, do NOT promote to recommended until a positive G5 measurement lands") is vindicated a fourth time, now across two measurement regimes AND the post-investigation finding that the named alternative axis is itself a dead end. Re-open only on concrete consumer demand (seal integration reporting a gain, or a new game domain measuring positive G5).
+**The civ dual-LEO investigation is genuinely closed.** Proposal 007's stance ("ship as opt-in, document G5 as unproven, do NOT promote to recommended until a positive G5 measurement lands") is vindicated a fourth time, now across two measurement regimes AND the post-investigation finding that the named alternative axis is itself a dead end. Re-open only on concrete consumer demand (mmorpg-remake integration reporting a gain, or a new game domain measuring positive G5).
 
 ## Fusion-mechanism investigation (Issue 188 / Bench 559, 2026-07-21)
 

@@ -56,6 +56,7 @@ from pathlib import Path
 # all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
 # that go through the wrapper.
 import console_safe  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 console_safe.apply()
 
@@ -680,12 +681,15 @@ def audit(repo: Path) -> RepoReport:
 
 
 def derive_repos(workspace: Path) -> list[Path]:
-    """A root BOUNDARY.md AND a `.git` DIR — never a typed list."""
-    return sorted(
-        d
-        for d in workspace.iterdir()
+    """A root BOUNDARY.md AND a `.git` DIR — never a typed list.
+
+    Names pass through the machine-local alias codec (`repo_alias.py`) so the
+    returned paths carry the CONTRACT spelling every tracked pin is keyed on.
+    """
+    return [workspace / n for n in repo_alias.apply(
+        d.name for d in workspace.iterdir()
         if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
-    )
+    )]
 
 
 def selftest() -> None:
@@ -913,7 +917,7 @@ def selftest() -> None:
         "plan414_hla_committed_belief_probe_goat.rs",
         "bench_256_kv_outer.goat.rs",     # the dotted dialect: `.` is a separator
         "test_g3_no_regression.rs",       # g<N> ordinal
-        "seal_halt_drill.rs",
+        "rpg_halt_drill.rs",
         "kv_conservation_check.rs",
         "feature_isolation_gate.rs",
         # The six the first cut got WRONG, found by diffing this classifier

@@ -49,7 +49,7 @@
 #                 rather than hiding it — this floor is about the instrument
 #
 # ⚠ SIX repos have 0 tracked scripts/*.py (riir-auth, riir-game-sdk, riir-kat,
-# riir-neuron-db, riir-viewbridge, seal-online-remaster), so both quantities are
+# riir-neuron-db, riir-viewbridge, mmorpg-remaster), so both quantities are
 # 0 and neither detects anything there — Issue 783's population shape. What
 # rescues those rows is that the gate's DOC_ROOTS handling is a REFUSAL, not a
 # floor: a repo whose AGENTS.md the walk cannot see is an instrument failure.
@@ -77,9 +77,9 @@ riir-neuron-db                   0          2                0
 riir-shader                      1          1                2
 riir-train                      36          1               61
 riir-viewbridge                  0          1                0
-seal-game-editor                 1          1                1
-seal-online-remaster             0          1                0
-seal-remake                      3          1                6
+mmorpg-editor                 1          1                1
+mmorpg-remaster             0          1                0
+mmorpg-remake                      3          1                6
 #
 # ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
 # riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).

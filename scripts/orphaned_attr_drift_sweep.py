@@ -20,7 +20,7 @@ day this landed, and the hand-typed warrant did not follow:
     orphaned                             0                            0
 
 The verdict never moved. **23,026 of the sites offered as its warrant were in
-trees no repo owns** — seal-online-remaster's gitignored `mmorpg/` nested
+trees no repo owns** — mmorpg-remaster's gitignored `mmorpg/` nested
 repository, riir-ai's vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR`
 sources under `.runs/target-*`. Correcting the number is a five-minute edit the
 next walk change invalidates again; making the claim MEASURED is the repair.

@@ -341,7 +341,7 @@ returns:
   stop-and-think at obstacles. **Explicitly Non-Goal: "Multi-agent
   warm-path coordination. Each agent reasons independently. Coordinated
   reasoning is a v2 concern."**
-- **Seal NavMesh** (shipped): `seal-core::map::nav::NavMesh` — graph
+- **RPG NavMesh** (shipped): `mmorpg-core::map::nav::NavMesh` — graph
   topology + collision grid, **no solver**.
 
 **Zero** shipped implementation of multi-agent collision-free pathfinding

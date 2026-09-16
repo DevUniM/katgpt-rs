@@ -11,7 +11,7 @@ use crate::sigmoid;
 ///
 /// Must be `Eq + Hash + Clone` so PIBT and the space-time A* can track visited
 /// configurations in hash maps. The `neighbors()` method defines the graph
-/// topology (4-connected grid by default; NavMesh adjacency for seal-core).
+/// topology (4-connected grid by default; NavMesh adjacency for mmorpg-core).
 ///
 /// **Raw vs latent:** positions are always **raw** (physical, synced,
 /// deterministic-replay-safe). The latent guidance field `Φ` is computed from

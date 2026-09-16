@@ -15,7 +15,7 @@
 
 The paper proves a *negative, worst-case* capacity theorem for single-vector retrieval: for embedding dimension `d`, the number of top-`k` document subsets realizable by **any** query is bounded, so there always exist relevance structures no `d`-dimensional single-vector index can represent — regardless of model size, training data, or loss. This is the exact complement to Research 123, which proved the *positive, k-sparse-conditional* bound `d = Θ(k log n)`.
 
-**Why it matters here:** our entire default-on retrieval surface is single-vector cosine top-k at **`d = 8`**. Applying the paper's own Theorem 1 at γ=0.1, `d=8` supports all top-`k` subsets only up to `n ≤ 20,706` for `k=2`, `n ≤ 269` for `k=4`, and `n ≤ 44` for `k=8` — and the minimum over *all* `k` is just **30 documents** (§2.2b). `ItemEmbedIndex` runs `k=5` retrieval over the real **25,943-item** Seal catalogue at `d=8`, where the ceiling is 122 items and the bound demands `d ≥ 19.2` — **213× over on corpus, 2.4× under on dimension**.
+**Why it matters here:** our entire default-on retrieval surface is single-vector cosine top-k at **`d = 8`**. Applying the paper's own Theorem 1 at γ=0.1, `d=8` supports all top-`k` subsets only up to `n ≤ 20,706` for `k=2`, `n ≤ 269` for `k=4`, and `n ≤ 44` for `k=8` — and the minimum over *all* `k` is just **30 documents** (§2.2b). `ItemEmbedIndex` runs `k=5` retrieval over the real **25,943-item** live-game catalogue at `d=8`, where the ceiling is 122 items and the bound demands `d ≥ 19.2` — **213× over on corpus, 2.4× under on dimension**.
 
 **Distilled for katgpt-rs (modelless, inference-time):** the transferable artifact is not a new mechanism — it is a *closed-form capacity budget* `d ≥ ln C(n,k) / ln(1+1/γ)`, increasing in `n`, that says a priori whether a retrieval configuration is inside its representable regime. Shipped 2026-08-10 as `dim_capacity_required` / `dim_capacity_ceiling` / `dim_capacity_floor` / `ln_binomial` in `katgpt-types/src/simd/research.rs` (feature `sigmoid_margin`), with tests reproducing the paper's Table 1 cell-for-cell. Complements — does not replace — Research 123's positive `dim_sufficiency_bound`, which still has zero production call sites.
 
@@ -162,7 +162,7 @@ Free-embedding best case (`critical_n`, k=2), with the paper's measured 4.5× re
 
 ### 2.3 The single most exposed shipped artifact
 
-`ItemEmbedIndex` — `d=8`, real catalogue `n=25,943` Seal items, and its GOAT gate is a **k=5** task ("10/10 type-centroid queries return ≥3/5 same-type"):
+`ItemEmbedIndex` — `d=8`, real catalogue `n=25,943` live-game items, and its GOAT gate is a **k=5** task ("10/10 type-centroid queries return ≥3/5 same-type"):
 
 | k | required d (Thm 1, γ=0.1) | have | status |
 |---|---|---|---|

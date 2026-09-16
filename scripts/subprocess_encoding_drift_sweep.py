@@ -24,7 +24,7 @@ pointing it anywhere but here found something (Issue 783):
 
 The 31 at landing (2026-09-14), all repaired in the same change:
 
-    riir-train 12+1 · riir-clippy 9+1 · riir-ai 6 · riir-dapps 1 · seal-game-editor 1
+    riir-train 12+1 · riir-clippy 9+1 · riir-ai 6 · riir-dapps 1 · mmorpg-editor 1
 
 Two of them were not latent. `riir-clippy/scripts/gen_dashboard.py:552` reads
 `git log --pretty=%s` across the sibling repos, and every commit subject in this

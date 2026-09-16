@@ -7,7 +7,7 @@ set, the arm reached via a dependent, the separate workspace, `check`-vs-lints.
 This is the seventh axis and it is one level up — **is what the lane names the
 whole surface?**
 
-Found in seal-remake (`.issues/010` T2): the root package carried a positive
+Found in mmorpg-remake (`.issues/010` T2): the root package carried a positive
 `#[cfg(target_arch = "wasm32")]` block that no row built and, measured, none
 *could* — and the block had been uncompilable since it was written, because it
 called a function declared `#[cfg(not(target_arch = "wasm32"))]`.
@@ -40,7 +40,7 @@ build the next time that row runs, which is exactly where the 010-class
 catch would surface. Deliberately NOT credited: dev/build deps (host-side),
 optional deps (feature off in the row), target tables gating to native, and
 cross-repo path deps (a sibling's coverage is answered by the sibling's own
-run). seal-poc-submodule is the standing negative control: deliberately
+run). mmorpg-poc-submodule is the standing negative control: deliberately
 excluded from its repo's CI and depended on by nothing, it stays UNCOVERED.
 """
 
@@ -61,6 +61,7 @@ from typing import NamedTuple
 # all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
 # that go through the wrapper.
 import console_safe  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 console_safe.apply()
 
@@ -124,14 +125,13 @@ def derive_population(root: Path | None = None) -> list[Path]:
     in CI. Two of the ten were unparameterised and therefore untestable there.
     """
     ws = WORKSPACE if root is None else Path(root)
-    return sorted(
-        (
-            d
-            for d in ws.iterdir()
-            if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
-        ),
-        key=lambda p: p.name,
-    )
+    # Names pass through the machine-local alias codec (`repo_alias.py`) so
+    # the returned paths carry the CONTRACT spelling every tracked pin is
+    # keyed on.
+    return [ws / n for n in repo_alias.apply(
+        d.name for d in ws.iterdir()
+        if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
+    )]
 
 
 def package_of(repo: Path, rel: str) -> str | None:
@@ -697,7 +697,7 @@ def self_test() -> int:
       canary-c  depended on by nothing       -> ✗ UNCOVERED
       canary-d  optional path dep of a       -> ✗ UNCOVERED (not credited)
       canary-e  workspace=true dep of a      -> ✓ by-dep (root-table resolve)
-    The c/d shape is the seal-remake `.issues/010` lineage — the real catch
+    The c/d shape is the mmorpg-remake `.issues/010` lineage — the real catch
     this upgrade must NOT collapse. A verdict drift reds here instead of
     shipping a silent misclassification.
     """
@@ -866,7 +866,7 @@ def main() -> int:
             print(f"      {repo}: {pkg} ({n} positive site(s))")
     print("\n  A report, not a gate — exit 0. Neither bucket is automatically a "
           "defect: a\n  package can be unbuildable for wasm32 by construction "
-          "(seal-remake's authority\n  bin), where the repair is deleting the "
+          "(mmorpg-remake's authority\n  bin), where the repair is deleting the "
           "dead arm, not adding a row.\n")
     print("  Resolution (Issue 738 T1): a derived-row package upgrades to ✓ "
           "derived only\n  on static evidence from a row-bearing lane file — "

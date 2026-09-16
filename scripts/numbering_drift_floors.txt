@@ -37,12 +37,12 @@
 # (2026-09-05); ALL now resolved — riir-ai's 6 the same day (T4b), riir-clippy's
 # 4 via its Issue 069 (58e7c1d, owner go), riir-train's 13 via its Issue 514
 # (103ed351, hand reads overturned the UNDECIDABLE verdicts) — so the standing
-# backlog is 12 in seal-game-editor, which is READ-ONLY to these sessions
+# backlog is 12 in mmorpg-editor, which is READ-ONLY to these sessions
 # (report only). Resolving one is a citation-weight arbitration, not a rename:
 # Issue 724 T2's precedent is that the file with the most inbound mentions
 # KEEPS the number and the other moves to a fresh one, which requires reading
 # the corpus and updating every citation. Three of the four repos are owned by
-# other sessions and seal-game-editor is read-only to this one. A pin of 0
+# other sessions and mmorpg-editor is read-only to this one. A pin of 0
 # would red on landing and be ignored by the next reader — the failure mode
 # docs_gate.sh's preamble records. Pinned at measured, so a NEW collision reds
 # immediately while the standing backlog stays visible in this file instead of
@@ -69,7 +69,7 @@
 # The Issue-770 walk (verdict-review findings 1+2) judges every HEAD-reachable
 # commit against its OWN parents' blob values: merge resolutions taking the
 # lower side are now visible and correctly blamed (riir-ai Issue 627→614 at a
-# Merge commit; seal-game-editor Plan 152→150 ×3 at merges). Corrected count:
+# Merge commit; mmorpg-editor Plan 152→150 ×3 at merges). Corrected count:
 # 27 workspace-wide. Same doctrine as max_dup — the standing history is
 # COMMITTED (un-committing it rewrites every repo's past; the hazard was
 # absorbed by gap fast-forwards and push-wins renumbers; the max_dup column
@@ -80,7 +80,7 @@
 # branch the box carries, not of which refs happen to be fetched.
 #
 # ⛔ There is deliberately NO max_unbumped column (Issue 770 finding 4): the
-# worktree-below-history-max quantity is checkout state — seal-game-editor's
+# worktree-below-history-max quantity is checkout state — mmorpg-editor's
 # bevy worktree reads 191 while other refs sit at 194 — a pin would be ref-set
 # dependent and red on a box that owes nothing. It is PRINTED by the sweep
 # every run, never gated.
@@ -102,6 +102,6 @@ riir-neuron-db      	37	0	0	0	0	# observed 2026-09-05: 47 files
 riir-shader           	2	0	0	0	1	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)
 riir-train          	258	0	0	0	2	# resets (770 walk): Bench 523→518, 570→569 — the 769 walker's other 8 rows (Issue ×2, Bench ×6) were phantoms; 2026-09-05 dups RESOLVED (Issue 514)
 riir-viewbridge     	0	0	0	0	0	# observed 2026-09-05: 0 files
-seal-game-editor    	175	13	0	0	4	# resets: Plan 152→150 ×3 (all MERGE resolutions) + 191→190 · dup 13 (READ-ONLY per owner rule — renumber is the editor owners' repair; every bump here is a measured event, never a silent tolerance)
-seal-online-remaster  	30	0	0	0	0	# observed 2026-09-12: 52 files
-seal-remake         	1	0	0	0	0	# observed 2026-09-05: 1 file
+mmorpg-editor    	175	13	0	0	4	# resets: Plan 152→150 ×3 (all MERGE resolutions) + 191→190 · dup 13 (READ-ONLY per owner rule — renumber is the editor owners' repair; every bump here is a measured event, never a silent tolerance)
+mmorpg-remaster  	30	0	0	0	0	# observed 2026-09-12: 52 files
+mmorpg-remake         	1	0	0	0	0	# observed 2026-09-05: 1 file

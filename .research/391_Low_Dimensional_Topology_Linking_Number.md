@@ -82,7 +82,7 @@ For any continuous coordinate-wise monotonic activation, the minimum width for u
 
 | Paper term | Codebase equivalent | Status |
 |---|---|---|
-| linking number, Hopf link, unlink | (none) | **zero hits** — grep `linking\|hopf\|fundamental cycle\|winding number\|cycle basis` returns OAuth account-unlinking (seal-online-remaster), KG triple lineage linking (riir-games), and Plan 371's Hopf *bifurcation* (different "Hopf" — ODE eigenvalue, not link) |
+| linking number, Hopf link, unlink | (none) | **zero hits** — grep `linking\|hopf\|fundamental cycle\|winding number\|cycle basis` returns OAuth account-unlinking (mmorpg-remaster), KG triple lineage linking (riir-games), and Plan 371's Hopf *bifurcation* (different "Hopf" — ODE eigenvalue, not link) |
 | extrinsic / ambient topology | (none) | **zero hits** — grep `extrinsic topolog\|ambient topolog\|ambient homeomorphism\|extrinsic invariant` returns nothing |
 | folding map, coordinate fold, non-monotonic activation | (none in the topological sense) | "folding" hits = ThoughtFold chain compaction (Plan 195), `xor-folding` hashing, RMSNorm gamma *folding* (Plan 160) — all unrelated |
 | monotonic activation preservation | (none as a linking theorem) | "monotonic" hits = version counters, `monotonically-decreasing gain`, `partition-of-unity` B-spline — none about linking |

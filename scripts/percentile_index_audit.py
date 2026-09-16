@@ -50,6 +50,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tracked_walk import tracked_files  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 # Issue 804: this instrument is documented as directly invokable, and its
 # verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
@@ -525,7 +526,9 @@ def tally(findings):
 
 
 def repos(root):
-    return sorted(
+    # Names pass through the machine-local alias codec (`repo_alias.py`) so
+    # every cross-repo instrument audits the same CONTRACT-name set.
+    return repo_alias.apply(
         d for d in os.listdir(root)
         if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
         and os.path.isdir(os.path.join(root, d, ".git"))
@@ -538,7 +541,7 @@ def list_rs_files(repo_root):
     Issue 777. The previous form was an `os.walk` behind
     `skip = {"target", ".git", "node_modules", ".venv"}`, and a
     directory-name list cannot express "not ours": it credited
-    seal-online-remaster with the 1404 `.rs` files of `mmorpg/` — gitignored,
+    mmorpg-remaster with the 1404 `.rs` files of `mmorpg/` — gitignored,
     and its own git repository — and reported this audit's only TRUNC-VAR
     finding at an address where the repair cannot be made. It also swept in
     cargo OUT_DIR sources under riir-train's `.runs/target-release/` etc.,

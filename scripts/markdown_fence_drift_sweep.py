@@ -12,7 +12,7 @@ to zero, across three repos and 5048 tracked `.md`:
 
     katgpt-rs   1bf768cd + ed455885   12      riir-ai    a1a205681 + 6e73d89c5   5
     riir-train  d761a375 + ca21b763    2
-    seal-online-remaster 99064c5      1  (the sweep's own first catch, 2026-09-12)
+    mmorpg-remaster 99064c5      1  (the sweep's own first catch, 2026-09-12)
 
 Twelve of those nineteen were in this repo, where a gate now stands. The other
 **seven** were in repos where one edit puts them back with no word from any
@@ -32,7 +32,7 @@ them found something the moment it was pointed anywhere but here:
     2026-09-07 trap_sentinel_drift_sweep     one repo -> 1 finding, pinned + proven inert
     this file  markdown_fence_drift_sweep    one repo -> clean at 19 repos / 5058 files;
                                        its first workspace run (2026-09-12, 20 repos after
-                                       seal-online-remaster joined the set) caught 1 finding
+                                       mmorpg-remaster joined the set) caught 1 finding
                                        in the new repo — repaired + floored the same day
 
 Why BOTH pins, and why the walk floor is not redundant

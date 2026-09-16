@@ -113,7 +113,7 @@ The strongest single observation of this distillation: the LLM search rediscover
 
 - **katgpt-rs (public):** this note; Plan 591 primitive (generic DEC+CA composition — no tile vocabulary, no game semantics); bench.
 - **riir-ai (private):** Issue 911 + Proposal 012 addendum (game surface: living dungeons, zone content); any future System impl wiring globals into `riir-games` content tick.
-- **Consumers (seal-remake, riir-mmorpg-examples):** eventual content pipelines via the facade — not filed now.
+- **Consumers (mmorpg-remake, riir-mmorpg-examples):** eventual content pipelines via the facade — not filed now.
 - **Not chain / not neuron-db / not train / not clippy** (§6).
 
 ## 9. Constraints check

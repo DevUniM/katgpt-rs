@@ -1754,7 +1754,7 @@ A family of six opt-in features implementing modelless inference-time sense comp
 ### Companion plans
 
 - **riir-ai Plan 249:** model-based training counterpart (sense module learning via GD).
-- **seal-online-remaster Plan 036:** Brain Annotation — KG/HLA schema metadata for GameComponent derive.
+- **mmorpg-remaster Plan 036:** Brain Annotation — KG/HLA schema metadata for GameComponent derive.
 
 🔧 Feature flags: `sense_composition` (parent, implies plasma_path + domain_latent), `merkle_octree` (implies sense_composition), `schema_centroid` (implies sense_composition), `bake_precision` (implies sense_composition), `spectral_threat` (implies sense_composition + modal_spec), `sense_lod` (implies sense_composition + slod).
 

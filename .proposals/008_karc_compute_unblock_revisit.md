@@ -60,7 +60,7 @@ Has the K=10/M=8/R=2 experiment (sibling WIP, d_h=29_160) been run?
             YES ──→ Promote `karc_forecaster` + `karc_householder_eig_par` to default-on.
             │        (Path B is already shipped; no new eigensolver needed.) DONE.
             │
-            NO ──→ Is there a riir-ai consumer (civ NPC, seal-core) that accepts ~7-7.5 LT
+            NO ──→ Is there a riir-ai consumer (civ NPC, mmorpg-core) that accepts ~7-7.5 LT
                    threshold with the λ=5e-2 NRMSE-quality forecast?
                     │
                     YES ──→ Path D2 (gate re-spec) with consumer evidence.

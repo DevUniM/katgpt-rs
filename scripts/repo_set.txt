@@ -20,6 +20,6 @@ riir-neuron-db
 riir-shader
 riir-train
 riir-viewbridge
-seal-game-editor
-seal-online-remaster
-seal-remake
+mmorpg-editor
+mmorpg-remaster
+mmorpg-remake

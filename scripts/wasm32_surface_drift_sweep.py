@@ -18,7 +18,7 @@ Why this class deserves a wall
 ------------------------------
 An UNCOVERED package is code that has never compiled and that nothing will ever
 tell you about, because the arch it is gated on is one no lane passes.
-Measured, seal-remake (`.issues/010` T2, katgpt-rs Issue 738): a positive
+Measured, mmorpg-remake (`.issues/010` T2, katgpt-rs Issue 738): a positive
 `#[cfg(target_arch = "wasm32")]` block that no row built and that had been
 **uncompilable since it was written** — it called a `cfg(not(wasm32))`
 function.
@@ -30,7 +30,7 @@ converts it into a backlog.
 
 UNCOVERED is pinned by MEMBERSHIP, not by count
 -----------------------------------------------
-The one standing row, `seal-online-remaster: seal-poc-submodule`, is a
+The one standing row, `mmorpg-remaster: mmorpg-poc-submodule`, is a
 deliberate negative control: excluded from its repo's CI, depended on by
 nothing, and that repo is read-only from here (arm-vs-row is its owner's call).
 A `max_uncovered = 1` count would go green on the day that row is repaired and
@@ -376,7 +376,7 @@ def main() -> int:
         for _d in deferred:
             print(f"  ⚠ {_d}")
         print("    A new UNCOVERED package is an arm that compiles NOWHERE — "
-              "seal-remake's was uncompilable from the day it was written. The "
+              "mmorpg-remake's was uncompilable from the day it was written. The "
               "repair is a lane row, or deleting a dead arm; it is not a pin.")
         return 1
     _line = "✓ wasm32 surface sweep PASSED — every repo within its pins"

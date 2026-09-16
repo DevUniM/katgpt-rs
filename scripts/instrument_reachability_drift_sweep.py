@@ -55,7 +55,7 @@ root set inflates the finding count rather than hiding it, and the floor is
 about the instrument, not the tree.
 
 ⚠ Six repos have **0 tracked `scripts/*.py`** (riir-auth, riir-game-sdk,
-riir-kat, riir-neuron-db, riir-viewbridge, seal-online-remaster), so both
+riir-kat, riir-neuron-db, riir-viewbridge, mmorpg-remaster), so both
 quantities are 0 there and neither detects anything — Issue 783's population
 shape, stated as a measurement rather than assumed. What rescues those rows is
 that the gate's `DOC_ROOTS` handling is a REFUSAL and not a floor: a repo whose

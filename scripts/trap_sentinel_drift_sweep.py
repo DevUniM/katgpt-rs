@@ -16,11 +16,11 @@ repos and 37 scripts:
     riir-train            4d35aed4    8      riir-auth        bd50158     1
     riir-mmorpg-examples  3f20650     6      riir-deployer    a632a4b     1
     riir-ai               a8260ad23   4      riir-viewbridge  21da73a     1
-    seal-remake           26a18191 + 7efe2a23                             2
+    mmorpg-remake           26a18191 + 7efe2a23                             2
 
 Every one of those 37 sentinels is a single line that a future edit can drop
 without a word from any gate. That is precisely the shape of the defect Issue
-734 exists about: seal-remake's guard could not fail past its layer 13 for
+734 exists about: mmorpg-remake's guard could not fail past its layer 13 for
 months because nothing objected at the time.
 
 This is the fifth instance of one shape in this workspace, and the first two

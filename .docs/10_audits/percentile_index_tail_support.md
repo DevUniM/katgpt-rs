@@ -124,7 +124,7 @@ walk is 11,132 `.rs` files.
 (2026-09-14). The same 16 repos measure **8,694** tracked `.rs`; the sweep
 re-measured **124 sites, 0/0/0/0** at the same time. The 2,438-file drop is not
 deleted code — it is content no repo owns leaving the population
-(seal-online-remaster's gitignored `mmorpg/` nested repository, riir-ai's
+(mmorpg-remaster's gitignored `mmorpg/` nested repository, riir-ai's
 vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR` sources). Both figures
 are kept, dated: read a falling population against its DEFINITION before
 reading it as a shrink, which is the §2 rule one paragraph down applied to the
@@ -417,7 +417,7 @@ UNRESOLVED rows are worth the same treatment. Distribution, measured
 | riir-neuron-db | 7 |
 | katgpt-rs | 2 (both tokenizer noise, §11) |
 | riir-game-sdk / riir-train | 2 each |
-| riir-clippy / riir-mmorpg-examples / seal-remake | 1 each |
+| riir-clippy / riir-mmorpg-examples / mmorpg-remake | 1 each |
 
 Filed where they live, each with the sites **verified in source** and the rest
 listed explicitly as unverified candidates:
@@ -465,7 +465,7 @@ defect: `riir-neuron-db/benches/bench_593_two_stage_knn.rs:130` has the
 truncating index, and **every** call site discards it
 (`let (p50, _) = measure(...)`) with one passing `n_iter = 30`. It is latent,
 not live — whoever starts reading that tuple's second element inherits the max.
-And `seal-remake/crates/seal-view/tests/texture_vessel_bench.rs:589` is
+And `mmorpg-remake/crates/mmorpg-view/tests/texture_vessel_bench.rs:589` is
 `assert_eq!((n * 99) / 100, n - 1, "the shape that reads a max as a p99")` — a
 **canary asserting the defect exists**, i.e. the one site in the workspace
 where this shape is the intended behaviour. Both are the reason a per-site read

@@ -1,23 +1,23 @@
 //! BabelCodec GOAT gate (Plan 331 Phase 5).
 //!
-//! The make-or-break bench. G2 (≥ 2× compression on a Seal-style corpus) is
+//! The make-or-break bench. G2 (≥ 2× compression on a RPG-style corpus) is
 //! the gate that killed CompressionDrafter twice (Plan 285/287). This bench
 //! runs G1 (round-trip fidelity), G2 (compression ratio), G3 (latency), G4
 //! (alloc-free hot path), and G5 (determinism / cross-arch BLAKE3 stability).
 //!
 //! # Corpus substitution (honest disclosure)
 //!
-//! The plan references the "real Seal 17k corpus" from Plan 285/287. **That
+//! The plan references the "real RPG 17k corpus" from Plan 285/287. **That
 //! corpus does not exist as a committed fixture in this repo** — Plan 285's
 //! bench (`.benchmarks/285_compression_drafter_goat.md`) used 8 hardcoded
 //! quest-grammar strings and 100 numbered contexts (`"quest 0"`..=`"quest 99"`),
-//! not a 17k-entry corpus. Grep for `seal_17k|seal_corpus|Seal 17` across the
+//! not a 17k-entry corpus. Grep for `rpg_17k|rpg_corpus|RPG 17` across the
 //! crate returns zero hits.
 //!
-//! Per the plan brief's instruction ("If you cannot locate a Seal 17k corpus
+//! Per the plan brief's instruction ("If you cannot locate a RPG 17k corpus
 //! fixture, generate a representative synthetic corpus... synthesize ≥1000
 //! entries and document this substitution honestly"), this bench synthesizes
-//! **1500 representative entries** in the style Seal dialog/quest/KG data would
+//! **1500 representative entries** in the style RPG dialog/quest/KG data would
 //! have:
 //!   - 500 KG-triple entity-attribute pairs (S-V-O shape, verbose canonical form)
 //!   - 500 config strings (Config[target]: key = value(unit))
@@ -102,10 +102,10 @@ impl Lcg {
     }
 }
 
-// ─── Synthetic Seal-style corpus ────────────────────────────────────────────
+// ─── Synthetic RPG-style corpus ────────────────────────────────────────────
 //
 // Three categories of 500 entries each (1500 total), generated deterministically
-// from a fixed-seed LCG. The categories mirror what Seal dialog/quest/KG data
+// from a fixed-seed LCG. The categories mirror what RPG dialog/quest/KG data
 // would look like in verbose canonical form (the form the codec round-trips
 // bit-identically).
 
@@ -615,14 +615,14 @@ fn main() {
 
     let corpus = synth_corpus();
     println!(
-        "Synthetic Seal-style corpus: {} entries ({} KG triples + {} configs + {} mixed)",
+        "Synthetic RPG-style corpus: {} entries ({} KG triples + {} configs + {} mixed)",
         corpus.len(),
         N_PER_CATEGORY,
         N_PER_CATEGORY,
         N_PER_CATEGORY
     );
     println!(
-        "NOTE: the 'real Seal 17k corpus' is not a committed fixture (grep returns zero hits);\n      this synthetic corpus substitutes honestly per the plan brief."
+        "NOTE: the 'real RPG 17k corpus' is not a committed fixture (grep returns zero hits);\n      this synthetic corpus substitutes honestly per the plan brief."
     );
     println!();
 

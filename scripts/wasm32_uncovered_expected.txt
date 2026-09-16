@@ -4,7 +4,7 @@
 #
 # An UNCOVERED package carries positive `#[cfg(target_arch = "wasm32")]` code
 # that NO lane row in its repo can reach. That is code which compiles nowhere:
-# seal-remake's (`.issues/010` T2, katgpt-rs Issue 738) had been uncompilable
+# mmorpg-remake's (`.issues/010` T2, katgpt-rs Issue 738) had been uncompilable
 # since the day it was written — it called a `cfg(not(wasm32))` function — and
 # nothing said so for months.
 #
@@ -20,17 +20,17 @@
 # BY DESIGN and somebody has said so.
 #
 #  repo                  package
-seal-online-remaster     seal-poc-submodule
-# 2026-09-16: the seal-core migration (12a4ce3) left the OLD copy behind. Every
-# dependent in this repo now path-deps `../../../seal-remake/crates/seal-core`,
-# so the local `crates/seal-core` is orphaned — it used to be covered BY-DEP
+mmorpg-remaster     mmorpg-poc-submodule
+# 2026-09-16: the mmorpg-core migration (12a4ce3) left the OLD copy behind. Every
+# dependent in this repo now path-deps `../../../mmorpg-remake/crates/mmorpg-core`,
+# so the local `crates/mmorpg-core` is orphaned — it used to be covered BY-DEP
 # through those dependents and is UNCOVERED the moment they stopped pointing at
 # it. Not a lane gap to close: whether the duplicate should exist at all is the
 # deprecated repo's owner's call, and adding a wasm32 row for a crate that is
 # probably about to be deleted is the wrong repair.
-seal-online-remaster     seal-core
+mmorpg-remaster     mmorpg-core
 
-# seal-poc-submodule is the standing NEGATIVE CONTROL, recorded as such in
+# mmorpg-poc-submodule is the standing NEGATIVE CONTROL, recorded as such in
 # AGENTS.md since 2026-09-14: deliberately excluded from its repo's CI and
 # depended on by nothing, so it must stay UNCOVERED rather than be "fixed". It
 # is also what proves the by-dep credit (Issue 774) did not become a blanket

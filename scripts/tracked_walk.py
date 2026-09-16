@@ -8,9 +8,9 @@ and this workspace has now measured it going wrong in three independent ways
 (Issue 777; the precedents are Issue 734 for `trap_exit_launder_audit.py` and
 Issue 738 T3 for `platform_dead_code_audit.py` / `wasm32_surface_audit.py`):
 
-1. **A gitignored NESTED REPOSITORY.** `seal-online-remaster/mmorpg/` is
+1. **A gitignored NESTED REPOSITORY.** `mmorpg-remaster/mmorpg/` is
    `.gitignore`'d AND carries its own `.git`; the filesystem walk credited its
-   1404 `.rs` files to seal-online-remaster and produced a correctly-shaped
+   1404 `.rs` files to mmorpg-remaster and produced a correctly-shaped
    percentile finding at an address where the repair cannot be made. That is
    worse than a false positive — it is a real defect filed against the wrong
    repo.

@@ -12,7 +12,7 @@ integration wrapper (see "Wrapper orthogonality" below).
 | # | Consumer | Repo | Tensor | Optimal ranks | Detection signal |
 |---|----------|------|--------|---------------|------------------|
 | 1 | Curator collusion detection | `riir-chain` | `V[curator, round, tier]` (binary plurality-agreement) | `(1, R, 5)` — `curator_rank=1` | Mode-0 factor row clustering (cosine ≥ 0.70) |
-| 2 | RMT economy anomaly detection | `seal-online-remaster` | `P[item, window, zone]` (log-median price) | `(1, 2, 1)` | Per-(item,zone) interaction residual after two-way median polish, MAD z-scored |
+| 2 | RMT economy anomaly detection | `mmorpg-remaster` | `P[item, window, zone]` (log-median price) | `(1, 2, 1)` | Per-(item,zone) interaction residual after two-way median polish, MAD z-scored |
 
 ## Consumer 1 — Chain Curator Collusion (riir-chain)
 
@@ -36,10 +36,10 @@ The plan suggested ranks `(2–4, R, 5)` for the curator mode. Empirically, **`c
 
 The 1.4ms release median is 40% over the 1ms aspiration. Root cause: the `16 × 80` mode-0 SVD unfolding is inherently ~4× the Plan 326 `(8,8,8)` primitive's 71µs (SVD work scales with the smaller matrix dimension × larger). This is a **cold analytics path** (runs every R rounds, not per-block consensus), so 2ms is an honest non-aspirational gate. The stateful `TuckerCollusionDetector` reuses scratch buffers across calls.
 
-## Consumer 2 — Game RMT Economy Anomaly (seal-online-remaster)
+## Consumer 2 — Game RMT Economy Anomaly (mmorpg-remaster)
 
-**Source:** `seal-online-remaster/crates/seal-gm-tools/src/analytics/rmt_tucker.rs` (821 lines, 13 unit tests + 1 perf gate)
-**Feature:** `tucker_rmt` (opt-in on `seal-gm-tools`; pulls `katgpt-core` with `default-features = false, features = ["tucker_factorization"]`)
+**Source:** `mmorpg-remaster/crates/mmorpg-gm-tools/src/analytics/rmt_tucker.rs` (821 lines, 13 unit tests + 1 perf gate)
+**Feature:** `tucker_rmt` (opt-in on `mmorpg-gm-tools`; pulls `katgpt-core` with `default-features = false, features = ["tucker_factorization"]`)
 
 ### GOAT gate — all PASS
 
@@ -104,7 +104,7 @@ This satisfies the modelless-first mandate of `katgpt-rs`. Neither consumer has 
 - **Primitive:** [Benchmark 326](326_tucker_hosvd_goat.md) — the generic N-mode HOSVD primitive
 - **Plan 328:** `.plans/328_tucker_consumer_applications.md`
 - **Consumer 1 source:** `riir-chain/src/consensus/collusion_tucker.rs`
-- **Consumer 2 source:** `seal-online-remaster/crates/seal-gm-tools/src/analytics/rmt_tucker.rs`
+- **Consumer 2 source:** `mmorpg-remaster/crates/mmorpg-gm-tools/src/analytics/rmt_tucker.rs`
 - **Wrapper decision:** `riir-neuron-db/.issues/002_compact_tucker_consumer_adoption_or_removal.md` (RESOLVED + removed 2026-07-07 — wrapper deleted, primitive stays)
 
 ## TL;DR

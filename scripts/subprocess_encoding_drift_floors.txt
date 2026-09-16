@@ -14,7 +14,7 @@
 # CHILD-ENCODER to zero in one change —
 #
 #   riir-train 12+1 · riir-clippy 9+1 · riir-ai 6 · riir-dapps 1 ·
-#   seal-game-editor 1
+#   mmorpg-editor 1
 #
 # ⛔ Do not "fix" a red by raising a ceiling. The repair is two tokens:
 # `encoding="utf-8", errors="replace"` on the parent's read, and
@@ -67,9 +67,9 @@ riir-neuron-db              0          0           0          0
 riir-shader                 1          0           0          0
 riir-train                 40          8           0          0
 riir-viewbridge             0          0           0          0
-seal-game-editor            1          1           0          0
-seal-online-remaster        2          0           0          0
-seal-remake                 3          0           0          0
+mmorpg-editor            1          1           0          0
+mmorpg-remaster        2          0           0          0
+mmorpg-remake                 3          0           0          0
 
 # ── the four repos with NO row, deliberately ────────────────────────────────
 # katgpt-web, riir-dao, riir-deployer and riir-esp32 are not checked out on the
@@ -85,9 +85,9 @@ seal-remake                 3          0           0          0
 # Per-repo (tracked .py / subprocess call sites), for the next re-pin's slack
 # arithmetic:
 #
-#   riir-train 68/15 · katgpt-rs 62/44 · riir-ai 8/8 · seal-remake 6/0 ·
-#   riir-clippy 5/12 · seal-online-remaster 4/0 · riir-chain 3/0 ·
-#   riir-mmorpg-examples 2/0 · riir-shader 2/0 · seal-game-editor 2/2 ·
+#   riir-train 68/15 · katgpt-rs 62/44 · riir-ai 8/8 · mmorpg-remake 6/0 ·
+#   riir-clippy 5/12 · mmorpg-remaster 4/0 · riir-chain 3/0 ·
+#   riir-mmorpg-examples 2/0 · riir-shader 2/0 · mmorpg-editor 2/2 ·
 #   riir-dapps 1/1 · riir-auth 0/0 · riir-game-sdk 0/0 · riir-kat 0/0 ·
 #   riir-neuron-db 0/0 · riir-viewbridge 0/0
 #

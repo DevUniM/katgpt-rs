@@ -91,6 +91,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tracked_walk import tracked_files  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 # Issue 804: this instrument is documented as directly invokable, and its
 # verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
@@ -161,12 +162,14 @@ def derive_repos(workspace: Path) -> list[Path]:
     registry completeness. The derived set on the boxes that have run it is
     unchanged (no worktree-shaped directory in this workspace); the defect was
     latent, not active.
+
+    Names pass through the machine-local alias codec (`repo_alias.py`) so the
+    returned paths carry the CONTRACT spelling every tracked pin is keyed on.
     """
-    return sorted(
-        d
-        for d in workspace.iterdir()
+    return [workspace / n for n in repo_alias.apply(
+        d.name for d in workspace.iterdir()
         if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
-    )
+    )]
 
 
 def rs_files(repo: Path):
@@ -176,7 +179,7 @@ def rs_files(repo: Path):
     problem: an `os.walk` pruning `("target", ".git", "node_modules")` is a
     directory-NAME list, and a name list cannot express "not ours". Measured
     in the sibling percentile audit, which carried the same three names:
-    seal-online-remaster's gitignored `mmorpg/` nested repo (+1404 `.rs`) and
+    mmorpg-remaster's gitignored `mmorpg/` nested repo (+1404 `.rs`) and
     riir-train's cargo OUT_DIR sources under `.runs/target-release/` (+48 —
     the set names `target`, and `target-release` is not `target`) were both
     inside the population. Nothing here matched them only because this

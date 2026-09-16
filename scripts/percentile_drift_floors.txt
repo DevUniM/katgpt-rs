@@ -27,7 +27,7 @@
 #
 # It cannot do that job alone across the workspace. SEVEN repos have ZERO
 # percentile sites (katgpt-web, riir-auth, riir-dao, riir-dapps, riir-deployer,
-# riir-viewbridge, seal-game-editor), so their site floor is 0 and detects
+# riir-viewbridge, mmorpg-editor), so their site floor is 0 and detects
 # nothing. min_rs_files — the size of the walk that PRODUCED the sites — still
 # bites there, and it is the quantity a walk_rs regression actually moves.
 #
@@ -59,7 +59,7 @@
 # Re-measured 2026-09-14 over the TRACKED walk (`scripts/tracked_walk.py`):
 # **16 repos, 8,694 .rs files, 124 sites, 0/0/0/0**. The 2,438-file drop is not
 # deletion — it is content no repo owns leaving the population: riir-ai's 252
-# vendored `wgpu-hal` files, seal-online-remaster's gitignored `mmorpg/` nested
+# vendored `wgpu-hal` files, mmorpg-remaster's gitignored `mmorpg/` nested
 # repository (1404), riir-train's cargo OUT_DIR sources under
 # `.runs/target-release/` and friends (48), and the same shapes on whatever box
 # produced the original pins.
@@ -95,6 +95,6 @@ riir-neuron-db               125      6    0      0       0     0
 riir-shader                 27      0    0      0       0     0  # observed 2026-09-12: 46 .rs, 0 sites
 riir-train                   730      3    0      0       0     0  # Issue 777 re-pin: 1129 tracked .rs; the 2500 pin counted .runs/target-*/ OUT_DIR sources
 riir-viewbridge               15      0    0      0       0     0
-seal-game-editor             125      0    0      0       0     0
-seal-online-remaster       335      2    0      0       0     0  # observed 2026-09-12: 611 .rs, 4 sites (all 4 decidable-clean)
-seal-remake                   15      0    0      0       0     0
+mmorpg-editor             125      0    0      0       0     0
+mmorpg-remaster       335      2    0      0       0     0  # observed 2026-09-12: 611 .rs, 4 sites (all 4 decidable-clean)
+mmorpg-remake                   15      0    0      0       0     0

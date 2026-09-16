@@ -2,7 +2,7 @@
 """Gate: AGENTS.md §"Repo count" must name exactly the repos in repo_set.txt.
 
 WHY THIS EXISTS. On 2026-09-03 that paragraph listed `riir-armageddon`
-(retired the day before, directory gone) and omitted `seal-remake-unity`
+(retired the day before, directory gone) and omitted `mmorpg-remake-unity`
 (enrolled in the same window). **One repo left and one arrived, so the total
 stayed 19** — the paragraph's own count was RIGHT, every count nearby agreed,
 and the set was wrong anyway. Four routing instruments repeated it, including

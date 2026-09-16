@@ -10,7 +10,7 @@
 
 ## Goal
 
-Give Plan 326's Tucker primitive **two obvious, high-value consumers** — one in `riir-chain`, one in `seal-online-remaster` — where the 3-mode tensor factorization model is the textbook solution and the existing rule-based heuristics are the obvious upgrade target.
+Give Plan 326's Tucker primitive **two obvious, high-value consumers** — one in `riir-chain`, one in `mmorpg-remaster` — where the 3-mode tensor factorization model is the textbook solution and the existing rule-based heuristics are the obvious upgrade target.
 
 Both consumers share the same pattern: **factor-model anomaly detection**. Build a 3-mode tensor of observed behavior, factorize it via HOSVD, and flag entities whose residual against the low-rank reconstruction is anomalous (too high = outlier; too low = too-compressible = scripted/colluding). This is exactly how real-world market surveillance and behavioral fraud detection work — it is not a contrived fit.
 
@@ -88,14 +88,14 @@ V[curator, round, tier] ∈ {0,1}  (or normalized agreement score)
 
 ---
 
-## Consumer 2 — Game: RMT Economy Anomaly Detection (seal-online-remaster)
+## Consumer 2 — Game: RMT Economy Anomaly Detection (mmorpg-remaster)
 
 ### Current state (the upgrade target)
 
 The MMO already has rule-based economy anomaly detection:
-- `seal-online-remaster/crates/seal-gm-tools/src/state.rs` — `EconomyDashboard { rmt_alert_count, recent_flows, ... }`, `ShopEntry { price, volume_24h, flagged }`, `ItemStat { anomaly_flag }`, `Guild { anomaly_flag }`
-- `seal-online-remaster/crates/seal-gm-tools/src/tabs/shops.rs` — `anomaly_section()` UI with suspend/flag/investigate actions on `flagged != 0` shops
-- `seal-online-remaster/crates/seal-gm-tools/src/rerun_stream.rs` — `log_economy_graph(flows)` already visualizes gold flows
+- `mmorpg-remaster/crates/mmorpg-gm-tools/src/state.rs` — `EconomyDashboard { rmt_alert_count, recent_flows, ... }`, `ShopEntry { price, volume_24h, flagged }`, `ItemStat { anomaly_flag }`, `Guild { anomaly_flag }`
+- `mmorpg-remaster/crates/mmorpg-gm-tools/src/tabs/shops.rs` — `anomaly_section()` UI with suspend/flag/investigate actions on `flagged != 0` shops
+- `mmorpg-remaster/crates/mmorpg-gm-tools/src/rerun_stream.rs` — `log_economy_graph(flows)` already visualizes gold flows
 
 **Current heuristic:** `flagged` is a hand-tuned threshold rule (e.g., price > N× median). Brittle: misses novel RMT patterns, generates false positives on legitimate event-driven price spikes.
 
@@ -123,8 +123,8 @@ The `flagged` field on `ShopEntry`/`ItemStat` gets populated from the Tucker res
 
 ### Tasks
 
-- [x] **T2.1** `EconomyTensor` builder in `seal-gm-tools/src/analytics/` (or `seal-container-service`) — rolls up `ShopEntry`/`GoldFlow`/`ItemStat` history into `P[item, window, zone]`. **T0 prerequisite:** confirm the persistence layer retains enough per-item-per-zone-per-window history (if not, T0 adds a retention table).
-  *(Shipped as `build_tensor_into` in `rmt_tucker.rs` + `shops_to_price_points` adapter in `seal-online-remaster/crates/seal-gm-tools/src/analytics/mod.rs`. T0 finding: the MMO has NO per-item-per-zone-per-window price history table today — `ShopEntry` only stores current price/volume_24h. The detector takes pre-windowed `PricePoint` inputs; a future server-side collector would feed multi-window data. The `shops_to_price_points` adapter converts a single shop snapshot into 1-window `PricePoint`s as a thin shim for the current data model.)*
+- [x] **T2.1** `EconomyTensor` builder in `mmorpg-gm-tools/src/analytics/` (or `mmorpg-container-service`) — rolls up `ShopEntry`/`GoldFlow`/`ItemStat` history into `P[item, window, zone]`. **T0 prerequisite:** confirm the persistence layer retains enough per-item-per-zone-per-window history (if not, T0 adds a retention table).
+  *(Shipped as `build_tensor_into` in `rmt_tucker.rs` + `shops_to_price_points` adapter in `mmorpg-remaster/crates/mmorpg-gm-tools/src/analytics/mod.rs`. T0 finding: the MMO has NO per-item-per-zone-per-window price history table today — `ShopEntry` only stores current price/volume_24h. The detector takes pre-windowed `PricePoint` inputs; a future server-side collector would feed multi-window data. The `shops_to_price_points` adapter converts a single shop snapshot into 1-window `PricePoint`s as a thin shim for the current data model.)*
 - [x] **T2.2** `detect_rmt_tucker(tensor, ranks) -> Vec<RmtAnomaly>` that:
   - Calls `katgpt_core::linalg::tucker_decompose_into` with ranks `(r_i, r_w, r_z)` (low-rank — the normal market is low-dimensional)
   - Reconstructs via `tucker_reconstruct_into`
@@ -134,7 +134,7 @@ The `flagged` field on `ShopEntry`/`ItemStat` gets populated from the Tucker res
 - [x] **T2.3** Wire into `EconomyDashboard` — populate `ShopEntry.flagged` / `ItemStat.anomaly_flag` / `rmt_alert_count` from Tucker residuals instead of (or alongside) the threshold rule.
   *(Shipped as a new `tucker_rmt_anomalies: Vec<RmtAnomaly>` field on `GmAppState` (behind `tucker_rmt` feature). The existing `ShopEntry.flagged` threshold rule is left intact — Tucker runs as a complementary factor-model detector. The dashboard renders both sections side-by-side in the shops tab.)*
 - [x] **T2.4** GM dashboard: add "Market Factor" view (the item-factor loadings as a heatmap) and "Cross-Server Divergence" view (the zone-factor), alongside the existing anomaly section.
-  *(Shipped as `tucker_rmt_section` + `tucker_anomaly_row` in `seal-online-remaster/crates/seal-gm-tools/src/tabs/shops.rs` (behind `tucker_rmt` feature). Shows flagged (item, zone) pairs with residual and z-score. The full factor-matrix heatmap view is deferred — the current view shows the anomaly LIST, which is the actionable output. A future enhancement could expose the factor matrices for visualization.)*
+  *(Shipped as `tucker_rmt_section` + `tucker_anomaly_row` in `mmorpg-remaster/crates/mmorpg-gm-tools/src/tabs/shops.rs` (behind `tucker_rmt` feature). Shows flagged (item, zone) pairs with residual and z-score. The full factor-matrix heatmap view is deferred — the current view shows the anomaly LIST, which is the actionable output. A future enhancement could expose the factor matrices for visualization.)*
 - [x] **T2.5** Tests: synthetic RMT injection (K items with manipulated prices in 1 zone) → Tucker flags them; threshold rule misses them when the manipulation stays under the static threshold.
   *(Shipped: 13 unit tests including G1/G2/G3 gates, G4 perf gate `#[ignore]`, edge cases (empty input, missing cells, shape change, max_anomalies cap, threshold sensitivity). All 13 pass; G4 passes in release mode.)*
 
@@ -187,5 +187,5 @@ The cap only hurt the "one giant batch" framing. The factor-model-anomaly framin
 
 - **Primitive:** [Plan 326](326_tucker_hosvd_factorization.md) — `katgpt-core/linalg::tucker` (DEFAULT-ON)
 - **Chain integration point:** `riir-chain/src/consensus/curator_slashing.rs` (`detect_collusion`), `katgpt-rs/crates/katgpt-core/src/curator.rs` (`CuratorVote`, `CuratorConsensus`)
-- **Game integration point:** `seal-online-remaster/crates/seal-gm-tools/src/state.rs` (`EconomyDashboard`, `ShopEntry`), `seal-online-remaster/crates/seal-gm-tools/src/tabs/shops.rs` (`anomaly_section`)
+- **Game integration point:** `mmorpg-remaster/crates/mmorpg-gm-tools/src/state.rs` (`EconomyDashboard`, `ShopEntry`), `mmorpg-remaster/crates/mmorpg-gm-tools/src/tabs/shops.rs` (`anomaly_section`)
 - **Benchmark record:** `.benchmarks/328_tucker_consumer_applications.md` (created in T3.4)

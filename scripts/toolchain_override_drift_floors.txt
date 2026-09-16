@@ -104,9 +104,9 @@
 # katgpt-rs (128 of 4371 tracked) — the walk is the tracked walk, verified.
 #
 #   katgpt-rs 128 (drift 2) · riir-train 125 · riir-ai 124 (drift 1,
-#   vendored 284) · riir-chain 60 (unresolved 1) · seal-game-editor 52 ·
-#   riir-mmorpg-examples 46 · seal-online-remaster 43 (vendored 3) ·
-#   riir-deployer 27 · riir-clippy 26 · seal-remake 22 · riir-game-sdk 17
+#   vendored 284) · riir-chain 60 (unresolved 1) · mmorpg-editor 52 ·
+#   riir-mmorpg-examples 46 · mmorpg-remaster 43 (vendored 3) ·
+#   riir-deployer 27 · riir-clippy 26 · mmorpg-remake 22 · riir-game-sdk 17
 #   (no-pin-override 1) · riir-shader 17 · riir-dapps 13 · riir-neuron-db 14 ·
 #   riir-viewbridge 11 · riir-dao 5 · riir-esp32 5 · riir-kat 5 ·
 #   riir-auth 4 · katgpt-web 4
@@ -144,6 +144,6 @@ riir-neuron-db                   8          0               0
 riir-shader                     10          0               0
 riir-train                      72          0               0
 riir-viewbridge                  6          0               0
-seal-game-editor                30          0               0
-seal-online-remaster            25          0               0
-seal-remake                     13          0               0
+mmorpg-editor                30          0               0
+mmorpg-remaster            25          0               0
+mmorpg-remake                     13          0               0

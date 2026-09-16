@@ -61,9 +61,9 @@ CompressionDrafter failed because quest-grammar strings are too short and too fe
 
 ## Corpus substitution (honest disclosure)
 
-The plan references the "real Seal 17k corpus" from Plan 285/287. **That corpus does not exist as a committed fixture in this repo.** Verification:
+The plan references the "real RPG 17k corpus" from Plan 285/287. **That corpus does not exist as a committed fixture in this repo.** Verification:
 
-- `grep -r "seal_17k|seal_corpus|Seal 17" katgpt-rs/crates/katgpt-core/` → **zero hits**.
+- `grep -r "rpg_17k|rpg_corpus|RPG 17" katgpt-rs/crates/katgpt-core/` → **zero hits**.
 - [`.benchmarks/285_compression_drafter_goat.md`](285_compression_drafter_goat.md) used 8 hardcoded quest-grammar strings + 100 numbered contexts (`"quest 0"`..=`"quest 99"`), not a 17k corpus.
 
 Per the plan brief ("synthesize ≥1000 entries and document this substitution honestly"), this bench synthesizes **1500 representative entries** from a fixed-seed LCG (deterministic, reproducible):
@@ -74,7 +74,7 @@ Per the plan brief ("synthesize ≥1000 entries and document this substitution h
 | Config strings | 500 | `Config[{target}]: {key} = {value}({unit})` |
 | Multi-line quest/dialog records | 500 | 3-5 lines mixing Section / Attribute / Config / Conditional / Comparison |
 
-These categories mirror what Seal Online dialog/quest/KG data would look like in the verbose canonical form the codec round-trips. The compression numbers are honest measurements on this synthetic corpus — they are **NOT** the paper's LLM-prompted 3.6×.
+These categories mirror what a commercial MMORPG's dialog/quest/KG data would look like in the verbose canonical form the codec round-trips. The compression numbers are honest measurements on this synthetic corpus — they are **NOT** the paper's LLM-prompted 3.6×.
 
 ---
 

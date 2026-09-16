@@ -197,6 +197,6 @@ riir-neuron-db                  52            42          0               3
 riir-shader                      0             0          0               0  # observed 2026-09-12: no rows
 riir-train                     400           260          0               4
 riir-viewbridge                  0             0          0               0
-seal-game-editor                 0             0          0               0
-seal-online-remaster              1             0          0               0  # 2026-09-16: 3 -> 2 rows. `crates/seal-edge-worker/` was DELETED (d1c2fb7, migrated to seal-remake by owner directive) and took its required-features row with it — a committed, upstream-visible shrink, not a walk going blind. Floored at 1 rather than 2: this repo is now the deprecated one that pulls from the canonical one, so more crates will leave, and a floor that reds on every migration is a floor nobody trusts.
-seal-remake                      6             2          0               0
+mmorpg-editor                 0             0          0               0
+mmorpg-remaster              1             0          0               0  # 2026-09-16: 3 -> 2 rows. `crates/mmorpg-edge-worker/` was DELETED (d1c2fb7, migrated to mmorpg-remake by owner directive) and took its required-features row with it — a committed, upstream-visible shrink, not a walk going blind. Floored at 1 rather than 2: this repo is now the deprecated one that pulls from the canonical one, so more crates will leave, and a floor that reds on every migration is a floor nobody trusts.
+mmorpg-remake                      6             2          0               0

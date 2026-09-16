@@ -59,9 +59,9 @@
 # riir-shader                 7     15         0         0
 # riir-train                 48    172         0         0
 # riir-viewbridge             3     17         0         0
-# seal-game-editor            4     11         0         0
-# seal-online-remaster        7     26         0         0
-# seal-remake                 5     68         0         0
+# mmorpg-editor            4     11         0         0
+# mmorpg-remaster        7     26         0         0
+# mmorpg-remake                 5     68         0         0
 #
 #                     scripts  sites  findings  unparsed
 katgpt-rs                   5     42         1         0
@@ -81,6 +81,6 @@ riir-neuron-db              3     15         1         0
 riir-shader                 4      9         0         0
 riir-train                 28    103         0         0
 riir-viewbridge             1     10         0         0
-seal-game-editor            2      6         0         0
-seal-online-remaster        4     15         0         0
-seal-remake                 3     40         0         0
+mmorpg-editor            2      6         0         0
+mmorpg-remaster        4     15         0         0
+mmorpg-remake                 3     40         0         0

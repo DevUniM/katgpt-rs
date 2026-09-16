@@ -126,7 +126,7 @@ The three honest options, priced (owner picks; **(i) is the standing state**):
 
 - **(i) keep the scoped job** — landed, ~zero marginal cost, machine-invariant
   core; the full run stays dispatch-only for triage campaigns.
-- **(ii) a per-target triaged weekly integration job** — the seal-remake
+- **(ii) a per-target triaged weekly integration job** — the mmorpg-remake
   `e1ead85` shape over the ~470 default-runnable integration targets. Machine
   cost ≈ the execution half (~2,300 CPU-s) + one feature-set compile;
   engineering cost = triaging `.issues/723`'s reds into expect-red pins.
@@ -151,7 +151,7 @@ stream. No compile gate can find that.
 **Price in CPU-seconds, not wall-clock.** A wall-clock figure from this
 workstation is uninterpretable — the box ran at load average 44-87 for a whole
 day from sibling work. CPU time and peak RSS measure what a process *consumed*
-rather than how long it *waited*; seal-remake
+rather than how long it *waited*; mmorpg-remake
 `.benchmarks/002_png_vs_ktx2_host_cpu_rss.md` measured that directly (over a 2x
 load swing the CPU ratios moved by under 0.11 and never reordered an arm).
 `/usr/bin/time -l` on the cargo invocation is the whole instrument, and

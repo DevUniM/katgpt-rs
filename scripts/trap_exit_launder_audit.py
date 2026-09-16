@@ -69,7 +69,7 @@ its own message and is not touched.
 
 # Provenance
 
-seal-remake's `scripts/ci_feature_guard.sh` carried a `trap "rm -f '$A'
+mmorpg-remake's `scripts/ci_feature_guard.sh` carried a `trap "rm -f '$A'
 '$B'" EXIT` naming two variables assigned ~20 and ~45 lines later. Under
 `set -u` that expansion aborted the script — so its last four layers could
 never run and `ALL LAYERS GREEN` could never print — and the abort exited
@@ -126,6 +126,7 @@ import tempfile
 # all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
 # that go through the wrapper.
 import console_safe  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 console_safe.apply()
 
@@ -746,7 +747,9 @@ probe
 
 
 def repos(root):
-    return sorted(
+    # Names pass through the machine-local alias codec (`repo_alias.py`) so
+    # every cross-repo instrument audits the same CONTRACT-name set.
+    return repo_alias.apply(
         d for d in os.listdir(root)
         if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
         and os.path.isdir(os.path.join(root, d, ".git"))
@@ -904,7 +907,7 @@ def main():
           f"their aborts exit 1, so their\n  sentinels are PRECAUTIONARY and become "
           f"load-bearing only if somebody adds `-e`.")
     print("\n  EXPOSED is LATENT — it needs an abort to bite, and the script may well\n"
-          "  have none today. It is still the reason the seal-remake gate could not\n"
+          "  have none today. It is still the reason the mmorpg-remake gate could not\n"
           "  fail for months: the abort arrived later, and nothing said so.\n"
           "  'replaced' counts scripts, not traps, and is orthogonal to the verdict.\n"
           "  Report only; exit 0 always.")

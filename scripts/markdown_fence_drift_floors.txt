@@ -68,18 +68,18 @@ riir-neuron-db             115                 0
 riir-shader                 13                 0
 riir-train                 375                 0
 riir-viewbridge              7                 0
-seal-game-editor           165                 0
-seal-remake                 12                 0
-seal-online-remaster       50                 0
+mmorpg-editor           165                 0
+mmorpg-remake                 12                 0
+mmorpg-remaster       50                 0
 
 # Measured 2026-09-12, the landing run: 19 repos · 5058 tracked+untracked .md ·
 # 0 unterminated. Per-repo md counts at landing, for the next re-pin's slack
 # arithmetic:
 #
 #   katgpt-rs 1518 · riir-ai 1424 · riir-train 632 · riir-clippy 455 ·
-#   seal-game-editor 282 · riir-chain 220 · riir-neuron-db 197 ·
+#   mmorpg-editor 282 · riir-chain 220 · riir-neuron-db 197 ·
 #   riir-game-sdk 90 · riir-mmorpg-examples 74 · riir-dapps 42 ·
-#   riir-deployer 31 · riir-shader 22 · seal-remake 21 · riir-dao 13 ·
+#   riir-deployer 31 · riir-shader 22 · mmorpg-remake 21 · riir-dao 13 ·
 #   riir-viewbridge 13 · riir-auth 9 · katgpt-web 6 · riir-esp32 6 · riir-kat 3
 #
 # ⚠ Read that list as a MEASUREMENT RECORD, not as a second set of pins. The
@@ -87,10 +87,10 @@ seal-online-remaster       50                 0
 # later reader can tell a real shrink from a re-pin nobody justified.
 #
 # ── first post-landing run, 2026-09-12 (the sweep's first CATCH) ─────────────
-# seal-online-remaster joined the contract set (BOUNDARY.md landed there,
+# mmorpg-remaster joined the contract set (BOUNDARY.md landed there,
 # katgpt-rs Issue 760) AFTER the landing run above — so it was outside the 19
 # and outside every pin. The first full run derived 20 repos / 5146 .md and
-# found exactly one unterminated fence: seal-online-remaster
+# found exactly one unterminated fence: mmorpg-remaster
 # `.plans/005_layer3_reducer.md:600` (14 swallowed lines — the File Map tree;
 # repaired `99064c5`, floored at 50). The class the sweep exists for, caught
 # by its own first workspace run: a repo that joins after the landing

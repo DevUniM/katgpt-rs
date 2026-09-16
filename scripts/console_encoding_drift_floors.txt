@@ -37,12 +37,12 @@
 # sibling repairs as landed while both sweeps were red for six hours.
 #
 # ⛑ FOUR more repos re-pinned on 2026-09-16, under Issue 806's session, at
-# riir-dapps `dd5a027`, riir-mmorpg-examples `96029e5` and seal-game-editor
+# riir-dapps `dd5a027`, riir-mmorpg-examples `96029e5` and mmorpg-editor
 # `07ecbc4d` — 1 + 1 + 3 rows, all latent (none of the three is known to be run
 # on a non-UTF-8 console), closed because the action is one line and a ratchet
 # row only ever tightens on a repair.
 #
-# ⛔ seal-remake's four were repaired too — upstream, at seal-remake `d5ad55c`,
+# ⛔ mmorpg-remake's four were repaired too — upstream, at mmorpg-remake `d5ad55c`,
 # committed against `origin/develop` by plumbing because this box's checkout is
 # 29 behind and carries another session's dirty `Cargo.lock`. Its row STAYS AT
 # 4, and that is the rule working rather than an oversight: the pins read LOCAL
@@ -75,7 +75,7 @@
 #   max_undefended   the RATCHET.
 #
 # ⚠ HALF the repos here have an EMPTY population (riir-auth, riir-chain, riir-game-sdk,
-# riir-kat, riir-neuron-db, riir-shader, riir-viewbridge, seal-online-remaster
+# riir-kat, riir-neuron-db, riir-shader, riir-viewbridge, mmorpg-remaster
 # — riir-chain and riir-shader do have scripts/*.py, they just print nothing
 # non-ASCII). Every ceiling is vacuous there and only min_scripts detects
 # anything, in the two that have scripts at all. Issue 783's population shape,
@@ -90,11 +90,11 @@
 # the measurement.
 #
 # ⛔ EVERY row is measured at LOCAL HEAD, including the two whose repos this box
-# is behind on — riir-ai (152 behind) and seal-remake (22 behind). An earlier
+# is behind on — riir-ai (152 behind) and mmorpg-remake (22 behind). An earlier
 # version of this file pinned those two from ORIGIN instead, reasoning that "the
 # pin describes the REPO, whose current state is origin". That is wrong, and
 # measuring it is what showed why: at origin riir-ai carries 5 undefended and
-# seal-remake 6, against 4 and 4 here — so the margin is not a bookkeeping
+# mmorpg-remake 6, against 4 and 4 here — so the margin is not a bookkeeping
 # artifact, it is THREE genuinely new undefended instruments that landed
 # upstream. Pinning from origin absorbs them into the baseline with nobody ever
 # adjudicating them, which destroys the only claim a ratchet makes: *the commit
@@ -104,7 +104,7 @@
 # PINS read HEAD — and HEAD means local HEAD. So this file reds on the sync, and
 # that red is a TRUE positive with an owner and a one-line action, not noise.
 # `instrument_reachability_floors.txt` is pinned the same way and reds the same
-# way on the same sync (riir-ai 7 → 8, seal-remake 6 → 8, measured); that
+# way on the same sync (riir-ai 7 → 8, mmorpg-remake 6 → 8, measured); that
 # agreement is the check that this convention is the house one.
 #
 # ⚠ What the STALE advisory IS for is the opposite direction: a red here that
@@ -127,9 +127,9 @@ riir-neuron-db                   0               0               0
 riir-shader                      1               0               0
 riir-train                      34              31              53
 riir-viewbridge                  0               0               0
-seal-game-editor                 1               1               0
-seal-online-remaster             0               0               0
-seal-remake                      3               2               4
+mmorpg-editor                 1               1               0
+mmorpg-remaster             0               0               0
+mmorpg-remake                      3               2               4
 #
 # ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
 # riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).

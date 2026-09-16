@@ -77,9 +77,9 @@ riir-neuron-db             120      1950         0           0
 riir-shader                 38       640         0           0
 riir-train                 670     10400         0           0
 riir-viewbridge             14       150         0           0
-seal-game-editor           140      3650         0           0
-seal-online-remaster       360      7400         0           0
-seal-remake                 33       270         0           0
+mmorpg-editor           140      3650         0           0
+mmorpg-remaster       360      7400         0           0
+mmorpg-remake                 33       270         0           0
 
 # ── FOUR repos have no row, and that is not an oversight ─────────────────────
 # katgpt-web · riir-dao · riir-deployer · riir-esp32 are contract repos that
@@ -113,9 +113,9 @@ seal-remake                 33       270         0           0
 #   riir-shader            64 .rs ·  1076 cand ·    10 units · 0 find
 #   riir-train           1129 .rs · 17349 cand ·   536 units · 0 find
 #   riir-viewbridge        24 .rs ·   260 cand ·    16 units · 0 find
-#   seal-game-editor      233 .rs ·  6124 cand ·   119 units · 0 find
-#   seal-online-remaster  611 .rs · 12336 cand ·    70 units · 0 find
-#   seal-remake            56 .rs ·   452 cand ·    25 units · 0 find
+#   mmorpg-editor      233 .rs ·  6124 cand ·   119 units · 0 find
+#   mmorpg-remaster  611 .rs · 12336 cand ·    70 units · 0 find
+#   mmorpg-remake            56 .rs ·   452 cand ·    25 units · 0 find
 #
 #   totals: 8694 .rs · 119452 candidate decls · 3433 units · 0 findings · 1 MOD-REF
 #

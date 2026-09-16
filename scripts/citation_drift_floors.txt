@@ -28,7 +28,7 @@
 # riir-clippy 2fc7dac9 / Issue 096); riir-game-sdk's `Plan 032` was a
 # PHANTOM never allocated in any repo, born 06-03 in chain_viz's own
 # doc-comment — removed, not qualified (riir-game-sdk 037042f / Issue 031);
-# seal-remake's 16 rows were repaired 09:18 (92dff5ca) but the ratchet
+# mmorpg-remake's 16 rows were repaired 09:18 (92dff5ca) but the ratchet
 # commit never landed — paid here. A ceiling of 0 everywhere makes this
 # file a WALL again, all 19 repos.
 #
@@ -106,9 +106,9 @@ riir-neuron-db             27      0               3       0
 riir-shader                 0      0               0       0
 riir-train                 43      0               0       0  # tightened 2026-09-16 from 1: all four IN-LOCAL-RANGE rows were qualified at riir-train 90c88820 (riir-ai Issue 366 x3, riir-clippy Plan 127), so the bucket is genuinely empty and the next unqualified citation should red on arrival
 riir-viewbridge            24     0               2       0
-seal-game-editor            0      0               0       0
-seal-online-remaster        2      0               0       0  # observed 2026-09-12: docs=1 cites=2 (AGENTS.md only); OWNER-PARKED 2026-09-12 — deprecation intended, no new work in that repo
-seal-remake                39      0               0       0
+mmorpg-editor            0      0               0       0
+mmorpg-remaster        2      0               0       0  # observed 2026-09-12: docs=1 cites=2 (AGENTS.md only); OWNER-PARKED 2026-09-12 — deprecation intended, no new work in that repo
+mmorpg-remake                39      0               0       0
 
 # ── how the backlog was cleared, and the zero rows that remain ──────────────
 # 2026-09-12 in_local_range bumps, both ADJUDICATED local before re-pinning:
@@ -132,10 +132,10 @@ seal-remake                39      0               0       0
 # both sites) — same class, same cure: the local checkout was 12 behind,
 # and the red clears when that session syncs.
 # And once MORE the next day (2026-09-13), the new-prose arm of the same
-# class: seal-remake's item-sync HISTORY tail landed `Plan 586 /
+# class: mmorpg-remake's item-sync HISTORY tail landed `Plan 586 /
 # Proposal 046` bare — both riir-ai's, and the SAME FILE already said so
 # three headings up (the REPEAT label; the repair is a copy, not a
-# lookup). Repaired seal-remake `196e015d`; sweep 0 CROSS over all 20
+# lookup). Repaired mmorpg-remake `196e015d`; sweep 0 CROSS over all 20
 # repos again. The corpus MOVES (below) is not a warning — it is the
 # measured recurrence rate of exactly this.
 # A FOURTH arc the same day (2026-09-13, evening) — and this one was a
@@ -163,7 +163,7 @@ seal-remake                39      0               0       0
 # removed, not qualified (riir-game-sdk `037042f` / Issue 031).
 #
 # ⛔ Two of those ceilings fell for the OTHER reason, and the ambiguity is
-# real: riir-mmorpg-examples' in_local_range 16 -> 0 and seal-remake's 1 -> 0
+# real: riir-mmorpg-examples' in_local_range 16 -> 0 and mmorpg-remake's 1 -> 0
 # are NOT prose repairs — they are Issue 754 teaching `allocated()` to read a
 # repo's own `## Issue 059 (2026-08-14)` heading, so 7 numbers that had been
 # invisible to both the worktree walk and `git log` became visible. A falling

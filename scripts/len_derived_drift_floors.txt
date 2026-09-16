@@ -79,9 +79,9 @@ riir-neuron-db                   0          0             0
 riir-shader                      0          0             0
 riir-train                       5         11             0
 riir-viewbridge                  0          0             0
-seal-game-editor                 0          0             0
-seal-online-remaster             0          0             0
-seal-remake                      0          0             0
+mmorpg-editor                 0          0             0
+mmorpg-remaster             0          0             0
+mmorpg-remake                      0          0             0
 #
 # ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
 # riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).

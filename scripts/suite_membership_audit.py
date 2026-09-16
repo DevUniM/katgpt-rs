@@ -71,6 +71,7 @@ except ModuleNotFoundError:  # pragma: no cover (3.10 only)
 
 import cfg_gated_target_audit as cga  # noqa: E402  (shared vocabulary)
 import ci_test_execution_report as cit  # noqa: E402  (shared invocation_texts)
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 # Issue 804: this instrument is documented as directly invokable, and its
 # verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
@@ -319,11 +320,15 @@ def audit(repo: Path, workspace_corpus: str | None = None) -> RepoReport:
 
 
 def derive_repos(workspace: Path) -> list[Path]:
-    """A root BOUNDARY.md AND a `.git` DIR — never a typed list."""
-    return sorted(
-        d for d in workspace.iterdir()
+    """A root BOUNDARY.md AND a `.git` DIR — never a typed list.
+
+    Names pass through the machine-local alias codec (`repo_alias.py`) so the
+    returned paths carry the CONTRACT spelling every tracked pin is keyed on.
+    """
+    return [workspace / n for n in repo_alias.apply(
+        d.name for d in workspace.iterdir()
         if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
-    )
+    )]
 
 
 def selftest() -> None:
@@ -402,7 +407,7 @@ def selftest() -> None:
     assert line_is_broad_test('cargo test --workspace --quiet || fail "cargo test --workspace"')
     assert line_is_broad_test('cargo test --all-features --tests')
     assert line_is_broad_test('out="$(cargo test --workspace)"')
-    assert line_is_broad_test("cargo test -p seal-view --features texture_vessel")
+    assert line_is_broad_test("cargo test -p mmorpg-view --features texture_vessel")
     assert not line_is_broad_test("cargo test -p riir-gpu --features x --test bench_831 -- --ignored")
     assert not line_is_broad_test("cargo test -p katgpt-core --lib")
     assert not line_is_broad_test("cargo test --doc")

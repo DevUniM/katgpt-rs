@@ -59,7 +59,7 @@ def relpath_from(md_dir: Path, target_abs: Path, keep_trailing_slash: bool):
 
 KNOWN_REPOS = {"katgpt-rs", "riir-ai", "riir-chain", "riir-clippy", "riir-train", "riir-neuron-db",
                "riir-game-sdk", "riir-mmorpg-examples", "riir-dapps", "riir-viewbridge", "riir-auth",
-               "katgpt-web", "riir-dao", "riir-deployer", "seal-game-editor", "seal-remake"}
+               "katgpt-web", "riir-dao", "riir-deployer", "mmorpg-editor", "mmorpg-remake"}
 
 
 def decide(target: str, md: Path):

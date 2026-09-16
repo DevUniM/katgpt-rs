@@ -61,8 +61,11 @@ import pathlib
 # all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
 # that go through the wrapper.
 import console_safe  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 console_safe.apply()
+
+# === ci_gate_coverage
 
 GIT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_RE = re.compile(r"(?:\./|\b)((?:scripts|ci|\.ci)/[A-Za-z0-9_.-]+\.sh)")
@@ -73,9 +76,9 @@ SIGNALS = ("clippy", "--workspace", "--all-targets", "--all-features",
 
 def derive_repos(root: Path) -> list[str]:
     """`-d .git`, not `-e`: a git worktree has a .git FILE and would double-count."""
-    return sorted(d.name for d in root.iterdir()
-                  if d.is_dir() and (d / "BOUNDARY.md").is_file()
-                  and (d / ".git").is_dir())
+    return repo_alias.apply(d.name for d in root.iterdir()
+                            if d.is_dir() and (d / "BOUNDARY.md").is_file()
+                            and (d / ".git").is_dir())
 
 
 def _git(root: Path, repo: str, *args: str) -> str:
@@ -150,7 +153,7 @@ def _branch_exists(root: Path, repo: str, branch: str) -> bool:
     Split out from `_on_branch` because the two failures need DIFFERENT
     repairs and `_on_branch` returns False for both. Measured 2026-09-15 over
     the five repos this report flags hand-only: THREE have no `origin/main` at
-    all (riir-auth, riir-kat, seal-remake) while their `push` filter names it,
+    all (riir-auth, riir-kat, mmorpg-remake) while their `push` filter names it,
     and the two that do have one (riir-ai, riir-viewbridge) carry no
     `.github/workflows/` directory there. "Promote the file to main" is the fix
     for the second and is not even expressible for the first.

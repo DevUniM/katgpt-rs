@@ -50,9 +50,9 @@ riir-neuron-db                 0            0               0
 riir-shader                    4            2               0
 riir-train                     0            0               0
 riir-viewbridge                1            1               0
-seal-game-editor               0            0               0
-seal-online-remaster           2            2               0  # 2026-09-16: min_files 4 -> 2 (measured 3). `crates/seal-edge-worker/` was DELETED (d1c2fb7, migrated to seal-remake by owner directive) and took its wasm32 surface with it — a committed, upstream-visible shrink, not a walk going blind. This repo is now the deprecated one that pulls from the canonical one, so more will leave.
-seal-remake                   12            1               0
+mmorpg-editor               0            0               0
+mmorpg-remaster           2            2               0  # 2026-09-16: min_files 4 -> 2 (measured 3). `crates/mmorpg-edge-worker/` was DELETED (d1c2fb7, migrated to mmorpg-remake by owner directive) and took its wasm32 surface with it — a committed, upstream-visible shrink, not a walk going blind. This repo is now the deprecated one that pulls from the canonical one, so more will leave.
+mmorpg-remake                   12            1               0
 TOTALS                       115           16               0
 
 # ── the four repos with NO row, deliberately ────────────────────────────────
@@ -74,11 +74,11 @@ TOTALS                       115           16               0
 # 25 NAMED · 2 BY-DEP · 0 UNRESOLVED · 1 UNCOVERED.
 # Per-repo (files / positive-cfg packages):
 #
-#   riir-ai 85/9 · riir-mmorpg-examples 42/3 · seal-remake 22/1 ·
+#   riir-ai 85/9 · riir-mmorpg-examples 42/3 · mmorpg-remake 22/1 ·
 #   katgpt-rs 16/4 · riir-game-sdk 15/0 · riir-chain 12/3 · riir-shader 7/3 ·
-#   seal-online-remaster 7/3 · riir-dapps 6/1 · riir-viewbridge 1/1 ·
+#   mmorpg-remaster 7/3 · riir-dapps 6/1 · riir-viewbridge 1/1 ·
 #   riir-auth 0/0 · riir-clippy 0/0 · riir-kat 0/0 · riir-neuron-db 0/0 ·
-#   riir-train 0/0 · seal-game-editor 0/0
+#   riir-train 0/0 · mmorpg-editor 0/0
 #
 # ⚠ riir-game-sdk is the row that shows why min_files and min_packages are
 # separate quantities: 15 files MENTION wasm32 and 0 carry a positive cfg (all

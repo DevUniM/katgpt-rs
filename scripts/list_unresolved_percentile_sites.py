@@ -43,7 +43,7 @@ The remaining 12 rows across 6 repos, all verified-OK:
   riir-clippy     benches/bench_002_l2_pruner_syn.rs:115
                   → n_iters=10_000 → idx 9900, support 100; the gate reads
                     p50, p99 print-only. OK.
-  seal-remake     crates/seal-view/tests/texture_vessel_bench.rs:589 [ASSERTED]
+  mmorpg-remake     crates/mmorpg-view/tests/texture_vessel_bench.rs:589 [ASSERTED]
                   → the same canary class (asserts the naive shape == n-1,
                     "the shape that reads a max as a p99"). Intentional.
   katgpt-rs       crates/katgpt-types/src/simd/tests.rs:850

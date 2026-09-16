@@ -1513,7 +1513,7 @@ required-features = ["karc_forecaster"]
 # Plan 331 — BabelCodec GOAT gate. G1 round-trip fidelity + G2 compression
 # ratio (the make-or-break — same gate that killed CompressionDrafter twice) +
 # G3 latency + G4 alloc-free hot path + G5 determinism. The corpus is a
-# 1500-entry synthetic Seal-style substitute (the real Seal 17k corpus is not
+# 1500-entry synthetic RPG-style substitute (the real RPG 17k corpus is not
 # a committed fixture — documented honestly in the bench header).
 [[test]]
 name = "bench_331_babel_codec_goat"

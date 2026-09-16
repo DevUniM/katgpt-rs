@@ -349,7 +349,7 @@ The original draft said "Training on Rust-SWE-bench — modelless-first mandate.
 - **Cross-language SWE benchmarks.** Rust-only (the source features + rubrc are Rust-specific).
 - **Full 500-task WASM compilation.** POC on a WASM-compatible subset first.
 - **Default-on promotion.** Research validation only.
-- **Production steering runtime.** The adapter fit + WASM validation is the substrate; runtime integration (riir-ai NPC cognition, seal consumer) is a separate plan.
+- **Production steering runtime.** The adapter fit + WASM validation is the substrate; runtime integration (riir-ai NPC cognition, mmorpg-remake consumer) is a separate plan.
 
 > **Note (2026-08-01):** "Training on Rust-SWE-bench" was listed here as out-of-scope. **Corrected**: fine-tuning/LoRA via riir-train is an ALLOWED fallback (Layer 4b). The modelless-first mandate requires exhausting Layer 4 first, but does not forbid training if modelless proves insufficient. See the "riir-train fallback" subsection above.
 

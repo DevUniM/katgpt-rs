@@ -45,7 +45,7 @@ retired that population the same day it landed** (`820bf8b6`). Re-measured
 2026-09-14 over the TRACKED walk, same 16 repos: **8,694 `.rs` files, 26,598
 outer-`#[cfg]` sites, 0 orphaned** — 22% and **46%** below the line above. The
 verdict never moved; 23,026 of the sites offered as its warrant were in trees
-no repo owns (seal-online-remaster's gitignored `mmorpg/` nested repository,
+no repo owns (mmorpg-remaster's gitignored `mmorpg/` nested repository,
 riir-ai's vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR` sources under
 `.runs/target-*`). Both figures are kept, dated, because a reader who cannot
 see that the population DEFINITION changed reads that drop as deleted code.

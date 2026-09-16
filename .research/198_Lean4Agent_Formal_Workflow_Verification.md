@@ -190,7 +190,7 @@ struct ValidationResult {
 }
 ```
 
-The witness is a compact trace of which rules were checked, which passed, which failed. BLAKE3 hash ensures determinism. This connects to Research 106 (Shock: proof certificates) and our anti-cheat replay system (seal-online-remaster).
+The witness is a compact trace of which rules were checked, which passed, which failed. BLAKE3 hash ensures determinism. This connects to Research 106 (Shock: proof certificates) and our anti-cheat replay system (mmorpg-remaster).
 
 **Domain:** Both modelless (katgpt-rs) and model-based (riir-ai). The WASM validator is shared infrastructure.
 

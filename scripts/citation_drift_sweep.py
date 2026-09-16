@@ -107,8 +107,8 @@ plausible address that is wrong beats no address, and the directory-name path
 from that argument with no measurement behind the exemption.
 
 The repair also tightened the name match to segment boundaries: a plain
-`"seal-remake" in ctx` read riir-viewbridge's `seal-remake-unity` as naming
-**seal-remake** and qualified a `Plan 031` citation on a different repo's name.
+`"mmorpg-remake" in ctx` read riir-viewbridge's `mmorpg-remake-unity` as naming
+**mmorpg-remake** and qualified a `Plan 031` citation on a different repo's name.
 
 Two adjudications the per-repo filings forced, recorded so they stay decided
 ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ lives in no document the reader has, and the measurement refutes the weaker
 claim too: of the 45 CROSS rows carrying a crate name in the window, **4
 resolve to a repo that does NOT own the cited number** (riir-game-sdk's
 `Issue 097` sits next to `riir-games-mmorpg::sync_facades::avatar_sync` while
-097 belongs to riir-mmorpg-examples/riir-chain/seal-game-editor). Accepting
+097 belongs to riir-mmorpg-examples/riir-chain/mmorpg-editor). Accepting
 crate names as qualifiers would certify those four as clean, and they are the
 worst rows in the corpus — a plausible address that is wrong. So the rows are
 counted as findings and sub-labelled `crate-hint` / `⛔MISLEADING` to ORDER

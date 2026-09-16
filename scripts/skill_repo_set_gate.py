@@ -59,6 +59,10 @@ import sys
 import os
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
+
 # The workspace root = this repo's parent, so the gate works both on the
 # workstation (all 18 contract repos side by side) and in CI (a lone checkout).
 # Overridable for testing. NOT hard-coded to /Users/katopz/git — a gate against
@@ -104,8 +108,11 @@ def derive_repos(root: Path) -> list[str]:
 
     `(d / ".git").is_dir()`, not `.exists()`: a `git worktree` has a `.git`
     FILE, and counting one duplicates every hit of the repo it shadows.
+    Names pass through the machine-local alias codec (`repo_alias.py`) so a
+    box whose on-disk sibling names differ from the contract names still
+    yields the tracked vocabulary every pin and snapshot is keyed on.
     """
-    return sorted(
+    return repo_alias.apply(
         d.name for d in root.iterdir()
         if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
     )
@@ -228,7 +235,7 @@ def load_vocabulary(derived: list[str]) -> tuple[list[str], str | None, str | No
 def scan(path: Path, repos: list[str]) -> list[tuple[int, int, set[str], bool]]:
     alt = "|".join(map(re.escape, repos))
     # A repo used as a path component. The leading lookbehind stops
-    # `seal-online-remaster-unity/` from matching a shorter repo name, and
+    # `mmorpg-remaster-unity/` from matching a shorter repo name, and
     # stops `.../katgpt-rs/crates/riir-ai/` style nesting from double-counting.
     prefix = r"(?:\.\./|" + re.escape(str(GIT_ROOT)) + r"/)?"
     path_re = re.compile(r"(?<![\w./-])" + prefix + r"(" + alt + r")/")
@@ -321,7 +328,7 @@ def selftest() -> list[str]:
        [b[3] for b in fenced_blocks("```\na")], [""])
 
     # ── the detector: scan()'s own verdict arithmetic ─────────────────────
-    vocab = ["katgpt-rs", "riir-ai", "riir-chain", "seal-online-remaster"]
+    vocab = ["katgpt-rs", "riir-ai", "riir-chain", "mmorpg-remaster"]
 
     def scanned(*lines):
         with tempfile.TemporaryDirectory() as td:
@@ -357,7 +364,7 @@ def selftest() -> list[str]:
     # trailing `/` in the pattern already does the work. The lookbehind guards
     # the LEFT side — the arm below is the one that discriminates it.
     eq("a longer name does not match a shorter repo",
-       scanned("```", "cd seal-online-remaster-unity/a && cd riir-ai/b", "```"), [])
+       scanned("```", "cd mmorpg-remaster-unity/a && cd riir-ai/b", "```"), [])
     # The lookbehind proper: a repo NESTED inside another repo's path is one
     # path, not two repos. Without it this reads as a two-repo enumeration and
     # reds every skill that cites a crate by its in-repo path.
@@ -468,8 +475,12 @@ def main() -> int:
         print(f"✗ {GIT_ROOT} is not a directory — cannot derive the repo set")
         return 1
     repos = derive_repos(GIT_ROOT)
+    # Skills are read from DISK, so resolve contract names back to on-disk
+    # dirs; the census line prints contract spellings (repo_alias.display)
+    # because run logs get pasted into tracked docs.
     skills = sorted(
-        p for r in repos for p in (GIT_ROOT / r / ".agents/skills").glob("*/SKILL.md")
+        p for r in repos
+        for p in (GIT_ROOT / repo_alias.disk(r) / ".agents/skills").glob("*/SKILL.md")
     )
     # Liveness. A run that examined nothing must not read like a clean one,
     # and one that examined a SUBSET must say which subset (Issue 703 is
@@ -482,7 +493,7 @@ def main() -> int:
         print(f"✗ gate examined 0 SKILL.md across {len(repos)} repo(s); "
               f"refusing to report a pass")
         return 1
-    covered = sorted({p.parents[3].name for p in skills})
+    covered = sorted({repo_alias.display(p.parents[3].name) for p in skills})
     # Computed early: a partial-clone deferral (Issue 765) changes what the
     # scope line may claim — "full workspace" over 14 of 20 would be the
     # partial-set-as-whole-one defect this gate exists to catch.

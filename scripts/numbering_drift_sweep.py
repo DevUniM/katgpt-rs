@@ -83,7 +83,7 @@ verdicts here —
   unbumped   the WORKTREE counter sits below its committed history max on
              HEAD — a checkout/branch state, not a commit. REPORT-ONLY,
              deliberately unpinned (Issue 770 finding 4): the quantity is a
-             function of which branch the box carries (seal-game-editor's
+             function of which branch the box carries (mmorpg-editor's
              bevy worktree vs other refs' 194), so a pin would be ref-set
              dependent and red on a box that owes nothing — the class the
              AGENTS.md "a verdict the box can invalidate should refuse" law
@@ -106,6 +106,7 @@ import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
 import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
 from sweep_population import population_verdict  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -122,12 +123,13 @@ def contract_repos(workspace: Path) -> list[Path]:
     The `.git` test is a directory test on purpose — a worktree's `.git` is a
     FILE, and a throwaway worktree of a repo already in the walk would be
     counted twice (the trap scripts/repo_set.txt's own derivation documents).
+    Names pass through the machine-local alias codec (`repo_alias.py`) so the
+    returned paths carry the CONTRACT spelling every tracked pin is keyed on.
     """
-    return sorted(
-        (p for p in workspace.iterdir()
-         if (p / "BOUNDARY.md").is_file() and (p / ".git").is_dir()),
-        key=lambda p: p.name,
-    )
+    return [workspace / n for n in repo_alias.apply(
+        p.name for p in workspace.iterdir()
+        if (p / "BOUNDARY.md").is_file() and (p / ".git").is_dir()
+    )]
 
 
 def parse_rows(path: Path) -> dict[str, dict[str, int]]:

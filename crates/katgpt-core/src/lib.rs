@@ -1357,7 +1357,7 @@ pub use compression_drafter::{CompressionDrafter, Lz4FlexDrafter};
 
 // BabelCodec — Readability-relaxed semantic codec (Plan 331, Research 312,
 // arXiv:2606.19857 BabelTele). Successor text codec to CompressionDrafter:
-// where CompressionDrafter failed G2 twice on the Seal corpus (byte-level LZ4
+// where CompressionDrafter failed G2 twice on the RPG corpus (byte-level LZ4
 // matching on short quest-grammar strings), BabelCodec operates on semantic
 // STRUCTURE (BT-P8 fixed symbolic mapping rules) — purpose-built for KG-triple
 // / entity-attribute / config / quest-grammar surfaces. Ships three pieces:

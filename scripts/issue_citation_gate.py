@@ -333,7 +333,7 @@ def heading_style_blind(repo: Path, subdir: str,
     unread**, and the split is by HOUSE STYLE rather than correctness —
     riir-mmorpg-examples 43/43 (`## Issue NNN (date) — title`); riir-ai 0/25,
     riir-clippy 0/25 and riir-train 0/13 (`## Issue NNN resolved — title
-    (date)`); seal-remake 14/15; katgpt-rs mixed at 7/29, its own newest closes
+    (date)`); mmorpg-remake 14/15; katgpt-rs mixed at 7/29, its own newest closes
     in the form its own instrument cannot read. A dated measurement RECORD, not
     a claim — the live figures are printed by `citation_drift_sweep.py` on
     every run, per repo and in total.
@@ -423,8 +423,8 @@ def aliases(repo_name: str) -> list[str]:
 
 
 class _NameRx(dict):
-    """`riir-viewbridge` names `seal-remake-unity`; a plain `"seal-remake" in
-    ctx` reads that as naming **seal-remake**, a different repo, and qualified
+    """`riir-viewbridge` names `mmorpg-remake-unity`; a plain `"mmorpg-remake" in
+    ctx` reads that as naming **mmorpg-remake**, a different repo, and qualified
     a `Plan 031` citation on it (Issue 752). A repo name is only a repo name
     when no further name-segment extends it — `riir-ai/scripts/…` and
     `riir-ai's` still match, `riir-games-mmorpg` does not match
@@ -654,11 +654,11 @@ def selftest() -> list[str]:
     eq("⚑ a 2-char stem does not ('ai' collides with prose)",
        aliases("riir-ai"), ["riir-ai"])
     eq("a 3-char stem does not", aliases("riir-dao"), ["riir-dao"])
-    eq("a non-riir name has no stem", aliases("seal-remake"), ["seal-remake"])
+    eq("a non-riir name has no stem", aliases("mmorpg-remake"), ["mmorpg-remake"])
 
     # ── _NAME: a repo name is only a name when nothing extends it ─────────
-    eq("⚑ seal-remake-unity does not name seal-remake",
-       bool(_NAME["seal-remake"].search("riir-viewbridge names seal-remake-unity")),
+    eq("⚑ mmorpg-remake-unity does not name mmorpg-remake",
+       bool(_NAME["mmorpg-remake"].search("riir-viewbridge names mmorpg-remake-unity")),
        False)
     eq("⚑ riir-games-mmorpg does not name riir-game-sdk",
        bool(_NAME["riir-game-sdk"].search("in riir-games-mmorpg")), False)

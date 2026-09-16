@@ -66,9 +66,9 @@ riir-neuron-db            115            300              0
 riir-shader                35             50              0
 riir-train                620           1700              0
 riir-viewbridge            13             10              0
-seal-game-editor          128            130              0
-seal-online-remaster      335            310              0
-seal-remake                30            100              0
+mmorpg-editor          128            130              0
+mmorpg-remaster      335            310              0
+mmorpg-remake                30            100              0
 
 # ── the four repos with NO row, deliberately ────────────────────────────────
 # katgpt-web, riir-dao, riir-deployer and riir-esp32 are not checked out on the
@@ -86,10 +86,10 @@ seal-remake                30            100              0
 # arithmetic:
 #
 #   riir-ai 2626/10082 · katgpt-rs 2415/7124 · riir-train 1129/3235 ·
-#   seal-online-remaster 611/619 · riir-chain 482/1943 · riir-clippy 363/1039 ·
-#   riir-game-sdk 261/575 · seal-game-editor 233/259 · riir-neuron-db 211/574 ·
+#   mmorpg-remaster 611/619 · riir-chain 482/1943 · riir-clippy 363/1039 ·
+#   riir-game-sdk 261/575 · mmorpg-editor 233/259 · riir-neuron-db 211/574 ·
 #   riir-dapps 106/199 · riir-mmorpg-examples 69/438 · riir-shader 64/94 ·
-#   seal-remake 56/193 · riir-kat 26/166 · riir-viewbridge 24/20 ·
+#   mmorpg-remake 56/193 · riir-kat 26/166 · riir-viewbridge 24/20 ·
 #   riir-auth 18/38
 #
 # ⚠ Read that list as a MEASUREMENT RECORD, not as a second set of pins. The
@@ -99,7 +99,7 @@ seal-remake                30            100              0
 # ⚠ And read it against the PRE-777 figure rather than instead of it: the same
 # 16 repos measured 11,132 `.rs` / 49,624 sites on 2026-09-06 over a FILESYSTEM
 # walk. The 22% / 46% drop is not deleted code — it is content no repo owns
-# leaving the population (seal-online-remaster's gitignored `mmorpg/` nested
+# leaving the population (mmorpg-remaster's gitignored `mmorpg/` nested
 # repository, riir-ai's vendored `wgpu-hal` fork, riir-train's cargo OUT_DIR
 # sources under `.runs/target-*`). A reader who cannot see that the population
 # DEFINITION changed reads that drop as a catastrophe.

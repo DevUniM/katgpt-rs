@@ -22,7 +22,7 @@ the cost-blindness the issue exists to prevent.
 workstation is uninterpretable — sibling sessions held it at load average
 44-87 for a whole day. CPU-seconds and peak RSS measure what a process
 *consumed* rather than how long it *waited*, and are load-invariant to within
-0.11 over a 2x load swing (seal-remake `.benchmarks/002_png_vs_ktx2_host_cpu_rss.md`).
+0.11 over a 2x load swing (mmorpg-remake `.benchmarks/002_png_vs_ktx2_host_cpu_rss.md`).
 CPU-seconds is also closer to what Actions bills.
 
 ## The measurement
@@ -108,7 +108,7 @@ any revision. Fixed and verified in this session: `cargo test --workspace
 ## Cost conclusion — decision input, not a decision
 
 The full `--all-features` execution **cannot pass as-is regardless of budget**.
-Making it green requires either per-target triage pins (the seal-remake
+Making it green requires either per-target triage pins (the mmorpg-remake
 `e1ead85` shape — name each target, floor its count, tolerate its known reds)
 or accepting a permanently-red weekly job, which is worthless as a gate. The
 three honest options, now priced:
@@ -116,7 +116,7 @@ three honest options, now priced:
 - **(i) keep T3(b) as the executed scoped job** — landed, ~zero marginal cost,
   machine-invariant core; the full run stays dispatch-only for triage
   campaigns. **This is the standing state.**
-- **(ii) a per-target triaged weekly integration job** — the seal-remake shape
+- **(ii) a per-target triaged weekly integration job** — the mmorpg-remake shape
   over the ~470 default-runnable integration targets. Machine cost ≈ the
   execution half (~2,300 CPU-s) + one feature-set compile. Engineering cost =
   triaging `.issues/723`'s red targets into expect-red pins.

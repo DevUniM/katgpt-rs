@@ -272,7 +272,7 @@ removed per the noise-reduction rule; its unique content (re-evaluation
 triggers) is preserved here. Reopen the work if any of these fire:
 
 - **A concrete consumer** (riir-ai runtime, riir-game-sdk,
-  seal-online-remaster) requests default-on `variable_rank_domain_expert`
+  mmorpg-remaster) requests default-on `variable_rank_domain_expert`
   and is willing to absorb the ~1.7× latency — re-prioritize.
 - **A new modelless technique** (e.g., const-generic specialization,
   `min_specialization` stabilization) makes vtable elimination possible

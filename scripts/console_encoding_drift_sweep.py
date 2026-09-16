@@ -15,8 +15,8 @@ box: **144 in-population instruments, 73 defended, 71 NOT** —
     riir-train           53 of 53 undefended
     riir-clippy           5 of  5
     riir-ai               4 of  5
-    seal-remake           4 of  4
-    seal-game-editor      3 of  3
+    mmorpg-remake           4 of  4
+    mmorpg-editor      3 of  3
     riir-dapps            1 of  1
     riir-mmorpg-examples  1 of  1
     katgpt-rs             0 of 72   ← the gate landed here and nowhere else
@@ -62,7 +62,7 @@ Three floors, and in most repos none of them bites
 
 ⚠ HALF the population has **0 in-population instruments** (riir-auth, riir-chain,
 riir-game-sdk, riir-kat, riir-neuron-db, riir-shader, riir-viewbridge,
-seal-online-remaster — and two of those, riir-chain and riir-shader, have
+mmorpg-remaster — and two of those, riir-chain and riir-shader, have
 `scripts/*.py` that simply print nothing non-ASCII). Both quantities are 0
 there and neither detects anything — Issue 783's population shape, stated as a
 measurement rather than assumed. `min_scripts` is the ONLY blindness detector

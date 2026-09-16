@@ -155,7 +155,7 @@ manifold_pruner   // opt-in, GOAT-gate for default promotion
 | Target | What | Why |
 |--------|------|-----|
 | `riir-ai` | `KernelKind` enum + kernel scoring functions | Reusable inference-time scoring — no dependency on katgpt-rs specifics |
-| `seal-online-remaster` | Manifold-wise NPC behavior validation | Replace binary "is_action_valid" with soft manifold scoring for smoother AI |
+| `mmorpg-remaster` | Manifold-wise NPC behavior validation | Replace binary "is_action_valid" with soft manifold scoring for smoother AI |
 | `katgpt-rs` | Trait extensions, HyperplanePruner, BFCP radius wiring | Core implementation |
 
 ---

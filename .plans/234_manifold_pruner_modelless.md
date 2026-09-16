@@ -194,7 +194,7 @@ If G1 fails (no ≥3% gain):
 | Repo | What | Why |
 |------|------|-----|
 | `riir-ai` | `KernelKind` enum + kernel scoring functions | Reusable math for LoRA training manifold loss (Research 092) |
-| `seal-online-remaster` | Soft validity scoring for NPC behavior | Replace binary action validation with manifold scoring |
+| `mmorpg-remaster` | Soft validity scoring for NPC behavior | Replace binary action validation with manifold scoring |
 
 ---
 
