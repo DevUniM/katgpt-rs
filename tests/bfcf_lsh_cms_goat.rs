@@ -12,6 +12,7 @@
 //! G9: Files under 2048 lines — verified at commit time
 //! G10: Feature isolation — empty/edge inputs don't panic
 
+use std::hint::black_box;
 use std::time::Instant;
 
 use katgpt_rs::pruners::roaring_membership::{CompactBitmap, RoaringBatching, RoaringMembership};
@@ -264,10 +265,19 @@ fn g5_roaring_batch_speedup() {
     let bm_slice = membership.bitmaps();
 
     // Benchmark: Roaring reject count (O(1) per bitmap).
+    //
+    // ⛔ `black_box` on BOTH sides of every measured loop in this test, and it
+    // is not decoration (Issue 806). `let _count = …` discards the result, so
+    // in release LLVM deletes the whole loop: this gate printed
+    // `got 0.0× (roaring=0.00μs, linear=0.00μs)` — a ratio of 0/0 — on the
+    // first x86_64 release execution it ever had, and then oscillated between
+    // passing and failing with the box's load, because scheduling noise is the
+    // only thing that was making either timing non-zero. A speedup asserted
+    // from two elided loops cannot assert anything.
     let iters = 1000;
     let start = Instant::now();
     for _ in 0..iters {
-        let _count = membership.roaring_reject_count(bm_slice);
+        black_box(membership.roaring_reject_count(black_box(bm_slice)));
     }
     let roaring_time = start.elapsed();
 
@@ -281,12 +291,35 @@ fn g5_roaring_batch_speedup() {
         .collect();
     let start = Instant::now();
     for _ in 0..iters {
-        let _count: u64 = bool_vecs
+        let count: u64 = black_box(&bool_vecs)
             .iter()
             .map(|v: &Vec<bool>| v.iter().filter(|b| **b).count() as u64)
             .sum();
+        black_box(count);
     }
     let linear_time = start.elapsed();
+
+    // A ratio is only a measurement if BOTH arms cleared the clock. Assert
+    // that first, so a future elision is reported as "this measured nothing"
+    // rather than as a speedup regression — the `.max(1e-9)` below turns an
+    // elided numerator into a plausible-looking 0.0× and sends the reader
+    // after the wrong thing.
+    // 1 µs of TOTAL time per arm. Measured on the 4090 with the black_box in
+    // place: roaring 2_600 ns and linear 13_027_600 ns over 1000 iterations —
+    // the roaring arm really is 2.6 ns/call, so a floor set at the SLOW arm's
+    // scale would red on a correct run. 1 µs is ~10 QPC ticks (Windows
+    // `Instant` is ~100 ns), which separates a real small measurement from an
+    // elided loop (0 to a couple of hundred ns) without demanding that the
+    // fast side be slow.
+    let floor_ns = 1_000u128;
+    assert!(
+        roaring_time.as_nanos() >= floor_ns && linear_time.as_nanos() >= floor_ns,
+        "G5 UNMEASURED: a loop was optimised away or the clock is too coarse \
+         (roaring={}ns, linear={}ns over {iters} iters, floor {floor_ns}ns) — \
+         the speedup below would be a ratio of two non-measurements",
+        roaring_time.as_nanos(),
+        linear_time.as_nanos(),
+    );
 
     let speedup = linear_time.as_secs_f64() / roaring_time.as_secs_f64().max(1e-9);
 
