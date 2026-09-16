@@ -11,6 +11,30 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 810 CLOSED (2026-09-16) — `sigmoid_calibration`: the Platt-style calibrated sigmoid gate lands as a PoC with all four gates green
+
+Filed from Research 562 (Jev distill): every decision/confidence scalar in the stack is a
+sigmoid output whose boundedness is Lean-proven but whose MEANING is proven nowhere. The PoC
+lands `crates/katgpt-core/src/sigmoid_calibration.rs` behind opt-in `sigmoid_calibration`:
+`SigmoidGateCalibrator` (observe → FIFO ring, zero-alloc · refit → deterministic 2-param
+Newton on Platt-smoothed targets, off-hot-path · apply → one logit + fma + sigmoid, zero-alloc
+· commitment → BLAKE3 over versioned canonical bytes incl. the monotone `n_obs_total`, the
+`closure::commitment` convention), `CalibratedGateSet<const N>` for the 5-affect-scalar shape,
+and the public metric substrate (`brier_score` / `log_loss` / `expected_calibration_error`).
+Monotonicity guard `w = 1/T > 0` (anti-correlated windows project to `W_MIN`) — calibration
+can never reorder decisions, so G3 is by construction. Measured (planted fixture
+`p_true = sigmoid(1.6z−0.4)`, train/test split, n=2048 eval): **G1** ECE 0.0696 → 0.0322
+(2.16×, ≤ 0.05) with planted-transform recovery T=0.627/b=0.243 (planted 0.625/0.25);
+**G2 (Report the Floor)** log-loss 0.5923 < uncalibrated 0.6066 < base-rate floor 0.6878 and
+Brier 0.2026 < 0.2090 < 0.2473 — both dumb baselines beaten on both metrics; **G3** default
+lib suite 2060/0 unchanged + ranking/optimal-threshold/fire-rate-movement assertions;
+**G4** observe+apply 1000-call loop zero-alloc (Issue-741 predicate — runs in dev AND
+`--release --features alloc_tracking`). Docs: README/examples counts 611→612, feature catalog
+§113. 11/11 module tests, clippy `-D warnings` both feature states, docs gate 25/25. Consumers
+(CLR verifier, ActionBridge `sigmoid_confidence`, the 5 affect scalars) filed as riir-ai Issue
+964 — opt-in per the no-default-consumer rule until a consumer GOAT lands. Issue file removed
+per the noise-reduction rule.
+
 ## Issue 809 T1+T2 CLOSED (2026-09-16) — the global-RNG census is read; the class is gated; the T3 `Rng::new()` census is deferred with a reason
 
 The 806 matrix found the defect; this landed the wall. The T1 census used the WIDE predicate
@@ -29,10 +53,9 @@ comment/string masking, unconditional arms (check_validation 25/25 at landing). 
 found its own population hole before landing: a planted UNTRACKED file is invisible (`git
 ls-files` IS the population) — correct for a per-push CHECK, and the canary was redone staged.
 arm_reach: 22 killed / 2 EQUIVALENT (in-string EOL-backslash flips — the multi-line-string
-class the masker documents out of scope; pinned at the arms header). T3 deferred: `Rng::new()`
-is ~95 sites over 34 production files, dominated by sampling-by-design paths
-(`CuratorBandit::new` the notable shipped-primitive candidate) — a per-site read T1-style, not
-a batch conversion.
+class the masker documents out of scope; pinned at the arms header). T3 LANDED same day at
+`6d120abeb` — the `Rng::new()`/`Rng::default()` constructor class joined the gate (147 global
+sites across 55 files, every row pinned); issue file removed per the noise-reduction rule.
 
 ## Issue 806 T6 CLOSED (2026-09-16, the M3 side) — t698_t5_kv_mean adjudicated arch-dependent with dual pins; kda grad-check floor was below its own noise
 

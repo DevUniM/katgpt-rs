@@ -3988,3 +3988,46 @@ Pure integer arithmetic, zero deps, zero allocs, wasm32-clean.
 Issue 807 (resolved 2026-09-16, git history) ·
 Substrate: `crates/katgpt-core/src/lthash.rs`, bench
 `benches/bench_lthash.rs`.
+
+## 113. sigmoid_calibration — Platt-style calibrated sigmoid gate (Issue 810)
+
+Every decision/confidence scalar in the stack is a sigmoid output whose
+boundedness is Lean-proven but whose *meaning* is proven nowhere ("fear =
+0.8" is not known to fire ~80% of the time). This feature adds the missing
+modelless half: a per-direction two-parameter refit (temperature T, bias b)
+over recorded `(sigmoid_output, binary_outcome)` pairs — Platt 1999; Guo et
+al. 2017 (arXiv:1706.04599); Kadavath 2022 (arXiv:2207.05221). Mutation
+class #3 (direction/sigmoid-gate latent update from labeled outcomes) —
+never base weights; the fit is a deterministic 2-parameter Newton solve on
+Platt-smoothed targets, bit-identical under replay.
+
+- **`SigmoidGateCalibrator`**: `observe(p, outcome)` (fixed-capacity FIFO
+  ring, zero-alloc) → `refit()` (off-hot-path convex Newton) → `apply(p)`
+  (one logit + fma + sigmoid, zero-alloc hot path) → `commitment()` (BLAKE3
+  over versioned canonical bytes — params + window capacity + total
+  observation count; the `closure::commitment` small-artifact convention).
+- **Monotonicity guard**: `w = 1/T > 0` enforced (anti-correlated windows
+  project to `W_MIN`) — calibration can never reorder decisions.
+- **`CalibratedGateSet<const N>`**: fixed-size bank for multi-scalar surfaces
+  (the 5 affect scalars, a verifier panel).
+- **Metric substrate** (public): `brier_score`, `log_loss`,
+  `expected_calibration_error` — consumed by the gates and future
+  consumers (CLR's ECE harness).
+- **G1**: planted-transform recovery — fixture `p_true = sigmoid(1.6z−0.4)`
+  (T=0.625, b=0.25): fitted T=0.627, b=0.243; decision-level ECE 0.0696 →
+  0.0322 (2.16× ≤ 0.05 target), train/test split honored.
+- **G2 (Report the Floor)**: log-loss 0.5923 < uncalibrated 0.6066 <
+  base-rate floor 0.6878; Brier 0.2026 < 0.2090 < 0.2473 — both dumb
+  baselines beaten on both metrics.
+- **G3**: ranking + optimal-threshold accuracy identical by construction
+  (monotone w > 0); fire-rate error shrinks, never grows.
+- **G4**: observe+apply zero-alloc (1000-call loop, 0 allocations; runs in
+  dev AND `--release --features alloc_tracking` per the Issue-741
+  predicate).
+
+Consumers (riir-ai, filed as the follow-up issue): CLR verifier ECE
+transition, ActionBridge `sigmoid_confidence` + ABSTAIN threshold, the 5
+affect scalars (local monotone transform; raw sync boundary untouched).
+
+Issue 810 (resolved 2026-09-16, git history) ·
+Substrate: `crates/katgpt-core/src/sigmoid_calibration.rs`.

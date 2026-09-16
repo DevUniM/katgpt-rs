@@ -3253,3 +3253,8 @@ pub mod lthash;
 #[cfg(all(test, any(debug_assertions, feature = "alloc_tracking")))]
 #[global_allocator]
 static TEST_GLOBAL_ALLOC: alloc::TrackingAllocator = alloc::TrackingAllocator;
+
+/// Calibrated sigmoid gate (Issue 810) — Platt-style temperature/bias refit
+/// for decision/confidence scalars. Opt-in (`sigmoid_calibration`).
+#[cfg(feature = "sigmoid_calibration")]
+pub mod sigmoid_calibration;
