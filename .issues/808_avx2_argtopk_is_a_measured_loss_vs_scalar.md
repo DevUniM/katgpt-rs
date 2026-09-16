@@ -2,7 +2,12 @@
 
 **Status:** OPEN — decision, workstation-measured. Found while executing
 [Issue 806](806_x86_64_execution_matrix_followup.md)'s matrix; the correctness
-half of the same finding is already fixed.
+half of the same finding is already fixed. **2026-09-17:** option 4's
+re-measurement (six realistic block-score distributions) + T2's per-k `N_MIN`
+crossover landed as [Bench 810](../.benchmarks/810_argtopk_distribution_crossover.md)
+— the recorded loss shape SURVIVES realistic distributions and deepens on
+`late_peak`; k≤4 is the distribution-robust carve-out. T1 remains the owner's
+call; T2's ≥2-microarchitecture bar is still 1 of 2 met.
 
 ## Provenance
 
@@ -80,9 +85,30 @@ pick between 1 and 2.
 - [ ] T2 — if 1 or 2: measure `N_MIN` per `k` on ≥ 2 microarchitectures, then
       gate the dispatch and add the crossover to the bench as an assertion, so
       the next regression is a test failure rather than a table nobody reads.
+      ⚠ 2026-09-17: the Raptor-Lake row exists (Bench 810) — and `N_MIN` is
+      DISTRIBUTION-sensitive there (k=8: 256 on `locality`, 768 on
+      `iid_uniform`, >1024 on `late_peak`), so the eventual gate needs the
+      distribution axis, not one n per k.
 - [x] T3 — **DONE** (landed with this issue). `bench_256_simd_topk` had no
       `[[test]]` row at all, so `cargo test --test bench_256_simd_topk` at
       default features compiled an empty binary and printed `ok. 0 passed`,
       exit 0 — this repo's own green-zero rule, on the one target that
       executes the kernel two defects were hiding in. Row added; independent
       of options 1–4.
+- [x] T4 — **DONE 2026-09-17** (Bench 810 + `tests/bench_256_simd_topk.rs`
+      `bench_simd_topk_issue808_{distribution_matrix,crossover_nmin}`). Option
+      4's evidence half, ungated: six deterministic distributions (iid /
+      gauss-sigmoid / locality / early-peak / late-peak / bimodal-sparse) ×
+      k ∈ {1,2,4,8,16} × n ∈ {64..1024} × BOTH profile arms (default release;
+      `+avx2`), interleaved median-of-ratios (`tests/common/ab_timing.rs`),
+      per-cell correctness vs full-sort reference. Headlines: (1) the k=8/16
+      loss survives every distribution except `early_peak` and DEEPENS on
+      `late_peak` (0.41–0.72× below n=512; still 0.90–0.95× at n=1024 — no
+      n-floor rescues k=8 there); (2) k=2/4 win or tie on every distribution
+      past n=64–128 (up to 3.9×) — option 2 is the distribution-robust
+      carve-out; (3) `N_MIN` is distribution-sensitive (see T2 note); (4)
+      k=1's dispatch is a separate two-pass argmax whose cost depends on where
+      the max sits (`late_peak` loses ~0.9× at every n). Instrument caveat:
+      the harness's anti-hoist churn adds a constant to both arms, compressing
+      ratios toward 1.00 — measured losses are MILDer than true. T1 is
+      untouched: this box is 1 of the ≥2 microarchitectures T2's bar demands.
