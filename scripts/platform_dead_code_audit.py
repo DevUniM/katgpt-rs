@@ -911,6 +911,14 @@ from tracked_walk import (  # noqa: E402  (sys.path is set at the top of this fi
     vendored_p,
 )
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 
 def list_rs_files(root: Path) -> tuple:
     """(files, vendored_excluded) — tracked `*.rs` where git can answer.

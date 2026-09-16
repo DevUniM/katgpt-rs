@@ -51,6 +51,14 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # Target dirs and the cargo table that declares them.
 TARGET_KINDS = {"tests": "test", "benches": "bench", "examples": "example"}
 

@@ -131,6 +131,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # ── verdicts ────────────────────────────────────────────────────────────────
 FINDING = "FINDING"
 GUARDED = "GUARDED"

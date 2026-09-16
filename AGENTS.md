@@ -300,6 +300,7 @@ develop work. One line per check:
 | `subprocess_encoding_gate.py` | a `subprocess` call that decodes with the SYSTEM locale — silent mojibake, or `stdout = None` with the returncode intact (Issue 778) |
 | `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
 | `sweep_advisory_membership_gate.py` | a `*_drift_sweep.py` that does not call the Issue-797 worktree advisory — its findings and floors then describe whatever the working tree happened to say; gated by MEMBERSHIP, because a count is green on a swap and went stale two hours after it was typed (Issue 797 T5) |
+| `console_encoding_gate.py` | a tracked `scripts/*.py` that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with **no verdict**, so a sweep's findings are not *unknown* but *unlooked at*; `docs_gate.sh`'s `PYTHONIOENCODING` only covers runs that go through the wrapper, and every workstation audit is documented as a DIRECT invocation (Issue 804). The shared defence is `scripts/console_safe.py`: `errors="backslashreplace"`, because the console encoding is not ours to choose, and forcing it gives mojibake instead of an exception |
 | `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 

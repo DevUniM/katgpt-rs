@@ -56,6 +56,14 @@ import sys
 from pathlib import Path
 import pathlib
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 GIT_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_RE = re.compile(r"(?:\./|\b)((?:scripts|ci|\.ci)/[A-Za-z0-9_.-]+\.sh)")
 # Ordered: the report reads left-to-right as increasing surface.

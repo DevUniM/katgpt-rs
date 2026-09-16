@@ -92,6 +92,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tracked_walk import tracked_files  # noqa: E402
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # ── HALF A: cube kernels that derive dims from `.len()` ────────────────────
 
 CUBE_FN_RE = re.compile(

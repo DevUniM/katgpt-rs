@@ -53,6 +53,14 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # Pruned during the FALLBACK walk only. Deliberately short: this list is not
 # the mechanism, it is what remains when git cannot answer at all.
 SKIP_DIRS = {"target", ".git", "node_modules", ".venv", "dist"}

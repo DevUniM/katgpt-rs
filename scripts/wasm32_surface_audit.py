@@ -56,6 +56,14 @@ import tomllib
 from pathlib import Path
 from typing import NamedTuple
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 WORKSPACE = Path(__file__).resolve().parent.parent.parent
 
 CFG_RE = re.compile(r'target_arch\s*=\s*"wasm32"')

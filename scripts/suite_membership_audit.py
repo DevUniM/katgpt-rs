@@ -72,6 +72,14 @@ except ModuleNotFoundError:  # pragma: no cover (3.10 only)
 import cfg_gated_target_audit as cga  # noqa: E402  (shared vocabulary)
 import ci_test_execution_report as cit  # noqa: E402  (shared invocation_texts)
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # Files that can pin a suite, per repo. The hand method grepped
 # `scripts/ .github/` — that boundary is kept. These are text-scanned, not
 # parsed: a target name inside a comment still names the target (a suite that

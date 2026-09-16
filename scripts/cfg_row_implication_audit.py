@@ -94,6 +94,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cfg_gated_target_audit import derive_repos  # noqa: E402
 from required_features_build_audit import Row, parse_rows  # noqa: E402
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 INNER_CFG = re.compile(r"^\s*#!\[cfg\((.*)\)\]\s*$", re.DOTALL)
 # A `//` comment inside a multi-line attribute must be dropped BEFORE the
 # predicate is joined, and before parens are counted. Two failures otherwise,

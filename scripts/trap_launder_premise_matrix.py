@@ -88,6 +88,14 @@ import shutil
 import subprocess
 import tempfile
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # ── The matrix ────────────────────────────────────────────────────────────
 # `set -u` and `set -uo pipefail` are in the list because the audit's
 # population predicate was `set -u`: measuring nounset WITHOUT errexit is how

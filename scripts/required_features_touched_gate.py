@@ -76,6 +76,14 @@ from required_features_build_audit import (  # noqa: E402
     MIN_FREE_GIB,
 )
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 
 def changed_files(repo: Path, base: str, head: str) -> list[Path]:
     """Paths changed between two revisions, resolved absolute.

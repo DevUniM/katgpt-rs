@@ -46,6 +46,14 @@ sys.path.insert(0, str(HERE))
 
 from skill_repo_set_gate import fenced_blocks, selftest  # noqa: E402 — reused, not re-derived
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 REPO_ROOT = HERE.parent
 
 # The walk's own floor. 1517 tracked `.md` at landing (2026-09-12); floored well

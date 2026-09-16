@@ -146,6 +146,20 @@ def prove_fires(root, present):
 
 
 def main():  # population-predicate: not a contract-repo walk (it CALLS restatement_theorem_audit.repos, the registered subset predicate)
+    # ⛔ Without this the sweep CRASHES on the Windows workstation (cp874
+    # console) at its first `✓` — `UnicodeEncodeError` out of the print, no
+    # verdict, exit 1. 17 of the 18 `*_drift_sweep.py` carry this block
+    # verbatim; this one did not, so it was the one member of the family
+    # nobody on this box could run at all, and its findings went unread —
+    # the shape AGENTS.md names for a sweep that always reds. Not
+    # `encoding="utf-8"`: the console encoding is not ours to choose, and
+    # `backslashreplace` degrades `✓` to `✓` rather than dying.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):
+            pass  # not a TextIOWrapper (embedded / detached); keep old behavior
+
     audit.selftest()
     audit.selftest_scoping()
 

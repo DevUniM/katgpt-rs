@@ -67,6 +67,14 @@ from bench_doc_audit import (
     parse_status_phrase,
 )
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 
 def _parse_intra_crate_spec(spec: str) -> str | None:
     """Normalize a Cargo feature dep spec to a bare intra-crate feature name.

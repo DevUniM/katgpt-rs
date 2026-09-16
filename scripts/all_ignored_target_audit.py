@@ -79,6 +79,14 @@ from cfg_gated_target_audit import (  # noqa: E402
     manifests,
 )
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # `#[test]`, `#[tokio::test]`, `#[async_std::test]`, `#[bench]`, and the
 # `#[test]`-alike attribute macros used across the workspace. Anchored at the
 # attribute start so `#[should_panic]` and friends do not match.

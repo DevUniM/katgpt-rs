@@ -1,0 +1,19 @@
+# Pins for scripts/console_encoding_gate.py — Issue 804.
+#
+# An instrument in scope (a tracked top-level `scripts/*.py` with a `__main__`
+# entry point and a non-ASCII STRING literal) that does NOT defend its streams
+# dies with `UnicodeEncodeError` and NO verdict on a non-UTF-8 console. The
+# repair is one line — `console_safe.apply()` after the imports, or the inline
+# `sys.stdout.reconfigure(errors="backslashreplace")` that 42 instruments
+# already carry. Both are credited.
+#
+# Format: one script NAME per line, then `#` and a REASON. A reasonless row is
+# REFUSED — a row nobody had to justify is a backlog wearing a pin (Issue 785).
+# A row whose script has since been defended, or has left the population, reds
+# as STALE: this file must not be allowed to only ever loosen.
+#
+# ⛔ DELIBERATELY EMPTY, and it should stay that way. There is no instrument in
+# this repo for which "prints a glyph nobody can read, on the one box that runs
+# the whole sweep family by hand" is the right outcome. If you are reaching for
+# a row here, the one-line call is cheaper than the sentence you are about to
+# have to write.
