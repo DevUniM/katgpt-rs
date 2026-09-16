@@ -33,12 +33,18 @@
 # it were a property of the code. The stale-pin wall is what caught it: a pin
 # file that only ever loosens would have kept both forever.
 #
+# ⛔ AND `g5_roaring_batch_speedup` came out on the FOURTH run, for the same
+# reason — it is the 0.00 µs / 0.00 µs row, so of course it is load-sensitive:
+# under load both arms fall below the clock granularity and the ratio is 0/0,
+# and alone they do not. Four runs of one commit produced four different
+# failing sets, which is why the script now RE-RUNS each failure alone before
+# adjudicating it. Only rows that fail TWICE reach this file.
+#
 # Read a future red on either as a BOX-CONDITIONS question first. AGENTS.md
 # says the same thing about its own docs-gate CPU figure — cite a number with
 # the load class it was measured under, or it carries a quiet-box premise onto
 # a busy box.
 #
 proof_g3b_swar_speedup  # ≥5.0× gate, 4.37× here. Its own name is "Issue 298 SWAR+FMLA+4acc" — FMLA is an aarch64 instruction, so the bar is a NEON number and the x86_64 arm has never been calibrated. Not a regression: a bar that was never set for this ISA.
-g5_roaring_batch_speedup  # "≥2×, got 0.0× (roaring=0.00μs, linear=0.00μs)" — the ratio is 0/0. Both arms measured BELOW the clock granularity in release; this is a timer-resolution artifact, not a speedup that vanished. Needs an iteration count, not a fix to roaring.
 t09_throughput_inv_sqrt_16x16  # 88.7 µs against a 10 µs absolute target. Absolute-latency targets do not transfer between machines at all, and this is 9× over — the one row here worth re-measuring on a quiet box before believing either way.
 t698_t5_kv_mean_gates  # fixture identity: measured 4d0b592740db9358 here, pinned 23d0daab3f087159 at landing (892657c1, 2026-08-30 — the commit message records the measurement). ⛔ UNADJUDICATED, and the test itself says "never re-base silently", so it is pinned rather than re-based. Triage so far: the hash is stable across debug/release and with/without +avx2 on this box, so it is not a codegen artifact; issue_698 t1/t2/t6/t7 hash the SAME TransformerWeights::new stream at n_layer=1 and their pins DO reproduce here, so it is not a blanket cross-platform weight-init divergence; `gated_mlp` (the only RNG-DRAWING cfg-gated field in that constructor) is opt-in and off in this build; config.rs has not changed since the test landed. Measured on this box: f32::ln and f32::cos differ from an f64-then-round reference on ~0.26% / ~0.20% of inputs, so Rng::normal's Box-Muller is libm-dependent in principle — but t1 agrees over ~4k draws, which a 0.5%-per-draw divergence could not survive. Resolving it needs one M3 run of this target; see Bench 806.

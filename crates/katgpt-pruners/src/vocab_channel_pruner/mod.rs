@@ -434,6 +434,11 @@ impl VocabChannelDecomposer {
     }
 
     /// Optimize Householder vector via random coordinate descent on kurtosis.
+    // 8 args: the 7 that were already the call context, plus the seeded `rng`
+    // Issue 809 threads through. Bundling them into a struct would move the
+    // same seven values one level down for no reader's benefit — the house
+    // convention here (361 sites) is the allow with the reason.
+    #[allow(clippy::too_many_arguments)]
     fn optimize_householder(
         &self,
         h: &mut [f32],
