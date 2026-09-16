@@ -482,6 +482,7 @@ hippocampal_cache = ["katgpt-core/hippocampal_cache"]  # HOLA Hippocampal Exact 
 hga = ["katgpt-core/hga", "katgpt-attn/hga"]  # Hierarchical Global Attention — chunk→group→token routing with RoPE-aware mixed-frequency summaries (Plan 397, Research 379, arxiv 2606.30709). Opt-in — Phase 2 GOAT gate (G2 head-to-head vs DashAttention) RAN + FAILED (G2-proxy negative result per .plans/397_hierarchical_global_attention.md — HGA loses to default-on DashAttention on synthetic NIAH routing comparison); stays opt-in as documented negative result per Plan 397 T3.3 (G5 latency PASS at 1.12×, but G2 is the load-bearing gate and it lost).
 chain_fold = ["thinking_cot", "katgpt-speculative/chain_fold"]  # ThoughtFold chain folding — inference-time CoT step pruning (Plan 195 GOAT 16/16, validated by Plan 228 78% reduction). Phase 12 (2026-07-04): module moved to katgpt-speculative; root forwards.
 clr = ["katgpt-claim/clr"]  # CLR Claim-Level Reliability runtime — sigmoid projection vote over claim embeddings (Plan 284, Research 255). Phase 11 (2026-07-04): module moved to katgpt-claim; root forwards.
+clr_calibration = ["katgpt-claim/clr_calibration"]  # CLR verdict calibration — the first sigmoid_calibration consumer (riir-ai Issue 964 C1; substrate Issue 810, GOAT Bench 807). CalibratedVerifier wraps any ClaimVerifier: observe (sigmoid_output, outcome) pairs, refit off-hot-path, apply in front of the reliability gate. Cold start bit-identical; fitted transform strictly monotone. Opt-in per the no-default-consumer rule.
 claim_rubric = ["katgpt-claim/claim_rubric"]  # Claim Rubric Runtime — L1/L2/L3 evidence ladder validator (Plan 307, Research 287). Phase 11 (2026-07-04): module moved to katgpt-claim; root forwards.
 bandit_top_p = ["bandit", "katgpt-pruners/bandit_top_p"]  # Adaptive top-p bandit arm selection (Plan 181, default ON candidate)
 curvature_alloc = ["bandit", "katgpt-pruners/curvature_alloc"]  # Curvature-influence allocation — EoS proxy budget control (Plan 183)
@@ -2581,6 +2582,21 @@ required-features = ["clr"]
 name = "bench_284_clr_goat_g4"
 path = "tests/bench_284_clr_goat_g4.rs"
 required-features = ["clr"]
+
+# Bench 807 — CLR verifier calibration GOAT (riir-ai Issue 964 C1 — the first
+# sigmoid_calibration consumer; substrate katgpt-rs Issue 810). Gates:
+#   G1  miscalibrated-fixture ECE (planted transform, train/test split) —
+#       calibrated beats uncalibrated AND the base-rate floor on log-loss
+#       + Brier (Report-the-Floor rule);
+#   G1b no-harm on the already-calibrated Bench-284 G2 fixture;
+#   G3  cold-start bit-identity + pairwise monotonicity + vote-winner
+#       stability under a near-identity refit;
+#   G4  alloc-free observe/apply loop (debug-gated, the Issue-741 predicate).
+# Run: cargo test --features clr_calibration --test bench_807_clr_calibration_goat -- --nocapture
+[[test]]
+name = "bench_807_clr_calibration_goat"
+path = "tests/bench_807_clr_calibration_goat.rs"
+required-features = ["clr_calibration"]
 
 # Plan 284 Phase 4 — CLR clr_vote_minimal performance benchmark (G3).
 # Uses std::time::Instant + harness = false (criterion is not a root-crate

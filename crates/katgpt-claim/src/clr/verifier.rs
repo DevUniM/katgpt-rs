@@ -18,6 +18,21 @@
 //!
 //! NO softmax is used anywhere in this module — only sigmoid (per project
 //! convention and the user's `AGENTS.md` rule).
+//!
+//! # Calibration (riir-ai Issue 964 C1, Bench 807)
+//!
+//! These verdicts are BOUNDED in `(0,1)` by construction, but boundedness is
+//! not calibration: whether a 0.8 verdict means "~80% of such claims come
+//! true" depends on the direction vectors and embedding scale, and drifts as
+//! either side moves. The `clr_calibration` feature ships
+//! [`crate::clr::calibration::CalibratedVerifier`], which wraps this (or any)
+//! verifier with the Platt-style `SigmoidGateCalibrator` (katgpt-core Issue
+//! 810): observe `(sigmoid_output, outcome)` pairs where ground truth is
+//! known, refit off-hot-path, and apply in front of the reliability gate —
+//! cold start bit-identical, fitted transform strictly monotone. GOAT (Bench
+//! 807): planted-drift fixture ECE 0.0924 → 0.0164 with planted-transform
+//! recovery; the already-calibrated G2 fixture undisturbed (ΔECE +0.0002);
+//! vote winners stable; observe+apply zero-alloc.
 
 use crate::clr::traits::{ClaimVerifier, DirectionVectorSource};
 use crate::clr::types::Verdict;

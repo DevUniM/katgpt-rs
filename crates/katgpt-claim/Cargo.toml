@@ -33,3 +33,16 @@ claim_rubric = []
 # CLR Claim-Level Reliability runtime — sigmoid projection vote over claim
 # embeddings (Plan 284, Research 255). DEFAULT-ON.
 clr = []
+
+# CLR verdict calibration (riir-ai Issue 964 C1 — the first
+# sigmoid_calibration consumer; substrate katgpt-rs Issue 810, GOAT record
+# katgpt-rs Bench 807). Wraps any ClaimVerifier with the Platt-style
+# SigmoidGateCalibrator: record (sigmoid_output, outcome) pairs where ground
+# truth is known, refit off-hot-path, apply in front of the reliability
+# gate. Cold start is BIT-IDENTICAL to the uncalibrated verifier (identity
+# fast path); the fitted transform is strictly monotone (w = 1/T > 0) so
+# pairwise verdict order never inverts. Latent-domain rules: calibration is
+# a local monotone transform — calibrated verdicts never cross a sync
+# boundary. Opt-in per the no-default-consumer rule until each consumer's
+# own GOAT lands.
+clr_calibration = ["clr", "katgpt-core/sigmoid_calibration"]

@@ -11,6 +11,30 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## riir-ai Issue 964 C1 LANDED (2026-09-16) — `clr_calibration`: the CLR verifier becomes the first `sigmoid_calibration` consumer (Bench 807)
+
+The CLR verifier's verdicts were bounded (Bench 284 G2, ECE 0.0087 on a fixture whose ground
+truth was the verifier's OWN sigmoid) — boundedness again, not calibration. `clr_calibration`
+(katgpt-claim, opt-in, root forwarder) ships `CalibratedVerifier<V>`: wraps any `ClaimVerifier`
+with the Issue-810 Platt calibrator — `observe(raw_verdict, outcome)` at the existing ECE harness
+points, off-hot-path `refit`, `apply` in front of the reliability gate `r_k = (mean_m v)^M`.
+GOAT (Bench 807, deterministic seeds): planted-drift fixture (world on `sigmoid(1.6·dot − 0.4)`,
+verifier on `sigmoid(dot)`) ECE 0.0924 → **0.0164** (5.6×) with planted recovery (T, b) =
+(0.642, 0.252) vs (0.625, 0.250); log-loss 0.4819 and Brier 0.1591 both beat the uncalibrated
+verdict AND the base-rate floor (Report-the-Floor); the already-calibrated G2 fixture undisturbed
+(ΔECE +0.0002, pinned as the ±0.005 bin-noise no-harm band — the honest reading of C1's "≤"
+on a saturated fixture); vote winner stable 25/25 seeds under a near-identity refit; observe+apply
+zero-alloc (dev + release `alloc_tracking`). Substrate companion fix: `apply` gained the identity
+fast path — at `(w, c) = (1, 0)` the input returns bit-identically (a logit→sigmoid roundtrip is
+NOT bit-exact in f32; the documented "identity until evidence" contract is exact-value) — cold
+start changes nothing, pinned by two new substrate tests + the consumer G3a bit-identity gate.
+Dev note recorded in the bench doc: the first draft's train/test splits used DIFFERENT random
+direction vectors (calibrated predictions scored against another direction's labels — ECE 0.35
+with correct recovered params); splits share one direction pool now. Module docs tightened
+bounded→calibrated (`clr/traits.rs`, `clr/verifier.rs`); feature catalog §114; README counts
+612→613. Clippy `-D warnings` clean (katgpt-claim `--all-targets --all-features`, katgpt-core
+`sigmoid_calibration`); bench_284 G1/G2/G5 + G4 re-run green; docs gate 25/25.
+
 ## Issue 812 CLOSED (2026-09-16) — the bench_doc_audit BlindRead context split was a TMPDIR-FORM split; the arm now matches paths form-independently
 
 The verdict-review second opinion measured a deterministic red/green split on a byte-identical

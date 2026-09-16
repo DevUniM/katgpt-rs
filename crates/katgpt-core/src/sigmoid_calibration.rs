@@ -131,8 +131,18 @@ impl SigmoidGateCalibrator {
     /// `p_cal = sigmoid(w · logit(p) + c)` — one logit, one fma, one
     /// sigmoid. Monotone in `p` for every reachable parameter state
     /// (`w ≥ W_MIN > 0`), so ranking is preserved by construction.
+    ///
+    /// Identity fast path: at the constructed parameters `(w, c) = (1, 0)`
+    /// the input is returned **bit-identically** — a `logit → sigmoid`
+    /// roundtrip is not bit-exact in f32, and the documented contract
+    /// ("apply is the identity until evidence says otherwise") plus the
+    /// cold-start bit-identity requirements of downstream consumers
+    /// (riir-ai Issue 964 C1/C3) demand the exact value, not a float twin.
     #[inline]
     pub fn apply(&self, p: f32) -> f32 {
+        if self.w == 1.0 && self.c == 0.0 {
+            return p;
+        }
         sigmoid(self.w.mul_add(logit_clamped(p), self.c))
     }
 
@@ -743,6 +753,37 @@ mod tests {
         let (t, b) = cal.params();
         assert_eq!((t, b), (1.0, 0.0));
         assert!((cal.apply(0.3) - 0.3).abs() < 1e-6, "identity apply");
+    }
+
+    /// Cold start is bit-identical, not merely close: `new`'s documented
+    /// contract ("apply is the identity until evidence says otherwise") is
+    /// an exact-value contract. A `logit → sigmoid` roundtrip is NOT
+    /// bit-exact in f32, so the fast path must return the input unchanged —
+    /// downstream consumers commit/sync the raw sigmoid output through the
+    /// cold-start gate (riir-ai Issue 964 C1/C3 bit-identity requirements).
+    #[test]
+    fn cold_start_apply_is_bit_identical() {
+        let cal = SigmoidGateCalibrator::new(64, 8);
+        // Saturated ends included: the clamp only exists on the slow path.
+        for i in 0..254 {
+            let p = (i + 1) as f32 / 255.0;
+            assert_eq!(cal.apply(p).to_bits(), p.to_bits(), "p = {p}");
+        }
+    }
+
+    /// A below-`min_obs` refit leaves the bit-identity fast path armed —
+    /// observations recorded but no evidence acted on yet.
+    #[test]
+    fn below_min_obs_apply_stays_bit_identical() {
+        let mut cal = SigmoidGateCalibrator::new(256, 32);
+        for i in 0..16 {
+            cal.observe(0.25 + 0.02 * i as f32, i % 3 == 0);
+        }
+        assert!(!cal.refit());
+        for i in 0..254 {
+            let p = (i + 1) as f32 / 255.0;
+            assert_eq!(cal.apply(p).to_bits(), p.to_bits(), "p = {p}");
+        }
     }
 
     /// FIFO eviction: capacity 4 under 6 observations keeps the last 4 and
