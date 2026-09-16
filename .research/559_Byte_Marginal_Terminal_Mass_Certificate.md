@@ -1,7 +1,12 @@
 # Research 559: Byte Marginal + Terminal-Mass Certificate (Breaking the Token Ceiling)
 
 > **Source:** "Breaking the Token Ceiling: Distilling Smaller, Stronger Byte Models" — arXiv:2609.12303 (Marathe, Pagnoni, Limisiewicz, Li, Lewis, Zettlemoyer, Iyer; Meta FAIR + UW, 2026-09-11)
-> **Status:** Active — GOAT verdict, Plan 598 filed
+> **Status:** Done — GOAT verdict; Plan 598 EXECUTED 2026-09-16 (Bench 770): the
+> certificate machinery is correct and alloc-free (G1/G4), but the G2 <5%-of-softmax
+> premise is REFUTED (depth-0 gather ≈ 1.97× softmax, full loop 2.63×) —
+> `refinement_marginal` stays OPT-IN, no promotion. The never-under-reports bound
+> validated on-stack (98 adversarial cells) and is inherited by any future
+> exact-conversion lane.
 > **Related Research:** 017 (Fast BLT — byte *architecture* negative verdict; this note is the byte *interface* on token models, complementary), 548 (TriSpec margin-gated escalation — the certificate fuses here), 087 (ConvexTok — tokenization-side), 137 (Pplx datrie — trie substrate), 392 (attention dilution — unrelated mass-shape family)
 > **Related Plans:** 598 (katgpt-rs byte marginal primitive)
 > **Cross-ref (riir-ai):** Issue 961 (perf league BPB normalization); (riir-train) training rows in §7

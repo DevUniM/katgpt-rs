@@ -3919,3 +3919,45 @@ Bench: [763](../../.benchmarks/763_dual_wave_goat.md) ·
 Substrate: `crates/katgpt-core/src/dual.rs` +
 `crates/katgpt-dec/src/wave_kernel.rs`, benches
 `bench_775_adjoint_goat.rs` (core) + `bench_775_dual_wave_goat.rs` (dec).
+
+## 111. refinement_marginal — single-pass token→byte marginal + terminal-mass certificate (Plan 598 / Research 559)
+
+The interface math from the byte-distillation paper (arXiv:2609.12303,
+Marginalize-It family): coarse-grain a token-space categorical into the
+257-bin byte record (256 byte bins + a TERMINAL bin that ABSORBS the
+boundary mass the classic pass renormalizes away) — plus the closed-form
+per-step certificate `error_bound` (TV ≤ M/(1−M), over-reports by
+construction; tight identity TV ≤ M derived in the module doc),
+`expected_escalation_cost` (Σ_k M_k), and the `escalation_sigmoid`
+serve/escalate gate.
+
+`RefinementTable` (flat symbol→child sequences, `byte_at` O(1)) is exact at
+depth 0 (first-byte marginal) and certificate-quantified after; the
+streaming frontier (`coarse_grain_first`/`coarse_grain_step` +
+`CoarseGrainScratch`) touches only survivors per step — one pass over the
+flattened table worst case, no per-step vocab rescan, zero allocs.
+
+**GOAT (Bench 770, 2026-09-16): G1/G3/G4 PASS, G2 FAIL honest — NOT
+promoted.** Correctness + the never-under-reports bound are proven (5 unit
+tests + 98-cell integration vs an independent full-rescan reference, min
+slack +8.4e-5); the plan's <5%-of-softmax premise is REFUTED structurally:
+the per-symbol variable-offset byte GATHER is ~1.97× softmax at depth-0
+alone (2.63× full 8-step loop) at every vocab size — no restructure under
+consideration removes the gather. G4: 0 steady-state allocs (release,
+alloc_tracking); table build 1.4 ms @ 131K vocab (1 s/100K bar ×700).
+Stays opt-in per the plan's own promotion rule; the proven certificate is
+inherited by any future exact-conversion/escalation lane.
+
+🔧 Feature flag: `refinement_marginal = []` in `katgpt-core`; the BPE
+instantiation is `refinement_marginal` in the ROOT crate
+(`katgpt_rs::refinement_bridge`: `refinement_table_from_bpe`,
+`tokenizer_geometry`, `decode_argmax`) — root home because
+katgpt-tokenizer is a categorical leaf.
+
+📖 Research: [559](../../.research/559_Byte_Marginal_Terminal_Mass_Certificate.md) ·
+Plan: [598](../../.plans/598_byte_marginal_certificate.md) ·
+Bench: [770](../../.benchmarks/770_refinement_marginal_goat.md) ·
+Substrate: `crates/katgpt-core/src/refinement_marginal.rs` +
+`src/refinement_bridge.rs`, test
+`tests/refinement_marginal_tokenizer_bridge.rs`, bench
+`benches/plan598_refinement_marginal_bench.rs`.

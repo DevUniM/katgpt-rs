@@ -231,6 +231,13 @@ pub mod plot;
 // ── Pruners (genuine root module — bomber + katgpt-pruners re-export) ──────
 pub mod pruners;
 
+// ── Refinement-marginal BPE bridge (Plan 598 / Research 559) ───────────────
+// The BPE instantiation of katgpt-core's refinement_marginal: the root crate
+// is the only home honoring katgpt-tokenizer's leaf constraint (see the
+// module doc). Gated + forwarded like every other opt-in primitive.
+#[cfg(feature = "refinement_marginal")]
+pub mod refinement_bridge;
+
 // ── DenseMesh module-scoped re-export ──────────────────────────────────────
 #[cfg(feature = "dense_mesh")]
 pub mod dense_mesh {

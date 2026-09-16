@@ -964,6 +964,11 @@ pub mod subspace_phase_gate;
 #[cfg(feature = "subspace_intervention")]
 pub mod subspace_intervention;
 
+// Plan 598 / Research 559 — single-pass token→byte marginal with the
+// terminal-mass certificate. OPT-IN (no-default-consumer rule).
+#[cfg(feature = "refinement_marginal")]
+pub mod refinement_marginal;
+
 // Group Invariance Probe — modelless symmetry discovery on a hypothesis Lie
 // group (Plan 356, Research 355 — distilled from LieFlow, arXiv:2512.20043).
 // Generalizes `subspace_phase_gate` from "subspace of R^d" to "subgroup of G":
