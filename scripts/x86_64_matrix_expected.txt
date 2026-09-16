@@ -45,6 +45,12 @@
 # the load class it was measured under, or it carries a quiet-box premise onto
 # a busy box.
 #
+# RESOLVED 2026-09-16 (T6, the M3 run): t698_t5_kv_mean_gates was adjudicated
+# by arch-conditional dual pins (the same commit that removed this row) — the M3 run reproduces the pin
+# 23d0daab3f087159 (test green), this box measures 4d0b592740db9358, so the
+# fixture IS arch-dependent (Box-Muller libm ulps somewhere in the ~260k-draw
+# stream; the n_layer=1 t1 agreement covers too few divergent draws to see it).
+# The test passes on BOTH platforms now; the row left per the stale-pin rule.
+
 proof_g3b_swar_speedup  # ≥5.0× gate, 4.37× here. Its own name is "Issue 298 SWAR+FMLA+4acc" — FMLA is an aarch64 instruction, so the bar is a NEON number and the x86_64 arm has never been calibrated. Not a regression: a bar that was never set for this ISA.
 t09_throughput_inv_sqrt_16x16  # 88.7 µs against a 10 µs absolute target. Absolute-latency targets do not transfer between machines at all, and this is 9× over — the one row here worth re-measuring on a quiet box before believing either way.
-t698_t5_kv_mean_gates  # fixture identity: measured 4d0b592740db9358 here, pinned 23d0daab3f087159 at landing (892657c1, 2026-08-30 — the commit message records the measurement). ⛔ UNADJUDICATED, and the test itself says "never re-base silently", so it is pinned rather than re-based. Triage so far: the hash is stable across debug/release and with/without +avx2 on this box, so it is not a codegen artifact; issue_698 t1/t2/t6/t7 hash the SAME TransformerWeights::new stream at n_layer=1 and their pins DO reproduce here, so it is not a blanket cross-platform weight-init divergence; `gated_mlp` (the only RNG-DRAWING cfg-gated field in that constructor) is opt-in and off in this build; config.rs has not changed since the test landed. Measured on this box: f32::ln and f32::cos differ from an f64-then-round reference on ~0.26% / ~0.20% of inputs, so Rng::normal's Box-Muller is libm-dependent in principle — but t1 agrees over ~4k draws, which a 0.5%-per-draw divergence could not survive. Resolving it needs one M3 run of this target; see Bench 806.
