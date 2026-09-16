@@ -115,9 +115,104 @@ def scan(repo: Path, dirname: str, tracked: set[str]):
     return by_num, hw, n, hw_bad
 
 
+def unmeasurable(repo: Path) -> str | None:
+    """Why `repo` cannot be measured, or `None` if it can.
+
+    `tracked_paths` converts a git failure into an EMPTY SET, which is the
+    same value a repo with no numbered files would produce. Downstream that
+    becomes `0 numbered file(s)` in every directory, and the ceilings above
+    the floors are then evaluated over nothing — so a typo'd path prints ten
+    `STALE pin ...: pinned as a collision and no longer one — remove the row`
+    lines and `legacy collisions 0 < ratchet 61 — re-pin DOWN in this commit`
+    before the floor breach that is the real verdict.
+
+    ⛔ Both of those remedies DELETE the only record of a collision, and this
+    repo has already run that incident for real: a pin was removed as "stale"
+    in the commit that closed its issue, and `develop` went red for every
+    later run (AGENTS.md § Numbering Discipline). The floors do red — exit is
+    1, not 0 — so nothing here was silently wrong; what was wrong is that the
+    destructive advice is printed FIRST and the reason it is bogus LAST,
+    which is this document's own most-repeated failure.
+
+    So refuse up front, with the exit code this module already reserves for
+    "the instrument cannot be trusted" (2) rather than the one that means
+    "the repo has findings" (1).
+
+    ⚠ The check is toplevel EQUALITY, not "did `rev-parse` succeed". `git -C`
+    walks UP, so a subdirectory of a real repo answers happily and then
+    resolves every path relative to the wrong root — `tracked_walk.py` records
+    the same hazard for its own `.git` probe. An arm pins that case, because
+    the cheaper check passes it.
+    """
+    if not repo.is_dir():
+        return f"not a directory: {repo}"
+    try:
+        top = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--show-toplevel"],
+            capture_output=True, encoding="utf-8", errors="replace", check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return f"not a git repository, or git unavailable: {repo}"
+    # No `if not top` branch: `check=True` means the call SUCCEEDED, and a
+    # successful `--show-toplevel` always prints a path (a bare repo fails at
+    # 128 with "must be run in a work tree" and is caught above). It would be
+    # an unarmable line, and removing it loses nothing even if some git did
+    # return empty — `Path("").resolve()` is the cwd, which fails the
+    # equality below and refuses anyway, just with a less precise message.
+    if Path(top).resolve() != repo:
+        return (f"not a repository ROOT: {repo} sits inside {Path(top).resolve()} "
+                f"— every path below would resolve against the wrong root")
+    return None
+
+
 def selftest() -> list[str]:
     """Pin the classifier. Every failure mode below is SILENT otherwise."""
     fails = []
+
+    # 0. the REFUSAL, four ways. Arm 3 is the one that earns its keep: the
+    #    obvious implementation ("did `rev-parse --show-toplevel` succeed?")
+    #    passes it, because `git -C` walks UP out of any subdirectory.
+    import subprocess as _sp, tempfile as _tf, pathlib as _pl
+    with _tf.TemporaryDirectory() as _td:
+        _root = _pl.Path(_td).resolve()
+        _missing = _root / "no_such_dir"
+        if unmeasurable(_missing) is None:
+            fails.append("unmeasurable() accepted a path that does not exist")
+        elif "not a directory" not in unmeasurable(_missing):
+            fails.append("unmeasurable() misreported a missing path")
+
+        _plain = _root / "plain"
+        _plain.mkdir()
+        _why = unmeasurable(_plain)
+        if _why is None:
+            fails.append("unmeasurable() accepted a directory that is not a git repo")
+        elif "not a git repository" not in _why:
+            # The REASON, not just the refusal. Dropping `check=True` still
+            # refuses — an errored `rev-parse` prints nothing, and
+            # `Path("").resolve()` is the cwd, which fails the root-equality
+            # test — but it refuses as "not a repository ROOT", sending the
+            # reader to look for a parent repo that does not exist. Measured:
+            # with the message unasserted, that mutant SURVIVES.
+            fails.append(f"unmeasurable() refused a non-repo for the wrong reason: {_why}")
+
+        _repo = _root / "repo"
+        (_repo / "sub").mkdir(parents=True)
+        try:
+            _sp.run(["git", "-C", str(_repo), "init", "-q", "-b", "main"],
+                    capture_output=True, check=True)
+        except (_sp.CalledProcessError, FileNotFoundError):
+            fails.append("unmeasurable() arms need git and it is unavailable — "
+                         "the refusal is asserted by NOTHING")
+        else:
+            if unmeasurable(_repo) is not None:
+                fails.append(f"unmeasurable() refused a real repo root: {unmeasurable(_repo)}")
+            _sub = unmeasurable(_repo / "sub")
+            if _sub is None:
+                fails.append("unmeasurable() accepted a SUBDIRECTORY of a repo — "
+                             "`git -C` walks up, so every path below would "
+                             "resolve against the wrong root")
+            elif "ROOT" not in _sub:
+                fails.append(f"unmeasurable() refused a subdirectory for the wrong reason: {_sub}")
 
     # 1. the regex admits the real shapes and rejects the non-numbered ones
     for name in ("075_foo_bar.md", "0_x.md", "586_pot_scale.md"):
@@ -467,6 +562,15 @@ def main() -> int:
         return 2
 
     repo = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent
+    why = unmeasurable(repo)
+    if why:
+        print(f"✗ numbering gate REFUSES — {why}")
+        print("  Nothing below this line was measured. Every verdict this gate")
+        print("  prints is a ceiling over a git-derived population, so an")
+        print("  unreadable repo yields 0 files, 0 collisions and a page of")
+        print("  `remove the row` / `re-pin DOWN` advice that would DELETE the")
+        print("  only record of a real collision.")
+        return 2
     pins_path = Path(__file__).resolve().parent / "numbering_floors.txt"
     if not pins_path.is_file():
         print(f"✗ pins file missing: {pins_path}")

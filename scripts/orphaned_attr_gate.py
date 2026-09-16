@@ -156,6 +156,41 @@ def scan(repo: Path) -> Scan:
     return Scan(sorted(out), files_seen, cfg_seen)
 
 
+def unmeasured(repo: Path, files: int, own: bool) -> str | None:
+    """Why this walk is NOT a measurement, or `None` if it is.
+
+    Extracted rather than written inline, and that is the repair rather than a
+    tidy-up: `main` calls `selftest`, so a decision living in `main` cannot be
+    armed without recursing. Both branches below were inline first and neither
+    was reachable by any arm.
+
+    ⛔ The class (Issue 805). `tracked_files` answers an unreadable path with
+    an EMPTY SET — the same value a repo with no Rust produces — so a typo'd
+    or missing path walked to 0 files and printed
+    `✓ orphaned-attribute gate PASSED — pinned at 0, measured 0 over 0 .rs
+    file(s) in nonexistent-repo`. Exit 0. Every verdict here is a ceiling over
+    that walk, and a walk that returned nothing satisfies every ceiling.
+
+    ⚠ The sibling branch is NOT redundant with the floors, and the floors are
+    right to skip it: they are this repo's population and a sibling's belongs
+    to `orphaned_attr_drift_sweep.py`. The consequence is that sibling mode
+    has no blindness detector at ALL — `floors n/a` is printed on the pass
+    line — so this is the only thing standing between a misspelled sibling
+    path and a green.
+
+    ⚠ And it is UNSEEN, not FAILED. A contract repo with no Rust at all walks
+    to 0 legitimately, so condemning it would be wrong; refusing to call it a
+    pass is not. Never folded into the pass column — the house rule for every
+    bucket that means *unanswered*.
+    """
+    if not repo.is_dir():
+        return f"not a directory: {repo}"
+    if not own and files == 0:
+        return (f"{repo.name} walked to 0 .rs file(s) — legitimate for a repo "
+                f"with no Rust, indistinguishable here from a blind walk")
+    return None
+
+
 def selftest() -> None:
     """Pin both directions on every invocation.
 
@@ -164,6 +199,23 @@ def selftest() -> None:
     clean state it is asserting.
     """
     import tempfile
+
+    # ── the UNSEEN predicate (Issue 805) ────────────────────────────────────
+    # Four arms over `unmeasured`. Each reds under perturbation of the line it
+    # is aimed at, measured one mutation at a time.
+    with tempfile.TemporaryDirectory() as _td:
+        _root = Path(_td)
+        _gone = _root / "no_such_dir"
+        assert unmeasured(_gone, 0, False) is not None,             "a path that does not exist read as a measurement"
+        assert "not a directory" in unmeasured(_gone, 0, False),             "a missing path was refused for the wrong reason"
+        # An OWN-repo walk of 0 is left to the floors, which say it better —
+        # this predicate must not double-report it.
+        assert unmeasured(_root, 0, True) is None,             "own repo at 0 files was claimed by the sibling branch, not the floors"
+        # A SIBLING at 0 has no floor behind it, so this is the only guard.
+        assert unmeasured(_root, 0, False) is not None,             "a sibling walking to 0 .rs files read as a measurement"
+        # A real population is a measurement in both scopes.
+        assert unmeasured(_root, 1, False) is None, "a non-empty sibling was refused"
+        assert unmeasured(_root, 1, True) is None, "a non-empty own repo was refused"
 
     positive = (
         "#[cfg(debug_assertions)]\n"
@@ -253,6 +305,15 @@ def main(argv: list[str]) -> int:
     selftest()
     repo = Path(argv[1]).resolve() if len(argv) > 1 else REPO_ROOT
     got = scan(repo)
+    why = unmeasured(repo, got.files, repo == REPO_ROOT)
+    if why:
+        print(f"⛔ orphaned-attribute gate UNSEEN — {why}")
+        print("  NOTHING was measured, so the 0 offenders below would not be a")
+        print("  finding count. Every verdict this gate prints is a ceiling over a")
+        print("  walk; a walk that returned nothing satisfies every ceiling there is.")
+        print("  The half that CAN tell an empty repo from a blind walk is")
+        print("  orphaned_attr_drift_sweep.py, which pins each repo's population.")
+        return 2
     found = got.offenders
     pop = f"{got.files} .rs file(s), {got.cfg_sites} outer-#[cfg] site(s)"
 
