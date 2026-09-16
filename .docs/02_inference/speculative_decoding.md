@@ -957,7 +957,7 @@ By constraining the D2F block with high-confidence anchor tokens at regular inte
 - Small S → more anchors → less D2F work, more AR work
 - Large S → fewer anchors → more D2F work, less AR work
 
-### Confidence-Commit Variant (opt-in, Plan 600 — DBTM κ ∪ floor)
+### Confidence-Commit Variant (PROMOTED DEFAULT, Plan 600 + 601 — DBTM κ ∪ floor)
 
 `anchor_then_fill_with(&ConfidenceAnchorConfig { kappa, floor })` replaces the
 stride rule with content-adaptive selection over the walk's own max-softmax
@@ -965,14 +965,23 @@ confidence (Issue 811, arXiv:2609.15903 Eq 26): anchor positions with q ≥ κ
 (argmax proposal committed), and with `floor: true` the DBTM per-round commit
 floor (`dbtm_floor`) guarantees the block empties within the step budget.
 
-Measured on the mini-D2F PoC (Issue 811): 3.1–4.7× fewer fill steps than the
-matched-threshold stride arm at κ ∈ {0.9, 0.99} at quality parity;
-termination property-proven. Plan 600 T8/T9 gates MEASURED GREEN on the
-non-saturated corpus (Bench 600: G1 non-inferiority with resolution, G2
-2.0–3.9× steps / 0.70–0.79× wall, G4 alloc-free, T9 KL 0.996× incumbent) —
-still opt-in: the stride rule stays the default; promotion additionally
-requires the gates on a REAL-TEXT corpus (this repo's dllm lane is
-pattern-only), per the plan's acceptance.
+**Promoted 2026-09-17 (Plan 601, Bench 601): `ConfidenceAnchorConfig::default()`
+= κ 0.9 + floor is the decode default for the anchor-then-fill seam.** The
+gate evidence, on the pattern corpus (Bench 600) and on REAL TEXT (Bench
+601: char-level Austen tail, text-trained D2F):
+
+| Gate | Pattern corpus (Bench 600) | Real text (Bench 601) |
+|---|---|---|
+| G1 quality | paired Δ ≥ 0 at every κ, SE ≤ 0.016 | paired Δ **+0.034…+0.111** at every κ (SE ≤ 0.005) — the incumbent's no-floor path leaves slots masked (leak ≈ 1.0) and collapses to 0.007–0.013 acc |
+| G2 steps / wall | 2.0–3.9× / 0.70–0.79× | 1.2–2.8× / **0.72–0.91×** |
+| G4 alloc-free | fill loop allocation-free | corpus-independent (same seam) |
+| T9 realized KL vs incumbent | 0.996× | **0.87× / 0.67× / 0.48×** at κ 0.5 / 0.9 / 0.99 (empirical bigram law) |
+
+The strided [`AnchorConfig`] entry (`anchor_then_fill`) stays for
+compatibility and as the no-floor comparator; `AnchorConfig::default()` is
+unchanged (stride 2). Termination is property-proven at every (κ, k) cell
+(Issue 811); on real text the floor is the difference between a committed
+block and a masked one.
 
 ---
 

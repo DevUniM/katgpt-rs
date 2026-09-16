@@ -20,6 +20,8 @@
 use crate::transformer::TransformerWeights;
 use crate::types::{Config, Rng, kv_dim, matmul, matmul_relu, rmsnorm};
 
+pub mod text_corpus;
+
 #[cfg(feature = "replaid_schedules")]
 use crate::pruners::variance_minimizer::{VarianceMinimizer, VarianceMinimizerConfig};
 
@@ -1376,6 +1378,68 @@ pub fn evaluate_accuracy(
         0.0
     } else {
         correct as f32 / total as f32
+    }
+}
+
+/// Teacher-forced masked NLL (nats/token) on held-out blocks — the token-level
+/// quality axis for the real-text corpus (Plan 601). Mirrors
+/// [`evaluate_accuracy`]'s corruption loop but integrates
+/// `-ln P(target | corrupted context)` over the masked positions instead of
+/// counting argmax hits, so it has resolution even where accuracy saturates.
+/// Deliberately re-implemented against the forward logits rather than reusing
+/// [`masked_loss_into`]: the eval instrument must not silently inherit the
+/// training loss's averaging/temperature conventions.
+pub fn evaluate_masked_nll(
+    weights: &TransformerWeights,
+    test_data: &[Vec<usize>],
+    config: &Config,
+    mask_ratio: f32,
+    rng: &mut Rng,
+) -> f32 {
+    let mut total_nll = 0.0f32;
+    let mut n_masked = 0usize;
+    let mut corrupted_buf = Vec::with_capacity(config.block_size);
+    let mut is_masked_buf = Vec::with_capacity(config.block_size);
+    let mut positions_buf = Vec::with_capacity(config.block_size);
+    let mut bctx = BidirectionalContext::new(config);
+    let vocab = config.vocab_size;
+    for tokens in test_data {
+        let n_mask = corrupt_block_into(
+            tokens,
+            mask_ratio,
+            config.mask_token,
+            rng,
+            &mut corrupted_buf,
+            &mut is_masked_buf,
+            &mut positions_buf,
+        );
+        if n_mask == 0 {
+            continue;
+        }
+        forward_bidirectional_positions_into(weights, &corrupted_buf, config, &mut bctx);
+        for (p, &masked) in is_masked_buf.iter().enumerate() {
+            if !masked {
+                continue;
+            }
+            let logits_p = &bctx.all_logits[p * vocab..(p + 1) * vocab];
+            let target = tokens[p];
+            let mut m = f32::NEG_INFINITY;
+            for &l in logits_p {
+                m = m.max(l);
+            }
+            let mut sum = 0.0f32;
+            for &l in logits_p {
+                sum += (l - m).exp();
+            }
+            let lse = m + sum.ln();
+            total_nll += lse - logits_p[target];
+            n_masked += 1;
+        }
+    }
+    if n_masked == 0 {
+        0.0
+    } else {
+        total_nll / n_masked as f32
     }
 }
 

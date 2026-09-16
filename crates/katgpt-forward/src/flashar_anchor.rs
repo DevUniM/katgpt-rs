@@ -100,6 +100,19 @@ impl ConfidenceAnchorConfig {
     }
 }
 
+impl Default for ConfidenceAnchorConfig {
+    /// The promoted decode default (Plan 601, 2026-09-17): κ=0.9 + floor —
+    /// the balanced GOAT cell of the real-text gate run
+    /// (`.benchmarks/601_flashar_realtext_goat.md`): paired Δ(acc) +0.069
+    /// over the strided incumbent, 1.5× fewer fill steps, wall 0.87×, and
+    /// realized-KL ratio 0.67 on held-out Austen. Promotion satisfied Plan
+    /// 600's acceptance bar (T8 all-green + T9 on real text); the strided
+    /// [`AnchorConfig`] entry stays as the no-floor comparator.
+    fn default() -> Self {
+        Self { kappa: 0.9, floor: true }
+    }
+}
+
 /// Confidence-commit anchor selection: anchor every position whose
 /// max-softmax confidence `q` ≥ `kappa`, committing the argmax proposal.
 /// Positions whose argmax IS the mask token are never anchored.
