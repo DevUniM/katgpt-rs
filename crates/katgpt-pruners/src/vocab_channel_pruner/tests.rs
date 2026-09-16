@@ -270,6 +270,62 @@ fn test_decompose_neuron_discovers_channels() {
     );
 }
 
+/// Issue 809 regression — `decompose_neuron` must be a FUNCTION of its input.
+///
+/// The Householder symmetry-breaker used `fastrand`'s unseeded thread-local
+/// global, so the answer differed on every process. That is not merely untidy
+/// in a repo whose gates are fixture hashes and bit-identity: it made
+/// `test_decompose_neuron_discovers_channels` above flaky, and it was caught
+/// by the SAME commit passing on one run of the x86_64 matrix and failing on
+/// the next (`Token 2 should be the top token, got [3, 2, 1, 0]` — two tokens
+/// tie and the perturbation decided the order).
+///
+/// Two calls inside one process are the strongest assertion this test can
+/// make on its own; the cross-process half is the sibling test staying green
+/// run after run, which is what a seed derived from the input buys.
+#[test]
+fn test_decompose_neuron_is_deterministic() {
+    let lm_head: Vec<f32> = (0..16).map(|i| if i == 10 { 1.0 } else { 0.05 }).collect();
+    let neuron_weight = [0.02f32, 0.31, 7.5, 0.02];
+    let config = VocabChannelConfig {
+        max_channels: 3,
+        top_k_tokens: 4,
+        kurtosis_threshold: -10.0,
+        lambda: 0.001,
+        eta: 0.005,
+        max_iterations: 20,
+        sigma_mask: 5.0,
+        coords_per_iter: 4,
+        fd_epsilon: 1e-3,
+    };
+    let decomposer = VocabChannelDecomposer::new(config);
+
+    let a = decomposer.decompose_neuron(&neuron_weight, &lm_head, 4, 4);
+    let b = decomposer.decompose_neuron(&neuron_weight, &lm_head, 4, 4);
+
+    assert_eq!(a.len(), b.len(), "channel COUNT differs between two calls");
+    for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+        assert_eq!(x.top_tokens, y.top_tokens, "channel {i}: top_tokens differ");
+        // Bit-identity, not a tolerance: same input, same arithmetic, same
+        // order — a tolerance here would pass on a re-seeded run.
+        assert_eq!(
+            x.direction.iter().map(|f| f.to_bits()).collect::<Vec<_>>(),
+            y.direction.iter().map(|f| f.to_bits()).collect::<Vec<_>>(),
+            "channel {i}: direction is not bit-identical"
+        );
+        assert_eq!(x.kurtosis.to_bits(), y.kurtosis.to_bits(), "channel {i}: kurtosis");
+        assert_eq!(x.skewness.to_bits(), y.skewness.to_bits(), "channel {i}: skewness");
+    }
+
+    // A DIFFERENT neuron must not collapse onto the same stream — otherwise a
+    // constant seed would pass the assertions above and say nothing.
+    let other = [0.02f32, 0.31, 7.5, 0.03];
+    let c = decomposer.decompose_neuron(&other, &lm_head, 4, 4);
+    let same_stream = a.len() == c.len()
+        && a.iter().zip(c.iter()).all(|(x, y)| x.direction == y.direction);
+    assert!(!same_stream, "a different neuron produced an identical decomposition");
+}
+
 #[test]
 fn test_decompose_neuron_kurtosis_threshold() {
     let lm_head: Vec<f32> = (0..4)
