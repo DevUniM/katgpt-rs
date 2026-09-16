@@ -33,7 +33,7 @@ Metrics: exact-pattern accuracy / generative quality at NFE ∈ {1, 2, 4, 8}; wa
 - [x] T1 PoC harness: extend the flashar training-coupled test rig to run all three arms on one trained mini-D2F checkpoint (seeded, `CARGO_TARGET_DIR=/tmp/...`, clean up)
 - [x] T2 Run the arm table at NFE {1,2,4,8} × κ {0.5, 0.9, 0.99}; record verdict table in this issue
 - [x] T3 t\* schedule arm — pure-math half: `commit_time_star` (katgpt-core `ignition_schedule`) + `probability_order` (katgpt-core `set_diffusion_schedule`), both unit-tested; t\* constants recorded below
-- [-] T3 Plan-381 sweep-bench arm (probability-ordered reveal vs uniform/ar/mdlm on the sweep bench) — DEFERRED: the set-causal train/eval seams (`train_mini_set_causal`, `evaluate_set_causal_nelbo`) accept `&PositionOffsetSchedule` only; a probability-ordered arm needs a custom-order seam. File the seam issue when Plan 600 opens its T6.
+- [-] T3 Plan-381 sweep-bench arm (probability-ordered reveal vs uniform/ar/mdlm on the sweep bench) — DEFERRED: the set-causal train/eval seams (`train_mini_set_causal`, `evaluate_set_causal_nelbo`) accept `&PositionOffsetSchedule` only; a probability-ordered arm needs a custom-order seam. Seam issue FILED: [Issue 813](813_set_causal_custom_order_seam.md).
 - [x] T4 Verdict: recorded below — PASS (conditional, honest scope) → upgrade planned as [Plan 600](../.plans/600_flashar_confidence_commit_upgrade.md)
 - [-] T5 UGC cross-check (confidence-greedy reveal KL vs the UGC certificate) — DEFERRED: the T4 pass is on steps/termination at quality PARITY (no quality gain claimed), so the Caveat #1 certificate question is not load-bearing yet. Folded into Plan 600 T9 — required before any default-promotion claim on real text.
 

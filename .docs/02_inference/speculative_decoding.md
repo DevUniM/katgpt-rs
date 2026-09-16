@@ -967,8 +967,12 @@ floor (`dbtm_floor`) guarantees the block empties within the step budget.
 
 Measured on the mini-D2F PoC (Issue 811): 3.1–4.7× fewer fill steps than the
 matched-threshold stride arm at κ ∈ {0.9, 0.99} at quality parity;
-termination property-proven. Opt-in — the stride rule stays the default;
-promotion requires the real-text gates (Plan 600 T8/T9).
+termination property-proven. Plan 600 T8/T9 gates MEASURED GREEN on the
+non-saturated corpus (Bench 600: G1 non-inferiority with resolution, G2
+2.0–3.9× steps / 0.70–0.79× wall, G4 alloc-free, T9 KL 0.996× incumbent) —
+still opt-in: the stride rule stays the default; promotion additionally
+requires the gates on a REAL-TEXT corpus (this repo's dllm lane is
+pattern-only), per the plan's acceptance.
 
 ---
 
