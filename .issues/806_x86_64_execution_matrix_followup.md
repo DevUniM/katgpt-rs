@@ -1,6 +1,8 @@
 # Issue 806 — x86_64 execution matrix: the 4090 AVX2 run closed two cells; the rest of the katgpt-rs surface is still executed by nothing
 
-**Status:** OPEN — follow-up task, workstation/4090-owned, no CI lane exists for this axis (and none is requested; Actions spending call stands).
+**Status:** OPEN — the matrix RAN (2026-09-16), and what is left is one cell
+that needs the M3. Workstation/4090-owned, no CI lane exists for this axis
+(and none is requested; Actions spending call stands).
 
 ## Provenance
 
@@ -9,43 +11,107 @@
 (`bf16_convert` narrow-RNE missing the `>> 16`; `simd_lut_dequant` single-stage kernels using
 the SSE4.1 4-element `_mm_cvtepu8_epi32` under a 256-bit gather). All fixed same-day, 4090
 rerun 2069/0, M3 NEON 2070/0. Record: `HISTORY.md` top row + `.benchmarks/800_bf16_simd_goat.md`
-addendum. The run covered exactly two cells of the matrix; this issue is the rest of it.
+addendum. The run covered exactly two cells of the matrix; this issue was the rest of it.
 
-## Cells covered (2026-09-16, green)
+## What the rest of the matrix found (same day, `8da93896` + fixes)
 
-| cell | result |
-|---|---|
-| `katgpt-types --lib`, default features, runtime AVX2 dispatch | 139/139 |
-| `katgpt-core --lib --features bf16_simd`, `RUSTFLAGS="-C target-feature=+avx2"` | was 2054/15 → **2069/0** post-fix |
+Full record: [Bench 806](../.benchmarks/806_x86_64_execution_matrix.md).
+Nine cells, ~11,000 assertions executed on x86_64 for the first time.
 
-## Cells still x86_64-UNEXECUTED (this issue's scope)
+| # | cell | result |
+|---|---|---|
+| 1 | `katgpt-types --lib --all-features` | 261 / 0 |
+| 2 | `katgpt-types` `bench_578_avx2_goat` (release) | 2 / 0, min speedup 5.76× |
+| 3 | `katgpt-core --lib --all-features` | 4957 / 0 |
+| 4 | `katgpt-attn --lib --all-features` | 424 / 0 |
+| 5 | `katgpt-dec --lib --all-features` | 282 / 0 |
+| 6 | `katgpt-pruners --lib --all-features` | 3011 / 0 |
+| 7 | `katgpt-tokenizer --lib --all-features` | 74 / 0 |
+| 8 | `katgpt-rs --lib --all-features` | 565 / **4** → **569 / 0** after the fix |
+| 9 | `katgpt-rs --tests --release --no-fail-fast` | 232 targets · 1509 passed · **7** failed |
 
-1. `katgpt-core --lib --all-features` at `+avx2` — every other feature-gated SIMD arm
-   (elementwise variants, ternary SWAR, dot accumulators, `simd_lut_dequant`'s remaining
-   public entry points beyond the bf16_simd cell's coverage) compiles to nothing on aarch64
-   and has never run on x86_64. **Highest-value cell: today's finding says the prior
-   probability of more transcription bugs in never-executed arms is NOT low.**
-2. `katgpt-dec` lib tests at `+avx2` (the DEC operators ship SIMD paths too).
-3. Root package `--lib` + the always-on integration targets at `+avx2`.
-4. `wasm32`-adjacent: none — out of scope here (wasm32_gate owns that triple).
+**Four defects, all fixed:**
 
-## Method (pinned by the 2026-09-16 run)
+1. `argtopk`'s AVX2 insertion search discarded every **new maximum** (`lo == 0`
+   used as a "no lane qualified" sentinel, where the NEON sibling has an
+   explicit flag) — `086dd912`.
+2. The same kernel's partial-chunk step read **4 floats past the end** of the
+   slice on every execution — same commit.
+3. `observe_tvp_decision` read `self.gpu.is_some()` instead of
+   `self.gate.gpu_available()`, so 4 TVP GOAT tests were red on every
+   non-macOS platform and `g1b`'s no-GPU assertion passed **vacuously** —
+   `fa27be42`.
+4. `bench_llmexec_guard_overhead`'s measured loop had no `black_box` on its
+   inputs and was **constant-folded away in release**, publishing a fabricated
+   `0 ns/call` — `703bb70b`.
 
-- Run on the 4090 (the only x86_64 box): `git archive HEAD | ` extract to a SCRATCH dir —
-  never the sibling's checkout (it carries concurrent WIP).
-- ⛔ Compile-time `target_feature` gates: `RUSTFLAGS="-C target-feature=+avx2"` is MANDATORY
-  for any arm gated `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` — a plain
-  x86_64 `cargo test` silently exercises the scalar fallback and proves nothing. Record the
-  flags with every run.
-- Cross-check compile errors from the M3 first:
-  `RUSTFLAGS="-C target-feature=+avx2" cargo check -p <crate> --target x86_64-unknown-linux-musl --lib`
-  (check never links; the M3 loop is seconds, the 4090 loop is minutes).
-- Failure triage heuristic that worked: NEON-correct + AVX2-wrong = transcription slip
-  (lane crossing, saturating-pack-vs-truncate, SSE4.1-vs-AVX2 element counts), not
-  algorithm error — the NEON arm is the algorithm witness, the tests are the oracle.
+**The issue's own cell list was narrower than the surface.** It named three
+packages; a grep for `target_arch = "x86_64"` over the tracked tree finds
+**six**, and `katgpt-attn/src/dash_attn/channel_aware.rs:586` carries a
+**compile-time** `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` —
+the shape a plain x86_64 build compiles to nothing. That is why the population
+is DERIVED in the script below rather than hand-typed.
 
-## Exit criteria
+## T5 — the matrix is a script now
 
-Every cell above green on the 4090 (or a defect found → fixed → green), counts recorded in a
-`.benchmarks/` addendum + a `HISTORY.md` row. If a cell finds more latent defects, fix them in
-the same session — the oracle tests already exist for every arm these suites cover.
+`scripts/x86_64_execution_matrix.sh` (`aaa575b4`), documented in AGENTS.md.
+Refuses off x86_64, exports `+avx2` itself, derives its packages, carries the
+Issue-734 sentinel, floors every cell in `scripts/x86_64_matrix_floors.txt`,
+and adjudicates failing tests by MEMBERSHIP in
+`scripts/x86_64_matrix_expected.txt`. `--canary` verified live.
+
+- [x] T5 — landed.
+
+## What is still OPEN
+
+- [ ] **T6 — `t698_t5_kv_mean_gates` needs ONE M3 run.** Its fixture-identity
+      hash is `4d0b592740db9358` on x86_64 (stable across profile and
+      `+avx2`) against a pin of `23d0daab3f087159` measured at landing on the
+      M3. `issue_698` t1/t2/t6/t7 hash the same `TransformerWeights::new`
+      stream at `n_layer = 1` and **their** pins reproduce here, so it is not
+      a blanket cross-platform divergence; the full triage is in Bench 806.
+      The test's own message says *"never re-base silently"*, so it is pinned,
+      not re-based. **What to run on the M3:**
+      `cargo test -p katgpt-rs --test issue_698_t5_kv_mean -- --nocapture` and
+      compare the printed hash with both values. If the M3 still prints
+      `23d0daab…`, the fixture is genuinely arch-dependent and the pin needs
+      an arch-conditional form plus a recorded delta; if it prints
+      `4d0b5927…`, something re-keyed it after landing and the pin is simply
+      stale.
+- [ ] **T7 — six perf bars are pinned, not fixed.** Every one is a bar
+      calibrated on the M3 (one, `proof_g3b_swar_speedup`, is named
+      `SWAR+FMLA` — an *aarch64* instruction) or an absolute-latency target
+      that does not transfer between machines, and the run was taken on a box
+      with four other agent sessions' cargo resident. Each needs an x86_64
+      calibration on a QUIET box before it means anything. Rows and reasons:
+      `scripts/x86_64_matrix_expected.txt`.
+- [ ] **T8 — `argtopk`'s AVX2 arm is a measured LOSS** post-fix (12 of 15
+      (k, n) cells slower than the scalar fallback). Filed separately as
+      [Issue 808](808_avx2_argtopk_is_a_measured_loss_vs_scalar.md); owner's
+      call between four options.
+
+## Method (pinned by the 2026-09-16 runs)
+
+- Run on the 4090 (the only x86_64 box): `git archive HEAD` to a SCRATCH dir —
+  never the sibling's checkout (it carries concurrent WIP), and not on `E:`,
+  which is at 99%. The script does this for you.
+- ⛔ `RUSTFLAGS="-C target-feature=+avx2"` is MANDATORY for any arm gated
+  `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` — a plain x86_64
+  `cargo test` silently exercises the scalar fallback and proves nothing.
+- ⛔ **The integration cell is `--release --no-fail-fast`, measured not
+  preferred:** `goat_574_clustered_lm_head` ran >20 min in debug without
+  finishing and 39.8s in release, and without `--no-fail-fast` the run stops
+  at the first red target (the first attempt reported 56 of ~180).
+- ⚠ `--all-features` is **not a supported TEST configuration** here. It is used
+  as a WIDENING instrument, and every failure it produces is re-run under the
+  single feature that gates it before being called a finding. That narrowing is
+  what separated cell 8's four from an interaction artifact; nothing else in
+  nine cells needed it.
+- Failure triage heuristic, now three-for-three: **NEON-correct + AVX2-wrong =
+  transcription slip** (lane crossing, saturating-pack-vs-truncate,
+  SSE4.1-vs-AVX2 element counts, a sentinel replacing a flag), not algorithm
+  error — the NEON arm is the algorithm witness, the tests are the oracle.
+- ⚠ And a green parity test is not coverage: `argtopk`'s existing
+  `test_argtopk_simd_matches_scalar` was green through both defects because its
+  fixture's maximum sits inside the first `k`, so no post-init element is ever a
+  new maximum. Check whether the fixture can EXPRESS the mechanism.

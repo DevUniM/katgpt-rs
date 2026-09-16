@@ -31,7 +31,7 @@ defects**. This run is the rest of the matrix.
 | 6 | `katgpt-pruners --lib` | `--all-features` | debug | **3011 / 0** |
 | 7 | `katgpt-tokenizer --lib` | `--all-features` | debug | **74 / 0** |
 | 8 | `katgpt-rs --lib` (root) | `--all-features` | debug | **565 / 4 → 569 / 0** after the fix below |
-| 9 | `katgpt-rs --tests` (integration) | default | debug | see the integration section |
+| 9 | `katgpt-rs --tests` (integration) | default | **release** | **232 targets · 1509 passed · 7 failed · 28 ignored** — see below |
 
 Cells 4, 6 and 7 are **not in Issue 806's cell list** — the issue scoped the
 follow-up to katgpt-core, katgpt-dec and the root package. A grep for
@@ -188,7 +188,99 @@ target_arch = "x86_64"))]`, so it is a **green zero** on the M3 and red in
 any x86_64 debug run. It passes in exactly one configuration — x86_64 ×
 release × those two features — and nothing automatic is in it. This run is.
 
+## Cell 9 — the integration targets, and why the PROFILE had to change
+
+232 targets, 1509 assertions, **28 green-zero targets** (a `#![cfg]` whose
+feature is off — this repo's own documented shape, not a finding here).
+
+**Debug is not a viable profile for this cell, measured twice.**
+`goat_574_clustered_lm_head` ran for over **20 minutes in debug without
+finishing** and takes **39.8s** in release. `bench_164_gepa_reflective_goat`
+fails its own 10%-overhead bar at **15.5%** in debug purely because both sides
+are unoptimised. And `--no-fail-fast` is not optional either: the first
+attempt stopped at the first red target and reported **56** of ~180 as if that
+were the run.
+
+### 7 failing tests, 0 of them correctness
+
+| test | what it says | class |
+|---|---|---|
+| `proof_g3b_swar_speedup` | ≥5.0× gate, **4.37×** | bar named `SWAR+FMLA` — an **aarch64** instruction; the x86_64 arm was never calibrated |
+| `g5_roaring_batch_speedup` | "≥2×, got **0.0×** (roaring=0.00µs, linear=0.00µs)" | the ratio is **0/0** — both arms below clock granularity in release |
+| `g7_throughput_gain_over_plan_218_baseline` | −69.9% (6.22ms vs 3.66ms) | same target, same first-execution |
+| `t09_throughput_inv_sqrt_16x16` | 88.7 µs vs a **10 µs absolute** target | absolute latency does not transfer between machines at all |
+| `bench_176_router_forward_cpu` | 27.7% overhead (1.35 µs vs 1.06 µs) | 0.29 µs of absolute overhead, on a loaded box |
+| `benchmark::llmexec_guard::tests::test_bench_llmexec_guard_runs` | "guard timing should be positive" | **FIXED — a real defect, below** |
+| `t698_t5_kv_mean_gates` | fixture hash `4d0b592740db9358` ≠ pinned `23d0daab3f087159` | **UNADJUDICATED, below** |
+
+⛔ Read every perf row with the box conditions: four other agent sessions had
+cargo and clippy resident throughout. AGENTS.md's rule is that a gate whose
+verdict the box can invalidate should REFUSE; a cell that is 99% correctness
+assertions and 1% latency bars cannot refuse wholesale, so the six are pinned
+by name in `scripts/x86_64_matrix_expected.txt` with a reason each, and the
+latency bars are the part to distrust.
+
+### The third defect — a benchmark LLVM deleted
+
+`bench_llmexec_guard_overhead`'s **measured** loop called `verify_tier` on a
+`const BENCH_INPUTS` with a default config and **no `black_box` on the
+inputs**. In release, LLVM folds every call, precomputes `tier_counts`,
+deletes the loop, and `elapsed_guard` reads **0 ns** — so the function
+publishes a fabricated `0 ns/call` and `print_llmexec_guard_bench` prints it.
+The warmup and the no-op baseline immediately above it already black_box their
+inputs; the one loop whose number is REPORTED did not.
+
+Note which assertion caught it: `assert!(ns_guard > 0.0)` is the **only** one a
+deleted loop fails — `ns_guard < 1000.0` passes happily on `0.0`. And note the
+axis: full_gate's Layer 6b asserts (release × default-features), but it is
+`cargo check --tests` — COMPILE only. This had never been EXECUTED there.
+
+### The one left open — `t698_t5_kv_mean_gates`
+
+The test pins a BLAKE3[16] of its seeded `TransformerWeights`, and its own
+message says *"never re-base silently"*. So it is **pinned, not re-based**.
+What is measured:
+
+- the hash is **`4d0b592740db9358`** here and **stable across debug, release,
+  and with/without `+avx2`** — so it is not a codegen or profile artifact;
+- the pin `23d0daab3f087159` was **measured at landing** (`892657c1`,
+  2026-08-30; the commit message records it), i.e. on the M3;
+- `issue_698` **t1/t2/t6/t7** hash the SAME `TransformerWeights::new` stream at
+  `n_layer = 1` and **their pins DO reproduce here** — so this is not a blanket
+  cross-platform weight-init divergence;
+- `gated_mlp`, the only RNG-**drawing** cfg-gated field in that constructor, is
+  opt-in and off in this build, and `config.rs` has not changed since the test
+  landed;
+- `Rng::normal` is Box–Muller over `f32::ln` and `f32::cos`, and measured on
+  this box those differ from an f64-then-round reference on **0.26%** and
+  **0.20%** of inputs — so a per-platform libm difference is possible *in
+  principle*. ⚠ But t1 agrees over ~4k draws, which a ~0.5%-per-draw
+  divergence could not survive, so that mechanism is **not** established.
+  (The first version of this probe measured 12.8%/62.4% and was WRONG — it
+  folded the f32 multiply and `sqrt` rounding into the comparison and measured
+  double-rounding, not libm. The corrected probe isolates the call.)
+
+Resolving it needs **one M3 run of this target**, which this box cannot do.
+Until then the correct state is a named pin with the measurement written down,
+not a re-based constant.
+
 ## Reproduce
+
+The matrix is a **script** now — `scripts/x86_64_execution_matrix.sh`, landed
+with this record. Nine cells run by hand is a session; a census done by hand is
+a census that stops being done.
+
+```bash
+scripts/x86_64_execution_matrix.sh                       # the matrix
+scripts/x86_64_execution_matrix.sh --libs-only           # skip cell 9
+scripts/x86_64_execution_matrix.sh --canary              # prove the floors fire
+X86_MATRIX_DIR=/f/avx2scratch scripts/x86_64_execution_matrix.sh
+```
+
+It refuses off x86_64, exports `+avx2` itself, derives its package list from
+the tracked tree (7 measured, against the 3 this issue hand-typed), floors
+every cell, and adjudicates failing tests by membership. The raw commands the
+2026-09-16 run used, for the record:
 
 ```bash
 mkdir -p /f/avx2scratch && git archive HEAD | tar -x -C /f/avx2scratch
@@ -199,7 +291,7 @@ cargo test -p katgpt-types --test bench_578_avx2_goat --all-features -j 6 --rele
 cargo test -p katgpt-core --lib --all-features -j 6
 cargo test -p katgpt-attn -p katgpt-dec -p katgpt-pruners -p katgpt-tokenizer --lib --all-features -j 6
 cargo test -p katgpt-rs --lib --all-features -j 6
-cargo test -p katgpt-rs --tests -j 6
+cargo test -p katgpt-rs --tests --no-fail-fast --release -j 6
 ```
 
 ⚠ `--all-features` is **not a supported TEST configuration** in this
