@@ -121,6 +121,19 @@ statrs = "0.17"
 
 [features]
 
+# lthash (Issue 807, 2026-09-16): incremental homomorphic multiset hash
+# (lattice hash) - LtHash [u16; N] (default N=1024, wrapping add mod 2^16;
+# the Bellare-Micciancio MSet-Add construction as instantiated by eprint
+# 2019/227 and Agave's accounts_lt_hash commitment). insert=add, remove=
+# subtract, merge=sum -> an order-independent aggregate (commutative monoid,
+# deterministic under any thread schedule) with O(1) incremental updates.
+# Element derivation is domain-separated BLAKE3 XOF over a LENGTH-PREFIXED
+# part list (no concatenation ambiguity). Consumed by riir-chain
+# (chain_incremental_root, Proposal 010 D1) for the RSM per-replica
+# divergence check. Pure integer arithmetic, zero new deps (blake3 in
+# tree), zero allocs, wasm32-clean. OPT-IN pending first consumer wiring.
+lthash = []
+
 # alloc_tracking (Issue 741, 2026-09-09): compile the `alloc` module (the
 # `TrackingAllocator` + per-thread counters) in a RELEASE build so the G4/G5/G7
 # alloc gates can be run under `--release`, the profile AGENTS.md mandates for
@@ -2866,3 +2879,10 @@ required-features = ["metabolic_gate"]
 [[test]]
 name = "three_ball_paradigm"
 required-features = ["bmr"]
+
+# Issue 807 - LtHash GOAT gate (G2 op costs at N=1024/128 + incremental
+# replace vs 1000-element from-scratch rebuild; G4 zero-alloc).
+[[bench]]
+name = "bench_lthash"
+harness = false
+required-features = ["lthash"]

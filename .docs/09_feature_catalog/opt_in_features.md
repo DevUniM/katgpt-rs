@@ -3741,3 +3741,31 @@ ALL PASS (K-residual 6.7e-6; depth 3 ns / share sub-ns / K-solver 412 ns
 bounded; 0 allocs) ·
 Source: [arXiv:2609.10817](https://arxiv.org/abs/2609.10817) ·
 Substrate: `crates/katgpt-core/src/metabolic_gate.rs`.
+
+
+## 106. lthash — incremental homomorphic multiset hash (Issue 807)
+
+LtHash `[u16; N]` (default 1024 lanes, wrapping add mod 2^16 — the
+Bellare–Micciancio MSet-Add construction as instantiated by eprint 2019/227
+and Agave's accounts_lt_hash): insert = add, remove = subtract, merge = sum,
+checksum = BLAKE3(state). Order-independent aggregate by construction
+(commutative monoid — deterministic under any thread schedule), O(1)
+incremental updates, domain-separated BLAKE3-XOF element derivation over a
+length-prefixed part list (no concatenation ambiguity). First consumer:
+riir-chain Proposal 010 D1 (the RSM per-replica divergence check via
+`chain_incremental_root`). Pure integer arithmetic, zero deps, zero allocs,
+wasm32-clean.
+
+- **G1**: order-invariance (seeded permutations), multiset semantics, merge ≡
+  incremental, encoding unambiguity, domain separation, drift property
+  (500-op incremental == from-scratch rebuild), N=128 arm, hex-pinned KAT.
+- **G2**: incremental `replace` 31.6 ns vs 1000-member from-scratch rebuild
+  33.8 µs (**≈1069×**; derive-inclusive ~1.4 µs vs ~1.39 ms — same class).
+  Ops: insert 19.2 ns, merge 19.3 ns, checksum 5.76 µs, derive 1.37 µs @
+  1024 lanes / 245 ns @ 128.
+- **G4**: zero-alloc by construction (fixed arrays only).
+
+📖 Bench: [771](../../.benchmarks/771_lthash_goat.md) ·
+Issue 807 (resolved 2026-09-16, git history) ·
+Substrate: `crates/katgpt-core/src/lthash.rs`, bench
+`benches/bench_lthash.rs`.

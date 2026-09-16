@@ -11,6 +11,21 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 807 CLOSED (2026-09-16) - `lthash`: incremental homomorphic multiset hash (mainline transplant)
+
+Cherry-picked onto main from develop `8da93896` (same content, main-accurate
+doc counts; the first attempt `569daf98` committed only the auto-staged
+files - the conflict resolutions were working-tree only - this commit
+completes the wiring). LtHash `[u16; N]` (default 1024, wrapping add mod
+2^16; eprint 2019/227 / Agave accounts_lt_hash instantiation): insert=add,
+remove=subtract, merge=sum, checksum=BLAKE3; domain-separated BLAKE3-XOF
+element derivation over a length-prefixed part list. GOAT at Bench 771:
+G1 10/10 (order-invariance, drift incremental==rebuild, merge==incremental,
+KAT hex-pinned); G2 incremental replace 31.6 ns vs 1000-member rebuild
+33.8 us (~1069x); G4 zero-alloc. First consumer: riir-chain Proposal 010 D1
+(the RSM per-replica divergence check). OPT-IN; promotion waits on that
+consumer landing.
+
 ## Modelless-first mandate — original section (incl. the canonical-failure story)
 
 ## Modelless-first mandate (the core principle)

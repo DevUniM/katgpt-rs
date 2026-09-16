@@ -3075,6 +3075,18 @@ pub mod slice_tca;
 #[cfg(feature = "bmr")]
 pub mod bmr;
 
+// lthash - incremental homomorphic multiset hash (Issue 807): LtHash
+// [u16; N] (default 1024 lanes, wrapping add mod 2^16) with insert=add,
+// remove=subtract, merge=sum, checksum=BLAKE3(state). Order-independent
+// aggregate by construction (commutative monoid) -> deterministic under any
+// thread schedule. Element = domain-separated BLAKE3 XOF over a
+// length-prefixed part list (no concatenation-ambiguity collisions).
+// Consumed by riir-chain Proposal 010 D1 (the RSM per-replica divergence
+// check via chain_incremental_root). Pure integer arithmetic, zero deps,
+// zero allocs, wasm32-clean. OPT-IN pending first consumer wiring.
+#[cfg(feature = "lthash")]
+pub mod lthash;
+
 // Test-only `#[global_allocator]` so `alloc::tests::*` pass when running
 // `cargo test -p katgpt-core --lib`. Downstream consumers (katgpt-rs root,
 // riir-engine, etc.) install their OWN `#[global_allocator]`; this static is
