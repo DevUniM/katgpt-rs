@@ -248,6 +248,20 @@ def classifier_arms() -> list[str]:
           "a DOCSTRING glyph was not in scope — argparse prints it for --help")
     check(in_population("def f(:\n") is None,
           "an UNPARSED module got a boolean answer — silence is not evidence")
+    # The entry-point test is a CONJUNCTION and both halves must bite: a
+    # `__name__` comparison against some other constant is not an entry point,
+    # and crediting it would put every `if __name__ == "__mp_main__":` guard
+    # in scope.
+    check(in_population(GLYPH + 'if __name__ == "__mp_main__":\n    main()\n')
+          is False,
+          "a __name__ comparison against a NON-__main__ constant was read as "
+          "an entry point")
+    # The ASCII boundary is `> 127`, not `>= 127`: U+007F is DEL, it encodes
+    # fine in every single-byte codec, and a module whose only non-ASCII is a
+    # DEL cannot fail the way this gate is about.
+    check(in_population('def main():\n    print("\\x7f")\n' + MAIN) is False,
+          "U+007F (DEL) put a module in scope — it is ASCII and encodes "
+          "everywhere; the boundary is > 127, not >= 127")
 
     # ── defence ──
     check(is_defended(INLINE), "the inline reconfigure form was not credited")
@@ -267,6 +281,13 @@ def classifier_arms() -> list[str]:
     check(not is_defended("def f():\n    apply()\n"),
           "a bare apply() in a module that never mentions console_safe was "
           "credited — `apply` is far too common a name to credit blind")
+    # The owner test is a CONJUNCTION and both halves must bite. `apply` is a
+    # method name on pandas frames, on `functools`, on half the config objects
+    # in this workspace — crediting `anything.apply()` would make the gate
+    # pass on modules that never heard of this module.
+    check(not is_defended("import console_safe\ndef f():\n    other.apply()\n"),
+          "`other.apply()` was credited as the console_safe call — the owner "
+          "name is what distinguishes them, and the import alone is not it")
     check(not is_defended("def f(:\n"),
           "an UNPARSED module was credited as defended")
     return fails
