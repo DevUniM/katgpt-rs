@@ -93,7 +93,15 @@ impl InferenceRouter {
     /// (G3 zero-impact guarantee).
     #[inline]
     pub fn observe_tvp_decision(&self, current_tier: ComputeTier) -> TvpTierDecision {
-        let gpu_available = self.gpu.is_some();
+        // Ask the GATE, not the backend handle. This mirrors
+        // `observe_critical_entropy` (inference_router.rs), which reads
+        // `self.gate.gpu_available()` — and the two must agree, because the
+        // gate is what actually promotes the tier. `self.gpu` is `Some` only
+        // under `all(target_os = "macos", feature = "gpu_inference")`, so
+        // reading it made this decision platform-dependent: on x86_64 the
+        // G1/G4 promotion tests were red and `g1b`'s no-GPU Hold passed
+        // VACUOUSLY (both arms saw `false`). Issue 806.
+        let gpu_available = self.gate.gpu_available();
         // Demotion only fires under low load (matches trust_signal semantics).
         // Snapshot gate config once to avoid repeated method calls.
         let cfg = self.gate.config();
