@@ -63,7 +63,7 @@ is DERIVED in the script below rather than hand-typed.
 `scripts/x86_64_execution_matrix.sh` (`aaa575b4`), documented in AGENTS.md.
 Refuses off x86_64, exports `+avx2` itself, derives its packages, carries the
 Issue-734 sentinel, floors every cell in `scripts/x86_64_matrix_floors.txt`,
-and adjudicates failing tests by MEMBERSHIP in
+re-runs each failure ALONE and then adjudicates by MEMBERSHIP in
 `scripts/x86_64_matrix_expected.txt`. `--canary` verified live.
 
 - [x] T5 — landed.
@@ -76,18 +76,19 @@ and adjudicates failing tests by MEMBERSHIP in
       the recorded delta landed (band bits one ulp apart; behavior gates pass
       on both platforms); the stale pin row removed in the same commit. The
       addendum at the tail of Bench 806 has the full two-sided table.
-- [ ] **T7 — FOUR perf bars are pinned, not fixed.** Every one is a bar
+- [ ] **T7 — TWO perf bars are pinned, not fixed.** Both are a bar
       calibrated on the M3 (one, `proof_g3b_swar_speedup`, is named
       `SWAR+FMLA` — an *aarch64* instruction) or an absolute-latency target
       that does not transfer between machines. Each needs an x86_64
       calibration on a QUIET box before it means anything. Rows and reasons:
-      `scripts/x86_64_matrix_expected.txt`. ⚠ It was SIX until the second run:
-      `bench_176_router_forward_cpu` and
-      `g7_throughput_gain_over_plan_218_baseline` both passed an hour later
-      with fewer sibling sessions resident, so they are LOAD-SENSITIVE rather
-      than uncalibrated, and the stale-pin wall removed them. That is the
-      measurement to carry: on this box a latency bar's verdict is partly a
-      property of who else is building.
+      `scripts/x86_64_matrix_expected.txt`. ⚠ It was SIX. Four runs of the one
+      commit produced four different failing sets — `bench_176`, `g7`,
+      `g5_roaring`, `t08_throughput_rebalance_256x16` and
+      `goat_6_context_scaling_flat_o1` all came and went with the box's load —
+      so the script now RE-RUNS each failure alone and only rows that fail
+      twice are adjudicated. That is the measurement to carry: on this box a
+      latency bar's verdict is partly a property of who else is building, and
+      the instrument has to say so rather than pin it.
 - [ ] **T8 — `argtopk`'s AVX2 arm is a measured LOSS** post-fix (12 of 15
       (k, n) cells slower than the scalar fallback). Filed separately as
       [Issue 808](808_avx2_argtopk_is_a_measured_loss_vs_scalar.md); owner's
