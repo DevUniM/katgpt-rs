@@ -5369,3 +5369,50 @@ Bench 800-B's channel tie.
 
 Issue file removed per the noise-reduction rule (HISTORY + the module doc
 site tables + Bench 800-C are the record).
+
+## The full gate's wasm32 layer counted NEGATIVE cfgs as surface — derivation fixed positive-only (2026-09-16)
+
+The 802-followup clippy sweep (queue item 3, last run 09-13) opened with the
+full gate red at layer 2b: three "new" wasm32 sites not covered by a `--lib`
+lane — `benches/plan598_refinement_marginal_bench.rs`,
+`crates/katgpt-core/tests/bench_779_real_bank_affinity.rs`,
+`tests/refinement_marginal_tokenizer_bridge.rs`. All three carry
+`#![cfg(not(target_arch = "wasm32"))]` — native-only guards, each compiling
+to NOTHING on wasm32 by its own declaration. The layer's bare
+`git grep -l 'target_arch = "wasm32"'` cannot see the negation, so every
+native-only test/bench added to the tree demanded a residue pin — the exact
+class `wasm32_surface_audit.py` was built to fix (Issue 738 T3: "the
+predicate is the positive cfg"). This is the fourth instrument to meet the
+class, and the stale bomber rows proved the cost in advance: their pin reason
+describes a pre-guard crossterm failure the file no longer has.
+
+The fix (`448c77f91`) is the derivation, not a bigger pin list: `WASM_FILES`
+now counts a file only when it carries a COMPILE-TIME, non-negated wasm32 cfg
+— `not(...)` guards and runtime `cfg!` branches are both excluded (a runtime
+branch compiles both arms on every target, so the native --all-targets lane
+already compiles the wasm32 arm). Line-based, with the measured limit that a
+multi-line `not( ... )` wrapper over-includes — the safe direction (the file
+lands in the residue pin and demands a human read instead of silently
+vanishing). `WASM_RESIDUE_EXPECTED` is empty by construction; the two GOAT
+targets stay built FOR wasm32 via `WASM_EXTRA_TARGETS` (the lane is their
+pin, unchanged). Derived `-p` list unchanged: katgpt-core, katgpt-moka-wasm,
+katgpt-types + the root package.
+
+The same sweep run then paid for itself on the layer it had been shielding:
+layer 3 (workspace × all-features × all-targets × the -D list) had not
+executed since the 2b red, and it found 3 `needless_range_loop` errors in the
+Plan 598 test code (landed `0fbac8248` under default features — the
+all-features axis gap in the landing gate, the repo's most-repeated rule
+again) plus an unused import in the 598 bench that only compiles under its
+feature. Fixed in the same commit; `naive_marginal` became
+`enumerate().take(n)` + the brute-force compare became `zip().enumerate()`,
+semantics identical (5/5 module tests). Seven pre-existing feature-gated
+WARNINGS remain, none in the -D list, left to their owning lanes — one is a
+bench-loop semantics question (bench_775 single-element loop), not a
+mechanical fix.
+
+First full-gate PASS on this box after the fix (`✓ full gate PASSED — 0
+errors, 0 unbuildable targets`), and the executed axis held too: test_gate
+203 · 2060 · 249 · 139, every row at its floor. The slt.rs
+`field_reassign_with_default` blocker (`dfa6d3ff0`, fired under
+--all-targets only since `7352a75ab`) was cleared on the way in.
