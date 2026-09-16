@@ -27,6 +27,14 @@
 # this repo does not own. The commit that adds ANOTHER undefended instrument
 # reds; the action is one line.
 #
+# ⛑ riir-clippy re-pinned 5 → 0 on 2026-09-16 at riir-clippy `a7a0d03d`. It was
+# the one row known LIVE rather than latent — gen_dashboard.py reads
+# `git log --pretty=%s` across the siblings and every commit subject in this
+# workspace uses an em-dash — and a ratchet row only ever tightens on a repair.
+# The SHA is cited because a repair measured green in a worktree and never
+# committed is Issue 798's exact class: two tracked files here once recorded
+# sibling repairs as landed while both sweeps were red for six hours.
+#
 # ⚠ Deliberately NOT the Issue 785 rule's target. That rule forbids ratcheting
 # a bucket meaning *unanswered* — a backlog with no owner. This bucket means
 # *undefended*: every row has an owner, and every row is one line from closed.
@@ -64,7 +72,7 @@ katgpt-rs                       44              55               0
 riir-ai                          4               3               4
 riir-auth                        0               0               0
 riir-chain                       1               0               0
-riir-clippy                      3               3               5
+riir-clippy                      3               3               0
 riir-dapps                       0               0               1
 riir-game-sdk                    0               0               0
 riir-kat                         0               0               0

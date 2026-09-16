@@ -389,9 +389,10 @@ Issue 804 verdict half of `console_encoding_gate.py`, and the **tenth**
 instance of the never-generalised shape. Its issue wrote the cross-repo axis
 down as “⚠ unmeasured, deliberately” on the `check_validation_gate` 789 T4
 precedent — *re-measure the population before answering*. The measurement was
-then never taken; taken, it returns **seven** repos and **71** undefended
-instruments against katgpt-rs's 0 of 72, so 789's “no sweep” does NOT carry
-across. ⚠ The exposure caveat SURVIVES it — a cp874 console is this box's
+then never taken; taken, it returned **seven** repos against katgpt-rs's 0 of
+72, so 789's “no sweep” does NOT carry across — take the live counts from the
+sweep's own summary line, never from this sentence, which was already stale
+within the hour when riir-clippy's five rows were repaired at `a7a0d03d`. ⚠ The exposure caveat SURVIVES it — a cp874 console is this box's
 property and riir-train's 53 rows are the same plan-scoped over-capture
 `instrument_reachability` measures on this identical walk — which is why the
 ceiling is a **RATCHET on the derivative**, not a demand for 71 repairs in
