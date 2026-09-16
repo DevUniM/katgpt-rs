@@ -219,7 +219,15 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   passes the second time and a real failure does not. TRANSIENT rows print and
   are never counted, never pinned; it costs nothing, because everything is
   already built and `--exact` makes every other binary run zero tests. What
-  survives is three reproducible rows. A stale pin (its test passes now) reds
+  survived was three reproducible rows, and none of the three survived
+  calibration: `t698_t5_kv_mean_gates` was arch-dependent fixture truth (T6,
+  arch-conditional dual pins), and the two perf bars (`proof_g3b_swar_speedup`,
+  `t09_throughput_inv_sqrt_16x16`) were ISA-real — NEON/FMLA-calibrated bars
+  x86_64 never reaches, plus one stale instrument (t09's `bench_us(3, 20)`
+  oscillated 2.1× on a loaded M3; repaired to the Issue-723 `best_of_us`
+  harness) — resolved as arch-conditional dual pins (T7, 2026-09-16, Bench 806
+  Addendum II). The membership set is EMPTY: every confirmed x86_64 failure is
+  unexpected again. A stale pin (its test passes now) reds
   too — the file must not only ever loosen — except under `--libs-only`, which
   DEFERS that check because it skips the cell those rows come from.
 - Floors in `scripts/x86_64_matrix_floors.txt` — `min_passed` per package plus
