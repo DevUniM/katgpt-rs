@@ -375,8 +375,8 @@ unsafe fn dequant_via_lut_avx2(
     out: &mut [f32],
 ) {
     use core::arch::x86_64::{
-        _mm_cvtepu8_epi32, _mm_loadl_epi64, _mm256_and_si256, _mm256_castsi128_si256,
-        _mm256_i32gather_ps, _mm256_set1_epi32, _mm256_srlv_epi32, _mm256_storeu_ps,
+        _mm_loadl_epi64, _mm256_and_si256, _mm256_cvtepu8_epi32, _mm256_i32gather_ps,
+        _mm256_set1_epi32, _mm256_srlv_epi32, _mm256_storeu_ps,
     };
 
     unsafe {
@@ -393,9 +393,11 @@ unsafe fn dequant_via_lut_avx2(
         let mut i = 0;
         while i + 8 <= n {
             // Load 8 bytes (low 64 bits of __m128i), zero-extend to 8× i32.
-            let raw_bytes = _mm_cvtepu8_epi32(_mm_loadl_epi64(codes.as_ptr().add(i) as *const _));
-            // Widen to 256-bit, shift right + mask on i32 lanes.
-            let idx256 = _mm256_castsi128_si256(raw_bytes);
+            // `_mm256_cvtepu8_epi32` is required: the SSE4.1 `_mm_cvtepu8_epi32`
+            // widens only the low FOUR bytes, leaving lanes 4–7 at index 0 —
+            // every upper half of an 8-lane chunk gathered lut[0] (caught by
+            // the first x86_64 execution of this arm, 2026-09-16).
+            let idx256 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(codes.as_ptr().add(i) as *const _));
             let shifted = _mm256_srlv_epi32(idx256, shift_vec);
             let masked = _mm256_and_si256(shifted, mask_vec);
             // Gather 8× f32 from LUT base using the masked indices.
@@ -635,9 +637,9 @@ unsafe fn dequant_dot_via_lut_avx2(
     mask: u8,
 ) -> f32 {
     use core::arch::x86_64::{
-        _mm_cvtepu8_epi32, _mm_loadl_epi64, _mm256_add_ps, _mm256_and_si256,
-        _mm256_castsi128_si256, _mm256_fmadd_ps, _mm256_i32gather_ps, _mm256_loadu_ps,
-        _mm256_set1_epi32, _mm256_setzero_ps, _mm256_srlv_epi32,
+        _mm_loadl_epi64, _mm256_add_ps, _mm256_and_si256, _mm256_cvtepu8_epi32, _mm256_fmadd_ps,
+        _mm256_i32gather_ps, _mm256_loadu_ps, _mm256_set1_epi32, _mm256_setzero_ps,
+        _mm256_srlv_epi32,
     };
 
     unsafe {
@@ -658,9 +660,11 @@ unsafe fn dequant_dot_via_lut_avx2(
         // Process 16 elements per iteration (2× float32x8_t FMA).
         while i + 16 <= n {
             for (slot, &off) in [0, 8].iter().enumerate() {
-                let raw =
-                    _mm_cvtepu8_epi32(_mm_loadl_epi64(codes.as_ptr().add(i + off) as *const _));
-                let idx256 = _mm256_castsi128_si256(raw);
+                // `_mm256_cvtepu8_epi32`, not the SSE4.1 4-element form — see
+                // dequant_via_lut_avx2 (the 4-element form leaves lanes 4–7
+                // at index 0).
+                let idx256 =
+                    _mm256_cvtepu8_epi32(_mm_loadl_epi64(codes.as_ptr().add(i + off) as *const _));
                 let shifted = _mm256_srlv_epi32(idx256, shift_vec);
                 let masked = _mm256_and_si256(shifted, mask_vec);
                 let gathered = _mm256_i32gather_ps(lut_ptr, masked, 4);
@@ -677,8 +681,7 @@ unsafe fn dequant_dot_via_lut_avx2(
         // Process remaining 8-element chunk.
         let mut acc = _mm256_add_ps(acc0, acc1);
         if i + 8 <= n {
-            let raw = _mm_cvtepu8_epi32(_mm_loadl_epi64(codes.as_ptr().add(i) as *const _));
-            let idx256 = _mm256_castsi128_si256(raw);
+            let idx256 = _mm256_cvtepu8_epi32(_mm_loadl_epi64(codes.as_ptr().add(i) as *const _));
             let shifted = _mm256_srlv_epi32(idx256, shift_vec);
             let masked = _mm256_and_si256(shifted, mask_vec);
             let gathered = _mm256_i32gather_ps(lut_ptr, masked, 4);
@@ -1011,14 +1014,9 @@ unsafe fn dequant_dot_via_lut_multi_stage_avx2(
         // Process 16 elements per iteration (2 × float32x8_t FMA).
         while i + 16 <= n {
             for &(off, slot) in &[(0usize, 0usize), (8, 1)] {
-                // Load 8 code bytes → zero-extend to 8× i32 indices.
-                let raw =
-                    core::arch::x86_64::_mm_cvtepu8_epi32(core::arch::x86_64::_mm_loadl_epi64(
-                        codes_per_stage[0].as_ptr().add(i + off) as *const _,
-                    ));
-                // Stage 0 contributes via gather from its own LUT.
-                // We reuse the i32 index vector across stages since codes differ
-                // per stage — load each stage's codes separately.
+                // Per-stage codes are loaded + widened inside the stage loop
+                // below (the dead stage-0 preload that used to sit here used
+                // the SSE4.1 4-element widen and invited copy-paste reuse).
                 let mut stage_sum = _mm256_setzero_ps();
                 for k in 0..n_stages {
                     // _mm256_cvtepu8_epi32: widen 8 uint8 → 8 int32 (__m256i).
@@ -1031,7 +1029,6 @@ unsafe fn dequant_dot_via_lut_multi_stage_avx2(
                     let gathered = _mm256_i32gather_ps(lut_slices[k].as_ptr(), idx_vec, 4);
                     stage_sum = _mm256_add_ps(stage_sum, gathered);
                 }
-                let _ = raw; // (unused — kept for structural symmetry documentation)
                 let x_vec = _mm256_loadu_ps(x.as_ptr().add(i + off));
                 match slot {
                     0 => acc0 = _mm256_fmadd_ps(stage_sum, x_vec, acc0),

@@ -11,6 +11,30 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## First x86_64 execution of the katgpt-core/katgpt-types SIMD suites (2026-09-16) — 15 latent AVX2 bugs caught and fixed; Bench 800's execution-parity caveat resolved NEGATIVE then closed
+
+[Bench 800 addendum](.benchmarks/800_bf16_simd_goat.md). The run: 4090 box (i7-13700K), repo
+@ `d1f9be27a`, `git archive`-extracted to a scratch dir (the checkout there carries sibling WIP —
+never touched). katgpt-types `--lib` default build: **139/139** — the first x86_64 execution of
+the crate's suite, including the `simd_exp_sum_extreme_inputs_underflow_not_wrap` regression
+(riir-train Issue 549) that the AGENTS.md execute-axis table recorded as "executed by NOTHING".
+katgpt-core `--lib --features bf16_simd` at `RUSTFLAGS="-C target-feature=+avx2"` (bf16_convert's
+AVX2 arm is compile-time gated on `target_feature` — without the flag the run silently exercises
+the scalar fallback and proves nothing): **15 FAILED**, all AVX2-arm defects never executed by
+any lane (NEON runs on the M3; no automatic x86_64-native lane exists — the AGENTS.md platform-
+axis warning, measured): (1) `f32_to_bf16_rne_avx2` dropped the NEON identity's final `t >> 16`
+and `_mm_packus_epi32` saturated instead of truncating — every narrow packed mask garbage;
+(2) `dequant_via_lut_avx2` + `dequant_dot_via_lut_avx2` used the SSE4.1 4-element
+`_mm_cvtepu8_epi32` where the 256-bit gather needs `_mm256_cvtepu8_epi32` — lanes 4–7 of every
+eight gathered `lut[0]`; all 12 simd_lut_dequant failures cascade from those two sites. The
+multi-stage kernel knew the trap (its comment names it) — the single-stage kernels missed it.
+Fixed same-session, cross-checked from the M3
+via `cargo check --target x86_64-unknown-linux-musl` +avx2 (no linking needed), rerun green on
+the 4090: **2069 passed / 0 failed** (was 2054/15). Two standing lessons: an execution-parity
+caveat that "rests on the shared-algorithm argument" is a conjecture until the platform runs; a
+compile-time `target_feature` gate means even a plain x86_64 `cargo test` exercises nothing —
+record the flags with every such run.
+
 ## Issue 805 CLOSED (2026-09-16) — `numbering_gate.py --help` printed ten "remove the row" lines about a repo it could not read
 
 `--help` was read as a repo PATH, and `tracked_paths` converts a git failure into an EMPTY
@@ -82,6 +106,7 @@ names each unmeasured axis, and the lane is documented in AGENTS.md next to `tes
 ⛑ Renumbered 799 → 803 before the push by the Issue-796 rule — `dual_allocation_gate.py`
 reported INDEPENDENT, adjudicated 5 inbound vs 1 by Issue 724 T2; the gate is the reason it
 was caught before the push rather than at merge time. Landed `3ceb541b` (T1+T2) and the
+Landed `3ceb541b` (T1+T2) and the
 follow-up (T3+T4). Issue file removed per the noise-reduction rule.
 
 ## Issue 802 CLOSED (2026-09-16) — commitment-gap calibration rig: residue DEAD-BY-DOMINATION at micro scale; stability features (item 3) shipped earlier in the day

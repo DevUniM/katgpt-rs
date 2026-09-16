@@ -50,13 +50,35 @@ gate to pass):
   exhaustive over all 65536 u16 values; NEON-vs-scalar parity test EXECUTES
   on this machine.
 - **G4**: `into_buf` slice→slice APIs, zero alloc, stack-buffer test.
-- **AVX2 arm**: compile-verified clean (x86_64 +avx2 typecheck); execution
-  parity UNPROVEN (no x86_64 hardware in this session) — rests on the
-  shared-algorithm argument the NEON arm proves. Optional follow-up: run the
-  test suite on the 4090 box (x86_64 native) to close that caveat.
-- Tests: `cargo test -p katgpt-core --features bf16_simd --lib` → 2070 passed
-  (10 new bf16 tests); combo `--features bf16_simd,meld` → 2077/0; default
-  features → 2060/0; wasm32 combo check clean; clippy `-D warnings` clean.
+- **AVX2 arm — the caveat resolved NEGATIVE, then FIXED (2026-09-16, same
+  day).** The optional follow-up ran on the 4090 (i7-13700K, x86_64 native,
+  `RUSTFLAGS="-C target-feature=+avx2"`, repo @ `d1f9be27a`): **execution
+  parity FAILED — 15 tests red** (3 bf16 narrow-RNE + 12 simd_lut_dequant).
+  The shared-algorithm argument the NEON arm proves is REFUTED by execution;
+  both bugs are AVX2-transcription slips in arms that no automatic lane
+  compiles (NEON runs on the M3, nothing runs x86_64-native):
+  1. `f32_to_bf16_rne_avx2` dropped the NEON identity's final `t >> 16` —
+     `_mm_packus_epi32` SATURATES i32→u16 instead of taking the high half,
+     so every narrow packed 0x0000/0x7FFF/0xFFFF mask garbage
+     (`rne(+0.0)` → 32767). Fix: shift `sel` before the split+pack.
+  2. `dequant_via_lut_avx2` + `dequant_dot_via_lut_avx2` used the SSE4.1
+     **4-element** `_mm_cvtepu8_epi32` where the 256-bit gather needs the
+     **8-element** `_mm256_cvtepu8_epi32` — lanes 4–7 of every chunk kept
+     index 0 and gathered `lut[0]`. The multi-stage kernel's own comment
+     already documented this exact trap; the single-stage kernels missed it.
+     All 12 lut failures cascade from these two sites (the multi-vs-single
+     mismatch had the SINGLE side wrong). Also removed the dead stage-0
+     preload in the multi-stage kernel that carried the same wrong intrinsic.
+  Post-fix rerun on the same box: **`cargo test -p katgpt-core --lib
+  --features bf16_simd` → 2069 passed / 0 failed** (was 2054/15). The same
+  session also executed the katgpt-types suite on x86_64 for the first time
+  (139/139, default build, runtime AVX2 dispatch) — the
+  `simd_exp_sum_extreme_inputs_underflow_not_wrap` regression (riir-train
+  Issue 549) has now actually RUN and passed on AVX2 hardware.
+- Tests (original M3 run): `cargo test -p katgpt-core --features bf16_simd
+  --lib` → 2070 passed (10 new bf16 tests); combo `--features
+  bf16_simd,meld` → 2077/0; default features → 2060/0; wasm32 combo check
+  clean; clippy `-D warnings` clean.
 
 Landing: `f314d5006` (kernels + wiring; meld half of the wiring completes
 `43f15f7c8`). Issue 800 Arm A closed A1/A2/A3 with the honest FAIL; A4 `- [-]`.

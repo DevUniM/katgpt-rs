@@ -468,10 +468,17 @@ unsafe fn f32_to_bf16_rne_avx2(src: &[f32], dst: &mut [u16]) {
             // NaN result folded pre-shift (same identity as the NEON arm).
             let nan_u = _mm256_or_si256(x, qnan_shifted);
             let sel = _mm256_blendv_epi8(t, nan_u, is_nan);
+            // The NEON identity ends at `t >> 16` — shift BEFORE the 32→16
+            // pack: `_mm_packus_epi32` SATURATES i32→u16, it does not take the
+            // high half, so unshifted t packs as 0x0000/0x7FFF/0xFFFF mask
+            // garbage (caught by the first x86_64 execution of this arm,
+            // 2026-09-16 — NEON was never wrong; the shift was dropped in the
+            // AVX2 transcription).
+            let sel16 = _mm256_srli_epi32(sel, 16);
             // Two-__m128i pack: linear order, no 256-bit lane hazard (module
             // doc §AVX2 pack note).
-            let lo = _mm256_castsi256_si128(sel);
-            let hi = _mm256_extracti128_si256::<1>(sel);
+            let lo = _mm256_castsi256_si128(sel16);
+            let hi = _mm256_extracti128_si256::<1>(sel16);
             let packed = _mm_packus_epi32(lo, hi);
             _mm_storeu_si128(dp.add(i) as *mut __m128i, packed);
             i += 8;
