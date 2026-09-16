@@ -18,7 +18,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use katgpt_core::refinement_marginal::{
-    coarse_grain_first, coarse_grain_step, CoarseGrainScratch, CoarseRecord, RefinementTable,
+    coarse_grain_first, coarse_grain_step, CoarseGrainScratch, CoarseRecord,
 };
 use katgpt_rs::refinement_bridge::refinement_table_from_bpe;
 use katgpt_tokenizer::BpeTokenizer;

@@ -397,7 +397,7 @@ mod tests {
     fn naive_marginal(probs: &[f32], table: &RefinementTable, prefix: &[u8]) -> CoarseRecord {
         let mut rec = CoarseRecord::zeroed();
         let k = prefix.len();
-        for s in 0..table.n_symbols() {
+        for (s, &p) in probs.iter().enumerate().take(table.n_symbols()) {
             let len = table.symbol_len(s);
             if len < k {
                 continue;
@@ -405,7 +405,6 @@ mod tests {
             if !(0..k).all(|i| table.byte_at(s, i) == prefix[i]) {
                 continue;
             }
-            let p = probs[s];
             if len == k {
                 rec.bins[TERMINAL_BIN] += p;
                 rec.terminal_mass += p;
@@ -442,13 +441,13 @@ mod tests {
 
         // Independent brute force: one scatter loop over the sequences.
         let mut brute = vec![0.0_f32; SYMBOL_BINS + 1];
-        for s in 0..table.n_symbols() {
+        for (s, &p) in probs.iter().enumerate().take(table.n_symbols()) {
             let len = table.symbol_len(s);
             let b = if len == 0 { TERMINAL_BIN } else { table.byte_at(s, 0) as usize };
-            brute[b] += probs[s];
+            brute[b] += p;
         }
-        for i in 0..SYMBOL_BINS + 1 {
-            assert!((rec.bins[i] - brute[i]).abs() < 1e-6, "bin {i}");
+        for (i, (rec_bin, brute_bin)) in rec.bins.iter().zip(brute.iter()).enumerate() {
+            assert!((rec_bin - brute_bin).abs() < 1e-6, "bin {i}");
         }
         // The only depth-0 terminal is the empty symbol s0 — its mass is
         // genuinely unresolved continuation, so the certificate is T/C > 0

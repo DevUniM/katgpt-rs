@@ -264,7 +264,29 @@ fi   # end the full-mode-only part of Layer 2; Layer 2b below runs in BOTH modes
 # `katgpt-moka-wasm` alone, of which ELEVEN were `unsafe_op_in_unsafe_fn`
 # (edition-2024 `warning[E0133]`, on its way to a hard error) — in a crate
 # whose whole reason to exist is to be shipped to a browser.
-WASM_FILES=$(git grep -l 'target_arch = "wasm32"' -- '*.rs' 2>/dev/null || true)
+# Positive-surface derivation — the wasm32_surface_audit.py vocabulary: a
+# file counts as surface only when it carries a COMPILE-TIME, non-negated
+# wasm32 cfg. Two classes are deliberately NOT surface:
+#   `#![cfg(not(target_arch = "wasm32"))]` — a native-only guard; the file
+#       compiles to NOTHING on wasm32 and cannot break it. Counting it made
+#       every new native-only test/bench demand a residue pin (the class
+#       Issue 738 T3 fixed for the python audit; this is the fourth
+#       instrument to meet it).
+#   `cfg!(target_arch = "wasm32")` — a RUNTIME branch; both arms compile on
+#       every target, so the native --all-targets lane already compiles the
+#       wasm32 arm. Nothing wasm32-specific is left uncovered.
+# Line-based, with one measured limit: a multi-line `not( ... )` wrapper
+# re-includes its inner lines — over-inclusion, the safe direction (the
+# file lands in the residue pin below and demands a human read instead of
+# silently vanishing from the accounting).
+WASM_FILES=$(git grep -lE 'target_arch[[:space:]]*=[[:space:]]*"wasm32"' -- '*.rs' 2>/dev/null | while IFS= read -r f; do
+    if git grep -hE 'target_arch[[:space:]]*=[[:space:]]*"wasm32"' -- "$f" 2>/dev/null \
+        | grep -v 'cfg!' \
+        | grep -vE 'not[[:space:]]*\([[:space:]]*target_arch' \
+        | grep -q .; then
+        printf '%s\n' "$f"
+    fi
+done || true)
 WASM_SIMD_FILES=$(git grep -l 'target_feature = "simd128"' -- '*.rs' 2>/dev/null || true)
 WASM_N=$(printf '%s\n' "$WASM_FILES" | grep -c . || true)
 WASM_SIMD_N=$(printf '%s\n' "$WASM_SIMD_FILES" | grep -c . || true)
@@ -298,23 +320,27 @@ if printf '%s\n' "$WASM_FILES" | grep -q '^src/'; then
     WASM_PKGS=$(printf '%s\n%s\n' "$WASM_PKGS" "$ROOT_PKG" | sort -u)
 fi
 
-# Sites no `--lib` lane reaches. Two of the four ARE built, as named targets
-# (WASM_EXTRA_TARGETS); the other two are NOT, for a measured reason:
+# Sites no `--lib` lane reaches: the POSITIVE compile-time surface outside
+# crates/*/src/ and src/. Empty today by construction — every non-src wasm32
+# mention in the tree is either a runtime `cfg!` branch (the two GOAT
+# targets: both arms compile on every target, the native --all-targets lane
+# compiles the wasm32 arm, and the targets stay built FOR wasm32 as named
+# GOAT evidence in WASM_EXTRA_TARGETS below — the lane is their pin) or a
+# `#![cfg(not(target_arch = "wasm32"))]` native-only guard on
+# tests/benches/examples (the plan598 bench, the 779 real-bank affinity
+# test, the 598 tokenizer-bridge test, the two bomber arenas) — each
+# compiles to nothing on wasm32 by its own declaration.
 #
-#   examples/bomber_*.rs — `requires the features: bomber`, and with that
-#   feature on they fail at `cargo check` with `unresolved import
-#   sys::position` / `cannot find function enable_raw_mode in module sys`:
-#   crossterm has no wasm32 backend. A TUI arena cannot target a browser;
-#   this is a fact about the dependency, not a gap to close.
+# When this pin reds: a NEW compile-time positive wasm32 cfg has appeared
+# outside a src/ dir. Add the target to WASM_EXTRA_TARGETS (if it compiles
+# for wasm32) or pin it here with the measured reason it cannot. Do NOT
+# just re-pin the list.
 # `|| true` at the tail: under `set -euo pipefail`, grep -v exits 1 when it
 # outputs NOTHING (every site filtered), which would kill the gate on exactly
 # the changed-set case the comparison below exists to report. The residue
 # variable then reads empty and the != comparison prints its own verdict.
 WASM_RESIDUE=$(printf '%s\n' "$WASM_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' | sort || true)
-WASM_RESIDUE_EXPECTED='crates/katgpt-core/benches/bench_432_simd_lut_dequant_goat.rs
-crates/katgpt-core/examples/simd_wasm32_goat.rs
-examples/bomber_21_sonlt_arena.rs
-examples/bomber_tjs_arena.rs'
+WASM_RESIDUE_EXPECTED=''
 if [ "$WASM_RESIDUE" != "$WASM_RESIDUE_EXPECTED" ]; then
     echo "✗ the set of wasm32 sites NOT covered by a --lib lane has changed."
     echo "  Either add the new one to WASM_EXTRA_TARGETS (if it compiles for"
