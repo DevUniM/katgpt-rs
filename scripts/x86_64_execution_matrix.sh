@@ -182,7 +182,7 @@ TOTAL_PASSED=0
 SEEN_FAILS="$SCRATCH/.failing_tests.txt"
 : > "$SEEN_FAILS"
 
-# ── Failing tests are adjudicated by MEMBERSHIP, not counted ────────────────
+# ── Failing tests are CONFIRMED, then adjudicated by MEMBERSHIP ─────────────
 # The first full run of the integration cell was 0 correctness failures and
 # SIX perf-bar failures — a ≥5× gate whose own name says `SWAR+FMLA` (an
 # aarch64 instruction) scoring 4.37× here, two speedup ratios computed from
@@ -192,8 +192,34 @@ SEEN_FAILS="$SCRATCH/.failing_tests.txt"
 # So they are pinned by NAME with a reason each, the wall is 0 UNPINNED, and a
 # pin whose test has since started passing reds too — the file must not only
 # ever loosen. A count would be green on a swap; a set is not.
-collect_fails() {  # $1 = log
-    sed -n 's/^test \(.*\) \.\.\. FAILED$/\1/p' "$1" >> "$SEEN_FAILS" || true
+#
+# ⛔ AND THE SET CHURNS, which is why a membership pin alone is the wrong
+# instrument here. Three runs of the same commit on this box produced three
+# DIFFERENT failing sets: run 1 six, run 2 dropped two (`bench_176`, `g7`) and
+# gained an unseeded-RNG flake, run 3 dropped `g5_roaring` and gained
+# `t08_throughput_rebalance_256x16`. A pin file re-typed after every run is a
+# diary, not a wall.
+#
+# So every failure is RE-RUN ALONE before it is adjudicated — this session's
+# own finding, mechanised: a load-sensitive bar passes the second time and a
+# real failure does not. TRANSIENT rows are printed (they are what the box did)
+# and never counted, never pinned. The re-run is cheap: everything is already
+# built and `--exact` makes every other binary run zero tests.
+collect_fails() {  # $1 = log, $2 = the cargo args of the cell it came from
+    sed -n 's/^test \(.*\) \.\.\. FAILED$/\1\t'"$2"'/p' "$1" >> "$SEEN_FAILS" || true
+}
+
+confirm_fails() {  # stdin: name<TAB>args ; stdout: names that failed AGAIN
+    while IFS="$(printf '\t')" read -r name args; do
+        [ -n "$name" ] || continue
+        # shellcheck disable=SC2086 -- $args is a deliberate word list
+        if (cd "$SCRATCH" && cargo test $args -j "$JOBS" -- --exact "$name") \
+                > "$SCRATCH/.confirm.log" 2>&1; then
+            echo "    · TRANSIENT $name — failed in the cell, PASSED alone" >&2
+        else
+            echo "$name"
+        fi
+    done
 }
 
 run_lib_cell() {
@@ -211,7 +237,7 @@ run_lib_cell() {
     (cd "$SCRATCH" && cargo test -p "$pkg" --lib --all-features -j "$JOBS") \
         > "$log" 2>&1 || rc=$?
     before="$(wc -l < "$SEEN_FAILS" | tr -d ' ')"
-    collect_fails "$log"
+    collect_fails "$log" "-p $pkg --lib --all-features"
     after="$(wc -l < "$SEEN_FAILS" | tr -d ' ')"
     if [ "$rc" -ne 0 ] && [ "$before" = "$after" ]; then
         # Non-zero with no `test … FAILED` line is the harness DYING, not a
@@ -293,7 +319,7 @@ if [ "$LIBS_ONLY" -eq 0 ]; then
         echo "  hold while every binary inside it empties out."
         FAILED=$((FAILED + 1))
     fi
-    collect_fails "$log"
+    collect_fails "$log" "-p $ROOT_PKG --tests --release"
     if [ "$n_failed" -gt 0 ]; then
         echo "· $n_failed failing test(s) — adjudicated below (log: $log)"
     else
@@ -318,17 +344,29 @@ if [ -f "$EXPECTED" ]; then
 else
     : > "$PINNED"
 fi
-sort -u "$SEEN_FAILS" > "$SEEN_FAILS.sorted"
+echo ""
+echo "▸ confirming each failure ALONE (a load-sensitive bar passes the second time)"
+sort -u "$SEEN_FAILS" | confirm_fails | sort -u > "$SEEN_FAILS.sorted"
 UNPINNED="$(comm -23 "$SEEN_FAILS.sorted" "$PINNED")"
 STALE="$(comm -13 "$SEEN_FAILS.sorted" "$PINNED")"
 n_fail_tests="$(wc -l < "$SEEN_FAILS.sorted" | tr -d ' ')"
 n_pinned="$(wc -l < "$PINNED" | tr -d ' ')"
 echo ""
-echo "▸ failing tests: $n_fail_tests, pinned rows: $n_pinned"
+echo "▸ CONFIRMED failing tests: $n_fail_tests, pinned rows: $n_pinned"
 if [ -n "$UNPINNED" ]; then
     echo "✗ UNPINNED failing test(s) — this is the wall:"
     printf '    %s\n' $UNPINNED
     FAILED=$((FAILED + 1))
+fi
+if [ -n "$STALE" ] && [ "$LIBS_ONLY" -eq 1 ]; then
+    # --libs-only skips the cell that PRODUCES most of these rows, so every one
+    # of them would read STALE for the trivial reason that it never ran. A
+    # deferral, on the DEFERRED precedent, not a silent skip.
+    echo "· STALE check DEFERRED — --libs-only did not run the cell these pins"
+    echo "  describe, so \"passes now\" is unmeasured rather than true:"
+    printf '    %s
+' $STALE
+    STALE=""
 fi
 if [ -n "$STALE" ]; then
     echo "✗ STALE pin(s) — these tests PASS now, so the row describes nothing."
