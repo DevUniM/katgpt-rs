@@ -2233,7 +2233,7 @@ A second consolidated table for standalone opt-in features with their own plans,
 | Feature | Plan | Role |
 |---|---|---|
 | `progressive_mcgs` | 272 | Progressive MCGS — graph search with reference edges + entropy-gated schedule (Research 239) |
-| `set_diffusion` | 401 | Set Diffusion — set-causal attention + DecodeStrategy::SetDiffusion. Issue 813 (2026-09-17): the custom-order reveal seam (`train/evaluate_*_with_gen_steps`, `dllm::set_causal` module) + the t\*-gated probability-order sweep arm (Bench 809 — arm tables recorded; NO-SEPARATION verdict, the clean-token objective is self-copy trivial, masked-target unblock = Issue 816). |
+| `set_diffusion` | 401 | Set Diffusion — set-causal attention + DecodeStrategy::SetDiffusion. Issue 813 (2026-09-17): the custom-order reveal seam (`train/evaluate_*_with_gen_steps`, `dllm::set_causal` module) + the t\*-gated probability-order sweep arm (Bench 809: clean-token cells self-copy trivial → Issue 816's masked-target denoiser trainer resolved it same day — prob-t\* WINS the ordering table on both eval seeds, 2.59/2.61 vs uniform 2.89/2.88 nats). |
 | `hlplayer` blends | 436 | `binned_blend` (HARMFUL), `kernel_blend` (RECOMMENDED), `contextual_bandit` — see [negative_results §37](negative_results.md#37-binned-blend-estimator---real-arena-strictly-harmful-stays-opt-in) |
 
 ### Formal verification & proof

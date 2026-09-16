@@ -31,8 +31,8 @@
 //! existing caller and generalizes over both.
 
 use super::{
-    BackwardContext, ForwardSaveContext, LossAveraging, backward, forward_save_set_causal,
-    masked_loss_into, sgd_update,
+    BackwardContext, ForwardSaveContext, LossAveraging, backward, corrupt_block_into,
+    forward_save_set_causal, masked_loss_into, sgd_update,
 };
 use crate::transformer::TransformerWeights;
 use crate::types::{Config, Rng};
@@ -314,6 +314,218 @@ fn evaluate_set_causal_nelbo_with_gen_steps_internal(
             act.logits,
             tokens,
             &is_masked_all[..seq_len],
+            config.vocab_size,
+            LossAveraging::Global,
+            &mut exp_buf,
+        );
+        total += loss;
+        count += 1;
+    }
+    if count == 0 {
+        0.0
+    } else {
+        total / count as f32
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Issue 816: the masked-target (denoiser) set-causal trainer
+// ═══════════════════════════════════════════════════════════════
+//
+// Bench 809 measured the clean-token objective as SELF-COPY TRIVIAL: the
+// copy path is the RESIDUAL stream (Phase C adds `after_norm1` =
+// norm(wte[token] + wpe) back before the logits), not just self-attention —
+// a strict-self attention variant alone leaves the leak intact (measured:
+// every arm still converges to ~0 NELBO). The fix is the paper-faithful
+// denoiser shape: corrupt the input (mask_ratio), restrict the loss to the
+// masked positions — their residual carries `wte[mask_token]`, not the
+// answer — and let the set-causal mask decide how much CONTEXT each masked
+// position gets. Every mechanism (corrupt_block_into, masked_loss_into's
+// is_masked restriction, the zero-weight ⇒ zero-gradient backward invariant)
+// already shipped; this is their composition under the Issue-813 seam.
+
+/// Train a set-causal denoiser under a CUSTOM reveal source (Issue 816).
+///
+/// Per sample: corrupt the sequence at `mask_ratio` (the
+/// `train_mini_dllm` corruption model), draw the reveal ordering via
+/// `gen_steps_for` (the Issue-813 seam), run the INCUMBENT set-causal
+/// forward (same-set + earlier context), and take the loss over the MASKED
+/// positions only — so the target token never enters the prediction path
+/// and the reveal-order axis becomes measurable (Bench 809's blocked cell).
+///
+/// The order arms are comparable under paired seeds: the corruption draw is
+/// order-independent, so every arm sees the same corrupted inputs and
+/// differs only in which positions get context.
+pub fn train_mini_set_causal_denoiser_with_gen_steps(
+    config: &Config,
+    train_data: &[Vec<usize>],
+    test_data: &[Vec<usize>],
+    n_epochs: usize,
+    lr: f32,
+    mask_ratio: f32,
+    gen_steps_for: SetCausalGenStepsFn<'_>,
+    seed: u64,
+) -> (TransformerWeights, Vec<f32>) {
+    assert!
+        ((0.0..=1.0).contains(&mask_ratio),
+        "mask_ratio must be in [0, 1], got {mask_ratio}");
+    let mut rng = Rng::new(seed);
+    let mut weights = TransformerWeights::new(config, &mut rng);
+    let mut loss_history = Vec::with_capacity(n_epochs);
+    let mut fwd_ctx = ForwardSaveContext::new(config);
+    let mut bwd_ctx = BackwardContext::new(config);
+    let mut corrupted_buf = Vec::with_capacity(config.block_size);
+    let mut is_masked_buf = Vec::with_capacity(config.block_size);
+    let mut positions_buf = Vec::with_capacity(config.block_size);
+
+    let mut indices: Vec<usize> = (0..train_data.len()).collect();
+    for epoch in 0..n_epochs {
+        let mut epoch_loss = 0.0f32;
+        let mut n_samples = 0usize;
+
+        // Shuffle training data in-place (the shared trainer convention).
+        for i in (1..indices.len()).rev() {
+            let j = (rng.next() as usize) % (i + 1);
+            indices.swap(i, j);
+        }
+
+        for &idx in &indices {
+            let tokens = &train_data[idx];
+            let seq_len = tokens.len().min(config.block_size);
+
+            let n_mask = corrupt_block_into(
+                tokens,
+                mask_ratio,
+                config.mask_token,
+                &mut rng,
+                &mut corrupted_buf,
+                &mut is_masked_buf,
+                &mut positions_buf,
+            );
+            // Skip if nothing masked — the loss set is empty.
+            if n_mask == 0 {
+                continue;
+            }
+
+            // Issue 813 seam: the reveal source produces the generation steps
+            // over the CLEAN length (the corruption does not change it).
+            let gen_steps = gen_steps_for(seq_len, tokens, &mut rng);
+
+            // Incumbent set-causal forward over the CORRUPTED input.
+            let act =
+                forward_save_set_causal(&weights, &corrupted_buf, config, &gen_steps, &mut fwd_ctx);
+
+            // Denoiser loss: mean cross-entropy over the MASKED positions
+            // only (the leak-free loss set — unmasked positions carry their
+            // own token in the residual and are excluded).
+            let loss = masked_loss_into(
+                act.logits,
+                tokens,
+                &is_masked_buf,
+                config.vocab_size,
+                LossAveraging::Global,
+                &mut bwd_ctx.loss_exp_buf,
+            );
+
+            // Backward + SGD: the zero-weight ⇒ zero-gradient attention
+            // invariant carries the mask; the loss set carries the target.
+            backward(
+                &act,
+                &weights,
+                tokens,
+                &is_masked_buf,
+                config,
+                &mut bwd_ctx,
+            );
+            sgd_update(&mut weights, &bwd_ctx.grads, lr);
+
+            epoch_loss += loss;
+            n_samples += 1;
+        }
+
+        let avg_loss = if n_samples > 0 {
+            epoch_loss / n_samples as f32
+        } else {
+            0.0
+        };
+        loss_history.push(avg_loss);
+
+        if epoch % 100 == 0 || epoch == n_epochs - 1 {
+            let test_nll = evaluate_set_causal_denoiser_nll_with_gen_steps_internal(
+                &weights,
+                test_data,
+                config,
+                mask_ratio,
+                gen_steps_for,
+                &mut rng,
+                &mut fwd_ctx,
+            );
+            eprintln!(
+                "Epoch {epoch:>4}/{n_epochs}: train_masked_nll={avg_loss:.4} test_masked_nll={test_nll:.4}",
+            );
+        }
+    }
+
+    (weights, loss_history)
+}
+
+/// Evaluate mean NLL over masked positions for a set-causal denoiser under a
+/// CUSTOM reveal source (Issue 816) — one corruption + ordering draw per
+/// sequence. The eval companion of
+/// [`train_mini_set_causal_denoiser_with_gen_steps`], so a sweep arm trains
+/// and evaluates under the same objective.
+pub fn evaluate_set_causal_denoiser_nll_with_gen_steps(
+    weights: &TransformerWeights,
+    data: &[Vec<usize>],
+    config: &Config,
+    mask_ratio: f32,
+    gen_steps_for: SetCausalGenStepsFn<'_>,
+    rng: &mut Rng,
+) -> f32 {
+    let mut fwd_ctx = ForwardSaveContext::new(config);
+    evaluate_set_causal_denoiser_nll_with_gen_steps_internal(
+        weights, data, config, mask_ratio, gen_steps_for, rng, &mut fwd_ctx,
+    )
+}
+
+fn evaluate_set_causal_denoiser_nll_with_gen_steps_internal(
+    weights: &TransformerWeights,
+    data: &[Vec<usize>],
+    config: &Config,
+    mask_ratio: f32,
+    gen_steps_for: SetCausalGenStepsFn<'_>,
+    rng: &mut Rng,
+    fwd_ctx: &mut ForwardSaveContext,
+) -> f32 {
+    let mut total = 0.0f32;
+    let mut count = 0usize;
+    let mut corrupted_buf: Vec<usize> = Vec::with_capacity(config.block_size);
+    let mut is_masked_buf: Vec<bool> = Vec::with_capacity(config.block_size);
+    let mut positions_buf: Vec<usize> = Vec::with_capacity(config.block_size);
+    let mut exp_buf: Vec<f32> = vec![0.0f32; config.vocab_size];
+    for tokens in data {
+        let seq_len = tokens.len().min(config.block_size);
+        if seq_len == 0 {
+            continue;
+        }
+        let n_mask = corrupt_block_into(
+            tokens,
+            mask_ratio,
+            config.mask_token,
+            rng,
+            &mut corrupted_buf,
+            &mut is_masked_buf,
+            &mut positions_buf,
+        );
+        if n_mask == 0 {
+            continue;
+        }
+        let gen_steps = gen_steps_for(seq_len, tokens, rng);
+        let act = forward_save_set_causal(weights, &corrupted_buf, config, &gen_steps, fwd_ctx);
+        let loss = masked_loss_into(
+            act.logits,
+            tokens,
+            &is_masked_buf,
             config.vocab_size,
             LossAveraging::Global,
             &mut exp_buf,

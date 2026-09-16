@@ -1584,8 +1584,9 @@ mod set_causal;
 
 #[cfg(feature = "set_diffusion")]
 pub use set_causal::{
-    SetCausalGenStepsFn, evaluate_set_causal_nelbo, evaluate_set_causal_nelbo_with_gen_steps,
-    train_mini_set_causal, train_mini_set_causal_with_gen_steps,
+    SetCausalGenStepsFn, evaluate_set_causal_denoiser_nll_with_gen_steps,
+    evaluate_set_causal_nelbo, evaluate_set_causal_nelbo_with_gen_steps, train_mini_set_causal,
+    train_mini_set_causal_denoiser_with_gen_steps, train_mini_set_causal_with_gen_steps,
 };
 
 // ═══════════════════════════════════════════════════════════════

@@ -3,7 +3,7 @@
 **Date:** 2026-09-17
 **Issue:** Issue 813 — the Plan 600 T3 deferred arm (RESOLVED same day — the seam commit; the issue file removed per the noise-reduction rule, recoverable from git history)
 **Harness:** `tests/bench_809_set_causal_order_sweep.rs` (`required-features = ["set_diffusion", "ignition_schedule"]`; run `cargo test --release -p katgpt-rs --test bench_809_set_causal_order_sweep --features set_diffusion,ignition_schedule -- --nocapture`)
-**Verdict:** seam + arms LANDED and verified (G1 byte-identity, G2 t\*-gate mechanism, G3/G4 tables green) — **NO-SEPARATION between orders, mechanism measured**: the clean-token set-causal objective is self-copy trivial ([Issue 816](../.issues/816_set_causal_self_copy_trivial.md)). Honest NO-GAIN verdict per the Research-376 precedent.
+**Verdict:** seam + arms LANDED and verified (G1 byte-identity, G2 t\*-gate mechanism, G3/G4 tables green) — the clean-token cells are self-copy trivial (no separation possible there), and **Addendum I resolves it: the denoiser objective measures REAL SEPARATION — prob-t\* is the best arm on both eval seeds** (2.59/2.61 nats vs uniform 2.89/2.88; Research 563 §4.3 measured green). Full story: Issue 816 (resolved same day, file removed per the noise rule — git history + Addendum I below).
 
 ## What landed
 
@@ -45,7 +45,32 @@ Austen char-level, `micro_dllm_text`, 2048 train / 512 held-out eval blocks, 40 
 | mdlm all-at-once (degenerate) | 0.0315 | 0.0000 | 0.0000 | 3355 |
 | prob-t\* (new) | 0.0328 | 0.0000 | 0.0000 | 3329 |
 
-chance = ln 32 = 3.4657 · t\* = 0.7247. **train[0] ≈ 0.034 nats at epoch 0 — already ~100× better than chance**, and every arm converges to ~0 by epoch 40. The ordering axis cannot separate because the objective is self-copy trivial: self is always eligible (`gen_step[t] <= gen_step[q]`) and the trainer feeds clean tokens, so the identity copy solves every position under every order. Measured, not assumed → [Issue 816](../.issues/816_set_causal_self_copy_trivial.md) (masked-target variant = the separation unblock).
+chance = ln 32 = 3.4657 · t\* = 0.7247. **train[0] ≈ 0.034 nats at epoch 0 — already ~100× better than chance**, and every arm converges to ~0 by epoch 40. The ordering axis cannot separate because the objective is self-copy trivial. Two-layer mechanism, both measured: (1) self is always attention-eligible (`gen_step[t] <= gen_step[q]`); (2) — the deeper layer — the residual stream carries `wte[token_q]` back to the logits in Phase C, so even a strict-self attention variant leaves the leak intact (a strict-self implementation was built, measured insufficient at ~0.00001 across all arms, and REVERTED rather than shipped speculative). The fix is the masked-target objective → Issue 816 (resolved same day), Addendum I below.
+
+## Addendum I — the denoiser cell (Issue 816 resolved): the ordering axis SEPARATES
+
+The masked-target fix: corrupt at `mask_ratio = 0.5` (`corrupt_block_into`), run the INCUMBENT set-causal forward over the corrupted input, take the loss over MASKED positions only — a masked position's residual carries `wte[mask_token]`, not the answer, so the copy path is closed by construction. New API under `set_diffusion`: `train_mini_set_causal_denoiser_with_gen_steps` / `evaluate_set_causal_denoiser_nll_with_gen_steps` (no kernel/ctx/backward change).
+
+Cell B-denoiser — real-text (2048 train / 512 eval blocks, 40 epochs, seed 42, release):
+
+| arm | train[0] | train[-1] | eval@seed+1k | eval@seed+2k | wall_ms |
+|---|---|---|---|---|---|
+| uniform w=1 (mdlm order) | 3.0272 | 2.8863 | 2.8913 | 2.8779 | 2745 |
+| sw-default w=0.5 (incumbent) | 3.0269 | 2.8784 | 2.8932 | 2.8724 | 2662 |
+| ar (exact) | 3.0025 | 2.7096 | 2.7128 | 2.7436 | 2671 |
+| mdlm all-at-once | 3.0066 | 2.7988 | 2.8135 | 2.8554 | 2700 |
+| **prob-t\*** | 2.8455 | 2.5966 | **2.5946** | **2.6079** | 2751 |
+
+chance = ln 32 = 3.4657 · unigram floor (no context) = 2.8884 nats · t\* = 0.7247.
+
+**Measured verdicts (all pinned by `g5_denoiser_realtext_table`):**
+
+1. **The DBTM separation holds: prob-t\* wins the table on BOTH eval seeds** — −0.30 nats vs uniform (≈10%), −0.12 vs the second-best arm (ar). Confidence-ordered reveal front-loads predictable positions and hands the hard positions the most context — the Research 563 §4.3 Thm 4.1 direction, measured green on the leak-free objective.
+2. **uniform ≈ sw-default ≈ the no-context floor** (2.87–2.89 vs floor 2.8884): random orderings give masked positions nearly useless context at L=9 / mask 0.5. Sitting AT the floor is the honest result for these arms, not a failure.
+3. **mdlm is NOT a ceiling** — 2.81/2.86, beaten by ar: half its attended context is mask noise. The "full context = best" assumption was wrong, as was the clean-token cell's "degenerate floor" reading; both of the test file's own earlier comments were corrected to the measured truth.
+4. **Leakage guard**: any arm reading near-zero NLL means the loss set leaked back into copy; any arm meaningfully WORSE than the floor means the ordering is actively harmful. Both fire the gate.
+
+**Honest scope**: one corpus (Austen char), one block length (9), one mask ratio (0.5), one training seed — a measured direction on the lane's protocol, not a law. No promotion: nothing in this lane is a decode default; the anchor-then-fill seam's `ConfidenceAnchorConfig::default()` is untouched. A harder-corpus / longer-context re-gate follows the Plan-601 demote-on-loss pattern if promotion is ever on the table.
 
 ## Honest-scope notes
 
