@@ -30,7 +30,14 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$HERE")"
-FLOORS="$HERE/x86_64_matrix_floors.txt"
+# ⛔ The pins are read from the SCRATCH tree, not from `$HERE` — set below,
+# once the archive exists. The source comes from `git archive HEAD`, so a pin
+# file read from the live worktree can describe a DIFFERENT commit: measured,
+# on run 5 of this instrument, where a rebase landed between the extraction and
+# the adjudication and two rows read UNPINNED that the archived tree still
+# legitimately fails. Issue 797's rule, one level over — the display and the
+# pins must read the same snapshot.
+FLOORS=""
 
 LIBS_ONLY=0
 CANARY=0
@@ -95,6 +102,8 @@ else
 fi
 echo "▸ extracting $SHA → $SCRATCH"
 git -C "$REPO" archive HEAD | tar -x -C "$SCRATCH"
+FLOORS="$SCRATCH/scripts/x86_64_matrix_floors.txt"
+EXPECTED="$SCRATCH/scripts/x86_64_matrix_expected.txt"
 
 # ⛔ MANDATORY, not a tuning knob: an arm gated
 # `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` compiles to
@@ -329,7 +338,6 @@ if [ "$LIBS_ONLY" -eq 0 ]; then
 fi
 
 # ── Adjudicate the failing set against the pins ─────────────────────────────
-EXPECTED="$HERE/x86_64_matrix_expected.txt"
 PINNED="$SCRATCH/.pinned.txt"
 if [ -f "$EXPECTED" ]; then
     # A reasonless row is REFUSED, not accepted: a row nobody had to justify

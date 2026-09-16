@@ -52,5 +52,6 @@
 # stream; the n_layer=1 t1 agreement covers too few divergent draws to see it).
 # The test passes on BOTH platforms now; the row left per the stale-pin rule.
 
+g5_roaring_batch_speedup  # "≥2×, got 0.0× (roaring=0.00μs, linear=0.00μs)" — the ratio is 0/0. PINNED BACK on run 5 after being dropped on run 4: it is load-sensitive (it passed alone twice) but it also fails TWICE under sustained load, so the confirm-alone step cannot absorb it. ⛔ The real defect is in the TEST, not the box: a speedup asserted from two timings that both read 0.00 µs cannot assert anything on a machine where both arms are fast, and this one divides 0 by 0. The repair is an iteration count in tests/bfcf_lsh_cms_goat.rs (or a total rather than a ratio), not a fix to roaring — Issue 806 T7.
 proof_g3b_swar_speedup  # ≥5.0× gate, 4.37× here. Its own name is "Issue 298 SWAR+FMLA+4acc" — FMLA is an aarch64 instruction, so the bar is a NEON number and the x86_64 arm has never been calibrated. Not a regression: a bar that was never set for this ISA.
 t09_throughput_inv_sqrt_16x16  # 88.7 µs against a 10 µs absolute target. Absolute-latency targets do not transfer between machines at all, and this is 9× over — the one row here worth re-measuring on a quiet box before believing either way.
