@@ -3961,3 +3961,30 @@ Substrate: `crates/katgpt-core/src/refinement_marginal.rs` +
 `src/refinement_bridge.rs`, test
 `tests/refinement_marginal_tokenizer_bridge.rs`, bench
 `benches/plan598_refinement_marginal_bench.rs`.
+
+## 112. lthash — incremental homomorphic multiset hash (Issue 807)
+
+LtHash `[u16; N]` (default 1024 lanes, wrapping add mod 2¹⁶ — the
+Bellare–Micciancio MSet-Add construction as instantiated by eprint 2019/227
+and Agave's accounts_lt_hash): insert = add, remove = subtract, merge = sum,
+checksum = BLAKE3(state). Order-independent aggregate by construction
+(commutative monoid — deterministic under any thread schedule), O(1)
+incremental updates, domain-separated BLAKE3-XOF element derivation over a
+length-prefixed part list (no concatenation ambiguity). Mined from the
+Agave validator snapshot for riir-chain Proposal 010 D1 (commitment_root →
+O(1)) + riir-dapps Proposal 005 D1 (kat:statehash tamper-evidence trail).
+Pure integer arithmetic, zero deps, zero allocs, wasm32-clean.
+
+- **G1**: order-invariance (seeded permutations), multiset semantics, merge ≡
+  incremental, encoding unambiguity, domain separation, drift property
+  (500-op incremental == from-scratch rebuild), N=128 arm, hex-pinned KAT.
+- **G2**: incremental `replace` 31.6 ns vs 1000-member from-scratch rebuild
+  33.8 µs (**≈1069×**; derive-inclusive ~1.4 µs vs ~1.39 ms — same class).
+  Ops: insert 19.2 ns, merge 19.3 ns, checksum 5.76 µs, derive 1.37 µs @
+  1024 lanes / 245 ns @ 128.
+- **G4**: zero-alloc by construction (fixed arrays only).
+
+📖 Bench: [771](../../.benchmarks/771_lthash_goat.md) ·
+Issue 807 (resolved 2026-09-16, git history) ·
+Substrate: `crates/katgpt-core/src/lthash.rs`, bench
+`benches/bench_lthash.rs`.

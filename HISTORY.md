@@ -11,6 +11,28 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 807 CLOSED (2026-09-16) — `lthash`: incremental homomorphic multiset hash, the shared substrate for the Agave-mined commitment/state-hash proposals
+
+Mined from the Agave validator snapshot (`riir-clippy/.raw/agave @ c95d8706`, the eprint
+2019/227 / Facebook LtHash instantiation Agave ships for account-state commitment) via four
+read-only subagents for riir-chain Proposal 010 D1 (commitment_root 31.6 ms @ N=1e5 → O(1),
+the fix `dispatch.rs` + Bench 028 #16 already specify) + riir-dapps Proposal 005 D1
+(`kat:statehash` per-batch tamper-evidence). Substrate-first grep: zero existing
+multiset-hash; katgpt-core is the only home both private consumers reach without a cross-repo
+dep. Ships `crates/katgpt-core/src/lthash.rs` behind OPT-IN `lthash` (const-generic lanes,
+default 1024, wrapping add mod 2¹⁶; insert=add/remove=subtract/merge=sum/checksum=BLAKE3;
+domain-separated BLAKE3-XOF element derivation over a LENGTH-PREFIXED part list — no
+concatenation ambiguity). GOAT at [Bench 771](.benchmarks/771_lthash_goat.md): G1 10/10
+(order-invariance, drift incremental==rebuild, merge≡incremental, multiset semantics,
+encoding unambiguity, domain separation, N=128 arm, hex-pinned KAT); G2 incremental
+`replace` 31.6 ns vs 1000-member rebuild 33.8 µs ≈ 1069× (derive-inclusive ~1.4 µs vs
+~1.39 ms); G4 zero-alloc by construction (fixed arrays, ns-scale ops). Stable-const-generic
+lesson: `2 * N` array sizing needs `generic_const_exprs` — the derive path fills through a
+fixed 1 KB XOF chunk instead (any N, still zero-alloc); associated-fn calls like
+`LtHash::identity()` do NOT take the const default — every construction site needs a pinned
+type. Promotion to default waits on the first consumer (no-default-consumer rule). README /
+examples/README / feature-catalog counts bumped 610→611.
+
 ## First x86_64 execution of the katgpt-core/katgpt-types SIMD suites (2026-09-16) — 15 latent AVX2 bugs caught and fixed; Bench 800's execution-parity caveat resolved NEGATIVE then closed
 
 [Bench 800 addendum](.benchmarks/800_bf16_simd_goat.md). The run: 4090 box (i7-13700K), repo

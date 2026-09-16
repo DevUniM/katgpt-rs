@@ -121,6 +121,21 @@ statrs = "0.17"
 
 [features]
 
+# lthash (Issue 807, 2026-09-16): incremental homomorphic multiset hash
+# (lattice hash) — LtHash [u16; N] (default N=1024, wrapping add mod 2^16;
+# the Bellare–Micciancio MSet-Add construction as instantiated by eprint
+# 2019/227 and Agave's accounts_lt_hash commitment). insert=add, remove=
+# subtract, merge=sum → an order-independent aggregate (commutative monoid,
+# deterministic under any thread schedule) with O(1) incremental updates —
+# the shape riir-chain Proposal 010 D1 needs for commitment_root (31.6 ms @
+# N=1e5 → O(1)) and riir-dapps Proposal 005 D1 for the kat:statehash
+# per-batch tamper-evidence trail. Element derivation is domain-separated
+# BLAKE3 XOF over a LENGTH-PREFIXED part list (no concatenation ambiguity).
+# Pure integer arithmetic, zero new deps (blake3 in tree), zero allocs,
+# wasm32-clean. OPT-IN pending the Bench 771 GOAT + first consumer wiring
+# (no-default-consumer rule).
+lthash = []
+
 # bf16_simd (Issue 800 Arm A, 2026-09-16): SIMD bf16⇄f32 batch conversion
 # kernels — the widening direction (u16→u32<<16→f32) is lossless; the
 # narrowing ships RNE (bit-exact vs the `half` crate) with truncation as the
@@ -3137,3 +3152,11 @@ required-features = ["meld"]
 [[test]]
 name = "bench_779_real_bank_affinity"
 required-features = ["subspace_intervention"]
+
+# Issue 807 — LtHash GOAT gate (G2 op costs at N=1024/128 + the one-number
+# story: incremental replace vs 1000-element from-scratch rebuild; G4
+# zero-alloc by construction — fixed arrays only).
+[[bench]]
+name = "bench_lthash"
+harness = false
+required-features = ["lthash"]
