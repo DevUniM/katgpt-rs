@@ -638,11 +638,12 @@ mod tests {
         }
     }
 
-    /// Widening is EXHAUSTIVELY verified: all 65536 bf16 bit patterns, scalar
-    /// + dispatch. Non-NaN inputs must be bit-equal to `half`'s decode; NaN
-    /// inputs compared NaN-class + sign (half's decoder ORs 0x0040 into NaN
-    /// payloads — a decode-layer convention, not a conversion loss; our
-    /// kernel is the pure identity shift, module doc §Widening).
+    /// Widening is EXHAUSTIVELY verified: all 65536 bf16 bit patterns,
+    /// scalar + dispatch. Non-NaN inputs must be bit-equal to `half`'s
+    /// decode; NaN inputs compared NaN-class + sign (half's decoder ORs
+    /// 0x0040 into NaN payloads — a decode-layer convention, not a
+    /// conversion loss; our kernel is the pure identity shift, module doc
+    /// §Widening).
     #[test]
     fn g1_widen_exhaustive_matches_half_decode() {
         let mut src = [0u16; 65536];

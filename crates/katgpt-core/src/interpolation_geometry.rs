@@ -1414,8 +1414,8 @@ mod tests {
         );
         // Zero-norm Vec stays zero.
         assert_eq!(
-            norm_matched_noise_slice(&vec![0.0f32; 6], 9),
-            vec![0.0f32; 6]
+            norm_matched_noise_slice(&[0.0f32; 6], 9),
+            [0.0f32; 6]
         );
     }
 

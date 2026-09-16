@@ -746,12 +746,11 @@ mod tests {
         // Minimal sanity: means ±1 on coord 0, no noise ⇒ accuracy 1.0.
         // (n=20 < D=24 — this also exercises the dual dispatch.)
         let x: Vec<f32> = (0..20)
-            .map(|i| {
+            .flat_map(|i| {
                 let mut v = vec![0.0_f32; D];
                 v[0] = if i % 2 == 0 { -1.0 } else { 1.0 };
                 v
             })
-            .flatten()
             .collect();
         let y: Vec<usize> = (0..20).map(|i| i % 2).collect();
         let mut scratch = InterventionScratch::new(D, 2, 20, 20);

@@ -309,7 +309,7 @@ mod tests {
     fn live_indices_stable_across_churn() {
         let mut pool = GraphStablePool::new();
         let held: Vec<usize> = (0..16u64).map(|i| pool.alloc(1000 + i)).collect();
-        assert_eq!(held.iter().enumerate().all(|(i, &h)| h == i), true);
+        assert!(held.iter().enumerate().all(|(i, &h)| h == i));
 
         // A single scratch slot churned 1000×: free returns the previous
         // value, alloc returns the same index back (LIFO single-slot stack).

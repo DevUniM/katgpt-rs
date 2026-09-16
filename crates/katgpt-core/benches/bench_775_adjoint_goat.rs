@@ -295,13 +295,12 @@ fn main() {
     // and T=8L the k=1 mode still rings. Random-init layers (the gate
     // regime) lift those modes and settle fast.
     println!("─ spectral caveat (ungated): unit-spectral layers (pure difference operator)");
-    for seed in [0x775_0001u64] {
-        let (cos_2l, _) = run_chain(16, 16, seed, true, 2);
-        let (cos_8l, _) = run_chain(16, 16, seed, true, 8);
-        println!(
-            "  L=16 seed={seed:#x}: T=2L cosine = {cos_2l:.4} (arrival phase); T=8L cosine = {cos_8l:.4} (low-mode ring)"
-        );
-    }
+    let seed = 0x775_0001u64;
+    let (cos_2l, _) = run_chain(16, 16, seed, true, 2);
+    let (cos_8l, _) = run_chain(16, 16, seed, true, 8);
+    println!(
+        "  L=16 seed={seed:#x}: T=2L cosine = {cos_2l:.4} (arrival phase); T=8L cosine = {cos_8l:.4} (low-mode ring)"
+    );
 
     println!();
     println!("  worst (gate regime, converged): {worst:.4} @ {worst_label}");
