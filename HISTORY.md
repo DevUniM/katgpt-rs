@@ -11,6 +11,23 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 812 CLOSED (2026-09-16) — the bench_doc_audit BlindRead context split was a TMPDIR-FORM split; the arm now matches paths form-independently
+
+The verdict-review second opinion measured a deterministic red/green split on a byte-identical
+`bench_doc_audit.py` blob; the reproduction protocol (this box) found every interpreter green and
+isolated the trigger to `TMPDIR=/tmp/...` — an UNRESOLVED-SYMLINK temp-root spelling. The arm's
+predicate matched patched paths by `str(self).startswith(str(root))`, while `audit_repo`
+canonicalizes (`repo_root.resolve()`) — under the unresolved TMPDIR the fixture root spells
+`/tmp/...` and the audit's walked paths spell `/private/tmp/...`, so the OSError never fired and
+BOTH unreadable arms reported `got False, want True` on a healthy instrument. Not an interpreter
+difference (3.11–3.14 all green pre-fix under the default resolved TMPDIR) and not a patch-target
+miss (`Path.open`/`Path.read_text` ARE the audit's read layer). Fix: `root_forms = (str(root),
+str(root.resolve()))` with the pred accepting either spelling, premise documented at the arm —
+`scripts/bench_doc_audit.py` `blindness_arms()`. Verified both directions: resolved-form green,
+unresolved-form green post-fix; the pre-fix red under the same TMPDIR is the recorded canary;
+docs gate 25/25. Population checked: this is the workspace's only `setattr(Path, ...)` monkeypatch
+arm — nothing to generalize. Issue file removed per the noise-reduction rule.
+
 ## Issue 810 CLOSED (2026-09-16) — `sigmoid_calibration`: the Platt-style calibrated sigmoid gate lands as a PoC with all four gates green
 
 Filed from Research 562 (Jev distill): every decision/confidence scalar in the stack is a

@@ -1356,6 +1356,13 @@ def blindness_arms() -> list[str]:
         # UNREADABLE is the other case, in both directions.
         (root / "Cargo.toml").write_text(
             '[package]\nname = "p"\n[features]\nf = []\n', encoding="utf-8")
+        # The prefix match must be FORM-INDEPENDENT (Issue 812): audit_repo
+        # resolves its root (`repo_root.resolve()`), so when TMPDIR's string
+        # form is an unresolved symlink (/tmp → /private/tmp — reviewer box,
+        # 2026-09-16) the fixture's spelling and the audit's disagree and the
+        # patch silently stops matching: the arm then reports `got False` on
+        # a healthy instrument. Accept EITHER spelling of the same root.
+        root_forms = (str(root), str(root.resolve()))
         real_open, real_rt = Path.open, Path.read_text
         for attr, real, pred, who in (("open", real_open,
                                        lambda q: q.name == "Cargo.toml",
@@ -1363,8 +1370,9 @@ def blindness_arms() -> list[str]:
                                       ("read_text", real_rt,
                                        lambda q: q.suffix == ".md",
                                        "an unreadable DOC")):
-            def boom(self, *a, _r=real, _p=pred, **k):
-                if _p(self) and str(self).startswith(str(root)):
+            def boom(self, *a, _r=real, _p=pred, _forms=root_forms, **k):
+                if _p(self) and any(
+                        str(self).startswith(f) for f in _forms):
                     raise OSError(1450, "Insufficient system resources")
                 return _r(self, *a, **k)
 
