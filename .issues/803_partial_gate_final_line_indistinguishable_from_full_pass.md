@@ -1,6 +1,7 @@
 # Issue 803 (2026-09-15) — the off-macOS partial gate prints the SAME final line as a full pass
 
-> ⚑ **Renumbered 799 → 803 on 2026-09-16**, unpushed, by the Issue-796 rule:
+> ⚑ **Renumbered 799 → 803 on 2026-09-16**, before the push, by the
+> Issue-796 rule:
 > `dual_allocation_gate.py` reported INDEPENDENT — this box and origin had
 > both allocated 799 since their merge base (origin's is the bevy_ecs
 > bump-vs-retire boundary question, `2779bf87`). Adjudicated by inbound
@@ -84,19 +85,30 @@ follows is to not run it.
 
 - [x] **T1** Repair the 24 E0560 sites (delete the stale field from each
   literal). Verified: the class is gone from the quoted command.
-- [ ] **T2** The 4 `-D`-listed lint errors in `dual.rs` — `cargo heal` first per
+- [x] **T2** The 4 `-D`-listed lint errors in `dual.rs` — `cargo heal` first per
   the house rule, manual second.
-- [ ] **T3** The final line must carry the partial verdict. `--allow-partial-platform`
+- [x] **T3** The final line must carry the partial verdict. `--allow-partial-platform`
   (and a missing-wasm32 partial) prints a distinct, self-describing final line
   naming what was NOT measured — the macOS device-backend surface, by count, as
   Layer 2 already computes it. A full macOS run is unchanged. The existing
   refusal without the flag is unchanged.
-- [ ] **T4** Name the lane in AGENTS.md next to `test_gate.sh`, with its
+- [x] **T4** Name the lane in AGENTS.md next to `test_gate.sh`, with its
   standing: a workstation PARTIAL verdict, the same standing as the eighteen
   drift sweeps, and the only thing on this box that reads the consequences of a
   per-crate change. Do NOT add a workflow — `develop` has no push lane by owner
   call (Actions budget), and adding one by symmetry is the failure mode
   `check_validation_gate` records.
+
+**Status: RESOLVED 2026-09-16.** T1 + T2 landed at `3ceb541b`, T3 + T4 at
+`59ad87ea`'s parent (the renumbered `feat(803)` commit). Verified after the
+push: `cargo clippy --workspace --all-targets --all-features --keep-going`
+with the AGENTS.md `-D` list reports **0 errors**, `note_partial` is live in
+`full_gate.sh` with its own `⚠ full gate PARTIAL` final line, and AGENTS.md
+names the lane and its standing.
+
+⚑ The checkboxes were left unwalked for a day while all four were done —
+which is the same class as every other record in this repo drifting from
+what it describes, one document in.
 
 ## What this is NOT
 
