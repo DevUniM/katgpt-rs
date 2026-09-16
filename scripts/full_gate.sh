@@ -483,7 +483,37 @@ BROKEN_N=$({ printf '%s' "$BROKEN" | grep -c . || true; })
 # can act on.
 WARN_LINES=$({ grep -cE '^warning' "$LOG" || true; })
 WARN_TALLIES=$({ grep -cE '^warning: .* generated [0-9]+ warning' "$LOG" || true; })
-WARNINGS=$((WARN_LINES - WARN_TALLIES))
+# ⛔ A third `^warning:` class, and it is not a code finding at all: cargo's
+# own ENVIRONMENT warnings. On a volume with no hard links — this workspace's
+# E: is exFAT — every compilation session emits
+#   warning: hard linking files in the incremental compilation cache failed
+# once per session dir. Measured 2026-09-16 on the Windows workstation over
+# Layer 5's own log: 2098 `^warning` lines = 1049 per-target tallies + 1049 of
+# THESE + **zero** code warnings, reported as "1049 warning finding(s) across
+# 1049 target(s)". That number is unactionable and a reader will take it for a
+# thousand lints; the same run under a warmer cache said 64, which is worse,
+# because a plausible small number does not invite a second look.
+#
+# Counted and SUBTRACTED, never silently dropped, and printed when non-zero:
+# a count that vanishes is a count nobody can check, and the day cargo changes
+# this message the tally goes back into WARNINGS rather than disappearing.
+# The pattern is anchored on cargo's wording, not on "hard link", so an
+# unrelated future warning containing that phrase still counts as a finding.
+#
+# ⚠ WARN_TALLIES is NOT adjusted, and the phrase says so: cargo's per-unit
+# "generated N warnings" line counts its OWN warnings too, so on such a volume
+# a target with zero lints still gets a tally. Measured on the verification
+# run: 0 findings, 1049 tallies. "0 findings across 1049 targets" reads as a
+# contradiction; "over 1049 target(s) that emitted any warning" is what the
+# number actually is, and attributing tallies to causes is not decidable from
+# the text.
+WARN_ENV=$({ grep -cE '^warning: hard linking files in the incremental compilation cache' "$LOG" || true; })
+WARNINGS=$((WARN_LINES - WARN_TALLIES - WARN_ENV))
+if [ "$WARN_ENV" -gt 0 ]; then
+    WARN_ENV_NOTE="; $WARN_ENV cargo env warning(s) excluded (no-hard-link volume)"
+else
+    WARN_ENV_NOTE=""
+fi
 
 # ── Layer 3b: liveness — did this run examine anything at all? ───────────────
 # The gate reported "✓ full gate PASSED — 0 errors, 0 unbuildable targets
@@ -689,11 +719,11 @@ else
         # has to say so — the `DEFERRED` / `STALE` / `CPU SUPPRESSED` idiom the
         # eighteen drift sweeps already use. Exit 0: this is a real, useful
         # verdict over a named subset, not a failure.
-        echo "⚠ full gate PARTIAL — every layer that RAN is clean (0 errors, 0 unbuildable targets, $WARNINGS warning finding(s) across $WARN_TALLIES target(s), not gated; $UNITS unit(s) compiled), but this run did NOT measure:"
+        echo "⚠ full gate PARTIAL — every layer that RAN is clean (0 errors, 0 unbuildable targets, $WARNINGS warning finding(s) over $WARN_TALLIES target(s) that emitted any warning, not gated$WARN_ENV_NOTE; $UNITS unit(s) compiled), but this run did NOT measure:"
         printf '%s\n' "$PARTIAL_NOTES" | sed 's/^/    ⚠ /'
         echo "  A whole-repo claim needs a macOS run with every target installed; this is a SUBSET verdict."
     else
-        echo "✓ full gate PASSED — 0 errors, 0 unbuildable targets ($WARNINGS warning finding(s) across $WARN_TALLIES target(s), not gated; $UNITS unit(s) compiled)"
+        echo "✓ full gate PASSED — 0 errors, 0 unbuildable targets ($WARNINGS warning finding(s) over $WARN_TALLIES target(s) that emitted any warning, not gated$WARN_ENV_NOTE; $UNITS unit(s) compiled)"
     fi
 fi
 FULL_GATE_COMPLETED=1  # the last line — see full_gate_cleanup above
