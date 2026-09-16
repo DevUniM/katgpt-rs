@@ -4,7 +4,7 @@
 **Research:** [katgpt-rs/.research/564_R4T_Counter_Anchored_Fanout_Retrieval.md](../.research/564_R4T_Counter_Anchored_Fanout_Retrieval.md)
 **Source paper:** [arXiv:2603.06397](https://arxiv.org/abs/2603.06397) — "Efficient, Property-Aligned Fan-Out Retrieval via RL-Compiled Diffusion" (R4T, ICML 2026)
 **Target:** `crates/katgpt-core/src/set_admission.rs` (new module, sibling of `certified_frontier.rs`) + Cargo feature `set_admission = []`
-**Status:** Active — Phase 0 (planned; PRIMARY track — the trained twin is riir-train Plan 412, SECONDARY by the serving-envelope rule)
+**Status:** Active — Phase 0 COMPLETE + Phase 1 (core primitive) LANDED 2026-09-17 (PRIMARY track — the trained twin is riir-train Plan 412, SECONDARY by the serving-envelope rule). T0.1/T0.2 decisions + spec recorded below; `set_admission.rs` (config + greedy + Sherman–Morrison + incremental PR + exact vendi certificate via d×d eigenduality) + 10 gate tests all green (feature-on lib 2125/0, clippy `-D warnings` both states, `--no-default-features --features set_admission` composes). Phase 2 (fan-out construction) next; Phase 3 GOAT perf/alloc pins + Phase 4 consumers after.
 
 ---
 
@@ -18,18 +18,23 @@ Ship the modelless extraction of R4T's counter-anchor reward as a **selection-ti
 
 ### Tasks
 
-- [ ] **T0.1** Fix kernel = cosine (eigenduality requires linear/cosine; document the RBF→Nyström degradation as out of scope).
-- [ ] **T0.2** Write the L1/L2 property-test spec: (L1) a modular-only objective over a duplicate-tolerant pool admits an effective-rank-1 set; (L2) zeroing each anchor weight makes the corresponding degenerate family (paraphrase-collapse / semantic-drift / coordinate-gaming) reachable; the full triple excludes all three interiors.
+- [x] **T0.1** Fix kernel = cosine (eigenduality requires linear/cosine; document the RBF→Nyström degradation as out of scope). **(DECIDED 2026-09-17: kernel = cosine, latents normalized onto the unit shell internally; the RBF→Nyström degradation path is documented out of scope in the module docs — exact Vendi requires the linear/cosine kernel.)**
+- [x] **T0.2** Write the L1/L2 property-test spec: (L1) a modular-only objective over a duplicate-tolerant pool admits an effective-rank-1 set; (L2) zeroing each anchor weight makes the corresponding degenerate family (paraphrase-collapse / semantic-drift / coordinate-gaming) reachable; the full triple excludes all three interiors. **(SPEC 2026-09-17, implemented by the `l1_*`/`l2_*` tests in-module:**
+  - **L1 (modular-only disease):** pool = 14 duplicate-tolerant members (pairwise cos 0.8796 < the 0.95 cap) at g = 1.0 + 10 diverse fillers at g = 0.97; α = κ = 0 admits 8/8 duplicates ⇒ the admitted set's participation ratio < 1.5 (effective rank 1) and mean pairwise cos ≥ 0.85. The instrument is PR (the set's own rank functional), NOT the vendi floor flag — the flag belongs to the ρ family.
+  - **L2-κ (paraphrase-collapse, SELECTION):** two wobble families of identical shape (base e0 = dups g 1.0; orthogonal even axes = fillers g 0.99) with the query at normalize(e0+e2+e4+e6) so every member reads the SAME cos-to-query (0.4688) — α cancels, κ alone decides. κ = 0 ⇒ ≥5/6 dups admitted (mean pairwise ≥ 0.8); defaults ⇒ ≤ 2 dups and vendi ≥ 2.5 (the ≈0.2·0.22 ≈ 0.045 fresh-direction gain beats the 0.01 g-gap).
+  - **L2-α (semantic-drift, SELECTION):** far cluster (cos-to-query ≈ 0.18, g 1.0) vs near cluster (≈ 0.94, g 0.9); α = 0 ⇒ admitted set mean-cos < 0.5 (drift); defaults ⇒ ≥ 0.8 (held on-query).
+  - **L2-ρ (coordinate-gaming, DETECTION):** the gaming set (8 members at pairwise cos 0.9412 — passes EVERY pairwise screen) is spectrally one dominant direction (vendi ≈ 1.36 < the default floor 0.2·8 = 1.6) ⇒ flagged `collapsed` at defaults; ρ = 0 ⇒ never flagged (same vendi — the certificate is ρ-invariant, pinned).
+  - **Family semantics:** κ/α failures are SELECTION failures (who gets admitted); the ρ failure is a DETECTION failure (the report misses a degenerate set). `rho_vendi` weights the certificate floor, never the greedy — admission is ρ-invariant by construction and pinned by test.)**
 
 ## Phase 1 — Core primitive (`set_admission.rs`, feature `set_admission`)
 
 ### Tasks
 
-- [ ] **T1.1** `SetAdmissionConfig { alpha_align, kappa_div, theta_coll, rho_vendi }` + `Default` (R4T's reward proportions 0.6/0.2/0.2 as the starting sweep point for α/κ, not a claim).
-- [ ] **T1.2** Greedy admission: seed = argmax modular score; each admission adds `g(x) + α·cos(x,q₀) + κ·log(1 + x̂ᵀM⁻¹x̂)` with `M⁻¹` maintained by Sherman–Morrison rank-1 update into a fixed `[f32; 64]` scratch; reject candidates with `cos(x,s) > theta_coll` for any admitted `s` (the `ColinearityBatchGate` 0.95 precedent).
-- [ ] **T1.3** `participation_ratio(G)` incremental estimator — `(tr G)²/tr(G²)` off the maintained Gram; O(d²) per item, no eigensolve, no logs (the between-certifications fast path).
-- [ ] **T1.4** `cosine_kernel_eigs_into(x̂: &[[f32; D]], out: &mut [f32])` — d×d symmetric Jacobi eigensolve on the Gram (eigenduality: exact Vendi for cosine kernels, K-independent cost); certificate = `vendi_diversity(eigs)` (consume, never fork).
-- [ ] **T1.5** L1/L2 property tests per T0.2 + known answers: identical set ⇒ Vendi = PR = 1; orthonormal set ⇒ both = min(K,d); PR/Vendi rank-correlation ≥ 0.95 over 10⁴ random sets (empirical pin — different functionals that agree on ordering).
+- [x] **T1.1** `SetAdmissionConfig { alpha_align, kappa_div, theta_coll, rho_vendi }` + `Default` (R4T's reward proportions 0.6/0.2/0.2 as the starting sweep point for α/κ, not a claim). **(Defaults 0.6/0.2/0.95/0.2 — θ_coll takes the ColinearityBatchGate precedent; ρ documented as the certificate floor fraction.)**
+- [x] **T1.2** Greedy admission: seed = argmax modular score; each admission adds `g(x) + α·cos(x,q₀) + κ·log(1 + x̂ᵀM⁻¹x̂)` with `M⁻¹` maintained by Sherman–Morrison rank-1 update into a fixed `[f32; 64]` scratch; reject candidates with `cos(x,s) > theta_coll` for any admitted `s` (the `ColinearityBatchGate` 0.95 precedent). **(`M ≡ I + G` ridge-dual — the admitted Gram alone can be singular; the log term is the exact marginal log-det gain `log|I+G+xx̂ᵀ| − log|I+G|`. Non-normalizable rows (zero/NaN) skip, never NaN. Pinned single-pass argmax, lowest-index tie-break; `u16::MAX` sentinel beyond the returned count.)**
+- [x] **T1.3** `participation_ratio(G)` incremental estimator — `(tr G)²/tr(G²)` off the maintained Gram; O(d²) per item, no eigensolve, no logs (the between-certifications fast path). **(Maintained as running tr-G/tr-G² traces updated rank-1 per admission: `tr G += ‖x̂‖² = 1`, `tr G² += 2xᵀGx + 1` on the prior-Gram product.)**
+- [x] **T1.4** `cosine_kernel_eigs_into(x̂: &[[f32; D]], out: &mut [f32])` — d×d symmetric Jacobi eigensolve on the Gram (eigenduality: exact Vendi for cosine kernels, K-independent cost); certificate = `vendi_diversity(eigs)` (consume, never fork). **(DELIVERED AS `certify_scratch`/`certify_set`: the maintained d×d dual Gram diagonalizes through `spectral_pencil::dense::jacobi_eigen` (pinned, D=8, values ascending) → `certified_frontier::vendi_diversity` — both substrates consumed, neither forked; the K×K Gram is never built (eigenduality makes it redundant). Plus the T3.5 `saturated` flag field pinned now.)**
+- [x] **T1.5** L1/L2 property tests per T0.2 + known answers: identical set ⇒ Vendi = PR = 1; orthonormal set ⇒ both = min(K,d); PR/Vendi rank-correlation ≥ 0.95 over 10⁴ random sets (empirical pin — different functionals that agree on ordering). **(ALL GREEN: identical ⇒ vendi=pr=1.000 + flagged; orthonormal K=5/8 ⇒ both = min(K,8) + saturated; Spearman 0.9875 over 10⁴ seeded sets; + the cap/determinism/ρ-invariance/NaN-robustness tests — 10/10.)**
 
 ## Phase 2 — Latent fan-out construction (query expansion, modelless)
 

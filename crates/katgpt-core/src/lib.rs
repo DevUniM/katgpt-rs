@@ -1069,6 +1069,16 @@ pub mod viable_manifold_graph;
 #[cfg(feature = "certified_frontier")]
 pub mod certified_frontier;
 
+// set_admission — counter-anchored set admission (Plan 599, Research 564,
+// arXiv:2603.06397 "R4T"): greedy set admission scoring g + α·cos(x,q₀) +
+// κ·log(1 + x̂ᵀM⁻¹x̂) under the 0.95 colinearity cap (Sherman–Morrison M⁻¹,
+// incremental participation-ratio tripwire), exact cosine-kernel Vendi
+// certificate via d×d eigenduality through the pinned spectral_pencil
+// Jacobi + certified_frontier's vendi_diversity. Opt-in; both substrates
+// consumed, neither forked.
+#[cfg(feature = "set_admission")]
+pub mod set_admission;
+
 // Usage-Rate (Mass/Age) KV Eviction Scoring + Generation-Runaway Canary
 // (Plan 585, Research 523, arXiv:2608.19920 "Learning how to Forget" Seeger
 // et al., AWS 2026). The paper's normalized H2O score `cum_mass / max(1,
