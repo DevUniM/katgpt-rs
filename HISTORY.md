@@ -11,6 +11,29 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 809 T1+T2 CLOSED (2026-09-16) — the global-RNG census is read; the class is gated; the T3 `Rng::new()` census is deferred with a reason
+
+The 806 matrix found the defect; this landed the wall. The T1 census used the WIDE predicate
+(every free-function `fastrand::<primitive>()` over tracked `*.rs`), not the issue's original
+narrow list — **20 sites across 9 files**, several never enumerated before (cgsp's Uuid-v7
+snapshot ids, the katgpt-types simd tests, the examples). Exactly ONE defect-shaped pair: the
+issue's own prediction held — `bench_pflash_maxsim_block_scoring`'s fixture generation was the
+latent class (every GOAT re-run measured a different synthetic corpus); seeded
+`Rng::with_seed(809)`, needle margins realization-independent so no verdict moved. Everything
+else is deliberate with the reason on its row: the SDAR soft gate is stochastic BY DESIGN (the
+pure fn takes the draw as an argument); the cgsp sites are identity entropy (the sanctioned
+`Uuid::now_v7()` semantics); the rest are statistical tests (≥6.3σ / ~18σ margins) and
+demo/example players. T2: `scripts/global_rng_gate.py` — the docs gate's 25th check. Membership
+pin, LINE-FREE `path::call::count` keys, both directions red, floors on walk + predicate,
+comment/string masking, unconditional arms (check_validation 25/25 at landing). The canary run
+found its own population hole before landing: a planted UNTRACKED file is invisible (`git
+ls-files` IS the population) — correct for a per-push CHECK, and the canary was redone staged.
+arm_reach: 22 killed / 2 EQUIVALENT (in-string EOL-backslash flips — the multi-line-string
+class the masker documents out of scope; pinned at the arms header). T3 deferred: `Rng::new()`
+is ~95 sites over 34 production files, dominated by sampling-by-design paths
+(`CuratorBandit::new` the notable shipped-primitive candidate) — a per-site read T1-style, not
+a batch conversion.
+
 ## Issue 806 T6 CLOSED (2026-09-16, the M3 side) — t698_t5_kv_mean adjudicated arch-dependent with dual pins; kda grad-check floor was below its own noise
 
 [Bench 806 addendum](.benchmarks/806_x86_64_execution_matrix.md), landed from the M3 the same

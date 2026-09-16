@@ -283,7 +283,15 @@ CPU** (2026-09-15, loaded M3, sibling agents active; quiet-box class unknown,
 so the loaded-box scope the paragraph below demands applies). In CI the new
 check green-exits by construction — a main-push checkout has HEAD ==
 origin/main, merge base == HEAD — so its live reach is the workstation dev
-loop, where the divergence actually exists at run time.
+loop, where the divergence actually exists at run time. It moved to **23**
+(Issue 797's `sweep_advisory_membership_gate.py`) and **24** (Issue 804's
+`console_encoding_gate.py`) without a sentence here — the table above is the
+enforced copy, and this prose lagged it. It moved to **25** on 2026-09-16
+(Issue 809's `global_rng_gate.py`, a tracked-`*.rs` regex walk measured
+**~2.6s wall** on a quiet M3), and the sentence exists to say that the move
+is READ OFF THE GATE — `docs_gate_checks_sync.py` + `check_validation_gate.py`
+both print the live count, and a number typed here is a claim about history,
+never the instrument.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
@@ -367,6 +375,7 @@ develop work. One line per check:
 | `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
 | `sweep_advisory_membership_gate.py` | a `*_drift_sweep.py` that does not call the Issue-797 worktree advisory — its findings and floors then describe whatever the working tree happened to say; gated by MEMBERSHIP, because a count is green on a swap and went stale two hours after it was typed (Issue 797 T5) |
 | `console_encoding_gate.py` | a tracked `scripts/*.py` that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with **no verdict**, so a sweep's findings are not *unknown* but *unlooked at*; `docs_gate.sh`'s `PYTHONIOENCODING` only covers runs that go through the wrapper, and every workstation audit is documented as a DIRECT invocation (Issue 804). The shared defence is `scripts/console_safe.py`: `errors="backslashreplace"`, because the console encoding is not ours to choose, and forcing it gives mojibake instead of an exception |
+| `global_rng_gate.py` | a free-function global-fastrand draw with no pin row — the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809) |
 | `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 

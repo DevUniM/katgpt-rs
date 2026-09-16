@@ -1,0 +1,29 @@
+# Pins for scripts/global_rng_gate.py — Issue 809 T2.
+#
+# Every live free-function global-`fastrand` draw in a tracked `*.rs` carries
+# a row here with a REASON from the T1 census (2026-09-16): the commit that
+# adds a site reds until it is adjudicated, a row whose site is gone or whose
+# (file, call) count moved reds STALE — this file must not only ever loosen.
+#
+# Format: `relpath::call::count # reason`. Reasonless rows are REFUSED.
+# The key is line-free; the count is scoped to the (file, call) pair.
+#
+# Out of population (documented in the gate's header, not pinned here):
+# `fastrand::Rng::with_seed(..)` (the correct pattern), `Rng::new()` (the
+# ~95-site T3 census, unread — a pin file of unread rows is a backlog wearing
+# a pin), and non-fastrand RNG crates.
+#
+# The two DEFECT instances (vocab_channel_pruner's discover_channel/
+# optimize_householder; the bench_pflash_maxsim_block_scoring fixture pair)
+# were FIXED, not pinned — they are the reason the gate exists.
+
+crates/katgpt-core/src/cgsp/types.rs::u8::4 # snapshot_id_now() — hand-rolled Uuid-v7-layout generator: the random bits are the identity component of a time-ordered id (the sanctioned Uuid::now_v7() semantics, minus the uuid dep); per-call entropy is the spec, not a symmetry breaker
+crates/katgpt-pruners/src/sdar/sdar_absorb.rs::f32::1 # SDAR soft gate, stochastic BY DESIGN (module doc: promote = draw < gate, arXiv:2605.15155); the pure fn sdar_should_promote takes the draw as an argument — deterministic given it — and this opt-in feature's randomness is the published semantics
+crates/katgpt-pruners/src/sdar_gate.rs::f32::3 # tests only: statistical validation of the gate's own distribution at n=1000 with >=6.3-sigma bounds; the deterministic edges are covered by dedicated draw=0.0 / draw=1.0 tests
+crates/katgpt-speculative/src/correlation_budget.rs::bool::1 # test-only input stream (~50% mix, per the comment); the ordering assertions sit ~18 sigma from any realized flip at n=500
+crates/katgpt-types/src/simd/tests.rs::f32::2 # distributional agreement test (fused vs naive) — the fresh uniform realization every run IS the coverage; 1e-4 tolerance ~10x the realized error scale
+examples/corr_budget_01_bench.rs::bool::4 # example bench input streams (same class as the correlation_budget test); demo code, not a shipped primitive
+examples/go_00_api_bridge.rs::usize::1 # random legal-move demo player; by-design randomness over an externally-validated move set
+examples/self_distilling_demo.rs::usize::1 # random_arm() — the demo's stochastic arm selection is the point being demonstrated
+examples/self_distilling_demo.rs::f32::1 # demo match-quality sampling; same by-design class as random_arm
+tests/go_integration.rs::usize::2 # random legal-move player against a live AutoGo server (#[ignore]-gated); the assertions cover API acceptance and board validity, not game outcomes

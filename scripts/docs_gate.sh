@@ -119,6 +119,7 @@ CHECKS=(
     "scripts/instrument_reachability_gate.py:a tracked scripts/*.py no root and no documented instrument names — invisible to the census that would find it (Issue 787)"
     "scripts/sweep_advisory_membership_gate.py:a *_drift_sweep.py that does not call the Issue-797 worktree advisory — its findings and floors then describe whatever the working tree happened to say; gated by MEMBERSHIP, because a count is green on a swap and went stale two hours after it was typed (Issue 797 T5)"
     "scripts/console_encoding_gate.py:a tracked scripts/*.py that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with NO verdict and its findings go unread; docs_gate.sh's PYTHONIOENCODING only covers runs that go through the wrapper (Issue 804)"
+    "scripts/global_rng_gate.py:a free-function global-fastrand draw with no pin row — the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809)"
     "scripts/check_validation_gate.py:a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789)"
     "scripts/docs_gate_checks_sync.py:this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750)"
 )
