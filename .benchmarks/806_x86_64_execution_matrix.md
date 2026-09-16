@@ -298,6 +298,37 @@ the same commit.** This class is invisible to any gate that runs once per
 commit, and it could have flipped on the M3's weekly `--lib` lane at any time.
 The two runs happened here only because the first was validating a script.
 
+### The latency bars do not reproduce, and the pin file had to stop pretending
+
+Four runs of one commit produced **four different failing sets**:
+
+| run | failing set |
+|---|---|
+| 1 | six perf bars |
+| 2 | `bench_176` and `g7` gone; the katgpt-pruners RNG flake arrives |
+| 3 | `g5_roaring` gone; `t08_throughput_rebalance_256x16` arrives |
+| 4 | `g7` back and gone again; `goat_6_context_scaling_flat_o1` arrives, never seen before |
+
+A membership pin is the right shape for a stable set and the wrong one for a
+churning one — **a pin file re-typed after every run is a diary, not a wall**,
+and re-typing it is how a real regression eventually gets absorbed as
+*"probably the box again"*.
+
+So the script **re-runs every failure ALONE before adjudicating it**: this
+record's own finding, mechanised. A load-sensitive bar passes the second time
+and a real failure does not. TRANSIENT rows print — they are what the box did —
+and are never counted and never pinned. It cost nothing (everything is built,
+and `--exact` makes every other binary run zero tests) and it absorbed two rows
+on the first run that had it.
+
+What survives is **three** reproducible rows, and each one says something:
+`proof_g3b_swar_speedup` (a bar whose own name is an aarch64 instruction),
+`t09_throughput_inv_sqrt_16x16` (an absolute 10 µs target — absolute latency
+does not transfer between machines at all) and `t698_t5_kv_mean_gates` (the
+fixture hash, above). `g5_roaring_batch_speedup` left on run 4 and its own
+message said why all along: `0.0× (roaring=0.00μs, linear=0.00μs)` is **0/0** —
+under load both arms fall below the clock granularity, and alone they do not.
+
 ## Reproduce
 
 The matrix is a **script** now — `scripts/x86_64_execution_matrix.sh`, landed

@@ -208,15 +208,20 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   `goat_574_clustered_lm_head` ran >20 min in debug without finishing and 39.8s
   in release, and `bench_164_gepa_reflective` fails its own 10% bar at 15.5%
   purely because both sides are unoptimised.
-- **Failing tests are adjudicated by MEMBERSHIP**
+- **Every failure is RE-RUN ALONE, then adjudicated by MEMBERSHIP**
   (`scripts/x86_64_matrix_expected.txt`, a reason per row, refused without
-  one), because the first full integration run was **0 correctness failures
-  and six perf-bar failures** — a `≥5×` gate whose own name says `SWAR+FMLA`
-  (an aarch64 instruction) scoring 4.37× here, two speedup ratios computed
-  from two timings that both read `0.00 µs`, and a router-overhead bar taken on
-  a box running four other agents' cargo. A gate that always reds is a gate
-  nobody runs; a pin that only ever loosens is not a wall, so a stale row (its
-  test passes now) reds too.
+  one). The first integration run was **0 correctness failures and six perf-bar
+  failures**, and four runs of that one commit then produced **four different
+  failing sets** — so a membership pin alone was the wrong instrument, because
+  *a pin file re-typed after every run is a diary, not a wall*, and re-typing
+  it is how a real regression gets absorbed as "probably the box again". The
+  confirm step is this workspace's own lesson mechanised: a load-sensitive bar
+  passes the second time and a real failure does not. TRANSIENT rows print and
+  are never counted, never pinned; it costs nothing, because everything is
+  already built and `--exact` makes every other binary run zero tests. What
+  survives is three reproducible rows. A stale pin (its test passes now) reds
+  too — the file must not only ever loosen — except under `--libs-only`, which
+  DEFERS that check because it skips the cell those rows come from.
 - Floors in `scripts/x86_64_matrix_floors.txt` — `min_passed` per package plus
   the integration cell's **two** (targets AND assertions: a target that
   compiles to an empty binary stops printing a line, and the target count can
