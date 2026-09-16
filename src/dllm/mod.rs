@@ -1570,212 +1570,23 @@ pub fn train_mini_dllm(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Research 376 Phase 4: SW-SetDLM Training (set-causal attention)
+// SW-SetDLM Training (set-causal attention) — moved to `set_causal`
 // ═══════════════════════════════════════════════════════════════
 //
-// Gate: the functions below reference `crate::speculative::set_diffusion`,
-// which is gated behind the `set_diffusion` feature. Without this gate,
-// `cargo build -p katgpt-rs` fails when `dllm` is enabled but `set_diffusion`
-// is not (feature unification via dev-deps + dev-dep defaults transitively
-// enables `dllm`). Minimal fix: gate each function so they only compile
-// when `set_diffusion` is explicitly requested.
-
-/// Train a mini transformer with **set-causal attention** (SW-SetDLM training).
-///
-/// This is the set-causal counterpart of [`train_mini_dllm`]. Each training
-/// step samples a generation ordering σ from the [`PositionOffsetSchedule`],
-/// converts it to generation steps, runs a set-causal forward pass via
-/// `forward_save_set_causal`, computes the NELBO loss (mean cross-entropy
-/// over ALL positions — the all-L-conditionals estimator, Eq. 9), and runs
-/// backprop + SGD update.
-///
-/// # Why this exists (the GOAT-gate unblock)
-///
-/// The set-diffusion decoder substrate (Phase 4 T4.1–T4.3) is validated
-/// against bidirectionally-trained models, but a bidirectional model shows
-/// NO GAIN over direct bidirectional decode at the MDLM endpoint (they're the
-/// same thing). To pass the GOAT gate, the decoder needs a model that was
-/// TRAINED to exploit set-causal attention's flexibility. This function
-/// produces such a model on CPU, mirroring the `train_mini_dllm` precedent.
-///
-/// # Key difference from `train_mini_dllm`
-///
-/// | Aspect | `train_mini_dllm` | `train_mini_set_causal` |
-/// |--------|-------------------|-------------------------|
-/// | Attention | Bidirectional (all ↔ all) | Set-causal (gen-step masked) |
-/// | Input | Corrupted (mask_token substituted) | Clean tokens (no corruption) |
-/// | Targets | Masked positions only | ALL positions |
-/// | Ordering | Fixed (bidirectional) | Sampled from schedule each step |
-///
-/// In SW-SetDLM training, the model sees CLEAN tokens and predicts each token
-/// conditioned on its set-causal context (positions revealed earlier in σ).
-/// The loss is the mean cross-entropy over all L positions — this is the
-/// all-L-conditionals estimator that gives ~3× lower gradient variance than
-/// single-position estimation (paper Table 5, verified in
-/// `riir-train/tests/set_diffusion_variance_376.rs`).
-///
-/// # Arguments
-/// - `schedule`: the position-offset schedule to sample orderings from.
-///   Use [`PositionOffsetSchedule::default`] for the SW-SetDLM setting (w=0.5).
-/// - All other args mirror [`train_mini_dllm`].
-///
-/// # Returns
-/// `(weights, loss_history)` — the trained model and per-epoch mean NELBO.
+// Issue 813 (2026-09-17): the set-causal train/eval block moved to
+// [`set_causal`] — the custom-order reveal seam made it its own module
+// (mod.rs was at the 2048-line soft limit). The re-exports below preserve
+// every historical `crate::dllm::{train_mini_set_causal,
+// evaluate_set_causal_nelbo}` path byte-identically (the Plan 402/403
+// move-and-re-export precedent); the seam entry points live beside them.
 #[cfg(feature = "set_diffusion")]
-pub fn train_mini_set_causal(
-    config: &Config,
-    train_data: &[Vec<usize>],
-    test_data: &[Vec<usize>],
-    n_epochs: usize,
-    lr: f32,
-    schedule: &PositionOffsetSchedule,
-    seed: u64,
-) -> (TransformerWeights, Vec<f32>) {
-    let mut rng = Rng::new(seed);
-    let mut weights = TransformerWeights::new(config, &mut rng);
-    let mut loss_history = Vec::with_capacity(n_epochs);
-    let mut fwd_ctx = ForwardSaveContext::new(config);
-    let mut bwd_ctx = BackwardContext::new(config);
+mod set_causal;
 
-    // In SW-SetDLM training, ALL positions are targets (no masking/corruption).
-    // The model sees clean tokens and predicts each given its set-causal context.
-    let mut is_masked_all: Vec<bool> = vec![true; config.block_size];
-
-    let mut indices: Vec<usize> = (0..train_data.len()).collect();
-    for epoch in 0..n_epochs {
-        let mut epoch_loss = 0.0f32;
-        let mut n_samples = 0usize;
-
-        // Shuffle training data in-place
-        for i in (1..indices.len()).rev() {
-            let j = (rng.next() as usize) % (i + 1);
-            indices.swap(i, j);
-        }
-
-        for &idx in &indices {
-            let tokens = &train_data[idx];
-            let seq_len = tokens.len().min(config.block_size);
-            is_masked_all[..seq_len].fill(true);
-
-            // Sample ordering σ from the schedule, convert to gen_steps.
-            let order = schedule.sample_order_with(seq_len, || rng.uniform());
-            let gen_steps = crate::speculative::set_diffusion::order_to_gen_steps(&order);
-
-            // Set-causal forward with activation saving.
-            let act = forward_save_set_causal(&weights, tokens, config, &gen_steps, &mut fwd_ctx);
-
-            // NELBO loss: mean cross-entropy over all positions.
-            let loss = masked_loss_into(
-                act.logits,
-                tokens,
-                &is_masked_all[..seq_len],
-                config.vocab_size,
-                LossAveraging::Global,
-                &mut bwd_ctx.loss_exp_buf,
-            );
-
-            // Backward + SGD update (same as train_mini_dllm — the mask is
-            // encoded in the attention weights, so backward() works as-is).
-            backward(
-                &act,
-                &weights,
-                tokens,
-                &is_masked_all[..seq_len],
-                config,
-                &mut bwd_ctx,
-            );
-            sgd_update(&mut weights, &bwd_ctx.grads, lr);
-
-            epoch_loss += loss;
-            n_samples += 1;
-        }
-
-        let avg_loss = if n_samples > 0 {
-            epoch_loss / n_samples as f32
-        } else {
-            0.0
-        };
-        loss_history.push(avg_loss);
-
-        if epoch % 100 == 0 || epoch == n_epochs - 1 {
-            // Evaluate NELBO on test data at the training schedule.
-            let test_nelbo = evaluate_set_causal_nelbo_internal(
-                &weights,
-                test_data,
-                config,
-                schedule,
-                &mut rng,
-                &mut fwd_ctx,
-            );
-            eprintln!(
-                "Epoch {epoch:>4}/{n_epochs}: train_nelbo={avg_loss:.4} test_nelbo={test_nelbo:.4}",
-            );
-        }
-    }
-
-    (weights, loss_history)
-}
-
-/// Evaluate mean NELBO of a model under set-causal attention at a given schedule.
-///
-/// Samples one ordering per test sequence (matching the training distribution)
-/// and computes the mean NELBO. Allocates its own forward context — use
-/// `evaluate_set_causal_nelbo_internal` in hot paths to reuse a context.
-///
-/// Used by the GOAT gate test for cross-model comparison (set-causal vs
-/// bidirectional models at various schedule endpoints).
 #[cfg(feature = "set_diffusion")]
-pub fn evaluate_set_causal_nelbo(
-    weights: &TransformerWeights,
-    data: &[Vec<usize>],
-    config: &Config,
-    schedule: &PositionOffsetSchedule,
-    rng: &mut Rng,
-) -> f32 {
-    let mut fwd_ctx = ForwardSaveContext::new(config);
-    evaluate_set_causal_nelbo_internal(weights, data, config, schedule, rng, &mut fwd_ctx)
-}
-
-/// Internal allocation-free variant — caller provides the forward context.
-#[cfg(feature = "set_diffusion")]
-fn evaluate_set_causal_nelbo_internal(
-    weights: &TransformerWeights,
-    data: &[Vec<usize>],
-    config: &Config,
-    schedule: &PositionOffsetSchedule,
-    rng: &mut Rng,
-    fwd_ctx: &mut ForwardSaveContext,
-) -> f32 {
-    let mut total = 0.0f32;
-    let mut count = 0usize;
-    let mut is_masked_all: Vec<bool> = vec![true; config.block_size];
-    let mut exp_buf: Vec<f32> = vec![0.0f32; config.vocab_size];
-    for tokens in data {
-        let seq_len = tokens.len().min(config.block_size);
-        if seq_len == 0 {
-            continue;
-        }
-        is_masked_all[..seq_len].fill(true);
-        let order = schedule.sample_order_with(seq_len, || rng.uniform());
-        let gen_steps = crate::speculative::set_diffusion::order_to_gen_steps(&order);
-        let act = forward_save_set_causal(weights, tokens, config, &gen_steps, fwd_ctx);
-        let loss = masked_loss_into(
-            act.logits,
-            tokens,
-            &is_masked_all[..seq_len],
-            config.vocab_size,
-            LossAveraging::Global,
-            &mut exp_buf,
-        );
-        total += loss;
-        count += 1;
-    }
-    if count == 0 {
-        0.0
-    } else {
-        total / count as f32
-    }
-}
+pub use set_causal::{
+    SetCausalGenStepsFn, evaluate_set_causal_nelbo, evaluate_set_causal_nelbo_with_gen_steps,
+    train_mini_set_causal, train_mini_set_causal_with_gen_steps,
+};
 
 // ═══════════════════════════════════════════════════════════════
 // Plan 078 T3: Adaptive Noise Schedule Training

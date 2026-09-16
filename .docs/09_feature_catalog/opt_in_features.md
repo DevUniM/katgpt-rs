@@ -2233,7 +2233,7 @@ A second consolidated table for standalone opt-in features with their own plans,
 | Feature | Plan | Role |
 |---|---|---|
 | `progressive_mcgs` | 272 | Progressive MCGS — graph search with reference edges + entropy-gated schedule (Research 239) |
-| `set_diffusion` | 401 | Set Diffusion — set-causal attention + DecodeStrategy::SetDiffusion |
+| `set_diffusion` | 401 | Set Diffusion — set-causal attention + DecodeStrategy::SetDiffusion. Issue 813 (2026-09-17): the custom-order reveal seam (`train/evaluate_*_with_gen_steps`, `dllm::set_causal` module) + the t\*-gated probability-order sweep arm (Bench 809 — arm tables recorded; NO-SEPARATION verdict, the clean-token objective is self-copy trivial, masked-target unblock = Issue 816). |
 | `hlplayer` blends | 436 | `binned_blend` (HARMFUL), `kernel_blend` (RECOMMENDED), `contextual_bandit` — see [negative_results §37](negative_results.md#37-binned-blend-estimator---real-arena-strictly-harmful-stays-opt-in) |
 
 ### Formal verification & proof
@@ -2723,6 +2723,7 @@ RESOLVED+REMOVED 2026-08-18 (T1–T6 in `2d5a9efc`; consumer verdict folded in
 ## 83. Ignition Schedule — closed-form logistic ignition primitive (Issue 459 T5)
 
 **Feature flag:** `ignition_schedule = []` in katgpt-core (zero deps, opt-in).
+**Root forward (katgpt-rs, 2026-09-17):** `ignition_schedule = ["katgpt-core/ignition_schedule"]` — a pure dependency forward with no src/ consumer yet, landed for the set-causal reveal-order sweep lane (Issue 813 / Bench 809, whose bench consumes `commit_time_star`).
 
 `IgnitionSchedule` (katgpt-core/src/ignition.rs) — the Neural Quadratic Forms
 ignition theorems (arXiv:2608.13335 Thms 5–8; riir-train Research 422 §3.5) as
