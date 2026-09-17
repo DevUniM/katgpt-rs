@@ -1403,6 +1403,20 @@ name = "bench_359_dec_heat_kernel_trajectory_goat"
 harness = false
 required-features = ["heat_kernel_trajectory"]
 
+# Issue 825 T1+T2 — training-free Coulomb crowd redistribution via a DEC Poisson
+# solve (Research 468 §5, arXiv:2608.01692 v3 Prop 2). G1 conservation
+# (delta(j) = mu1 - mu0 to CG residual, cross-checked with belief_mass_divergence),
+# G2 endpoint distribution vs mu1 with its 1/sqrt(N) DECAY (an assert at one N
+# cannot tell exact-plus-noise from a small bias), G3 the 20x-bias analog against
+# the naive rescaled attract field (the shipped DecFlowField consumption shape;
+# FAIL-honest if the naive field is not biased here), G4 zero-alloc solve via the
+# shared counting_allocator!() harness. Prints verdict, exits 1 on FAIL.
+# std::time::Instant + harness=false (the bench_357/359 DEC GOAT convention).
+[[bench]]
+name = "bench_825_coulomb_crowd_redistribution_goat"
+harness = false
+required-features = ["dec_operators"]
+
 # Plan 319 Phase 2 — Clifford Geometric Product GOAT gate. G1 4-class separability
 # (coherent/orthogonal/anti-correlated/rotated) + G2 rotational recovery
 # (Pearson(wedge, sin θ)) + G3-alloc + G4 perf vs O(D²) naive. Prints verdict.
