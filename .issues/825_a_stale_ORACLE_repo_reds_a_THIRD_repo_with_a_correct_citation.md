@@ -172,6 +172,30 @@ with no network call at all.
       with the same number present in the worktree it must be clean; absent
       from both, it must still red. The middle arm is the one this issue
       exists for and the one a naive fix will skip.
+### T5's hole is MEASURED, and it is live right now
+
+Fetch age vs reported behind-ness, every contract repo on this box, 2026-09-18
+(`stat .git/FETCH_HEAD` — no network):
+
+| repo | last fetch | reports |
+|---|---|---|
+| riir-viewbridge | **60h** | `behind=0` |
+| seal-online-remaster | 12h | `behind=0` |
+| seal-remake | 12h | `behind=65` |
+| seal-game-editor | 0h *(I fetched)* | `behind=260` |
+| the other 12 | 1–2h | `behind=0` |
+
+**riir-viewbridge's `behind=0` rests on a fetch from two and a half days ago**
+— it is not a measurement of anything, and no output distinguishes it from the
+twelve repos whose zeros are an hour old and trustworthy. That is the whole
+defect, with a name attached.
+
+And the class is not hypothetical here: **before tonight's fetch,
+seal-game-editor was in exactly that bucket** — last fetch Sep 16 12:42,
+roughly 36 hours stale, reporting `0 behind / 0 ahead` while hiding the 260
+commits that produced this issue's false red. The only reason it now reads
+honestly is that somebody went looking.
+
 - [ ] **T5 — `(0, 0)` must not mean "not measured".** `behind_origin()` reads a
       remote-tracking ref whose own freshness it never reports, so a repo last
       fetched days ago reads *up to date*. Stat `.git/FETCH_HEAD` (no network)
