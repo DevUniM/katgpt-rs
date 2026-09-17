@@ -351,7 +351,7 @@ def head_overlay(root, patterns) -> dict[str, str | None]:
 
 
 @contextlib.contextmanager
-def head_tree(root, patterns, paths=None):
+def head_tree(root, patterns, paths=None, extra_dirty=()):
     """A throwaway CHECKOUT of HEAD, or `None` when nothing in scope is dirty.
 
     Issue 822 T5g — the third instrument, for classifiers the other two cannot
@@ -397,9 +397,24 @@ def head_tree(root, patterns, paths=None):
     anything reaching `git grep` over the whole tree is not), and state them
     from the same constant the sweep's SCOPE comes from. The default is the
     whole tree, which is always correct.
+
+    `extra_dirty` — paths that must count as dirt even though `git status` does
+    not report them. ⛔ It exists for ONE measured shape: a sweep whose WALK
+    includes UNTRACKED files. `dirty_files` excludes untracked by design ("a
+    sweep's population is what git tracks", Issue 777) and that is right for
+    every caller whose walk is `git ls-files` — but `restatement_theorem_audit`
+    uses `os.walk`, so an untracked `.lean` is IN its population, is in no
+    commit by definition, and produces zero `git status` dirt. Without this the
+    trigger never fires, no HEAD exists to compare against, and the row is
+    filed COMMITTED: Issue 822's defect in its purest form, which
+    `markdown_fence` had to split by hand one instrument over. Nothing here
+    needs the paths to exist or to be read — they only widen the trigger, and
+    the tree itself is still HEAD, where an untracked file correctly does not
+    appear.
     """
     root = Path(root)
-    if not dirty_in_population(root, patterns) or not (root / ".git").is_dir():
+    if not (dirty_in_population(root, patterns) or tuple(extra_dirty)) \
+            or not (root / ".git").is_dir():
         yield None
         return
     with tempfile.TemporaryDirectory() as td:
@@ -1214,6 +1229,31 @@ def tree_arms() -> list[str]:
             check(t is not None and (t / "assets" / "big.bin").is_file(),
                   "the DEFAULT head_tree narrowed — `paths=None` must be the "
                   "whole tree, which is the only always-correct answer")
+
+        # `extra_dirty` — the UNTRACKED trigger, for a sweep whose walk is
+        # `os.walk` rather than `git ls-files`. Committed and clean, so
+        # `git status` reports NOTHING; only the widened trigger can fire.
+        me3 = _repo(tmp, "t3")
+        (me3 / "a.lean").write_text("theorem x : True := trivial\n",
+                                    encoding="utf-8")
+        _run(me3, "add", "-A")
+        _run(me3, "commit", "-qm", "base")
+        (me3 / "wip.lean").write_text("-- never added\n", encoding="utf-8")
+        with head_tree(me3, ("*.lean",)) as t:
+            check(t is None,
+                  "an UNTRACKED file alone fired the ordinary trigger — "
+                  "`dirty_files` must keep excluding it (Issue 777)")
+        with head_tree(me3, ("*.lean",), extra_dirty=("wip.lean",)) as t:
+            check(t is not None,
+                  "extra_dirty did not widen the trigger, so a sweep whose "
+                  "walk includes untracked files files them as COMMITTED")
+            if t is not None:
+                check(not (t / "wip.lean").exists(),
+                      "the untracked file reached the HEAD tree — it is in no "
+                      "commit, so its finding must read UNCOMMITTED")
+                check((t / "a.lean").is_file(),
+                      "the widened trigger produced a tree missing HEAD's own "
+                      "content")
     return fails
 
 
@@ -1765,8 +1805,10 @@ def main() -> int:
           "HEAD checkout that answers git ls-files AND git grep (forced "
           "add, so a tracked-but-gitignored path survives), excludes "
           "untracked files, yields None on a clean tree / out-of-scope dirt "
-          "/ a non-repository and leaks nothing, and NARROWS to a pathspec "
+          "/ a non-repository and leaks nothing, NARROWS to a pathspec "
           "in both content and index while the default stays the whole tree, "
+          "and widens its TRIGGER on extra_dirty without letting an untracked "
+          "file into HEAD, "
           "a bare "
           "NAME + root resolves as a path does while an unresolvable one "
           "is SKIPPED, behind_origin separates None (no upstream, never "

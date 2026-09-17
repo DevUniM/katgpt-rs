@@ -62,7 +62,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import restatement_theorem_audit as audit  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, delta_of,  # noqa: E402
+                            head_tree, ordinal_keys, sweep_advisory)
 
 FLOORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       "restatement_drift_floors.txt")
@@ -111,6 +112,253 @@ def measure(repo_path):
         "rows": [x for x in r["rows"]
                  if x[0] in (audit.RESTATEMENT, audit.IDENTITY)],
     }
+
+
+# ONE list, read by the worktree advisory, by the HEAD trigger and by the
+# archive pathspec. `audit_repo` walks `.proofs` with `os.walk` and reads
+# `*.lean` and nothing else, which is what makes both the narrowing and this
+# constant sound — its inputs are ENUMERABLE.
+SCOPE = ("*.lean",)
+
+
+def untracked_lean(repo_path):
+    """Untracked-not-ignored `*.lean`, repo-relative — this sweep's own half.
+
+    ⛔ `audit_repo` walks the FILESYSTEM (`os.walk` over `.proofs`), so an
+    untracked theorem file IS in this sweep's population while producing zero
+    `git status` dirt — `dirty_files` excludes untracked by design (Issue 777)
+    and that is right for every caller whose walk is `git ls-files`. Without
+    widening the trigger there is no HEAD to compare against and the row is
+    filed COMMITTED, straight into a ceiling: Issue 822's defect in its purest
+    form, which `markdown_fence` met one instrument over. Handed to `head_tree`
+    as `extra_dirty` rather than by widening `dirty_files`, because the
+    exclusion is correct everywhere else.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_path), "ls-files", "--others",
+             "--exclude-standard", "-z", "--", "*.lean"],
+            capture_output=True, encoding="utf-8", errors="replace", check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return []
+    return [r for r in out.split("\0") if r.strip()]
+
+
+def row_addr(repo_path, row):
+    """A finding row's TREE-FREE address: `(bucket, rel path, theorem name)`.
+
+    ⛔ The audit's rows carry an ABSOLUTE path, and the HEAD side classifies a
+    materialised checkout — so a key holding it matches nothing across the two
+    sides and reports every theorem in the repo as UNCOMMITTED *and* MASKED at
+    once, which reads like a finding rather than like a broken key (measured
+    one sweep over, T5j).
+
+    The BUCKET is in the address because both ceilings partition by it
+    (`max_restatement`, `max_identity`): a theorem that is IDENTITY at HEAD and
+    RESTATEMENT in somebody's edit must not silently keep HEAD's bucket. The
+    `note` is NOT — it is display prose, and a key carrying prose reds on a
+    reworded message.
+    """
+    bucket, path, name, _note = row
+    rel = os.path.relpath(path, repo_path).replace("\\", "/")
+    return (bucket, rel, name)
+
+
+def adjudicate(repo_path, m):
+    """-> (`HeadDelta` over this repo's rows, the dict the FLOORS read).
+
+    Issue 822 T5j. `head_tree`, for T5g's reason: `audit_repo` scopes every def
+    table to its module plus its TRANSITIVE IMPORTS, so one dirty `.lean`
+    changes the verdicts of every file importing it — `head_delta`'s per-file
+    premise is not merely unproven here, it is false — and the classifier takes
+    its text from an `os.walk`, which no overlay can intercept.
+
+    Narrowed to `*.lean`: `prove_fires` already demonstrates that `audit_repo`
+    runs against a tree containing nothing but `.proofs`, so the pathspec is
+    provably sufficient rather than hopefully so.
+
+    `None` for the second element means there is no HEAD to compare against —
+    a clean tree, or not a repository — and the caller then reads the
+    worktree's own numbers, the conservative direction for a bucket the pins
+    read.
+    """
+    with head_tree(repo_path, SCOPE, paths=SCOPE,
+                   extra_dirty=untracked_lean(repo_path)) as tree:
+        if tree is None:
+            return HeadDelta(list(m["rows"]), [], []), None
+        head = measure(tree)
+        # `(key, row)` pairs, not bare keys: the buckets are DISPLAYED, and a
+        # delta that has thrown the rows away can only print addresses.
+        return (delta_of(
+            ordinal_keys(m["rows"], lambda r: row_addr(repo_path, r)),
+            ordinal_keys(head["rows"], lambda r: row_addr(tree, r)),
+            lambda kr: kr[0]), head)
+
+
+RESTATE_LEAN = """namespace Canary
+
+def alphaSize : Nat := 16
+def betaSize : Nat := 24
+def totalSize : Nat := alphaSize + betaSize
+
+theorem totalSize_eq_sum : totalSize = alphaSize + betaSize := by decide
+
+end Canary
+"""
+CLEAN_LEAN = """namespace Canary
+
+def alphaSize : Nat := 16
+
+theorem alphaSize_val : alphaSize = 16 := by decide
+
+end Canary
+"""
+
+
+def adjudicate_cases():
+    """`adjudicate` end to end against REAL git — Issue 822 T5j.
+
+    The fixture is this sweep's own subject: a theorem whose RHS is its `def`
+    body (RESTATEMENT) against one pinning a literal (clean). Every arm turns
+    on which of the two a COMMIT carries.
+    """
+    fails = []
+
+    def git(root, *args):
+        subprocess.run(("git", "-C", str(root)) + args,
+                       capture_output=True, check=True)
+
+    def fixture(td, committed, worktree=None, untracked=None):
+        repo = os.path.join(td, "r")
+        proofs = os.path.join(repo, ".proofs")
+        os.makedirs(proofs)
+        with open(os.path.join(proofs, "A.lean"), "w", encoding="utf-8") as fh:
+            fh.write(committed)
+        git(td, "init", "-q", "r")
+        git(repo, "config", "user.email", "arm@example.invalid")
+        git(repo, "config", "user.name", "arm")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        if worktree is not None:
+            with open(os.path.join(proofs, "A.lean"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(worktree)
+        if untracked is not None:
+            with open(os.path.join(proofs, "B.lean"), "w",
+                      encoding="utf-8") as fh:
+                fh.write(untracked)
+        return repo
+
+    def run(repo):
+        m = measure(repo)
+        delta, head = adjudicate(repo, m)
+        return m, delta, (m if head is None else head)
+
+    # a. ⛔ Issue 798's direction: a REMOVAL that is not committed is not
+    #    landed. `max_restatement` is a WALL at 0 in all four repos.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, RESTATE_LEAN, worktree=CLEAN_LEAN)
+        m, delta, j = run(repo)
+        if m["restatement"] != 0:
+            fails.append(f"arm a: the fixture is INERT — the worktree must "
+                         f"read 0 RESTATEMENT ({m['restatement']})")
+        if j["restatement"] != 1 or not delta.masked:
+            fails.append(f"adjudicate: an UNCOMMITTED removal cleared the "
+                         f"RESTATEMENT wall (judged {j['restatement']}, "
+                         f"masked {len(delta.masked)}) — the committed "
+                         f"theorem still proves nothing for everyone else")
+
+    # b. And its mirror: a restatement introduced in the worktree must not red
+    #    a wall at 0 over a line no commit contains.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, CLEAN_LEAN, worktree=RESTATE_LEAN)
+        m, delta, j = run(repo)
+        if m["restatement"] != 1:
+            fails.append(f"arm b: the fixture is INERT — the worktree must "
+                         f"read 1 RESTATEMENT ({m['restatement']})")
+        if j["restatement"] != 0 or len(delta.uncommitted) != 1:
+            fails.append(f"adjudicate: an uncommitted RESTATEMENT reached the "
+                         f"wall (judged {j['restatement']}) instead of "
+                         f"UNCOMMITTED ({len(delta.uncommitted)})")
+
+    # c. ⛔ The UNTRACKED half. `audit_repo` walks the FILESYSTEM, so an
+    #    untracked theorem file is IN the population and produces ZERO
+    #    `git status` dirt — without `extra_dirty` the trigger never fires,
+    #    there is no HEAD, and the row is filed COMMITTED.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, CLEAN_LEAN, untracked=RESTATE_LEAN)
+        m, delta, j = run(repo)
+        if m["restatement"] != 1:
+            fails.append(f"arm c: the fixture is INERT — the walk must SEE "
+                         f"the untracked file ({m['restatement']})")
+        if j["restatement"] != 0 or len(delta.uncommitted) != 1:
+            fails.append(f"adjudicate: an UNTRACKED theorem file's row reached "
+                         f"the wall (judged {j['restatement']}) — a finding "
+                         f"on a file `git log` cannot see, counted against a "
+                         f"pin, is this issue's whole subject")
+
+    # d. The FLOORS read HEAD too, and this is the direction only a file
+    #    nobody committed can reach: the worktree walk GREW, HEAD's did not.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, CLEAN_LEAN, untracked=CLEAN_LEAN)
+        m, delta, j = run(repo)
+        if m["files"] != 2 or j["files"] != 1:
+            fails.append(f"adjudicate: the walk floor read the worktree "
+                         f"({m['files']}) instead of HEAD ({j['files']})")
+
+    # e. The key must be TREE-FREE and ORDINAL-stable: a repo whose only dirt
+    #    is elsewhere must report its unchanged rows as MOVED nowhere. A key
+    #    carrying the absolute path reports every theorem as UNCOMMITTED *and*
+    #    MASKED at once, which reads like a finding rather than a broken key.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, RESTATE_LEAN, untracked=CLEAN_LEAN)
+        m, delta, j = run(repo)
+        moved = ([k for k, _r in delta.uncommitted]
+                 + [k for k, _r in delta.masked])
+        if any(k[0] == audit.RESTATEMENT for k in moved):
+            fails.append(f"row key: an UNCHANGED restatement row moved — the "
+                         f"key is carrying the tree ({moved})")
+
+    # f. A CLEAN tree must cost NOTHING: this instrument copies a tree.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, CLEAN_LEAN)
+        calls = []
+        real = audit.audit_repo
+        audit.audit_repo = lambda r: calls.append(r) or real(r)
+        try:
+            m, delta, j = run(repo)
+        finally:
+            audit.audit_repo = real
+        if len(calls) != 1:
+            fails.append(f"adjudicate: re-classified a CLEAN repo "
+                         f"({len(calls)} calls) — `head_tree` must yield "
+                         f"None and the caller must SKIP")
+        if delta.uncommitted or delta.masked:
+            fails.append(f"adjudicate: a clean tree reported moved rows "
+                         f"({delta})")
+    return fails
+
+
+def adjudicate_arms():
+    """The cases above, plus the STUB PROBE proving they sit on the seam.
+
+    ⛔ Aimed at `delta_of` — the helper `adjudicate` ACTUALLY calls — because
+    two of this family's first three probes reported a false all-clear by
+    being aimed at a function the target never invokes.
+    """
+    fails = adjudicate_cases()
+    real = globals()["delta_of"]
+    globals()["delta_of"] = lambda wt, hd, key: HeadDelta(list(wt), [], [])
+    try:
+        probed = adjudicate_cases()
+    finally:
+        globals()["delta_of"] = real
+    if len(probed) < 3:
+        fails.append(f"STUB PROBE: a `delta_of` that files every row as "
+                     f"COMMITTED red only {len(probed)} of the provenance "
+                     f"arms — they are not sitting under the seam")
+    return fails
 
 
 def prove_fires(root, present):
@@ -192,8 +440,6 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — the theorem sources.
-    deferred.extend(sweep_advisory(
-        contract, ("*.lean",), root=root))
     for _line in pop_lines:
         print(_line)
     fail += pop_fail
@@ -221,32 +467,65 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
               f"{', '.join(unpinned)} — re-pin deliberately")
         fail += len(unpinned)
 
+    n_uncommitted = n_masked = 0
     for repo in present:
         if repo not in floors:
             continue
         f = floors[repo]
-        m = measure(os.path.join(root, repo))
+        repo_path = os.path.join(root, repo)
+        m = measure(repo_path)
+        # Issue 822 T5j — the DISPLAY reads the worktree (it is what the files
+        # say today); every CEILING and both FLOORS read what a commit of this
+        # checkout would produce. `j` falls back to the worktree's own numbers
+        # where there is no HEAD to compare against.
+        delta, head = adjudicate(repo_path, m)
+        j = m if head is None else head
+        held = {k for k, _r in delta.uncommitted}
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
         bad = []
-        if m["files"] < f["min_lean_files"]:
-            bad.append(f"walk {m['files']} < floor {f['min_lean_files']}")
-        if m["theorems"] < f["min_theorems"]:
-            bad.append(f"parsed {m['theorems']} < floor {f['min_theorems']}")
-        if m["restatement"] > f["max_restatement"]:
-            bad.append(f"RESTATEMENT {m['restatement']} > "
+        if j["files"] < f["min_lean_files"]:
+            bad.append(f"walk {j['files']} < floor {f['min_lean_files']}")
+        if j["theorems"] < f["min_theorems"]:
+            bad.append(f"parsed {j['theorems']} < floor {f['min_theorems']}")
+        if j["restatement"] > f["max_restatement"]:
+            bad.append(f"RESTATEMENT {j['restatement']} committed > "
                        f"ceiling {f['max_restatement']}")
-        if m["identity"] > f["max_identity"]:
-            bad.append(f"IDENTITY {m['identity']} > ceiling {f['max_identity']}")
+        if j["identity"] > f["max_identity"]:
+            bad.append(f"IDENTITY {j['identity']} committed > "
+                       f"ceiling {f['max_identity']}")
         mark = "✗" if bad else "✓"
+        split = ""
+        if held or delta.masked:
+            split = (f"  [{len(held)} uncommitted"
+                     + (f", {len(delta.masked)} MASKED" if delta.masked else "")
+                     + f"; HEAD {j['files']} .lean / {j['theorems']} theorems]")
         print(f"{mark} {repo:<16} {m['files']:>3} .lean · "
               f"{m['theorems']:>3} theorems · "
-              f"RESTATEMENT {m['restatement']} · IDENTITY {m['identity']}")
+              f"RESTATEMENT {m['restatement']} · IDENTITY {m['identity']}"
+              f"{split}")
         for b in bad:
             print(f"     ⛔ {b}")
-        for bucket, path, name, note in m["rows"]:
+        # A MASKED row is NOT in the worktree buckets — that is what MASKED
+        # means — so it prints from the HEAD side or it prints nowhere, and a
+        # ceiling reds over a theorem nobody can see.
+        for _k, (bucket, path, name, note) in sorted(delta.masked,
+                                                     key=lambda kr: kr[0]):
+            print(f"     ⛔ {bucket:<12} {name}  [MASKED — committed, "
+                  f"hidden by this worktree]")
+        for k, (bucket, path, name, note) in ordinal_keys(
+                m["rows"], lambda r: row_addr(repo_path, r)):
+            wip = " [UNCOMMITTED — not adjudicated]" if k in held else ""
             print(f"     {bucket}  "
-                  f"{os.path.relpath(path, os.path.join(root, repo))} :: "
-                  f"{name}  — {note}")
+                  f"{os.path.relpath(path, repo_path)} :: "
+                  f"{name}  — {note}{wip}")
         fail += len(bad)
+
+    # ...after the loop, because Issue 822's row counts are its input and the
+    # population verdict above runs before a single repo has been measured.
+    deferred.extend(sweep_advisory(
+        contract, SCOPE, root=root,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
 
     print()
     if "--prove-fires" in sys.argv:
@@ -260,6 +539,12 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
               "the worked precedent) or, if it pins two independently "
               "maintained definitions, it should be reading CROSS-DEF —"
               " check which side is inline.")
+        # ⛔ A deferral rides the final line in BOTH directions, and this
+        # branch used to drop it: on the run that FAILS, the reader most needs
+        # to know that seven repos were never measured, that rows sit on
+        # uncommitted lines, or that the checkout is behind origin.
+        for _d in deferred:
+            print(f"  ⚠ {_d}")
         return 1
     # A deferral rides the FINAL line in both directions — one printed only
     # on failure is one nobody reads on the run that passes.
