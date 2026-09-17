@@ -75,7 +75,7 @@ riir-kat                         0          1                0
 riir-mmorpg-examples             1          1                2
 riir-neuron-db                   0          2                0
 riir-shader                      1          1                2
-riir-train                      36          1               61
+riir-train                      36          1               65  # 2026-09-17: 61 -> 65, ADJUDICATED not absorbed. The four are the Plan 403 cluster (build_capture_manifest, fetch_lph_corpus, modelless_floors, probe_verdict). Each name carries its plan number and each is a one-task artifact, which is the state this header calls CORRECT for this repo; modelless_floors is unreachable only because its two importers are, so the closure is working. Documenting them in riir-train's AGENTS.md would contradict that repo's own convention (it names none of its plan scripts). They were NOT left alone on the other axis: all five landed undefended streams too, and that was repaired at riir-train 21f19504 (Issue 804).
 riir-viewbridge                  0          1                0
 mmorpg-editor                 1          1                1
 mmorpg-remaster             0          1                0
