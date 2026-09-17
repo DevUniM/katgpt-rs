@@ -3202,6 +3202,20 @@ required-features = ["subspace_intervention"]
 name = "set_admission_fanout"
 required-features = ["set_admission"]
 
+# Plan 599 Phase 3 — the GOAT gate: G1 brute-force parity (greedy vs the
+# exact C(n,K) optimum on the telescoped surrogate, the (1-1/e) bound + the
+# exact-hit rate), G2 perf budgets, G3/T3.5 structural cross-checks. G4
+# alloc lives in the sibling single-fn binary (counting allocator).
+[[test]]
+name = "bench_811_set_admission_goat"
+required-features = ["set_admission"]
+
+# Plan 599 Phase 3 T3.4 — zero-alloc over 1000 admission+certificate+fan
+# cycles. Separate single-fn binary (global counting allocator convention).
+[[test]]
+name = "bench_811_set_admission_alloc_check"
+required-features = ["set_admission"]
+
 # Issue 807 — LtHash GOAT gate (G2 op costs at N=1024/128 + the one-number
 # story: incremental replace vs 1000-element from-scratch rebuild; G4
 # zero-alloc by construction — fixed arrays only).
