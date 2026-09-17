@@ -4118,3 +4118,35 @@ pins, consumers (riir-neuron-db diverse retrieval, riir-clippy issue 121
 set-rerank). Opt-in, default-off — promotion only on a measured consumer win,
 per the plan's GOAT rule (the conformal Report-the-Floor rule recorded as NOT
 triggered: no distribution/interval/coverage is claimed).
+
+## 116. certified_frontier — modelless safe-set expansion for binary verifiers (Plan 580)
+
+> **Added:** 2026-09-17 (doc-sync backfill — the Plan 580 landing shipped catalog-silent;
+> row authored from Bench 688 + the Cargo feature doc). Source: arXiv:2606.08802 ·
+> Research: [`.research/510_ActFlow_Certified_Frontier_Expansion.md`](../../.research/510_ActFlow_Certified_Frontier_Expansion.md) ·
+> Plan: [`.plans/580_certified_frontier_primitive.md`](../../.plans/580_certified_frontier_primitive.md) ·
+> Bench: [`.benchmarks/688_certified_frontier_goat.md`](../../.benchmarks/688_certified_frontier_goat.md) ·
+> Code: `katgpt-core/src/certified_frontier.rs`
+
+Answers "where do I look next" (safe uncertainty acquisition) + "when do I stop"
+(halting law) for a binary verifier over latent cells: a monotone certified cell
+set + Lipschitz reachability dilation. Fuses with `viable_manifold_graph` as its
+missing acquisition half (grow-then-navigate).
+
+Ships BOTH factorisations of the linear-kernel posterior behind one
+`LinearPosterior` trait (Plan 580 T5.3): the `n × n` primal `PosteriorBuffer`
+for `n < D`, and `DualPosteriorBuffer` — an incremental Cholesky of
+`XᵀX + λI` — for `n > D`, which is 69–84× faster at n=256/D=32, O(1) in n,
+and 4368 B of state at any n instead of 64 MiB at n=4096; pick with
+`prefer_dual(expected_obs, d)`.
+
+**Verdict — GOAT G1–G4 PASS, stays opt-in, promotion deferred:** T3.4 floor
+gate SPLIT (PASS on calibration; FAIL on the plan's stated product metric,
+measured degenerate). Promotion = a re-gate on a corrected metric, which
+awaits a consumer. Bench 688: 0.264 µs/query vs the 1 µs budget (13.2×
+iterated from a 3.428 µs first FAIL — cached candidacy, then the SoA lane +
+branch-free argmax), 0 unsound certifications across 1000 adversarial
+random-order seeds, halting law fires at 185/728/2961 observations for
+ε = 0.2/0.1/0.05 (the predicted 1/ε² scaling). Consumed by `set_admission`
+(§115, `vendi_diversity`) — the substrate-level win that arrived while the
+corrected-metric re-gate pends.
