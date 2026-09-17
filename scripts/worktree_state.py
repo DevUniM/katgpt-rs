@@ -351,7 +351,7 @@ def head_overlay(root, patterns) -> dict[str, str | None]:
 
 
 @contextlib.contextmanager
-def head_tree(root, patterns):
+def head_tree(root, patterns, paths=None):
     """A throwaway CHECKOUT of HEAD, or `None` when nothing in scope is dirty.
 
     Issue 822 T5g — the third instrument, for classifiers the other two cannot
@@ -380,6 +380,23 @@ def head_tree(root, patterns):
     failed: in both the honest answer is that this run has nothing committed
     to compare against, never a fabricated empty tree, which would report
     every finding as UNCOMMITTED.
+
+    `paths` — optional git PATHSPECS narrowing what the archive carries, and
+    the difference is not marginal. Measured on riir-train (T5j): the whole
+    tree is **604 MB / 2.1s to archive and 1.0s to extract**, against **30.6 MB
+    / 0.13s / 0.37s** for `'*.rs' '*.toml'`, and the `git add -A` underneath
+    scales with the same file count — one dirty file took a 1.9s sweep to
+    **36.6s** unnarrowed.
+
+    ⛔ **The narrowing is the caller's RISK, not a tuning knob, and it is the
+    same hazard as an overlay that misses a seam.** A file HEAD carries and the
+    pathspec drops is ABSENT from the tree, so a classifier that reads it
+    silently classifies against a tree that never existed — and unlike a
+    missing overlay entry there is no `None` to notice. Pass paths only where
+    the classifier's inputs are ENUMERABLE (a manifest+source join is;
+    anything reaching `git grep` over the whole tree is not), and state them
+    from the same constant the sweep's SCOPE comes from. The default is the
+    whole tree, which is always correct.
     """
     root = Path(root)
     if not dirty_in_population(root, patterns) or not (root / ".git").is_dir():
@@ -387,7 +404,8 @@ def head_tree(root, patterns):
         return
     with tempfile.TemporaryDirectory() as td:
         arc = Path(td) / "head.tar"
-        if _git(root, "archive", "-o", str(arc), "HEAD").returncode != 0:
+        spec = ["--", *_coerce(paths)] if paths else []
+        if _git(root, "archive", "-o", str(arc), "HEAD", *spec).returncode != 0:
             yield None
             return
         dest = Path(td) / "head"
@@ -1159,6 +1177,43 @@ def tree_arms() -> list[str]:
         (plain / "a.rs").write_text("x\n", encoding="utf-8")
         with head_tree(plain, ("*.rs",)) as t:
             check(t is None, "a non-repository produced a HEAD tree")
+
+        # `paths` — the narrowing, in BOTH directions. It is a 20x cost
+        # difference on a large repo and a silent wrong-tree risk if a
+        # classifier reads something the pathspec drops, so the arm asserts
+        # what is THERE and what is GONE rather than only that it still works.
+        me2 = _repo(tmp, "t2")
+        (me2 / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+        (me2 / "src").mkdir()
+        (me2 / "src" / "lib.rs").write_text("// rs\n", encoding="utf-8")
+        (me2 / "assets").mkdir()
+        (me2 / "assets" / "big.bin").write_text("payload\n", encoding="utf-8")
+        _run(me2, "add", "-A")
+        _run(me2, "commit", "-qm", "base")
+        (me2 / "src" / "lib.rs").write_text("// EDITED\n", encoding="utf-8")
+        with head_tree(me2, ("*.rs",), paths=("*.rs", "*.toml")) as t:
+            check(t is not None, "a narrowed head_tree yielded nothing")
+            if t is not None:
+                check((t / "src" / "lib.rs").is_file(),
+                      "the narrowed tree dropped a path the pathspec NAMES")
+                check((t / "Cargo.toml").is_file(),
+                      "the narrowed tree dropped the manifest")
+                check(not (t / "assets" / "big.bin").exists(),
+                      "the pathspec carried a file it does not name — the "
+                      "narrowing is inert and the cost measurement is a lie")
+                ls = subprocess.run(
+                    ["git", "-C", str(t), "ls-files"], capture_output=True,
+                    encoding="utf-8", errors="replace").stdout.split()
+                check("src/lib.rs" in ls and "assets/big.bin" not in ls,
+                      f"the narrowed tree's INDEX does not match its content "
+                      f"— a classifier asking git would disagree with one "
+                      f"reading the filesystem: {ls}")
+        # ...and the DEFAULT carries everything, or every existing caller
+        # silently narrowed the day this parameter landed.
+        with head_tree(me2, ("*.rs",)) as t:
+            check(t is not None and (t / "assets" / "big.bin").is_file(),
+                  "the DEFAULT head_tree narrowed — `paths=None` must be the "
+                  "whole tree, which is the only always-correct answer")
     return fails
 
 
@@ -1710,7 +1765,8 @@ def main() -> int:
           "HEAD checkout that answers git ls-files AND git grep (forced "
           "add, so a tracked-but-gitignored path survives), excludes "
           "untracked files, yields None on a clean tree / out-of-scope dirt "
-          "/ a non-repository and leaks nothing, "
+          "/ a non-repository and leaks nothing, and NARROWS to a pathspec "
+          "in both content and index while the default stays the whole tree, "
           "a bare "
           "NAME + root resolves as a path does while an unresolvable one "
           "is SKIPPED, behind_origin separates None (no upstream, never "

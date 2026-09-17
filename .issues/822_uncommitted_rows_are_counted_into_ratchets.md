@@ -423,6 +423,36 @@ inference is unavoidable from the repository alone; the repair is to name the
 task and the session in the commit BODY, or to not infer ownership at all and
 ask. Recorded here because the next multi-session task inherits it.
 
+⛔ **And "name the session in the body" is necessary and not sufficient — the
+body's own `mine` is a second unresolvable field** (2026-09-18, measured by
+katgpt-rs-54, recorded here at its request so one copy exists where a reader
+hits the problem). Two fields, both useless alone:
+
+* the **author line** is machine-checkable and identifies nobody — every
+  session commits as `katopz <katopz@gmail.com>`;
+* **"Nth of mine"** in a body is human-readable and identifies somebody you
+  *cannot resolve*, because it is relative to a writer the repository does not
+  name.
+
+So the only reliable signal is an **explicit self-identification** — a
+`Session: <name>` line — and even the NAME is not a key: `ListAgents` on this
+box showed **two live sessions both called `katgpt-rs-54`**, distinguished only
+by ref. Measured cost: reading `e13d3702`'s closing "Remaining on my side:
+cfg_gated and required_features" as the *messaging peer's* claim, when its
+author was a third session entirely. That produced a wrong WORK SPLIT — two
+sweeps left untouched by both sessions that were talking, each believing the
+other had them — rather than merely a wrong story. The standing note this
+workspace already had ("never infer a SHA's owner") is the right rule and had
+never been seen to cost anything until it cost an allocation decision.
+
+⚠ A second-order specimen from the same hour, and it is the one worth
+generalising: I asserted *"ListAgents shows only the two of us live"* in a
+message **arguing against inferring things from git** — without having run
+`ListAgents`. Running it returned three peers, not one. A claim about a cheap
+verification is exactly as unreliable as the inference it replaces when the
+verification was not performed; the repair is the same one this issue's T5h
+rule gives for findings — **run the instrument**.
+
 ## What landed (2026-09-17)
 
 - `scripts/worktree_state.py` — `HeadDelta`, `head_delta()`,
