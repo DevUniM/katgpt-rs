@@ -164,8 +164,32 @@ to decide whether to re-pin, and the banner gives them no way to tell.
         `.yaml` workflow — a ROOT, able to move scripts in and out of the
         unreachable set — was silently outside the sweep's declared
         population. One `SCOPE` constant now, used by both.
+- [x] **T5c — the LINE-BEARING key, solved once.** `subprocess_encoding` is
+      the third sweep wired and the first whose rows carry a line number
+      (`"{lineno}: {call text}"`) — the shape most of the remaining nine have.
+      The key drops the line and keys on `(file, kind, call text, ordinal)`:
+
+      - ⛔ A line-bearing key reports **every** row in an edited file as
+        UNCOMMITTED *and* MASKED at once, because any insertion above a call
+        shifts it.
+      - Two identical calls in one file would then collide, so an ORDINAL
+        within `(file, kind, text)` disambiguates — the
+        `len_derived_eyes_expected.txt` precedent, scoped to the whole address
+        so a new call site renumbers nothing. The ordinal is assigned per
+        row-set and never shared between the worktree and HEAD passes, or the
+        two sides count from different bases and every row looks moved.
+
+      ⛔ **And this one had to be armed rather than canaried, for a reason the
+      remaining sweeps will share.** It reports **0 DECODE / 0 CHILD across the
+      whole workspace** — Issue 783 repaired the class — and it has no
+      `--canary` at all. So every line the split adds is decision code that no
+      real run executes, and `split_arms()` (wired into `selftest`, which runs
+      on every invocation) is the only thing standing between this wiring and
+      code that has never run. Five perturbations, all red. **Check whether a
+      sweep's findings are empty before deciding its arms are optional** — an
+      empty finding set is exactly when a display change is unexercised.
 - [ ] **T5b — the FAN-OUT, which is the part that is not done.** T1 measured 14
-      sweeps with a count ceiling; **two** are wired. Do not read the helpers'
+      sweeps with a count ceiling; **three** are wired. Do not read the helpers'
       existence as the fan-out having happened — that substitution is this
       repo's most-repeated error and it is what made this issue the *ninth*
       instance. The per-sweep instrument is decided by T2's premise, not by
@@ -173,7 +197,9 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 
       | sweep | instrument |
       |---|---|
-      | `subprocess_encoding`, `orphaned_attr`, `markdown_fence`, `percentile`, `toolchain_override`, `pipefail_discard`, `platform_dead_code` | `head_delta` — per-file classifiers |
+      | `orphaned_attr`, `markdown_fence`, `percentile`, `toolchain_override`, `pipefail_discard`, `platform_dead_code` | `head_delta` — per-file classifiers |
+      | ~~`console_encoding`~~ | **done (T3/T4)** — `head_delta`, name-keyed |
+      | ~~`subprocess_encoding`~~ | **done (T5c)** — `head_delta`, line-free key + ordinal |
       | ~~`instrument_reachability`~~ | **done (T5a)** — `head_overlay` + `delta_of` |
       | `len_derived` | whole-classifier re-run, and its HALF C reaches other REPOS |
       | `numbering` | whole-classifier re-run; its rows are numbers, not files |
@@ -183,7 +209,9 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       over every contract repo, so four new arms is roughly a 45% increase:
       `console_encoding` went 9 arms/~15s to 14 arms/**~42s**. Workstation-only
       — none of these runs per push — but it is why the arms are four and not
-      fourteen.
+      fourteen. A sweep with no canary (like `subprocess_encoding`) pays
+      nothing here and needs `selftest` arms instead, which are cheaper and
+      run on every invocation.
 
 ## What landed (2026-09-17)
 
@@ -201,6 +229,11 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 - `scripts/instrument_reachability_gate.py` — `reachable(read=)`.
 - `scripts/instrument_reachability_drift_sweep.py` — `SCOPE` (one list, was
   two that disagreed), `adjudicate()`, the honest display, five canary arms.
+- `scripts/subprocess_encoding_drift_sweep.py` (T5c) — `row_key()` / `keyed()`
+  / `flatten()` (the line-free key with its ordinal), `head_offenders()`,
+  `adjudicate()`, the honest display with MASKED rows printed separately
+  because the worktree loop cannot reach a row the worktree does not have,
+  and `split_arms()` in `selftest`. Five perturbations, all red.
 
 ⛔ **Two DISPLAYS need two arms.** The MASKED arm first asserted only that the
 string `MASKED` appeared somewhere, which the ROW LABEL satisfies — so dropping

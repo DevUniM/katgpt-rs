@@ -90,13 +90,98 @@ import subprocess_encoding_gate as seg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import head_delta, sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
 PINS = HERE / "subprocess_encoding_drift_floors.txt"
 
 FIELDS = ("min_py_files", "min_calls", "max_decode", "max_child")
+
+
+
+def row_key(rel: str, kind: str, row: str, seen: dict) -> tuple:
+    """A LINE-FREE key for one offender row, Issue 822.
+
+    ⛔ The rows this sweep prints are `"{lineno}: {call text}"`, and a
+    line-bearing key reports EVERY row in an edited file as UNCOMMITTED *and*
+    MASKED at once — any insertion above a call shifts it. So the line is
+    dropped and the call's own unparsed text carries the identity.
+
+    Two identical calls in one file would then collide, so an ORDINAL within
+    `(rel, kind, text)` disambiguates — the `len_derived_eyes_expected.txt`
+    precedent, scoped to the whole address so a new call site renumbers
+    nothing. `seen` is the caller's counter and must be per row-set, never
+    shared between the worktree and HEAD passes, or the two sides count from
+    different bases and every row looks moved.
+    """
+    text = row.split(": ", 1)[1] if ": " in row else row
+    addr = (rel, kind, text)
+    n = seen.get(addr, 0)
+    seen[addr] = n + 1
+    return (*addr, n)
+
+
+def keyed(rows) -> list:
+    """`[(key, rel, kind, row)]` for a row set, ordinals assigned in order."""
+    seen: dict = {}
+    return [(row_key(rel, kind, row, seen), rel, kind, row)
+            for rel, kind, row in rows]
+
+
+def flatten(decode: dict, child: dict) -> list:
+    """The two buckets as one addressed row list, kind preserved.
+
+    ONE delta rather than two, because the ordinal in `row_key` has to be
+    assigned over the whole address space at once; the caller splits `.head`
+    back by kind for the two separate pins.
+    """
+    return ([(rel, "DECODE", r) for rel in sorted(decode) for r in decode[rel]]
+            + [(rel, "CHILD", r) for rel in sorted(child) for r in child[rel]])
+
+
+def head_offenders(walk: set):
+    """`head_delta`'s per-file reclassifier for this sweep's two ceilings.
+
+    Per-file row independence holds by construction: `scan_text` is an AST pass
+    over ONE module's source. `walk` is the sweep's own tracked population,
+    passed in rather than re-derived — `fnmatch`'s `*` crosses `/`, so the
+    scope glob admits paths the walk excludes, and a row invented there reads
+    as MASKED, a hard red nobody can repair.
+    """
+
+    def rescan(rel: str, src: str | None) -> list:
+        # None = absent from HEAD (staged but never committed): nothing
+        # committed to classify, so the worktree's row is UNCOMMITTED.
+        if src is None or rel not in walk:
+            return []
+        try:
+            decode, child, _ = seg.scan_text(src)
+        except SyntaxError:
+            # UNPARSED at HEAD is the instrument admitting it cannot read, and
+            # it has its own bucket one level up. Never folded into either
+            # ceiling — counting it as clean hides exposure, counting it as an
+            # offender invents it.
+            return []
+        return ([(rel, "DECODE", r) for r in decode]
+                + [(rel, "CHILD", r) for r in child])
+
+    return rescan
+
+
+def adjudicate(repo: Path, decode: dict, child: dict, walk: set):
+    """The offender rows, split COMMITTED / UNCOMMITTED / MASKED (Issue 822).
+
+    A named seam, not four lines inline: this is the verdict arithmetic, and
+    `arm_reach_audit`'s standing finding in this repo is that the classifier is
+    well armed and the verdict is not.
+    """
+    rows = keyed(flatten(decode, child))
+    rescan = head_offenders(walk)
+    return head_delta(
+        repo, ("*.py",), rows,
+        lambda r: r[1], lambda r: r[0],
+        lambda rel, src: keyed(rescan(rel, src)))
 
 
 def parse_pins(path: Path) -> dict[str, dict[str, int]]:
@@ -111,6 +196,123 @@ def parse_pins(path: Path) -> dict[str, dict[str, int]]:
                 f"malformed pin row (want {1 + len(FIELDS)} fields): {raw!r}")
         rows[parts[0]] = dict(zip(FIELDS, (int(v) for v in parts[1:])))
     return rows
+
+
+def split_arms() -> list[str]:
+    """The Issue 822 split, two-sided, against a real git tree.
+
+    UNCOMMITTED alone passes on an implementation that ignores HEAD and MASKED
+    alone on one that ignores the worktree, so both directions are asserted.
+    The LINE-FREE key gets its own arm because this is the first sweep wired
+    whose rows carry a line number, and it is the shape most of the remaining
+    ones have.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    BAD = 'import subprocess\nsubprocess.run(["x"], text=True)\n'
+    OK = ('import subprocess\n'
+          'subprocess.run(["x"], encoding="utf-8")\n')
+
+    # ── the key is LINE-FREE ────────────────────────────────────────────────
+    # ⛔ Any insertion above a call shifts its line, so a line-bearing key
+    # reports every row in an edited file as UNCOMMITTED *and* MASKED at once.
+    a = keyed([("f.py", "DECODE", "12: subprocess.run(['x'], text=True)")])
+    b = keyed([("f.py", "DECODE", "99: subprocess.run(['x'], text=True)")])
+    check(a[0][0] == b[0][0],
+          f"the row key is line-bearing: {a[0][0]} vs {b[0][0]}")
+    # ...and two IDENTICAL calls in one file stay distinct.
+    two = keyed([("f.py", "DECODE", "1: same(x)"),
+                 ("f.py", "DECODE", "7: same(x)")])
+    check(two[0][0] != two[1][0],
+          f"two identical calls collapsed to one key: {two}")
+    # ...while the same text in a DIFFERENT file, or a different KIND, is a
+    # different address rather than an ordinal of the first.
+    other = keyed([("g.py", "DECODE", "1: same(x)"),
+                   ("f.py", "CHILD", "1: same(x)")])
+    check(len({two[0][0], other[0][0], other[1][0]}) == 3,
+          f"the address is not (file, kind, text): {other}")
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "r"
+        repo.mkdir(parents=True)
+        git(repo.parent, "init", "-q", "-b", "main", "r")
+        git(repo, "config", "user.email", "t@t")
+        git(repo, "config", "user.name", "t")
+        (repo / "committed.py").write_text(BAD, encoding="utf-8")
+        (repo / "clean.py").write_text(OK, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "base")
+
+        def now():
+            dec, chi, _n, _c, _u = seg.scan(repo)
+            walk = {str(f.relative_to(repo)).replace(chr(92), "/")
+                    for f in tracked_files(repo, "*.py")[0]}
+            return dec, chi, adjudicate(repo, dec, chi, walk)
+
+        dec, chi, d = now()
+        check(len(d.committed) == 1 and not d.uncommitted and not d.masked,
+              f"a clean tree produced a split: {d}")
+
+        # ── UNCOMMITTED: the worktree INVENTS an offender ───────────────────
+        (repo / "clean.py").write_text(OK + BAD.split(chr(10), 1)[1],
+                                       encoding="utf-8")
+        dec, chi, d = now()
+        check(len(d.uncommitted) == 1,
+              f"UNCOMMITTED direction: {d.uncommitted}")
+        check(not d.masked, f"an invented row was also MASKED: {d.masked}")
+        # The committed offender in the OTHER file is untouched and still
+        # adjudicated — the bucket `split_rows` gets wrong.
+        check(len(d.head) == 1 and d.head[0][1] == "committed.py",
+              f"the pins' view lost the committed row: {d.head}")
+
+        # ── MASKED: the worktree HIDES a committed offender ─────────────────
+        git(repo, "checkout", "--", "clean.py")
+        (repo / "committed.py").write_text(OK, encoding="utf-8")
+        dec, chi, d = now()
+        check(not dec and not chi,
+              f"the fixture did not hide the offender: {dec} {chi}")
+        check(len(d.masked) == 1 and d.masked[0][1] == "committed.py",
+              f"MASKED direction: {d.masked}")
+        check(len(d.head) == 1,
+              f"a MASKED row is missing from the pins' view: {d.head}")
+
+        # ── a STAGED-only file has no HEAD blob ─────────────────────────────
+        git(repo, "checkout", "--", "committed.py")
+        (repo / "staged.py").write_text(BAD, encoding="utf-8")
+        git(repo, "add", "staged.py")
+        dec, chi, d = now()
+        check([r[1] for r in d.uncommitted] == ["staged.py"],
+              f"a staged-only file's row was not UNCOMMITTED: {d.uncommitted}")
+        check(all(r[1] != "staged.py" for r in d.masked),
+              f"a file absent from HEAD produced a MASKED row: {d.masked}")
+
+        # ── an UNPARSED file at HEAD is neither offender nor clean ──────────
+        # ⛔ Counting it as an offender INVENTS a MASKED row — a hard red
+        # nobody can repair; counting it as clean hides exposure. It has its
+        # own bucket one level up and must reach neither ceiling.
+        (repo / "broken.py").write_text("def f(\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "broken")
+        (repo / "broken.py").write_text(OK, encoding="utf-8")
+        dec, chi, d = now()
+        check(all(r[1] != "broken.py" for r in d.masked),
+              f"an UNPARSED HEAD blob produced a MASKED row: {d.masked}")
+
+        # ── the WALK guard ──────────────────────────────────────────────────
+        # `fnmatch`'s `*` crosses `/`, so the scope glob admits a path the
+        # walk excludes; a row invented there reads as MASKED.
+        check(head_offenders(set())("committed.py", BAD) == [],
+              "a path outside the sweep's own walk produced a row")
+
+    return fails
 
 
 def selftest() -> list[str]:
@@ -236,7 +438,9 @@ def selftest() -> list[str]:
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
-    return fails
+    # Issue 822: the split's arms are the ONLY execution this wiring gets —
+    # this sweep reports 0 findings workspace-wide and has no --canary.
+    return fails + split_arms()
 
 
 def main() -> int:
@@ -285,10 +489,27 @@ def main() -> int:
 
     bad = False
     tot_files = tot_calls = tot_dec = tot_chi = tot_unp = tot_vend = 0
+    n_uncommitted = n_masked = 0
 
     for name in names:
         repo = WORKSPACE / name
         decode, child, py_files, calls, unparsed = seg.scan(repo)
+
+        # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───
+        # A ceiling is a claim about the repo, and a repo's state is its
+        # commits. This workspace runs concurrent sessions against shared
+        # worktrees, so a row here may sit on a line no commit contains — and
+        # re-pinning from such a run bakes another session's in-flight edit
+        # into a tracked file, where it reds on every other box.
+        walk = {str(f.relative_to(repo)).replace(chr(92), "/")
+                for f in tracked_files(repo, "*.py")[0]}
+        delta = adjudicate(repo, decode, child, walk)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
+        head_dec = [r for r in delta.head if r[2] == "DECODE"]
+        head_chi = [r for r in delta.head if r[2] == "CHILD"]
+        held = {r[0] for r in delta.uncommitted}
+        hidden = {r[0] for r in delta.masked}
         # The vendored count rides the per-repo line rather than vanishing
         # (Issue 738 T3): a repo that vendors python would otherwise have its
         # numbers quietly reduced with nothing saying so.
@@ -321,10 +542,12 @@ def main() -> int:
                 flags.append(f"parse FLOOR breached: {calls} subprocess call "
                              f"site(s) < {row['min_calls']} — the walk is intact "
                              f"but the AST pass found nothing")
-            if n_dec > row["max_decode"]:
-                flags.append(f"DECODE {n_dec} > pinned {row['max_decode']}")
-            if n_chi > row["max_child"]:
-                flags.append(f"CHILD-ENCODER {n_chi} > pinned {row['max_child']}")
+            if len(head_dec) > row["max_decode"]:
+                flags.append(f"DECODE {len(head_dec)} committed > pinned "
+                             f"{row['max_decode']}")
+            if len(head_chi) > row["max_child"]:
+                flags.append(f"CHILD-ENCODER {len(head_chi)} committed > "
+                             f"pinned {row['max_child']}")
         if unparsed:
             flags.append(f"{len(unparsed)} file(s) the parser could not read — "
                          f"UNPARSED is the instrument admitting it cannot see, "
@@ -332,14 +555,36 @@ def main() -> int:
 
         status = "✗" if flags else ("·" if (n_dec or n_chi) else "✓")
         vend = f" vendored={vendored}" if vendored else ""
+        # T3: the count stays honest in BOTH directions. A bare total invites
+        # the one action Issue 822 exists to prevent — typing it into the pin.
+        split = ""
+        if delta.uncommitted or delta.masked:
+            split = (f" ({len(head_dec)}+{len(head_chi)} committed"
+                     + (f", {len(delta.uncommitted)} uncommitted"
+                        if delta.uncommitted else "")
+                     + (f", {len(delta.masked)} MASKED" if delta.masked else "")
+                     + ")")
         print(f"{status} {name:22s} py={py_files:<4d} calls={calls:<4d} "
-              f"decode={n_dec} child={n_chi}{vend}")
-        for rel in sorted(decode):
-            for r in decode[rel]:
-                print(f"      ⛔ DECODE        {rel}:{r}")
-        for rel in sorted(child):
-            for r in child[rel]:
-                print(f"      ⛔ CHILD-ENCODER {rel}:{r}")
+              f"decode={n_dec} child={n_chi}{vend}{split}")
+
+        def _tag(key, _held=held, _hidden=hidden):
+            # Never hidden — hiding them is the lie Issue 797 refuses — but
+            # labelled, so the reader sees which rows the pin did not read.
+            if key in _held:
+                return "  [UNCOMMITTED — not adjudicated]"
+            if key in _hidden:
+                return "  [MASKED — committed, and this worktree hides it]"
+            return ""
+
+        for key, rel, kind, r in keyed(flatten(decode, child)):
+            label = "DECODE       " if kind == "DECODE" else "CHILD-ENCODER"
+            print(f"      ⛔ {label} {rel}:{r}{_tag(key)}")
+        # A MASKED row is in HEAD and NOT in the worktree, so the loop above
+        # cannot reach it — it has no line here to hang a label on.
+        for key, rel, kind, r in delta.masked:
+            label = "DECODE       " if kind == "DECODE" else "CHILD-ENCODER"
+            print(f"      ⛔ {label} {rel}:{r}  [MASKED — committed, and this "
+                  f"worktree hides it]")
         for r in unparsed:
             print(f"      ⛔ UNPARSED      {r}")
         for f in flags:
@@ -359,7 +604,8 @@ def main() -> int:
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — the call sites.
     deferred.extend(sweep_advisory(
-        names, ("*.py",), root=WORKSPACE))
+        names, ("*.py",), root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
     for _line in pop_lines:
         print(_line)
     if pop_fail:
