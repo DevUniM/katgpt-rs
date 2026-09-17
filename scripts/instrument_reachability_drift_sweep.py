@@ -90,7 +90,7 @@ import instrument_reachability_gate as irg  # noqa: E402
 # The repo that owns the membership pin — derived, never typed.
 SELF = irg.REPO_ROOT.name
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -294,7 +294,12 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
         row = pins.get(name)
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if len(scripts) < row["min_scripts"]:
                 flags.append(f"walk FLOOR breached: {len(scripts)} tracked "

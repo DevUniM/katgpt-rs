@@ -66,7 +66,7 @@ import platform_dead_code_floor_gate as gate      # noqa: E402
 # are one definition shared by population_sync_gate and issue_citation_gate too
 # (Issue 765). A second copy would be a second thing to get wrong, and this one
 # decides whether a short population is a partial clone or a stale file.
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -181,10 +181,19 @@ def main() -> int:
     deferred += pop_deferred
     fail += pop_fail
 
-    # UNPINNED is a red under the marker too: a repo that is ON DISK and has no
-    # row is a repo joining the population, which no amount of partial checkout
-    # explains.
-    unpinned = sorted(set(present) - set(floors))
+    # UNPINNED is a red under the PARTIAL marker too: a repo that is ON DISK
+    # and has no row is a repo joining the population, which no amount of
+    # partial checkout explains.
+    #
+    # ⚠ Issue 821: that reasoning is right and it does not cover
+    # DOCS_GATE_KNOWN_EXTRA, which says the opposite thing — those repos are on
+    # disk and are declared NOT to be joining. This sweep reaches the same
+    # conclusion by its own set difference rather than through the family's
+    # per-repo loop, so the shared `pin_row_exempt` had to be applied here by
+    # hand; it is the one bespoke shape in the family and was still red on
+    # three repos it reported 0 findings in.
+    unpinned = sorted(set(present) - set(floors)
+                      - {n for n in present if pin_row_exempt(n)})
     if unpinned:
         print(f"⛔ UNPINNED (a repo joined the population) — re-pin deliberately, "
               f"with the numbers printed below: {', '.join(unpinned)}")

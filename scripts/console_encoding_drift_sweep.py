@@ -105,7 +105,7 @@ console_safe.apply()
 # never disagree about what "defended" means.
 import console_encoding_gate as ceg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 # The repo that owns the membership pin — derived, never typed.
@@ -386,7 +386,12 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
             flags.append(f"UNPARSED {u} — the instrument admitting it cannot "
                          f"read; never folded into either answer")
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if n_walk < row["min_scripts"]:
                 flags.append(f"walk FLOOR breached: {n_walk} tracked "

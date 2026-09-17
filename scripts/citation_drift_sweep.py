@@ -241,7 +241,7 @@ sys.path.insert(0, str(HERE))
 # document list are the GATE's, so the sweep and the per-push gate can never
 # disagree about what a citation IS.
 import issue_citation_gate as icg  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (  # noqa: E402
     dirty_files, head_text, worktree_advisory)
 
@@ -1077,7 +1077,12 @@ def main() -> int:
 
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(repo.name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             # `judge`, not `got` — the pins adjudicate HEAD (Issue 797). On a
             # clean repo the two ARE the same object, so this is a no-op in the

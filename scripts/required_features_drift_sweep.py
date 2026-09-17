@@ -81,7 +81,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # feature names are enableable.
 from required_features_build_audit import parse_rows, static_invalid  # noqa: E402
 from cfg_gated_target_audit import derive_repos, manifests  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -285,7 +285,12 @@ def main() -> int:
         tot_unparseable += got["n_unparseable"]
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(repo.name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if got["n_manifests"] < row["min_manifests"]:
                 flags.append(f"manifest FLOOR breached: {got['n_manifests']} "

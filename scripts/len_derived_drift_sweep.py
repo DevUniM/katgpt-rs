@@ -142,7 +142,7 @@ sys.path.insert(0, str(HERE))
 # sweep and the report can never disagree about what any bucket MEANS.
 import len_derived_binding_audit as lda  # noqa: E402
 from skill_repo_set_gate import derive_repos as derive_repo_names  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -594,7 +594,12 @@ def main(argv: list[str]) -> int:
         row = pins.get(name)
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if nk < row["min_kernels"]:
                 flags.append(f"parse FLOOR breached: {nk} `.len()`-deriving "

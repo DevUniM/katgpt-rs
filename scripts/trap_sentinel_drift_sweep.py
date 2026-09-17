@@ -97,7 +97,7 @@ sys.path.insert(0, str(HERE))
 # about what EXPOSED means.
 import trap_exit_launder_audit as tela  # noqa: E402
 import trap_sentinel_gate as tsg  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -311,7 +311,12 @@ def main() -> int:
 
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if got["n_scripts"] < row["min_scripts"]:
                 flags.append(f"walk FLOOR breached: {got['n_scripts']} tracked "

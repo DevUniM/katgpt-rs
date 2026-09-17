@@ -64,7 +64,7 @@ sys.path.insert(0, str(HERE))
 # DRY: the scanner, the classifier and the selftest are the report's, so the
 # sweep and the per-push gate can never disagree about what is load-bearing.
 import cfg_gated_target_audit as cga  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -267,7 +267,12 @@ def main() -> int:
         tot["load_bearing"] += len(got["load_bearing"])
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(repo.name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if got["n_targets"] < row["min_targets"]:
                 flags.append(f"target FLOOR breached: {got['n_targets']} < "

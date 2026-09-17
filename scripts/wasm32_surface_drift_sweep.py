@@ -80,7 +80,7 @@ sys.path.insert(0, str(HERE))
 # required-features family documents (Issue 755).
 import wasm32_surface_audit as wsa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -276,7 +276,12 @@ def main() -> int:
         row = pins.get(name)
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if s.files_walked < row["min_files"]:
                 flags.append(f"walk FLOOR breached: {s.files_walked} wasm32-"
@@ -292,7 +297,14 @@ def main() -> int:
                 flags.append(f"UNRESOLVED {len(unres)} > pinned "
                              f"{row['max_unresolved']} — never a pass, and never "
                              f"folded into a neighbour")
-        for pkg in uncov:
+        # ⚠ Issue 821: this loop sits OUTSIDE the `row is not None` branch, so
+        # excusing the pin row alone left an acknowledged known-extra reporting
+        # a hard UNCOVERED finding — a verdict about a repo the marker has just
+        # declared "not measured and not expected to be". An extra contributes
+        # no verdict, not merely no pin row. The membership file's OTHER
+        # direction (a pinned row that stopped being UNCOVERED) is untouched:
+        # a row naming an extra repo still has to be removed deliberately.
+        for pkg in (() if pin_row_exempt(name) else uncov):
             if (name, pkg) not in expected:
                 flags.append(f"UNCOVERED {pkg} is not in "
                              f"{EXPECTED.name} — no wasm32 row in this repo can "

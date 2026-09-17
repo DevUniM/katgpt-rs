@@ -62,7 +62,7 @@ sys.path.insert(0, str(HERE))
 # second thing to get wrong).
 import pipefail_discard_audit as pda  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
 
@@ -379,7 +379,12 @@ def main() -> int:
         row = pins.get(name)
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if res.files < row["min_sh_files"]:
                 flags.append(f"walk FLOOR breached: {res.files} tracked .sh < "

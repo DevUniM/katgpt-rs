@@ -62,6 +62,36 @@ console_safe.apply()
 _N_ASSERTIONS = 0
 
 
+def pin_row_exempt(name: str) -> bool:
+    """Does this repo owe a pin row? (Issue 821)
+
+    Issue 815's marker landed in `population_verdict` — the FINAL line — and
+    not in the per-repo pin loop every sweep runs six hundred lines earlier.
+    Measured 2026-09-17 with both documented markers set: **eight of nine
+    sweeps red on repos where they found nothing**, each printing "UNPINNED —
+    add a row" above a final line reading "not measured and not expected to
+    be". Two live ratchet breaches in riir-train were sitting behind those
+    reds, which is Issue 793's finding recurring with a second marker.
+
+    ⛔ The caller must pass a repo it actually VISITED. The loop iterates the
+    DERIVED walk, so a visited repo is on the box by construction and the
+    acknowledged-vs-stale split does not arise here — that split is
+    `population_verdict`'s, on the final line, and re-deriving it per row
+    would be a second copy of the one rule that makes this marker safe.
+
+    ⚠ NAMES, never `=1` — the asymmetry with the partial marker is 815's whole
+    design, and it is what keeps this predicate from becoming a blanket
+    excuse: an unnamed extra still owes a row and still reds.
+
+    It DELEGATES to `known_extra_state` rather than reading the marker itself,
+    so the one rule that stops this rotting into a blanket excuse exists once:
+    a name `repo_set.txt` has SINCE REGISTERED lands in that function's stale
+    half, not its acknowledged half, and the repo owes a row again. A private
+    `name in declared` test here would have silently skipped that.
+    """
+    return bool(known_extra_state([name])[0])
+
+
 def population_verdict(pins, present) -> tuple[list[str], list[str], int]:
     """(lines, deferred, failures) for the rows this run could not measure.
 
@@ -241,6 +271,29 @@ def selftest() -> list[str]:
         lines, deferred, n = population_verdict(snap, snap)
         check(n == 1 and any("STALE" in l for l in lines),
               f"acknowledging a REGISTERED repo must red: {lines} {n}")
+
+        # ── pin_row_exempt (Issue 821). The per-repo half of the same marker.
+        # Every arm below has a counterpart above, deliberately: the two halves
+        # ran on different rules for two days and the disagreement was the
+        # defect — the final line said "not expected to be measured" while the
+        # rows above demanded a pin so that they could be.
+        os.environ[KNOWN_EXTRA_MARKER] = "seal-x,seal-y"
+        check(pin_row_exempt("seal-x"),
+              "a DECLARED known-extra must not owe a pin row")
+        # ⚑ The same NAMES-not-`=1` property, one instrument over. Without this
+        # arm the predicate could degrade to "is the marker set at all" and
+        # every arm above would still pass.
+        check(not pin_row_exempt("seal-unnamed"),
+              "an UNDECLARED extra repo must still owe a pin row")
+        # The direction in which this rots: a name repo_set.txt has SINCE
+        # registered is STALE, and a stale acknowledgement excuses nothing —
+        # so the marker cannot only ever loosen.
+        os.environ[KNOWN_EXTRA_MARKER] = snap[0]
+        check(not pin_row_exempt(snap[0]),
+              "acknowledging a REGISTERED repo must not excuse its pin row")
+        os.environ.pop(KNOWN_EXTRA_MARKER, None)
+        check(not pin_row_exempt("seal-x"),
+              "with NO marker set, nobody is excused")
     finally:
         if saved is None:
             os.environ.pop(PARTIAL_MARKER, None)

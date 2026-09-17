@@ -104,11 +104,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
 import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
-from sweep_population import population_verdict  # noqa: E402
-from skill_repo_set_gate import (  # noqa: E402 — Issue 815's marker, shared not re-read
-    KNOWN_EXTRA_MARKER,
-    known_extra_state,
-)
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
@@ -395,28 +391,6 @@ def selftest() -> list[str]:
             fails.append(f"hist: the history walk must widen the population it "
                          f"floors ({got6['n_numbers']} <= {got5['n_numbers']})")
 
-        # ── Issue 815's marker, the half this module SELECTS. `[0]` is the
-        # acknowledged set and `[1]` the stale one, and taking the wrong index
-        # would excuse exactly the repos the marker refuses to excuse while
-        # demanding pin rows for the ones it does — a silent inversion with no
-        # visible symptom, since both are lists of repo names.
-        import os as _os
-        _snap = _os.environ.get(KNOWN_EXTRA_MARKER)
-        try:
-            _os.environ[KNOWN_EXTRA_MARKER] = "here-extra,gone-extra"
-            _ack, _stale = known_extra_state(["here-extra", "other"])
-            if set(_ack) != {"here-extra"}:
-                fails.append(f"known-extra: the acknowledged half must be the "
-                             f"repos PRESENT on the box, got {_ack}")
-            if set(_stale) != {"gone-extra"}:
-                fails.append(f"known-extra: a named repo absent from the box is "
-                             f"STALE and excuses nothing, got {_stale}")
-        finally:
-            if _snap is None:
-                _os.environ.pop(KNOWN_EXTRA_MARKER, None)
-            else:
-                _os.environ[KNOWN_EXTRA_MARKER] = _snap
-
         # row parser: 8 fields, comments stripped, arity enforced
         pins = ws / "pins.txt"
         pins.write_text("# c\nrepo-a\t10\t0\t0\t0\t0\t7\t2  # trailing\n\n")
@@ -502,11 +476,6 @@ def main() -> int:
         return 2
 
     seen = {p.name for p in repos}
-    # Only the ACKNOWLEDGED half excuses a missing pin row. A STALE entry (a
-    # name that is gone from the box, or that repo_set.txt has since
-    # registered) excuses nothing, so the marker cannot only ever loosen —
-    # `population_verdict` below is what reports it.
-    acknowledged_extra = set(known_extra_state(sorted(seen))[0])
     bad = False
     tot_dup = tot_above = tot_mal = tot_reset = tot_unb = tot_hist = 0
 
@@ -519,21 +488,13 @@ def main() -> int:
         tot_mal += len(got["malformed"])
         tot_reset += len(got["resets"])
         tot_unb += len(got["unbumped"])
+        # Issue 821: an acknowledged known-extra owes no pin row. This landed
+        # here first (Issue 820 T6) as a local copy; it is `pin_row_exempt`
+        # now, shared with the other 14 sweeps — the whole point of 821 being
+        # that a rule in one instrument is a rule that has not generalised.
         if row is None:
-            # ⛔ Issue 815's marker reached `population_verdict` and NOT this
-            # loop, so a box carrying acknowledged extras printed "not
-            # measured and not expected to be" on its final line and demanded
-            # a pin row for the same three repos six hundred lines earlier.
-            # A sweep that reds in every posture on repos the contract does
-            # not claim is a sweep nobody runs — and the UNPINNED wall must
-            # stay absolute for everything else, which is why the marker takes
-            # NAMES: `=1` would excuse the next unregistered repo too.
-            flags = ([] if repo.name in acknowledged_extra else
-                     ["UNPINNED — add a row (or it can never red)"])
-            if repo.name in acknowledged_extra:
-                print(f"      · outside the contract, acknowledged by "
-                      f"{KNOWN_EXTRA_MARKER} — no pin row is owed, and none of "
-                      f"the columns above was adjudicated")
+            flags = ([] if pin_row_exempt(repo.name)
+                     else ["UNPINNED — add a row (or it can never red)"])
         else:
             flags = pin_flags(got, row)
         # unbumped is REPORT-ONLY (Issue 770 finding 4): a checkout-state
