@@ -821,9 +821,17 @@ repair — reached, again, by a paragraph documenting the class.)
   IN-LOCAL-RANGE count**: a repo at or near `b/b` cannot have that count
   trusted as an editorial quantity at all.
 - Effect: workspace IN-LOCAL-RANGE **54 → 27**, two ratchets **tightened** in
-  the landing commit. The residual 209 unread are 781's original `resolved —`
+  the landing commit. The residual unread are 781's original `resolved —`
   family, **untouched** — 823 did not close 781's class, it made 781's own
   figure honest.
+- ⛔ **That residual is DERIVED per run, so it is not written here as a
+  number.** Two sessions quoted it hours apart as **209** and **213** and both
+  were right for the run that produced them: it moves whenever a sibling repo
+  edits a HISTORY heading, which is the whole reason 781's figure is printed
+  rather than remembered. **Take it from the sweep's own `heading oracle`
+  summary line**, never from this bullet — the same rule this section already
+  states one level up for `heading_unread=a/b`, reached a second time by a
+  paragraph *about* that rule carrying a stale constant of its own.
 
 ⚠ **A document that discusses a misattribution has to reproduce it**, and the
 instrument cannot tell a quoted specimen from a live one: the Issue-780

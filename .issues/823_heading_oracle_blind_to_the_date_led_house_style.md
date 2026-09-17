@@ -89,9 +89,15 @@ Both now say which widening: dropping the discriminator, not adding a
 position. A correct claim stated too broadly is how the next session concludes
 the class is closed.
 
-## T5 — OPEN: the residual 209, and the number this issue should NOT be read as
+## T5 — OPEN: the residual, and the number this issue should NOT be read as
 
-209 records remain unread, and they are the `## Issue NNN resolved — title
+⚠ **The count is DERIVED per run — read it off the sweep's `heading oracle`
+summary line, not from this section.** It was **209** at landing and **213**
+hours later, both correct for the run that produced them; it moves whenever a
+sibling repo edits a HISTORY heading. Two sessions quoted the two figures at
+each other before noticing they were the same measurement at different times.
+
+Those records remain unread, and they are the `## Issue NNN resolved — title
 (date)` family the original Issue 781 measured. **This issue does not touch
 them and must not be read as having closed Issue 781's class** — it removed a
 *position* blind spot that was hiding underneath it, and in doing so made 781's
