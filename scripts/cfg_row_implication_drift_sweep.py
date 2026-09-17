@@ -103,12 +103,15 @@ SCOPE = ("*.toml", "*.rs")
 def finding_key(f) -> tuple:
     """A `Finding`'s LINE-FREE, TREE-FREE identity.
 
-    ⛔ **`Row.repo`, `Row.path` and `Row.crate_dir` must NOT be in the key.**
-    The HEAD side classifies a materialised checkout, so `repo` is the temp
-    directory's name and the two paths carry its prefix — a key holding any of
-    them matches NOTHING across the two sides and reports every row in the repo
-    as both UNCOMMITTED and MASKED at once. The address that survives is the
-    one the manifest actually declares: package, kind, name.
+    ⛔ **`Row.path` and `Row.crate_dir` must NOT be in the key.** The HEAD side
+    classifies a materialised checkout, so both carry the temp directory's
+    prefix — a key holding either matches NOTHING across the two sides and
+    reports every row in the repo as both UNCOMMITTED and MASKED at once, which
+    reads like a finding rather than like a broken key. The address that
+    survives is the one the manifest actually declares: package, kind, name.
+    (`Row.repo` is safe since `head_tree` names its checkout after the source
+    repo — but it is left out anyway: a key should not depend on a property of
+    the other instrument, and this one did not have it on the day it landed.)
 
     ⛔ **The VERDICT is in the key** (T5f, T5g, T5i — third sweep running):
     `delta_of` keeps the WORKTREE's object for a key-matched row, so a field

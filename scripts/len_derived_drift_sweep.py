@@ -132,6 +132,8 @@ the leave-one-out.
 
 from __future__ import annotations
 
+import contextlib
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -143,7 +145,9 @@ sys.path.insert(0, str(HERE))
 import len_derived_binding_audit as lda  # noqa: E402
 from skill_repo_set_gate import derive_repos as derive_repo_names  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, delta_of,  # noqa: E402
+                            dirty_in_population, head_tree,
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -214,6 +218,280 @@ def norm(rel: str) -> str:
 
 def eyes_key(b) -> tuple[str, str, str, str]:
     return (b.repo, norm(b.file), b.kernel, b.handle_expr)
+
+
+# ONE list, read by the worktree advisory, by the HEAD trigger and by the
+# archive pathspec. `classify_workspace` walks TRACKED `*.rs` (Issue 777) and
+# reads nothing else, which is what makes both the narrowing and this constant
+# sound — its inputs are ENUMERABLE.
+SCOPE = ("*.rs",)
+
+
+def detail_of(bk: dict[str, int]) -> str:
+    return " ".join(f"{v}={n}" for v, n in sorted(bk.items())) or "—"
+
+
+def bind_key(b) -> tuple:
+    """A bind row's LINE-FREE, TREE-FREE identity.
+
+    ⛔ **No LINE.** Any edit above a bind site shifts it, so a line-bearing key
+    reports every row in an edited file as UNCOMMITTED *and* MASKED at once —
+    the rule `line_free`/`ordinal_keys` exist for, three sweeps over.
+
+    ⛔ **The VERDICT is in it.** Every ceiling here partitions by bucket
+    (`FINDING_BUCKETS` against `max_findings`, `EYES_BUCKET` against the
+    membership wall), so a key omitting it lets a worktree row silently
+    override HEAD's — and the EYES direction is DESTRUCTIVE: a pinned row that
+    looks "no longer reported" invites dropping the only record of a committed
+    bind.
+
+    ⚠ It is TREE-FREE for a reason worth stating rather than assuming: `b.file`
+    is ALREADY repo-relative (measured — the classifier stores `src/k.rs`, not
+    an absolute path), and `b.repo` is the DIRECTORY NAME, which is why this
+    sweep depends on `head_tree` naming its checkout after the source repo.
+    Nothing here strips a prefix; if either of those two facts changes, the two
+    sides stop matching and every row reads as UNCOMMITTED *and* MASKED at
+    once.
+
+    ⛔ `b.repo` is load-bearing and its arm had to be built for it: two repos
+    whose rows are otherwise identical — the same relative file, kernel and
+    handle, which is what a kernel copied between siblings looks like — would
+    otherwise let one repo's LIVE row match another's committed-and-hidden one,
+    emptying MASKED. A committed defect reported clean because a different repo
+    still has it.
+    """
+    return (b.repo, norm(b.file), b.kernel, b.handle_expr, b.verdict)
+
+
+def adjudicate(repo_paths, rep, classify=None):
+    """-> (`HeadDelta` over the bind rows, HEAD's report or None).
+
+    Issue 822 T5j, and this is the one sweep in the family whose HEAD side is a
+    WORKSPACE rather than a repo. `classify_workspace` resolves a wrapper
+    parameter's provenance through workspace CALLERS (HALF C), so classifying
+    one repo at HEAD against fifteen worktrees would mix the two states inside
+    a single verdict — worse than either. Every repo is passed in one call,
+    with the DIRTY ones swapped for materialised HEAD checkouts and the clean
+    ones left exactly as they are, which costs nothing for them.
+
+    ⚠ This depends on `head_tree` naming its checkout after the source repo:
+    every row here is keyed on `b.repo`, which the classifier takes from the
+    directory name. Two repos materialised at once would otherwise both be
+    `head` — a collision AND a misattribution. Asserted in `worktree_state`'s
+    own arms, not assumed here.
+
+    `None` for the second element means no repo in the workspace is dirty in
+    SCOPE, and the caller reads the worktree's own report — the conservative
+    direction for a bucket the pins read.
+    """
+    dirty = [p for p in repo_paths if dirty_in_population(p, SCOPE)]
+    if not dirty:
+        return HeadDelta([(bind_key(b), b) for b in rep.binds], [], []), None
+    classify = classify or lda.classify_workspace
+    with contextlib.ExitStack() as stack:
+        swapped = []
+        for p in repo_paths:
+            tree = stack.enter_context(head_tree(p, SCOPE, paths=SCOPE))
+            swapped.append(tree if tree is not None else p)
+        head = classify(swapped)
+    return (delta_of([(bind_key(b), b) for b in rep.binds],
+                     [(bind_key(b), b) for b in head.binds],
+                     lambda kb: kb[0]), head)
+
+
+_KERNEL = """#[cube(launch_unchecked)]
+fn attention_decode_f32(query: &[f32], kv: &[f32]) {
+    let kv_half = kv.len() as u32 / 2u32;
+}
+
+pub fn host() {
+    let kv_handle = client.empty(cap);
+    unsafe { attention_decode_f32::launch_unchecked::<R>(c, a,
+        BufferArg::from_raw_parts(kv_handle, %s)) }
+}
+"""
+# ⛔ The REAL classifier, captured at import. `canary()` below STUBS
+# `lda.classify_workspace` to a fixed report — correctly, its arms are about pin
+# arithmetic — and it reaches `main()`, which runs `selftest()`, which runs the
+# provenance arms. Without this the arms measure the canary's stub and every one
+# of them fails, taking all 12 canary arms down with it (measured, first run).
+_REAL_CLASSIFY = lda.classify_workspace
+
+CAPACITY_SRC = _KERNEL % "kv_handle.len()"      # a FINDING (declared size)
+UNRESOLVED_SRC = _KERNEL % "n_positions"        # not a finding, same shape
+
+
+def adjudicate_cases() -> list[str]:
+    """`adjudicate` end to end against REAL git — Issue 822 T5j.
+
+    A real workspace, a real kernel and a real bind site: the classifier is
+    the thing under test, and `canary()` above deliberately STUBS it (its arms
+    are about pin arithmetic), so a stub here would leave the seam this task
+    landed covered by nothing at all — T5e's finding, which is that nothing
+    automatic walls this join.
+    """
+    fails: list[str] = []
+
+    def git(root, *args):
+        subprocess.run(("git", "-C", str(root)) + args,
+                       capture_output=True, check=True)
+
+    def repo_at(ws: Path, name: str, committed: str, worktree: str | None):
+        repo = ws / name
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "k.rs").write_text(committed, encoding="utf-8")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        git(ws, "init", "-q", name)
+        git(repo, "config", "user.email", "arm@example.invalid")
+        git(repo, "config", "user.name", "arm")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        if worktree is not None:
+            (repo / "src" / "k.rs").write_text(worktree, encoding="utf-8")
+        return repo
+
+    def run(paths, classify=None):
+        classify = classify or _REAL_CLASSIFY
+        rep = classify(paths)
+        delta, head = adjudicate(paths, rep, classify=classify)
+        return rep, delta, (rep if head is None else head)
+
+    def caps(rep):
+        return [b for b in rep.binds if b.verdict == "CAPACITY"]
+
+    # a. ⛔ Issue 798's direction: a fix that is not COMMITTED is not landed.
+    #    CAPACITY is a WALL at 0, so an uncommitted repair clearing it hands
+    #    every other checkout a green over a live defect.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        repo = repo_at(ws, "r", CAPACITY_SRC, UNRESOLVED_SRC)
+        rep, delta, j = run([repo])
+        if caps(rep):
+            fails.append(f"arm a: the fixture is INERT — the worktree must "
+                         f"read no CAPACITY ({[b.verdict for b in rep.binds]})")
+        if len(caps(j)) != 1 or not delta.masked:
+            fails.append(f"adjudicate: an UNCOMMITTED fix cleared the CAPACITY "
+                         f"wall (judged {len(caps(j))}, masked "
+                         f"{len(delta.masked)}) — the committed kernel still "
+                         f"derives the wrong shape for everyone else")
+
+    # b. And its mirror: a defect introduced in the worktree must not red a
+    #    wall at 0 over a line no commit contains.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        repo = repo_at(ws, "r", UNRESOLVED_SRC, CAPACITY_SRC)
+        rep, delta, j = run([repo])
+        if len(caps(rep)) != 1:
+            fails.append("arm b: the fixture is INERT — the worktree must "
+                         "read one CAPACITY")
+        if caps(j) or len(delta.uncommitted) != 1:
+            fails.append(f"adjudicate: an uncommitted CAPACITY reached the "
+                         f"wall ({len(caps(j))}) instead of UNCOMMITTED "
+                         f"({len(delta.uncommitted)})")
+
+    # c. ⚠ The WORKSPACE axis, which no other sweep in the family has: HALF C
+    #    resolves provenance through other repos, so the HEAD side must be a
+    #    whole workspace — and each materialised repo must keep ITS OWN NAME,
+    #    or two dirty repos both arrive as `head` and every row is
+    #    misattributed. This is the arm that fails if `head_tree` stops naming
+    #    its checkout after the source.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        a = repo_at(ws, "alpha", CAPACITY_SRC, UNRESOLVED_SRC)
+        b = repo_at(ws, "beta", CAPACITY_SRC, UNRESOLVED_SRC)
+        rep, delta, j = run([a, b])
+        got = sorted({x.repo for x in j.binds})
+        if got != ["alpha", "beta"]:
+            fails.append(f"adjudicate: the HEAD workspace lost the repo names "
+                         f"({got}) — two materialised checkouts collided, so "
+                         f"every row is attributed to the wrong repo")
+        if len(delta.masked) != 2:
+            fails.append(f"adjudicate: {len(delta.masked)} MASKED row(s) over "
+                         f"two repos that each hide one committed finding")
+
+    # c2. ⛔ And the REPO must be in the key, which (c) cannot show because
+    #     both its repos move together. Two repos whose rows are otherwise
+    #     IDENTICAL — same relative file, kernel and handle, which is exactly
+    #     what a copied kernel across siblings looks like — and only one of
+    #     them hides its committed finding. Without `b.repo` the other repo's
+    #     live row matches it and the MASKED bucket goes empty: a committed
+    #     defect reported clean because a DIFFERENT repo still has it.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        a = repo_at(ws, "alpha", CAPACITY_SRC, UNRESOLVED_SRC)
+        b = repo_at(ws, "beta", CAPACITY_SRC, None)
+        rep, delta, j = run([a, b])
+        if [k[0] for k, _b in delta.masked] != ["alpha"]:
+            fails.append(f"row key: the repo is not in the key — alpha's "
+                         f"committed finding was matched by beta's live one "
+                         f"({[k[0] for k, _b in delta.masked]})")
+
+    # d. The key must be stable under unrelated dirt: a repo whose only change
+    #    is another file must report its own bind as moved NOWHERE.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        repo = repo_at(ws, "r", CAPACITY_SRC, None)
+        (repo / "src" / "other.rs").write_text("// dirt\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        rep, delta, j = run([repo])
+        if delta.uncommitted or delta.masked:
+            fails.append(f"row key: an UNCHANGED bind moved on unrelated dirt "
+                         f"(uncommitted={len(delta.uncommitted)}, "
+                         f"masked={len(delta.masked)})")
+
+    # d2. ⛔ And LINE-FREE specifically, which (d) cannot reach: the bind must
+    #     survive an edit ABOVE it. A line-bearing key reports every row in an
+    #     edited file as UNCOMMITTED *and* MASKED at once — the defect that
+    #     `line_free`/`ordinal_keys` exist for, and the reason this arm plants
+    #     a shift rather than a change.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        repo = repo_at(ws, "r", CAPACITY_SRC,
+                       "// a line nobody committed\n" + CAPACITY_SRC)
+        rep, delta, j = run([repo])
+        if delta.uncommitted or delta.masked:
+            fails.append(f"row key: a bind whose LINE moved was reported as "
+                         f"moved (uncommitted={len(delta.uncommitted)}, "
+                         f"masked={len(delta.masked)}) — the key carries a "
+                         f"line number, so any edit above a row reds it")
+
+    # e. A CLEAN workspace must cost NOTHING: this instrument copies a tree per
+    #    dirty repo, and the whole workspace is re-classified on top.
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        repo = repo_at(ws, "r", CAPACITY_SRC, None)
+        calls = []
+        rep, delta, j = run(
+            [repo], classify=lambda ps: calls.append(ps) or _REAL_CLASSIFY(ps))
+        if len(calls) != 1:
+            fails.append(f"adjudicate: re-classified a CLEAN workspace "
+                         f"({len(calls)} calls) — nothing is dirty in SCOPE "
+                         f"and the caller must SKIP")
+        if delta.uncommitted or delta.masked or not delta.committed:
+            fails.append(f"adjudicate: a clean workspace's rows are not all "
+                         f"COMMITTED ({delta})")
+    return fails
+
+
+def adjudicate_arms() -> list[str]:
+    """The cases above, plus the STUB PROBE proving they sit on the seam.
+
+    ⛔ Aimed at `delta_of` — the helper `adjudicate` ACTUALLY calls — because
+    two of this family's first three probes reported a false all-clear by
+    being aimed at a function the target never invokes.
+    """
+    fails = adjudicate_cases()
+    real = globals()["delta_of"]
+    globals()["delta_of"] = lambda wt, hd, key: HeadDelta(list(wt), [], [])
+    try:
+        probed = adjudicate_cases()
+    finally:
+        globals()["delta_of"] = real
+    if len(probed) < 3:
+        fails.append(f"STUB PROBE: a `delta_of` that files every row as "
+                     f"COMMITTED red only {len(probed)} of the provenance "
+                     f"arms — they are not sitting under the seam")
+    return fails
 
 
 def buckets_by_repo(rep) -> dict[str, dict[str, int]]:
@@ -374,7 +652,12 @@ def selftest() -> list[str]:
         except ValueError:
             pass
 
-    return fails
+    # Issue 822 T5j. In `selftest` and not behind `--canary`: `canary()`
+    # deliberately STUBS `classify_workspace` because its arms are about pin
+    # arithmetic, so a provenance arm living there would run against a fixed
+    # report and assert nothing. These drive a real workspace through real git
+    # and cost ~4s.
+    return fails + adjudicate_arms()
 
 
 def canary() -> int:
@@ -434,11 +717,25 @@ def canary() -> int:
         DELEGATED_WALK_PINS.write_text(
             delg if delg is not None else delg_src, encoding="utf-8")
         lda.classify_workspace = classify or (lambda repos: base)
+        # ⛔ The Issue-822 provenance seam is STUBBED here, and the cost is why
+        # (measured: the first run of this canary took >120s and was killed).
+        # Every arm re-enters `main()`, so without this each one materialises a
+        # HEAD checkout per dirty repo (~20s each) and re-runs the six
+        # provenance arms — 12x work that measures nothing new, because these
+        # arms are about PIN ARITHMETIC and the seam has its own arms in
+        # `selftest()`, which a direct invocation runs once. AGENTS.md's
+        # "budget the canary cost" rule, reached the expensive way.
+        real_adj, real_arms = globals()["adjudicate"], globals()["adjudicate_arms"]
+        globals()["adjudicate"] = lambda paths, rep, classify=None: (
+            HeadDelta([(bind_key(b), b) for b in rep.binds], [], []), None)
+        globals()["adjudicate_arms"] = lambda: []
         try:
             rc, out = run(argv)
         finally:
             PINS, EYES, DELEGATED_WALK_PINS = real
             lda.classify_workspace = real_classify
+            globals()["adjudicate"] = real_adj
+            globals()["adjudicate_arms"] = real_arms
         ok = rc == want_rc and want_text in out
         print(f"  {'✓' if ok else '✗'} {name}  (rc={rc}, want {want_rc})")
         if not ok:
@@ -568,10 +865,18 @@ def main(argv: list[str]) -> int:
         return 2
 
     rep = lda.classify_workspace(repo_paths)
-    per = buckets_by_repo(rep)
+    # Issue 822 T5j — the DISPLAY reads the worktree (it is what the files say
+    # today); every CEILING, every FLOOR and the EYES membership wall read what
+    # a commit of these checkouts would produce. `jrep` falls back to the
+    # worktree's own report where there is nothing dirty to compare against.
+    delta, head_rep = adjudicate(repo_paths, rep)
+    jrep = rep if head_rep is None else head_rep
+    held = {k for k, _b in delta.uncommitted}
+    per = buckets_by_repo(jrep)
     kernels_by_repo: dict[str, int] = {}
-    for k in rep.kernels:
+    for k in jrep.kernels:
         kernels_by_repo[k.repo] = kernels_by_repo.get(k.repo, 0) + 1
+    wt_per = buckets_by_repo(rep)
 
     bad = False
     tot_find = tot_unres = tot_binds = 0
@@ -587,7 +892,11 @@ def main(argv: list[str]) -> int:
         tot_unres += unres
         tot_binds += nb
 
-        for b in rep.binds:
+        # ⛔ The EYES membership wall reads HEAD too, and it is the DESTRUCTIVE
+        # direction that makes it matter: a pinned row the worktree happens to
+        # hide prints "no longer reported — drop the row", and dropping the pin
+        # for a bind that is still committed deletes the only record of it.
+        for b in jrep.binds:
             if b.repo == name and b.verdict == EYES_BUCKET:
                 seen_eyes[eyes_key(b)] = seen_eyes.get(eyes_key(b), 0) + 1
 
@@ -623,16 +932,37 @@ def main(argv: list[str]) -> int:
                     f"floors it, and that file has no non-zero row for {name}")
 
         status = "✗" if flags else ("·" if (findings or bk.get(EYES_BUCKET)) else "✓")
-        detail = " ".join(f"{v}={n}" for v, n in sorted(bk.items())) or "—"
-        print(f"{status} {name:22s} kernels={nk:<3d} binds={nb:<4d} {detail}")
+        wbk = wt_per.get(name, {})
+        detail = " ".join(f"{v}={n}" for v, n in sorted(wbk.items())) or "—"
+        moved = ([1 for k in held if k[0] == name]
+                 + [1 for k, _b in delta.masked if k[0] == name])
+        split = ""
+        if moved:
+            split = (f"  [{sum(1 for k in held if k[0] == name)} uncommitted"
+                     + (f", {sum(1 for k, _b in delta.masked if k[0] == name)}"
+                        f" MASKED" if any(k[0] == name for k, _b in delta.masked)
+                        else "")
+                     + f"; HEAD {detail_of(bk)}]")
+        print(f"{status} {name:22s} kernels={nk:<3d} binds={nb:<4d} {detail}"
+              f"{split}")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
         for v in FINDING_BUCKETS:
             for b in rep.binds:
                 if b.repo == name and b.verdict == v:
+                    wip = (" [UNCOMMITTED — not adjudicated]"
+                           if bind_key(b) in held else "")
                     print(f"      ⛔ {v} {norm(b.file)}:{b.line}  {b.kernel}  "
-                          f"{b.handle_expr}  [len: {b.length_expr}]")
+                          f"{b.handle_expr}  [len: {b.length_expr}]{wip}")
+        # A MASKED row is NOT in the worktree report — that is what MASKED
+        # means — so it prints from the HEAD side or it prints nowhere, and a
+        # ceiling reds over a bind site nobody can see.
+        for k, b in sorted(delta.masked, key=lambda kb: kb[0]):
+            if k[0] == name:
+                print(f"      ⛔ {b.verdict} {norm(b.file)}:{b.line}  "
+                      f"{b.kernel}  {b.handle_expr}  [MASKED — committed, "
+                      f"hidden by this worktree]")
 
     # ── the EYES LIST, by MEMBERSHIP, in BOTH directions ────────────────────
     for key in sorted(set(seen_eyes) - set(eyes)):
@@ -687,7 +1017,9 @@ def main(argv: list[str]) -> int:
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — kernels and bind sites.
     deferred.extend(sweep_advisory(
-        names, ("*.rs",), root=WORKSPACE))
+        names, SCOPE, root=WORKSPACE,
+        uncommitted_rows=len(delta.uncommitted),
+        masked_rows=len(delta.masked)))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

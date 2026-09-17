@@ -423,7 +423,14 @@ def head_tree(root, patterns, paths=None, extra_dirty=()):
         if _git(root, "archive", "-o", str(arc), "HEAD", *spec).returncode != 0:
             yield None
             return
-        dest = Path(td) / "head"
+        # ⛔ Named after the SOURCE repo, not "head". A classifier that takes a
+        # repo's identity from its directory name — `len_derived_binding_audit`
+        # resolves provenance through workspace CALLERS and keys every row on
+        # it — would otherwise see every materialised repo called `head`, which
+        # both collides when two are materialised at once and misattributes
+        # every row when one is. The temp directory already makes the path
+        # unique; the leaf is free to be honest.
+        dest = Path(td) / root.name
         dest.mkdir()
         try:
             with tarfile.open(arc) as tf:
@@ -1229,6 +1236,15 @@ def tree_arms() -> list[str]:
             check(t is not None and (t / "assets" / "big.bin").is_file(),
                   "the DEFAULT head_tree narrowed — `paths=None` must be the "
                   "whole tree, which is the only always-correct answer")
+
+        # The materialised tree is named after its SOURCE repo, because a
+        # classifier can key rows on the directory name — and two repos
+        # materialised at once would otherwise both be `head`.
+        with head_tree(me2, ("*.rs",), paths=("*.rs",)) as t:
+            check(t is not None and t.name == "t2",
+                  f"head_tree did not name its checkout after the source repo "
+                  f"({t.name if t is not None else None}) — a name-keyed "
+                  f"classifier then misattributes every row it produces")
 
         # `extra_dirty` — the UNTRACKED trigger, for a sweep whose walk is
         # `os.walk` rather than `git ls-files`. Committed and clean, so
