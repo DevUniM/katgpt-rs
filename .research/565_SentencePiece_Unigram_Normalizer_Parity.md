@@ -2,7 +2,7 @@
 
 > **Source:** google/sentencepiece @ `b2db4719c3f41e1b0c61dd948c5d8bf445bef1a0` (Apache-2.0; clone per skill §0.5, deleted after pinning — quotes re-verifiable by re-cloning at this sha). Papers: Kudo & Richardson, "SentencePiece" ([arXiv:1808.06226](https://arxiv.org/abs/1808.06226)); Kudo, "Subword Regularization" ([arXiv:1804.10959](https://arxiv.org/abs/1804.10959)).
 > **Date:** 2026-09-17
-> **Status:** Active — verdict GAIN; riir-ai Issue 970 filed (measured parity bug). No katgpt-rs issue (restraint — see Row B).
+> **Status:** RECORD — verdict GAIN; riir-ai Issue 970 **resolved 2026-09-17** (riir-ai `576bf1ef1`) — and the fix was larger than filed: see §6 Addendum (the shipped path ran the wrong ALGORITHM, not just the wrong whitespace rule). No katgpt-rs issue (restraint — see Row B).
 > **Related Research:** 137 (Pplx unigram Viterbi + Datrie — vocab-trie cousin, shipped `datrie_vocab`), 456 (Gigatoken SIMD BPE — vendored `fast_bpe`, Bench 191)
 > **Cross-ref (riir-ai):** Issue 400 (SentencePieceGgufTokenizer), Issue 970 (this note's consumer fix), Bench 780 (unigram Viterbi mode), Bench 723 (C++ dep containment)
 > **Classification:** Public
@@ -106,6 +106,63 @@ Real-input reach: double-space-after-period prose, LLM-generated text with irreg
 - **G1 correctness:** fixture suite §2.1/§2.2 (leading/trailing/interior runs, spaces-only, `end.  Next`, tab byte-fallback, Thai set incl. `ทำ`/`สวัสดี`, full-width, decomposed é) — token-id equality vs the in-repo C++ oracle (`SentencePieceTokenizer`, native `sentencepiece` feature) or the pinned golden ids.
 - **G3 no-regression:** Issue 400 T7 llama-tokenize ASCII agreement must stay green (pure-ASCII single-space inputs are unchanged by the fix — collapse/strip were no-ops there); existing tokenizer tests updated where they pinned the old collapse behavior.
 - **G4:** normalize stays allocation-light (the fix *deletes* logic — collapse/strip — and keeps the single-pass replace).
+
+## 6. Addendum 2026-09-17 — the consumer fix landed, and the note was right for a smaller reason than it said
+
+riir-ai Issue 970 is **resolved** (riir-ai `576bf1ef1`; HISTORY row there). Three
+corrections to this note, all measured while writing its fixture suite, and two
+of them are corrections to *this document*:
+
+**(a) §2.1's normalizer claim is now read off the spec, not inferred.** A
+protobuf scan of `riir-train/data/tokenizer.model` — no `sentencepiece` module
+needed, and it is not installed on the Windows workstation — returns
+`trainer_spec.model_type = BPE`, `normalizer_spec { name = "identity",
+precompiled_charsmap = 0 bytes, add_dummy_prefix = false,
+remove_extra_whitespaces = false }`. "Near-identity charsmap" is **literally
+identity**, and `remove_extra_whitespaces = false` is stated by the model rather
+than probed. Corollaries 1 and 2 stand, strengthened.
+
+**(b) §2.2's predicted-damage table was wrong in BOTH directions.** It was a
+code read of the normalize loop, and the loop is not the only thing in the path.
+The GGUF spells space runs of 2..63 as **type-4 `user_defined` pieces of literal
+ASCII spaces** (ids 139…), not the `▁▁`/`▁▁▁` that `tokenizer.model` prints — so
+the special-token partitioner already caught every multi-space run on raw text,
+before escaping. `'  world'` and `'end.  Next'` were **not** losing their run
+piece. The collapse/strip loop's live damage was narrower: the leading and
+trailing **single** space of each partition segment (`' world'`, `'world '`).
+The lesson is the one this workspace keeps re-learning one instrument over: a
+predicted finding read off one component is not a measurement of the path.
+
+**(c) The bigger defect was one level under the one we filed, and the fixture
+found it.** §1's coverage map credits `encode_unigram` as "✅ ships" with a
+normalizer footnote. It was the **wrong algorithm**: `model_type = BPE` means
+the GGUF scores are negative **merge ranks** (`▁world` = −1661, `Next` = −5880,
+floor −255494 ≈ −|vocab|), so a Viterbi maximizing Σ score rewards short
+frequent pieces without bound. Measured: `"Next"` → `["Ne","xt"]`, `" world"` →
+`["▁w","or","ld"]`, **+94.9% tokens** over 8 prose / code / chat-template
+prompts (`Explain the difference` → `Ex pl ain ▁t he ▁di ff er en ce`).
+Repaired to llama.cpp's `llm_tokenizer_spm` score-priority bigram merge; **9 of
+9** golden rows from §2.1 now agree, Thai / full-width / decomposed-é included.
+
+`'end.  Next'` was the row that carried both errors at once — predicted at 3
+tokens, actually 5, for a reason that had nothing to do with whitespace. A
+single row disagreeing with a prediction in the *unexpected direction* is worth
+more than the five that agreed.
+
+**What this does to §4's verdict: nothing, and that is the honest reading.**
+GAIN stands and the tier answers are unchanged — the axis is still
+correctness-parity on one consumer path, and SentencePiece is still the prior
+art. What changed is the *size* of the repair, not its class. **§5's G1 was the
+load-bearing task all along**: the golden-id fixture was specified as validation
+for a known fix and functioned as a discovery instrument, which is the argument
+for writing the oracle table before the repair rather than after it.
+
+**Open, tracked in riir-ai `.issues/972`:** Bench 780's behavior gate ran both
+arms through the defective tokenizer. Its T3 lossy-surface promotion rule —
+the one quoted in katgpt-rs `AGENTS.md` §Feature Flag Discipline — **stands**,
+being a comparative claim over a shared defect. Its "floor-limited — ref solves
+2/72" competence figure does not: a reference arm fed ~2× shredded prompts
+produces a low ceiling by construction, so the honest status is UNKNOWN.
 
 ## References
 
