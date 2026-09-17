@@ -127,7 +127,9 @@ of its own — surfaced. `--all-targets` is NOT the way to widen further: it
 dies on dev-deps (`statrs`, `proptest`) that do not resolve for wasm32, so
 extra coverage goes in as **named targets**.
 
-**And `x86_64` is a THIRD one — Layer 2c (Issue 819), the axis the wasm32
+**And `x86_64` is a THIRD one — Layer 2c (Issue 819 *the x86_64 lint lane*,
+closed; 819 is held by a second, live document and the disambiguation is
+pinned in `scripts/number_collisions_expected.txt`), the axis the wasm32
 work named and did not generalise.** The 2026-09-16 execution matrix closed
 `compile vs EXECUTE` for x86_64 and left its inverse standing: every lane in
 this repo that LINTS compiles the x86_64 arms to **nothing** (Layers 2/3/6 are
@@ -271,7 +273,8 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
 - ⛔ **And it does not LINT** — that is the inverse hole, and it stood for a
   day: this instrument executes the x86_64 arms with `+avx2` on and reads no
   warnings, while every lane that lints compiles those arms to nothing. 30
-  findings were sitting behind it (Issue 819). `full_gate.sh` **Layer 2c** is
+  findings were sitting behind it (Issue 819 *the x86_64 lint lane* — the
+  number is doubly held; see the pin file). `full_gate.sh` **Layer 2c** is
   the lint half; do not read a green matrix as a green arch.
 
 ## Docs gate + drift sweeps
@@ -2193,6 +2196,34 @@ The pin file's own header already said so and the header's count word said
 NINE against eight rows, so two independent signals were available and the
 removal happened anyway. A row comes out only when the *number* stops being
 doubly held, which a deletion never achieves.
+
+⛔ **That recovery ran in ONE repo of sixteen for two days** (Issue 820). The
+gate got `historical_collisions()` and `numbering_drift_sweep.py` — the
+cross-repo verdict half of that exact gate — kept calling the worktree scanner
+and printing `dup=0`. Measured 2026-09-17, the sweep unchanged except for
+pointing the gate's own function at the derived population: **0 tracked
+duplicates against 183 historical collisions**, 113 of them in repos the sweep
+covered and called clean, in **3.7s** for the whole workspace. Three of those
+sit above the era boundary, all in riir-ai (`.issues` 702, 753, 959). The
+eighth recorded instance of a rule landing in one instrument and never
+generalising (Issues 777, 778, 793, 782, 783, 789, 797) — **before fixing such
+a class, grep the whole family and land the repair as one shared mechanism.**
+- The sweep's `max_hist` is a **RATCHET at measured**, not the gate's
+  membership wall: the wall needs a reason per row and 15 repos' worth of
+  invented reasons is a backlog wearing a pin (Issue 785). `min_numbers`
+  floors the HISTORY walk and is **not** a second `min_files` — they break
+  separately, and a `git log` regression leaves `min_files` untouched while
+  collapsing the other to the on-disk count.
+- katgpt-rs's row does not RESTATE its gate — the sweep imports the same
+  function, so a count comparison is true by construction and *a pin that
+  restates its own input cannot fail*. It asserts the gate's **verdict** over
+  those rows instead, so a stale membership pin in
+  `number_collisions_expected.txt` reds the sweep too.
+- ⚠ The same run found Issue 815's `DOCS_GATE_KNOWN_EXTRA` marker reaching
+  `population_verdict` and **not** the sweeps' own per-repo pin loop: the final
+  line read "not measured and not expected to be" while three repos six hundred
+  lines earlier were red for having no pin row. The marker excuses the pin-row
+  requirement now, by NAME, in both directions.
 
 ⛔ **And do not renumber on a margin the instrument did not award.** Six of
 the nine were adjudicated and deliberately left alone — leads of +1 to +5 with

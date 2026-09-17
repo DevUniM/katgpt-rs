@@ -67,3 +67,26 @@ collision = .issues 779 Issue 791 — RESOLVED, this session's side renumbered t
 collision = .issues 780 Issue 791 — RESOLVED, this session's side renumbered to 794; citation_weight declined the pair and the coordination-free side moved
 collision = .issues 781 Issue 795 divergence — heading_oracle house style vs slt_wbic_selection; +2 over 17 decided with 47% UNRESOLVED, which is noise, not a verdict
 collision = .issues 782 Issue 795 divergence — pinned-repo-absent vs slt_noise_sweep; +4 over 11 decided with a 3-site loser, below the rewrite threshold
+
+# ── 2026-09-17: a TENTH, and it is a fresh event, not the 791/795 divergence ─
+# Two sessions allocated 819 the same day from the same counter value. This
+# one is ADJUDICATED rather than declined: the hand census is 10 sites, 0%
+# UNRESOLVED, splitting 7 to the sigmoid-prior issue (.research/566 x5,
+# .research/258, .research/392 — a research thread that cites its own issue
+# repeatedly) against 3 to the x86_64 lint lane (AGENTS.md x2, HISTORY.md x1).
+# citation_weight agreed at 6-3 over 9 ambiguous sites.
+#
+# ⚠ The margin was hand-checked BECAUSE `lane` is one of the sigmoid file's
+# distinctive tokens and AGENTS.md's Layer 2c prose is about a lint LANE — the
+# exact shape that would make the classifier award the loser's sites to the
+# winner. It did not; .research/566 is genuinely the citing document. Recorded
+# because a margin that survives a targeted check is worth more than one that
+# was never questioned.
+#
+# The loser is CLOSED and REMOVED (819_x86_64_arm_is_linted_by_nothing, closed
+# at b07fb7d6), so there is no file to `git mv` and the `-M` rename exclusion
+# has nothing to exclude: this pair is PERMANENT in the recovery walk. That is
+# the Issue 779 row's lesson restated — closing a holder is when the pin starts
+# being the only record — and it is why the repair here is a pin plus a
+# three-site disambiguation in the losing prose, not a renumber.
+collision = .issues 819 two same-day allocations off one counter value — sigmoid prior-logit forecast (KEEPS it, 7 of 10 sites, 0% unresolved) vs the x86_64 lint lane (CLOSED+removed at b07fb7d6; its 3 citations disambiguated in place per Issue 794's rule)

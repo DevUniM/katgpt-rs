@@ -4,7 +4,7 @@
 # here; deriving both from one walk is what makes a cross-repo gate permanently
 # green (the Issue 702 lesson, one instrument over).
 #
-# Format:  <repo>  <min_files>  <max_dup>  <max_above>  <max_malformed>  <max_resets>
+# Format:  <repo>  <min_files>  <max_dup>  <max_above>  <max_malformed>  <max_resets>  <min_numbers>  <max_hist>
 #
 #   min_files      FLOOR over the ALLOCATOR-SERIAL dirs only
 #                  (.plans/.issues/.research/.proposals). Every other column is
@@ -30,6 +30,36 @@
 #                  row (e.g. the lower-side resolution on a branch and again
 #                  at the merge that carries it). Lower a pin by the rows the
 #                  repair removes, never by the incidents you counted.
+#   min_numbers    FLOOR on the HISTORY walk (Issue 820) — distinct numbers
+#                  recovered by `git log -M --diff-filter=D` PLUS what is on
+#                  disk. It is NOT a second min_files and the two break
+#                  SEPARATELY, which is the whole reason both exist: min_files
+#                  counts tracked documents in the worktree, so a git-log
+#                  regression leaves it untouched while collapsing this one to
+#                  the on-disk count — and max_hist below then passes green
+#                  over a blind instrument. Pinned at ~85% of measured, the
+#                  min_files reasoning (numbers leave the walk only by a
+#                  history rewrite, so the slack is smaller).
+#   max_hist       numbers held by 2+ documents across HISTORY. A RATCHET at
+#                  the measured count, for max_dup's reasons below and one
+#                  more: 113 of the 183 are in repos this session does not own.
+#                  ⛔ This column is NOT a stricter max_dup — it is the class
+#                  max_dup CANNOT SEE. A document closed under the
+#                  noise-reduction rule is DELETED, so a collision where both
+#                  holders have closed leaves nothing in the worktree and
+#                  max_dup reads 0. Measured 2026-09-17: max_dup totalled 0
+#                  workspace-wide against 183 here. Never pool them.
+#
+# ── the UNMEASURED rows, and why their ceiling is 0 rather than something safe
+#
+# Seven repos are absent from this box (partial clone) and their two new
+# columns could not be measured. They carry `0 0` and say so on the row. The
+# min_numbers 0 is a floor that cannot fire and is disclosed as such; the
+# max_hist 0 will RED for any of them that has collisions, on the first
+# canonical-workstation run. That is deliberate and it is the lesser evil: a
+# ceiling invented to be comfortable is a ceiling that never fires, which is
+# this file's own stated failure mode one column up. Re-pin all seven from one
+# full-checkout run — the wasm32_surface_drift_floors TOTALS precedent.
 #
 # ── why max_dup is a ratchet at the measured value, not 0 ───────────────────
 #
@@ -85,23 +115,23 @@
 # dependent and red on a box that owes nothing. It is PRINTED by the sweep
 # every run, never gated.
 
-katgpt-rs           	795	0	0	0	5	# resets (770 walk): Issue 577→25 + Plan 572→526 + Bench 427→205 (the promote-to-main merge), 564→204, 585→584
-katgpt-web          	0	0	0	0	0	# observed 2026-09-05: 0 files (no .plans/.research yet)
-riir-ai             	493	0	0	0	9	# resets: Issue 627→614 ×2 (one at a Merge), 763→762 + Bench ×6 (incl. 641→640 ×2, one at a Merge); 2026-09-05 dups RESOLVED (T4b)
-riir-auth           	0	0	0	0	0	# observed 2026-09-05: 0 files
-riir-chain          	0	0	0	0	0	# resets 0 under the 770 walk — the 769 walker's ×4 rows were ALL phantoms (forward bumps on diverged lineages); allocator repaired 007->008 2026-09-05
-riir-clippy         	183	0	0	0	5	# resets: Issue 82→81 + Research 57→54, 87→86 + Bench 16→13, 42→41; 2026-09-05 dups RESOLVED (Issue 069 T2)
-riir-dao            	3	0	0	0	0	# observed 2026-09-05: 4 files
-riir-dapps          	15	0	0	0	0	# observed 2026-09-05: 19 files
-riir-deployer        	4	0	0	0	0	# observed 2026-09-05: 5 files
-riir-esp32           	1	0	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content
-riir-game-sdk        	6	0	0	0	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
-riir-kat              	0	0	0	0	0	# observed 2026-09-12: 0 allocator-serial files
-riir-mmorpg-examples	28	0	0	0	1	# reset: Plan (1) — first pinned under the 770 walk (invisible to the 769 one); malformed .issues allocator repaired 097 2026-09-06 (adc8877, push-wins)
-riir-neuron-db      	37	0	0	0	0	# observed 2026-09-05: 47 files
-riir-shader           	2	0	0	0	1	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)
-riir-train          	258	0	0	0	2	# resets (770 walk): Bench 523→518, 570→569 — the 769 walker's other 8 rows (Issue ×2, Bench ×6) were phantoms; 2026-09-05 dups RESOLVED (Issue 514)
-riir-viewbridge     	0	0	0	0	0	# observed 2026-09-05: 0 files
-mmorpg-editor    	175	13	0	0	4	# resets: Plan 152→150 ×3 (all MERGE resolutions) + 191→190 · dup 13 (READ-ONLY per owner rule — renumber is the editor owners' repair; every bump here is a measured event, never a silent tolerance)
-mmorpg-remaster  	30	0	0	0	0	# observed 2026-09-12: 52 files
-mmorpg-remake         	1	0	0	0	0	# observed 2026-09-05: 1 file
+katgpt-rs           	795	0	0	0	5	1200	71	# resets (770 walk): Issue 577→25 + Plan 572→526 + Bench 427→205 (the promote-to-main merge), 564→204, 585→584
+katgpt-web          	0	0	0	0	0	0	0	# observed 2026-09-05: 0 files (no .plans/.research yet)  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-ai             	493	0	0	0	9	1200	71	# resets: Issue 627→614 ×2 (one at a Merge), 763→762 + Bench ×6 (incl. 641→640 ×2, one at a Merge); 2026-09-05 dups RESOLVED (T4b)
+riir-auth           	0	0	0	0	0	0	0	# observed 2026-09-05: 0 files
+riir-chain          	0	0	0	0	0	180	6	# resets 0 under the 770 walk — the 769 walker's ×4 rows were ALL phantoms (forward bumps on diverged lineages); allocator repaired 007->008 2026-09-05
+riir-clippy         	183	0	0	0	5	350	3	# resets: Issue 82→81 + Research 57→54, 87→86 + Bench 16→13, 42→41; 2026-09-05 dups RESOLVED (Issue 069 T2)
+riir-dao            	3	0	0	0	0	0	0	# observed 2026-09-05: 4 files  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-dapps          	15	0	0	0	0	70	0	# observed 2026-09-05: 19 files
+riir-deployer        	4	0	0	0	0	0	0	# observed 2026-09-05: 5 files  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-esp32           	1	0	0	0	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-game-sdk        	6	0	0	0	0	33	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
+riir-kat              	0	0	0	0	0	0	0	# observed 2026-09-12: 0 allocator-serial files
+riir-mmorpg-examples	28	0	0	0	1	108	4	# reset: Plan (1) — first pinned under the 770 walk (invisible to the 769 one); malformed .issues allocator repaired 097 2026-09-06 (adc8877, push-wins)
+riir-neuron-db      	37	0	0	0	0	88	3	# observed 2026-09-05: 47 files
+riir-shader           	2	0	0	0	1	18	0	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)
+riir-train          	258	0	0	0	2	440	11	# resets (770 walk): Bench 523→518, 570→569 — the 769 walker's other 8 rows (Issue ×2, Bench ×6) were phantoms; 2026-09-05 dups RESOLVED (Issue 514)
+riir-viewbridge     	0	0	0	0	0	6	0	# observed 2026-09-05: 0 files
+mmorpg-editor    	175	13	0	0	4	0	0	# resets: Plan 152→150 ×3 (all MERGE resolutions) + 191→190 · dup 13 (READ-ONLY per owner rule — renumber is the editor owners' repair; every bump here is a measured event, never a silent tolerance)  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+mmorpg-remaster  	30	0	0	0	0	0	0	# observed 2026-09-12: 52 files  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+mmorpg-remake         	1	0	0	0	0	0	0	# observed 2026-09-05: 1 file  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire

@@ -13,6 +13,12 @@ paragraph's drift history · the resolved issue log.
 
 ## Issue 819 (2026-09-17) — CLOSED. The x86_64 arm was LINTED by nothing; the finding is not the 30, it is the sibling
 
+⚠ **819 is held by two documents.** A concurrent session allocated it the same
+day off the same counter value for the sigmoid prior-logit forecast issue,
+which KEEPS the number on weight (7 of 10 inbound sites, 0% unresolved —
+Issue 724 T2). This record is the *x86_64 lint lane*; the adjudication is
+pinned in `scripts/number_collisions_expected.txt`.
+
 Found while measuring clippy on the Issue 808 workstation: `cargo clippy -p katgpt-attn --all-features --lib` with
 `RUSTFLAGS="-C target-feature=+avx2"` returned **30** warnings, every one `E0133` / `unsafe_op_in_unsafe_fn` on
 edition 2024, every one in `crates/katgpt-attn/src/dash_attn/channel_aware.rs`, every one inside the x86_64 AVX2
