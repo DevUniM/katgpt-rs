@@ -1,6 +1,20 @@
 # OnlineLinearReadout — katgpt-core primitive for online-fit calibrated linear probes
 
-**Status:** OPEN (filed from riir-clippy Research 168 — arXiv:2607.05188 distillation; consumer: riir-clippy Issue 107) — **SEQUENCING NOTE updated 2026-09-15 post-T2: consumer premise STILL not recovered, now time-gated.** riir-clippy 107 T1 measured the probe lane NOT viable on ring-native features (horizon 1 < 2 on every corpus; the strategy prior is a sufficient statistic there). T2 landed the span-shape embedding column (write-time capture, riir-clippy `1d3cec0b`) and measured the synthetic corpora NOT revived either — auc(embed) 1.000 under the same 1.000 strategy floor; the diverged synthetic arms share templates, so span content carries no extra signal there. The lane's revival now rests on ORGANIC rings, which only started accumulating the column at the T2 landing (2026-09-15) — a corpus that grows with real healer usage, not a work item any agent can advance. Do not build this primitive ahead of that evidence: T5's "live consumer" bar is unchanged, and a synthetic-fixture GOAT pass would not speak to the measured-absent live signal. Re-check when riir-clippy 107 T3+ opens on organic multi-attempt rings carrying the column.
+**Status:** OPEN — BLOCKED, and the block is now **harder than "time-gated"**: the consumer is CLOSED, not waiting.
+
+⛔ **Correction 2026-09-17.** The status below said *"re-check when riir-clippy 107 T3+ opens on organic multi-attempt rings carrying the column"*. There is no such T3 to wait for. **riir-clippy Issue 107 CLOSED NEGATIVE on evidence 2026-09-15** (riir-clippy `5dfa1daff`, HISTORY.md record; file removed per the noise-reduction rule) — T3–T6 (probe harness, gate wiring, GOAT, transfer row) were closed **UNBUILT**, on the owner call that no probe harness, gate or bench is warranted while every available corpus says the oracle decision carries no decodable signal beyond the strategy prior. The two statements were written the same day and the sequencing note is the stale one.
+
+This does not change what to DO here — do not build the primitive — but it changes what to WATCH. The trigger is no longer "a task opens in a live issue"; it is one of riir-clippy 107's three recorded **reopen triggers**, any one of which reopens that issue and with it this one:
+
+1. an **ORGANIC** fixseq ring with ≥2-revert runs AND the span-embed column populated (it accumulates from 107 T2's write-time capture, riir-clippy `1d3cec0b`, and that capture ships — this is the lane's only revival path);
+2. **riir-train** densifying the store per its R135 / Bench 047;
+3. any post-keep-fix corpus where the resolved rate moves between orderings at all (the riir-clippy Bench 085 corollary).
+
+⚠ Kept OPEN rather than closed alongside its consumer: the shape here is a katgpt-core **primitive gap** (the missing third half of the linear-probe lineage, argued below on this repo's own type inventory), and that argument does not depend on riir-clippy having a use for it. What 107's closure removes is the **live consumer** T5's promotion bar requires — so this cannot reach promotion, and building it now would be a synthetic-fixture GOAT pass that does not speak to the measured-absent live signal.
+
+**Prior sequencing record** (accurate, superseded only in what it says to watch): riir-clippy 107 T1 measured the probe lane NOT viable on ring-native features (horizon 1 < 2 on every corpus; the strategy prior is a sufficient statistic there). T2 landed the span-shape embedding column and measured the synthetic corpora NOT revived either — auc(embed) 1.000 under the same 1.000 strategy floor; the diverged synthetic arms share templates, so span content carries no extra signal there.
+
+Filed from riir-clippy Research 168 — arXiv:2607.05188 distillation.
 
 ## Summary
 

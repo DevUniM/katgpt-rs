@@ -77,7 +77,13 @@ exists to refuse. On a box the operator has marked as a PARTIAL CLONE
 auto-detected), a gone-only file-vs-walk disagreement defers THAT comparison
 loudly: the predicate-agreement half still runs at full strength, and the
 deferral rides the final line. A repo on disk that the file does not know is
-genuine staleness in every posture and always reds.
+genuine staleness in every posture and always reds — UNLESS it is named in
+DOCS_GATE_KNOWN_EXTRA (Issue 815), the mirror marker for a box that carries
+siblings the contract does not claim. That one takes NAMES, never `=1`: `=1`
+would excuse the NEXT unregistered repo too, and "a repo JOINING" is the
+posture this gate keeps loud. It reds in both directions — a name that is gone
+from the box, or that repo_set.txt has since registered, is a stale
+acknowledgement.
 
 Exit 0 clean · 1 on disagreement · 2 if the gate cannot import a predicate.
 """
@@ -95,7 +101,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from skill_repo_set_gate import PARTIAL_MARKER  # noqa: E402 — the marker definition, reused not re-derived
+from skill_repo_set_gate import (  # noqa: E402 — the marker definitions + the known-extra classifier, reused not re-derived
+    KNOWN_EXTRA_MARKER,
+    PARTIAL_MARKER,
+    known_extra_state,
+)
 
 REPO_ROOT = HERE.parent
 # Overridable for testing (the skill_repo_set_gate precedent): the
@@ -395,11 +405,27 @@ def main() -> int:
                 l.strip() for l in REPO_SET.read_text(encoding="utf-8").splitlines()
                 if l.strip() and not l.lstrip().startswith("#")
             )
+            # Issue 815: repos this box carries that are acknowledged as
+            # OUTSIDE the contract by name. They leave the only_disk bucket
+            # (they are not staleness) and are disclosed on the final line;
+            # every UNNAMED extra repo still reds, which is why the marker
+            # takes names and not `=1`.
+            known_extra, stale_extra = known_extra_state(base)
+            if stale_extra:
+                bad = True
+                print(f"    ✗ {KNOWN_EXTRA_MARKER} names {len(stale_extra)} "
+                      f"repo(s) that are not unregistered-and-present — "
+                      f"{stale_extra}. Gone from this box, or since registered "
+                      f"in {REPO_SET.name}. Drop them from the marker.")
             if committed == base:
                 print(f"    ✓ {REPO_SET.name} matches ({len(committed)} repos)")
             else:
                 only_file = sorted(set(committed) - set(base))
-                only_disk = sorted(set(base) - set(committed))
+                only_disk = sorted(set(base) - set(committed) - set(known_extra))
+                if known_extra:
+                    print(f"    ▸ KNOWN-EXTRA ({KNOWN_EXTRA_MARKER}): "
+                          f"{len(known_extra)} on-disk repo(s) acknowledged "
+                          f"outside the contract — {known_extra}")
                 if only_disk:
                     # A repo the file does not know: genuine staleness in
                     # every posture — including a marked partial clone.
@@ -567,11 +593,72 @@ def canary() -> int:  # population-predicate: not a contract-repo walk (its FIXT
         claimed == len(PREDICATES), f"headline says {claimed}, tuple has "
                                     f"{len(PREDICATES)}")
 
+    # 9. the KNOWN-EXTRA axis (Issue 815). This gate's only SUPPRESSING path —
+    #    the one thing that can remove a repo from the only_disk bucket — so it
+    #    is armed in both directions, on a synthetic snapshot rather than the
+    #    real one. The arms below assert the classifier this gate consumes;
+    #    the branch that consumes it is asserted by arm 10.
+    import skill_repo_set_gate as _srg
+
+    _amb = {k: os.environ.get(k) for k in (_srg.PARTIAL_MARKER, KNOWN_EXTRA_MARKER)}
+    _snap_real = _srg.SNAPSHOT
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            _srg.SNAPSHOT = Path(td) / "repo_set.txt"
+            _srg.SNAPSHOT.write_text("katgpt-rs\nriir-ai\n", encoding="utf-8")
+            walk = ["katgpt-rs", "riir-ai", "seal-x", "seal-y"]
+
+            os.environ.pop(KNOWN_EXTRA_MARKER, None)
+            arm("no marker: nothing is acknowledged",
+                known_extra_state(walk) == ([], []), str(known_extra_state(walk)))
+
+            os.environ[KNOWN_EXTRA_MARKER] = "seal-x"
+            ack, stale = known_extra_state(walk)
+            arm("a NAMED extra repo is acknowledged", ack == ["seal-x"], str(ack))
+            # ⚑ The reason the marker takes NAMES and not `=1`: the UNNAMED
+            # extra must survive into only_disk and red. An arm that only
+            # checked the acknowledged side would pass on a `=1` marker that
+            # excuses everything, which is the design this rejects.
+            only_disk = sorted(set(walk) - {"katgpt-rs", "riir-ai"} - set(ack))
+            arm("…and an UNNAMED extra repo still reaches only_disk",
+                only_disk == ["seal-y"], str(only_disk))
+
+            os.environ[KNOWN_EXTRA_MARKER] = "seal-gone"
+            arm("a declared repo absent from the walk is STALE",
+                known_extra_state(walk) == ([], ["seal-gone"]),
+                str(known_extra_state(walk)))
+            os.environ[KNOWN_EXTRA_MARKER] = "riir-ai"
+            arm("a declared repo the snapshot registers is STALE",
+                known_extra_state(walk) == ([], ["riir-ai"]),
+                str(known_extra_state(walk)))
+    finally:
+        _srg.SNAPSHOT = _snap_real
+        for _k, _v in _amb.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+
+    # 10. the docstring must document the suppressing path. A marker that can
+    #     remove a finding and is described nowhere is the one nobody audits.
+    arm("the known-extra marker is documented in the docstring",
+        KNOWN_EXTRA_MARKER in (__doc__ or ""), "absent from __doc__")
+
     print(f"\n{sum(results)}/{len(results)} canary arm(s) PASSED")
     return 0 if all(results) else 2
 
 
 if __name__ == "__main__":
+    # ⛔ The stream defence used to live inside `main()` only, so `--canary`
+    # printed `✓` straight at the console encoding and died with
+    # UnicodeEncodeError mid-run — no verdict, not even a failing one, which is
+    # the Issue-804 class exactly (measured on this cp874 box while adding the
+    # Issue-815 arms). Both entry points need it, so it moves to the one place
+    # both go through. `console_safe` is the shared defence; `main()` keeps its
+    # own call for the paths that import and invoke it directly.
+    import console_safe
+
+    console_safe.apply()
     if "--canary" in sys.argv[1:]:
         sys.exit(canary())
     sys.exit(main())

@@ -43,7 +43,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from skill_repo_set_gate import PARTIAL_MARKER, partial_clone_state  # noqa: E402
+from skill_repo_set_gate import (  # noqa: E402
+    KNOWN_EXTRA_MARKER,
+    PARTIAL_MARKER,
+    known_extra_state,
+    partial_clone_state,
+)
 
 # Issue 804: this instrument is documented as directly invokable, and its
 # verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
@@ -52,6 +57,9 @@ from skill_repo_set_gate import PARTIAL_MARKER, partial_clone_state  # noqa: E40
 import console_safe  # noqa: E402
 
 console_safe.apply()
+
+
+_N_ASSERTIONS = 0
 
 
 def population_verdict(pins, present) -> tuple[list[str], list[str], int]:
@@ -70,6 +78,25 @@ def population_verdict(pins, present) -> tuple[list[str], list[str], int]:
     failures = 0
 
     marker_on, snap_absent, unregistered = partial_clone_state(present)
+
+    # Issue 815: repos named as OUTSIDE the contract. `partial_clone_state`
+    # has already removed them from `unregistered`; they are disclosed here so
+    # the suppression is visible on a PASSING run, not inferred from a bucket
+    # that got quieter. A stale acknowledgement is a FINDING, not a deferral —
+    # it is the direction in which this marker could rot into a blanket excuse.
+    acknowledged, stale_extra = known_extra_state(present)
+    if acknowledged:
+        deferred.append(
+            f"{len(acknowledged)} known-extra repo(s) outside the contract "
+            f"({', '.join(acknowledged)}) — acknowledged by "
+            f"{KNOWN_EXTRA_MARKER}, not measured and not expected to be")
+    if stale_extra:
+        lines.append(
+            f"⛔ STALE {KNOWN_EXTRA_MARKER} entry (named, but not "
+            "unregistered-and-present on this box — gone, or since registered "
+            "in repo_set.txt; drop it from the marker): "
+            + ", ".join(stale_extra))
+        failures += len(stale_extra)
 
     if unregistered:
         lines.append(
@@ -113,9 +140,18 @@ def selftest() -> list[str]:
 
     from skill_repo_set_gate import SNAPSHOT
 
+    global _N_ASSERTIONS
+    _N_ASSERTIONS = 0
     fails: list[str] = []
 
     def check(cond, msg):
+        # ⛔ COUNTED, never typed. The pass line used to hand-type "7
+        # assertion(s)"; that is the shape Issue 798 T3 found stale on arrival
+        # in `worktree_state`, in a module whose whole subject is records
+        # drifting from what they describe. Adding the Issue-815 arms below
+        # would have made it wrong again.
+        global _N_ASSERTIONS
+        _N_ASSERTIONS += 1
         if not cond:
             fails.append(msg)
 
@@ -127,9 +163,15 @@ def selftest() -> list[str]:
                            "exercise the arms; the parse is broken")
 
     saved = os.environ.get(PARTIAL_MARKER)
+    saved_extra = os.environ.get(KNOWN_EXTRA_MARKER)
     try:
         # ── no marker ──────────────────────────────────────────────────────
+        # BOTH cleared: these arms build a synthetic population but read the
+        # real environment, so an ambient marker leaks into arms that predate
+        # it — measured in `skill_repo_set_gate`, where exactly that turned a
+        # CORRECT invocation into an INSTRUMENT-unreadable verdict (Issue 815).
         os.environ.pop(PARTIAL_MARKER, None)
+        os.environ.pop(KNOWN_EXTRA_MARKER, None)
         lines, deferred, n = population_verdict(snap, snap)
         check((lines, deferred, n) == ([], [], 0),
               f"a complete population was not clean: {lines} {deferred} {n}")
@@ -158,11 +200,56 @@ def selftest() -> list[str]:
         lines, deferred, n = population_verdict([], snap[:-1])
         check(len(deferred) == 1 and snap[-1] in deferred[0],
               f"the snapshot did not widen an empty pin set: {deferred}")
+
+        # ── the known-extra axis (Issue 815) ───────────────────────────────
+        # The only thing that can take a repo OUT of the UNREGISTERED bucket,
+        # so the arms ask what it still reds on.
+        os.environ.pop(PARTIAL_MARKER, None)
+        joined = snap + ["seal-x", "seal-y"]
+
+        os.environ.pop(KNOWN_EXTRA_MARKER, None)
+        lines, deferred, n = population_verdict(snap, joined)
+        check(n == 2 and any("UNREGISTERED" in l for l in lines),
+              f"two extra repos must both be UNREGISTERED unmarked: {lines} {n}")
+
+        os.environ[KNOWN_EXTRA_MARKER] = "seal-x,seal-y"
+        lines, deferred, n = population_verdict(snap, joined)
+        check(n == 0 and lines == [],
+              f"named known-extra repos must not red: {lines} {n}")
+        # Disclosed on the FINAL line of a PASSING run — a suppression nobody
+        # sees is a suppression nobody re-reads.
+        check(any(KNOWN_EXTRA_MARKER in d for d in deferred),
+              f"the acknowledgement is not disclosed: {deferred}")
+
+        # ⚑ The reason the marker takes NAMES: acknowledging one extra repo
+        # must not acknowledge the next one. An arm that named both would pass
+        # against a blanket `=1` marker too.
+        os.environ[KNOWN_EXTRA_MARKER] = "seal-x"
+        lines, deferred, n = population_verdict(snap, joined)
+        check(n == 1 and any("UNREGISTERED" in l and "seal-y" in l
+                             for l in lines),
+              f"an UNNAMED extra repo must still red beside a named one: "
+              f"{lines} {n}")
+
+        # Both directions: a name that describes nothing is a FINDING, not a
+        # deferral — the direction in which this marker rots into an amnesty.
+        os.environ[KNOWN_EXTRA_MARKER] = "seal-never-existed"
+        lines, deferred, n = population_verdict(snap, snap)
+        check(n == 1 and any("STALE" in l for l in lines),
+              f"a stale acknowledgement must red: {lines} {n}")
+        os.environ[KNOWN_EXTRA_MARKER] = snap[0]
+        lines, deferred, n = population_verdict(snap, snap)
+        check(n == 1 and any("STALE" in l for l in lines),
+              f"acknowledging a REGISTERED repo must red: {lines} {n}")
     finally:
         if saved is None:
             os.environ.pop(PARTIAL_MARKER, None)
         else:
             os.environ[PARTIAL_MARKER] = saved
+        if saved_extra is None:
+            os.environ.pop(KNOWN_EXTRA_MARKER, None)
+        else:
+            os.environ[KNOWN_EXTRA_MARKER] = saved_extra
 
     return fails
 
@@ -174,10 +261,12 @@ def main() -> int:
         for f in fails:
             print("  ✗ " + f)
         return 1
-    print("✓ sweep_population selftest — 7 assertion(s): complete population "
-          "clean, UNSEEN without the marker, DEFERRED with it (naming repo + "
-          "marker), UNREGISTERED reds under the marker, snapshot widens an "
-          "empty pin set")
+    print(f"✓ sweep_population selftest — {_N_ASSERTIONS} assertion(s), "
+          "COUNTED not typed: complete population clean, UNSEEN without the "
+          "marker, DEFERRED with it (naming repo + marker), UNREGISTERED reds "
+          "under the marker, snapshot widens an empty pin set, and the "
+          f"{KNOWN_EXTRA_MARKER} axis both ways (named extras excused and "
+          "disclosed, unnamed ones still red, stale entries red)")
     return 0
 
 

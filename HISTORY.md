@@ -11,6 +11,96 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 815 (2026-09-17) — CLOSED by its own criterion: the box is green. Option 2 landed as `DOCS_GATE_KNOWN_EXTRA`, and options 1 and 3 remain the owner's
+
+⚠ **Read this as the REVERSIBLE option taken in the absence of a decision, not as the decision.** The issue asked the
+owner to choose between joining the three `seal-*` repos to the contract (1), a known-extra marker (2), and box
+hygiene (3). Option 2 is the only one that touches neither the 20-repo contract nor `seal-online-remaster`, whose
+main/develop are READ-ONLY by standing instruction — so it is what landed. Options 1 and 3 are unaffected and
+cheap to switch to: option 3 in particular makes the marker unnecessary, and dropping the marker restores the
+previous behaviour exactly.
+
+The marker is the MIRROR of `DOCS_GATE_PARTIAL_CLONE`, one bucket over: that one covers repos that are ABSENT, this
+covers repos that are PRESENT and unregistered. ⛔ It takes **NAMES, never `=1`** — `=1` would excuse the next
+unregistered repo too, and UNREGISTERED means "a repo JOINING", the posture this workspace keeps loud on purpose.
+It reds in BOTH directions: a name gone from the box, or since registered in `repo_set.txt`, is a STALE
+acknowledgement and fails, so the marker cannot only ever loosen. Never auto-detected, for the partial marker's own
+reason. One classifier (`skill_repo_set_gate.known_extra_state`), consumed by all three call sites — the Issue-793
+"land it in the family, not in one instrument" rule, which this repo records seven prior failures of.
+
+**Three defects found while landing it, all in the instruments rather than the contract:**
+
+1. ⛔ **`skill_repo_set_gate` printed "16 of 20 canonical repos present" over 13 canonical + 3 extra** — a scope line
+   crediting the extras as canonical and understating the absence by exactly their number. That is the
+   partial-set-as-whole-one defect the gate exists to catch, committed by the gate's own display. The walk is not
+   the canonical set once a box carries known-extra repos, and the two must not be conflated.
+2. ⛔ **Both selftests read the AMBIENT environment while building a SYNTHETIC workspace**, so setting the new marker
+   to this box's three real repos failed two Issue-765 arms whose synthetic walk has never heard of them — the gate
+   reported INSTRUMENT-unreadable on a CORRECT invocation. Both markers are now saved, cleared and restored around
+   the arms in both modules; the arms must measure the arms.
+3. ⛔ **`population_sync_gate --canary` died with UnicodeEncodeError and no verdict** on this cp874 console: the
+   stream defence lived inside `main()` only, so the canary path printed `✓` straight at the console encoding. That
+   is the Issue-804 class exactly — not findings *unknown* but findings *unlooked at*. `console_safe.apply()` moved
+   to the `__main__` entry both paths go through.
+
+⛔ **A fourth, caught by `arm_reach_gate` and closed by EXTRACTION rather than by a pin.** The full 26-module run
+reported exactly one UNPINNED survivor in the whole population, and it was the new code: an `and -> or` flip on
+`l.strip() and not l.startswith("#")` inside `known_extra_state`, distinguished by no arm. The snapshot parse existed
+**three times** in one file. In the two older copies the parsed list is RETURNED, so blank and comment lines leaking
+in change the result and the Issue-790 fixture (which carries both a comment AND a blank line for exactly this
+reason) kills the mutant; in the new copy the set was only tested with `n not in snap` against declared repo NAMES,
+so the junk changed the set and no verdict — genuinely EQUIVALENT, and therefore pinnable with a straight face. That
+is the trap. AGENTS.md records that about a third of rows once labelled EQUIVALENT were real gaps wearing the label,
+and the repair for a duplicated rule is to stop duplicating it (Issue 755), not to adjudicate each copy on its own
+merits. `read_snapshot()` is one site now, reached by all three callers and armed by the fixture that was already
+there; the mutant population dropped 100 → 97 and the survivor set is back to the two pre-existing pinned rows.
+
+Arms: 16/16 in `population_sync_gate --canary` (5 new + the documentation arm), 13 COUNTED in
+`sweep_population.selftest` (its pass line hand-typed "7 assertion(s)" and would have gone stale on arrival —
+Issue 798 T3's shape, so the count is derived now), and the `skill_repo_set_gate` arms including the one that
+matters most: an UNNAMED extra repo still reds beside a named one, which is the arm a blanket `=1` marker would pass.
+
+## Issue 808 (2026-09-17) — CLOSED: T1 landed option 2, the AVX2 `argtopk` dispatch narrowed to k ≤ 4 on x86_64; the measured loss is GONE and the wins are kept
+
+Owner's call on the four options, taken on Bench 810's evidence: **option 2**, and scoped to **x86_64 only**. The
+dispatch predicate in `argtopk_with_scratch` is arch-independent `k ≤ 16`, so the narrowing lives inside the x86_64
+`argtopk_simd` against a new `AVX2_ARGTOPK_K_MAX = 4`; NEON keeps the full k ≤ 16 range, because it is the algorithm
+witness the AVX2 port was transcribed from, it is not measured as a loss, and narrowing it would be a behaviour
+change on aarch64 that no measurement asked for. Option 1 was refused on its own data: Bench 810 measured `N_MIN` as
+DISTRIBUTION-sensitive (k=8: 256 on `locality`, 768 on `iid_uniform`, >1024 on `late_peak`) and the dispatch cannot
+observe the distribution, so a per-k n-floor would be a gate on a quantity the gate cannot see.
+
+**Measured after the change** (4090, i7-13700K, `+avx2`, release, interleaved median-of-ratios): the recorded loss is
+gone — `late_peak` k=8, the deepest cell at **0.41–0.72×**, now reads **0.98–0.99×**, and the worst cell anywhere
+above the bound is **0.95×** across six distributions × k ∈ {8,16} × n ∈ {64..512}. The wins below the bound are
+untouched: k=2 reaches **5.11×** (`iid_uniform`, n=1024), k=4 **3.51×**, k=1 **6.73×** (`locality`, n=1024).
+
+**T3's lesson applied to T1's own fix.** Narrowing a dispatch RECREATES the condition both Issue 806 defects grew in:
+the two 806 regression tests reach the kernel through `argtopk_with_scratch`, so at k ∈ {8,12,16} they would have
+silently started asserting the SCALAR path on x86_64 and the AVX2 arm would be executed by nothing again. The kernel
+was therefore hoisted out of its enclosing fn into a named `argtopk_avx2_kernel` so a test can still reach it ABOVE
+the dispatch bound, and `test_argtopk_avx2_kernel_matches_reference_above_dispatch_bound` calls it directly over both
+806 fixtures (the ascending ramp, the 1..7-element partial tail) at k ∈ {4,5,8,12,16}. Both new tests were verified
+NON-VACUOUS by perturbation (reversing the kernel's output order reds them, plus 7 pre-existing).
+
+**T2 closed under option 2, in two halves that fail differently.** The load-immune half is
+`test_avx2_argtopk_dispatch_bound_is_pinned` — a constant does not oscillate, and this repo has measured perf bars
+producing four different failing sets across four runs of ONE commit (Bench 806 T7). The timing half is
+`bench_simd_topk_issue808_t2_above_bound_is_not_a_loss`, floored at **0.85×** against an expected ~1.00 and a defect
+that was 0.41×; it carries the confirm-alone discipline in its own failure message. T2's ≥2-microarchitecture bar is
+**not** discharged and was never load-bearing for NARROWING — narrowing is the conservative direction, falling back
+to code that runs everywhere. It still gates any WIDENING back toward option 1, and the reopen instrument is
+`bench_simd_topk_issue808_crossover_nmin`, deliberately KEPT even though it now reads ~1.00 above k=4 on x86_64:
+deleting it would delete the reopen path.
+
+## Issue 806 (2026-09-17) — CLOSED: T8 was the last open task and it was entirely Issue 808's T1
+
+T6 and T7 closed 2026-09-16 (Bench 806 Addenda I+II, quiet-box calibration); T8 was filed out to Issue 808 as the
+owner's choice between four options. With 808's T1 landed and 808 closed, 806 owns nothing further. Standing record:
+the nine-cell matrix, the five defects it found, and the method pins live in `.benchmarks/806_x86_64_execution_matrix.md`;
+the matrix itself is `scripts/x86_64_execution_matrix.sh`, documented in AGENTS.md, and remains a workstation verdict
+with no CI lane requested.
+
 ## Issue 818 CLOSED (2026-09-17) — the four no-default `--all-targets` breaks gated both halves; bench_412's green-zero row found in the same sweep
 
 Fix `78a1ac5d7`. The repro (`cargo check -p katgpt-core --no-default-features --all-targets`) named four targets, all
@@ -30,7 +120,7 @@ green zeros); no-default, default, and all-features `--all-targets` all check cl
 bit-unchanged. Standing corollary for promotions: DEMOTING/promoting a default-on feature must MOVE its target
 gates in the same commit, never delete them (bench_371 is the measured instance).
 
-## Issue 808 T4 LANDED (2026-09-17) — `argtopk` AVX2 dispatch re-measured on six realistic block-score distributions + per-k `N_MIN` crossover (Bench 810); Issue 817 single-pass AVX2 `argmax` port measured NEGATIVE + reverted (Bench 812)
+## Issue 808 (2026-09-17) — T4 LANDED: `argtopk` AVX2 dispatch re-measured on six realistic block-score distributions + per-k `N_MIN` crossover (Bench 810)
 
 Two units on the 4090 box, one evidence-gathering, one a same-day negative. **Bench 810** (Issue 808's option-4 half + T2's
 Raptor-Lake row): the recorded "AVX2 `argtopk` k≤16 is a measured loss" table was measured on ONE i.i.d. fixture — the re-measure across six
@@ -40,7 +130,12 @@ still 0.90–0.95× at n=1024 — **no n-floor rescues k=8 there**); k≤4 is th
 3.9×); and `N_MIN` is distribution-sensitive (k=8: 256 on `locality`, 768 on `iid_uniform`, >1024 on `late_peak`) — so the eventual T2 gate
 needs the distribution axis, not one n per k. Instrument: the shared Issue-723 interleaved median-of-ratios (`tests/common/ab_timing.rs`),
 new tests `bench_simd_topk_issue808_{distribution_matrix,crossover_nmin}` in `tests/bench_256_simd_topk.rs`. T1 stays the owner's call;
-T2's ≥2-microarchitecture bar is 1 of 2 met. **Bench 811** (Issue 817, filed+closed same day): the same matrix's k=1 rows exposed the
+T2's ≥2-microarchitecture bar is 1 of 2 met.
+
+## Issue 817 (2026-09-17) — single-pass AVX2 `argmax` port measured NEGATIVE + reverted; the NEON premise does not transfer (Bench 812)
+
+Filed and closed the same day, alongside the Issue 808 T4 unit above; the file was removed per the
+noise-reduction rule, so this heading is the whole allocation record. **Bench 812**: the same matrix's k=1 rows exposed the
 x86_64 `simd_argmax_f32` two-pass cost depending on WHERE the maximum sits (`position(== max)` rescans), and `argmax.rs` carried a standing
 offer to port the NEON single-pass kernel to AVX2. The port was built (8-lane (max,index) tracking, blend-on-strict-gt, correctness green on
 known-answer + tie + AVX2-tail + NaN-pin tests) and measured a NET LOSS on this box: `iid` 0.24–0.28× and `early` 0.20–0.23× at n ≥ 256 on

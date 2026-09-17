@@ -86,6 +86,84 @@ MARKER_RE = re.compile(r"repo-set-ok:\s*(\S.*?)\s*(?:-->|$)")
 # import from this module — the fence scanner / derive_repos precedent).
 PARTIAL_MARKER = "DOCS_GATE_PARTIAL_CLONE"
 
+# ── the known-extra axis (Issue 815) ────────────────────────────────────────
+# The MIRROR of the partial-clone marker, one bucket over. PARTIAL covers
+# repos that are ABSENT; this covers repos that are PRESENT and unregistered —
+# a box carrying siblings the 20-repo contract does not name (the 4090's three
+# `seal-*` directories, each with a root BOUNDARY.md and a .git, so each
+# satisfies `derive_repos` exactly).
+#
+# ⛔ It takes NAMES, never `=1`, and that asymmetry with PARTIAL_MARKER is the
+# whole design. `=1` would excuse the NEXT unregistered repo too, which is the
+# one nobody has looked at — and UNREGISTERED means "a repo JOINING", the
+# posture AGENTS.md keeps loud on purpose. Naming them keeps the bucket loud
+# for everything not named.
+#
+# It is an explicit opt-in in the DOCS_GATE_CI idiom and is NEVER
+# auto-detected, for the reason the partial-clone marker is not: a repo whose
+# `repo_set.txt` row was simply forgotten is set-identical, from the walk
+# alone, to a repo that genuinely does not belong to the contract.
+#
+# Reds in BOTH directions. A name here that is not on disk, or that
+# `repo_set.txt` already knows, is a STALE acknowledgement — so the file
+# cannot only ever loosen, and an acknowledgement does not outlive the repo it
+# was written for.
+KNOWN_EXTRA_MARKER = "DOCS_GATE_KNOWN_EXTRA"
+
+
+def read_snapshot() -> list[str]:
+    """The committed repo vocabulary — ONE parse, not three (Issue 815).
+
+    ⛔ This existed three times, and the third copy is how it was found.
+    `arm_reach_gate` reported the Issue-815 copy as the only UNPINNED survivor
+    in the whole 26-module population: an `and -> or` flip on
+    `l.strip() and not l.startswith("#")` that no arm distinguished.
+
+    The honest reading of that survivor is what argues for extracting rather
+    than pinning it. In the two OLDER copies the parsed list is RETURNED, so
+    blank and comment lines leaking in change the result and the existing
+    fixture (`"# a comment\\nkatgpt-rs\\n\\nriir-ai\\n..."`, which carries both
+    a comment AND a blank line for exactly this reason — Issue 790) kills the
+    mutant. In the third the set was only ever tested with `n not in snap`
+    against declared repo NAMES, so the junk members changed the set without
+    changing any verdict — EQUIVALENT, and therefore pinnable with a
+    straight face. But "EQUIVALENT" here would have been a pin on a line that
+    should not have been written twice: AGENTS.md records that about a third
+    of rows once labelled EQUIVALENT were real gaps wearing the label, and the
+    repair for a duplicated rule is to stop duplicating it (Issue 755), not to
+    adjudicate each copy separately.
+
+    One site now, reached by all three callers and armed by the fixture above.
+    """
+    if not SNAPSHOT.is_file():
+        return []
+    return [l.strip() for l in SNAPSHOT.read_text(encoding="utf-8").splitlines()
+            if l.strip() and not l.startswith("#")]
+
+
+def _known_extra_names() -> list[str]:
+    """The marker's declared names. Comma- or whitespace-separated."""
+    raw = os.environ.get(KNOWN_EXTRA_MARKER, "")
+    return sorted({n for n in re.split(r"[,\s]+", raw.strip()) if n})
+
+
+def known_extra_state(derived: list[str]) -> tuple[list[str], list[str]]:
+    """(acknowledged, stale) for the declared known-extra repos.
+
+    acknowledged  declared, on this box, and absent from the snapshot — the
+                  rows the marker actually excuses from UNREGISTERED.
+    stale         declared but NOT in that posture: either gone from the box,
+                  or since ADDED to `repo_set.txt` (it joined the contract, so
+                  the acknowledgement is now a lie about it). Always reds.
+    """
+    declared = _known_extra_names()
+    if not declared:
+        return [], []
+    snap = set(read_snapshot())
+    present = set(derived)
+    ack = sorted(n for n in declared if n in present and n not in snap)
+    return ack, sorted(set(declared) - set(ack))
+
 
 def partial_clone_state(derived: list[str]) -> tuple[bool, list[str], list[str]]:
     """(marker_on, absent, unregistered) vs the committed snapshot.
@@ -93,14 +171,18 @@ def partial_clone_state(derived: list[str]) -> tuple[bool, list[str], list[str]]
     absent        in the snapshot, not on this box — the partial-clone shape
                   only when `unregistered` is empty.
     unregistered  on this box, missing from the snapshot — genuine staleness
-                  in EVERY posture; never deferred, marker or not.
+                  in EVERY posture; never deferred by PARTIAL_MARKER, which
+                  covers the opposite bucket. The one thing that removes a row
+                  here is `KNOWN_EXTRA_MARKER` NAMING it (Issue 815).
     """
     marker_on = os.environ.get(PARTIAL_MARKER) == "1"
     if not SNAPSHOT.is_file():
         return marker_on, [], []
-    snap = [l.strip() for l in SNAPSHOT.read_text(encoding="utf-8").splitlines()
-            if l.strip() and not l.startswith("#")]
-    return marker_on, sorted(set(snap) - set(derived)), sorted(set(derived) - set(snap))
+    snap = read_snapshot()
+    unregistered = set(derived) - set(snap)
+    ack, _ = known_extra_state(derived)
+    return (marker_on, sorted(set(snap) - set(derived)),
+            sorted(unregistered - set(ack)))
 
 
 def derive_repos(root: Path) -> list[str]:
@@ -192,6 +274,20 @@ def fenced_blocks(text: str):
         yield start, -len(lines), buf, (lines[start - 2] if start >= 2 else "")
 
 
+def _known_extra_note(ack: list[str]) -> str | None:
+    """The advisory line for acknowledged known-extra repos, or None.
+
+    Rides the caller's FINAL line in BOTH directions, never only on failure —
+    an acknowledgement nobody sees on a passing run is one nobody re-reads
+    (the `DEFERRED` precedent, Issue 793).
+    """
+    if not ack:
+        return None
+    return (f"known-extra ({KNOWN_EXTRA_MARKER}): {len(ack)} on-disk repo(s) "
+            f"acknowledged as OUTSIDE the contract — {ack}; every OTHER "
+            f"unregistered repo still reds")
+
+
 def load_vocabulary(derived: list[str]) -> tuple[list[str], str | None, str | None]:
     """(repo names to match on, error, partial-deferral note).
 
@@ -202,11 +298,24 @@ def load_vocabulary(derived: list[str]) -> tuple[list[str], str | None, str | No
     if not SNAPSHOT.is_file():
         return [], (f"{SNAPSHOT.name} is missing — the gate has no repo "
                     f"vocabulary. Regenerate on the workstation."), None
-    snap = [l.strip() for l in SNAPSHOT.read_text(encoding="utf-8").splitlines()
-            if l.strip() and not l.startswith("#")]
+    snap = read_snapshot()
+    ack, stale_ack = known_extra_state(derived)
+    if stale_ack:
+        # Reds in the tightening direction too: an acknowledgement that no
+        # longer describes anything is a claim nobody re-checked.
+        return [], (f"{KNOWN_EXTRA_MARKER} names {len(stale_ack)} repo(s) that "
+                    f"are NOT unregistered-and-present — {stale_ack}. Either "
+                    f"they are gone from this box, or {SNAPSHOT.name} has since "
+                    f"registered them (they joined the contract). Drop them "
+                    f"from the marker."), None
     if len(derived) > 1 and sorted(snap) != sorted(derived):
-        missing = sorted(set(derived) - set(snap))
+        missing = sorted(set(derived) - set(snap) - set(ack))
         gone = sorted(set(snap) - set(derived))
+        if not missing and not gone:
+            # Everything the walk added is acknowledged by name, and nothing
+            # is absent: the snapshot axis is green, with the advisory riding
+            # the final line in BOTH directions (the DEFERRED precedent).
+            return snap, None, _known_extra_note(ack)
         if missing:
             # A repo the snapshot does not know: genuine staleness in every
             # posture — including a marked partial clone.
@@ -221,7 +330,10 @@ def load_vocabulary(derived: list[str]) -> tuple[list[str], str | None, str | No
             note = (f"partial clone ({PARTIAL_MARKER}=1): {len(gone)} snapshot "
                     f"repo(s) absent on this box — snapshot audit DEFERRED to "
                     f"a full-workstation run")
-            return snap, None, note
+            # A box can be BOTH partial and known-extra — the 4090 measured as
+            # exactly that (Issue 815). Neither note may swallow the other.
+            extra = _known_extra_note(ack)
+            return snap, None, f"{note}; {extra}" if extra else note
         return [], (f"{SNAPSHOT.name} names {len(gone)} repo(s) absent from "
                     f"this box — {gone}. Either this is a PARTIAL CLONE "
                     f"(export {PARTIAL_MARKER}=1 to defer the population axis "
@@ -284,6 +396,7 @@ def selftest() -> list[str]:
     def eq(label: str, got, want):
         if got != want:
             fails.append(f"    {label}: got {got!r}, want {want!r}")
+
 
     # ── the parser: both fence families, per CommonMark ──────────────────
     def spans(*lines):
@@ -381,7 +494,17 @@ def selftest() -> list[str]:
 
     # ── the partial-clone axis: a deferral bug greens everything ──────────
     global SNAPSHOT
-    _real_snap, _real_env = SNAPSHOT, os.environ.get(PARTIAL_MARKER)
+    # ⛔ These arms build a SYNTHETIC workspace but read the REAL environment,
+    # so an ambient marker leaks into arms that predate it. Not hypothetical:
+    # setting `DOCS_GATE_KNOWN_EXTRA` to this box's three real `seal-*` repos
+    # failed two Issue-765 arms whose synthetic walk has never heard of them,
+    # and the gate reported INSTRUMENT-unreadable on a CORRECT invocation
+    # (Issue 815). BOTH markers are cleared for the duration and restored
+    # after — the arms must measure the arms.
+    _real_snap = SNAPSHOT
+    _ambient = {k: os.environ.get(k) for k in (PARTIAL_MARKER, KNOWN_EXTRA_MARKER)}
+    for _k in _ambient:
+        os.environ.pop(_k, None)
     try:
         with tempfile.TemporaryDirectory() as td:
             SNAPSHOT = Path(td) / "repo_set.txt"
@@ -427,6 +550,83 @@ def selftest() -> list[str]:
             eq("the marker does not excuse an UNREGISTERED repo",
                load_vocabulary(["katgpt-rs", "riir-ai", "riir-chain", "riir-dao"])[0],
                [])
+
+            # ── the known-extra axis (Issue 815) ───────────────────────────
+            # Aimed at the SUPPRESSING path first, the `heading_allocated`
+            # discipline: this marker is the only thing in the gate that can
+            # remove an UNREGISTERED row, so every arm below asks what it
+            # still reds on.
+            os.environ.pop(PARTIAL_MARKER, None)
+            walk_extra = ["katgpt-rs", "riir-ai", "riir-chain", "seal-remake"]
+
+            os.environ.pop(KNOWN_EXTRA_MARKER, None)
+            eq("no marker: an extra repo is UNREGISTERED",
+               partial_clone_state(walk_extra), (False, [], ["seal-remake"]))
+            eq("no marker: known_extra_state is empty both ways",
+               known_extra_state(walk_extra), ([], []))
+
+            os.environ[KNOWN_EXTRA_MARKER] = "seal-remake"
+            eq("a NAMED extra repo leaves the UNREGISTERED bucket",
+               partial_clone_state(walk_extra), (False, [], []))
+            eq("...and is reported as acknowledged, not silently dropped",
+               known_extra_state(walk_extra), (["seal-remake"], []))
+            vocab_x, err_x, note_x = load_vocabulary(walk_extra)
+            eq("a fully-acknowledged walk passes the snapshot axis",
+               (sorted(vocab_x), err_x), (["katgpt-rs", "riir-ai", "riir-chain"], None))
+            # The advisory rides the FINAL line on a PASSING run — a deferral
+            # printed only on failure is one nobody reads on the run that passes.
+            eq("...and says so on the final line", bool(note_x), True)
+
+            # ⚑ The whole reason the marker takes NAMES and not `=1`: a SECOND
+            # unregistered repo is still loud while the first is acknowledged.
+            eq("an UNNAMED extra repo still reds beside a named one",
+               partial_clone_state(walk_extra + ["seal-remake-2"]),
+               (False, [], ["seal-remake-2"]))
+            eq("...and the gate refuses, it does not merely warn",
+               load_vocabulary(walk_extra + ["seal-remake-2"])[0], [])
+
+            # Both directions: a name that no longer describes an
+            # unregistered-and-present repo is STALE and reds.
+            os.environ[KNOWN_EXTRA_MARKER] = "seal-gone"
+            eq("a declared repo absent from the box is STALE",
+               known_extra_state(walk_extra), ([], ["seal-gone"]))
+            eq("...and the gate refuses on it",
+               load_vocabulary(walk_extra)[0], [])
+            os.environ[KNOWN_EXTRA_MARKER] = "riir-chain"
+            eq("a declared repo the snapshot HAS since registered is STALE",
+               known_extra_state(walk_extra), ([], ["riir-chain"]))
+            eq("...and the gate refuses on it too",
+               load_vocabulary(walk_extra)[0], [])
+
+            # The two markers are independent axes and a box can carry both.
+            os.environ[KNOWN_EXTRA_MARKER] = "seal-remake"
+            os.environ[PARTIAL_MARKER] = "1"
+            both = ["katgpt-rs", "riir-ai", "seal-remake"]
+            eq("partial AND known-extra: each bucket keeps its own rows",
+               partial_clone_state(both), (True, ["riir-chain"], []))
+            vocab_b, err_b, note_b = load_vocabulary(both)
+            eq("...the gate passes on both axes",
+               (sorted(vocab_b), err_b),
+               (["katgpt-rs", "riir-ai", "riir-chain"], None))
+            # ⚑ Neither note may swallow the other, or one of the two
+            # deferrals silently stops being disclosed.
+            eq("...and BOTH deferrals are disclosed",
+               (PARTIAL_MARKER in (note_b or ""),
+                KNOWN_EXTRA_MARKER in (note_b or "")),
+               (True, True))
+
+            # Separator handling: the marker is hand-typed in a shell export.
+            os.environ[KNOWN_EXTRA_MARKER] = " seal-a,seal-b  seal-a , "
+            eq("comma/space separated, de-duplicated, blanks dropped",
+               _known_extra_names(), ["seal-a", "seal-b"])
+            os.environ[KNOWN_EXTRA_MARKER] = ""
+            eq("an EMPTY marker acknowledges nothing (it is not `=1`)",
+               (_known_extra_names(), known_extra_state(walk_extra)),
+               ([], ([], [])))
+            eq("...so an extra repo still reds under an empty marker",
+               partial_clone_state(walk_extra), (True, [], ["seal-remake"]))
+            os.environ.pop(KNOWN_EXTRA_MARKER, None)
+            os.environ.pop(PARTIAL_MARKER, None)
             # ⚑ The `len(derived) > 1` BLINDNESS guard, at its exact boundary
             # (Issue 790 T2 — it survived a `> -> >=` flip, because every arm
             # above passes two or more repos). A one-repo walk is the walk
@@ -443,10 +643,11 @@ def selftest() -> list[str]:
                load_vocabulary(["riir-dao", "riir-ai"])[0], [])
     finally:
         SNAPSHOT = _real_snap
-        if _real_env is None:
-            os.environ.pop(PARTIAL_MARKER, None)
-        else:
-            os.environ[PARTIAL_MARKER] = _real_env
+        for _k, _v in _ambient.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     return fails
 
@@ -498,22 +699,39 @@ def main() -> int:
     # scope line may claim — "full workspace" over 14 of 20 would be the
     # partial-set-as-whole-one defect this gate exists to catch.
     vocab, err, partial = load_vocabulary(repos)
-    if partial:
-        scope = (f"partial clone — {len(repos)} of {len(vocab)} canonical "
+    # ⛔ The walk is not the CANONICAL set once a box carries known-extra
+    # repos, and the two must not be conflated in the scope line. Measured
+    # (Issue 815): with the three `seal-*` repos acknowledged, `len(repos)` is
+    # 16 while only 13 of them are contract repos, and the line read
+    # "16 of 20 canonical repos present" — a count that credits the extras as
+    # canonical and understates the absence by exactly their number. That is
+    # the partial-set-as-whole-one defect this gate exists to catch, committed
+    # by the gate's own display.
+    ack, _stale_ack = known_extra_state(repos)
+    canonical = [r for r in repos if r not in ack]
+    absent = sorted(set(vocab) - set(canonical))
+    if partial and absent:
+        scope = (f"partial clone — {len(canonical)} of {len(vocab)} canonical "
                  f"repos present, snapshot audit DEFERRED")
     else:
         # On the workstation all contract repos are present; in CI only this
         # checkout is. Both are legitimate — reporting WHICH is the point.
-        scope = "full workspace" if len(repos) > 1 else f"{SELF_REPO} only (CI)"
+        scope = ("full workspace" if len(canonical) > 1
+                 else f"{SELF_REPO} only (CI)")
+    if ack:
+        # Rides the FINAL line, in BOTH directions — `scope` is embedded in
+        # the pass line for exactly this reason (see the comment there).
+        scope += (f" · {len(ack)} known-extra repo(s) OUTSIDE the contract "
+                  f"({KNOWN_EXTRA_MARKER}): {', '.join(ack)}")
     print(f"▸ {len(repos)} contract repo(s) under {GIT_ROOT} — {scope}")
     print(f"▸ {len(skills)} SKILL.md in {len(covered)}: {', '.join(covered)}")
 
     if err:
         print(f"✗ {err}")
         return 1
-    if partial:
+    if partial and absent:
         src = " (snapshot — partial-clone deferral: NOT verified on this box)"
-    elif len(repos) > 1:
+    elif len(canonical) > 1:
         src = " (re-derived and verified against the live workspace)"
     else:
         src = " (snapshot — no siblings to verify against)"

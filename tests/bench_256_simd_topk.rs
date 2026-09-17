@@ -414,6 +414,16 @@ fn measure_cell(base: &[f32], k: usize, rounds: usize) -> CellResult {
 /// The full distribution × (k, n) grid — does the AVX2/NEON dispatch still
 /// lose where the recorded table says it does, once the input looks like
 /// block scores instead of i.i.d. uniform?
+///
+/// ⚠ POST-T1 the answer differs by architecture, and reading one grid for the
+/// other is the trap. On **aarch64** this is still the question it was: NEON
+/// dispatches the whole k ≤ 16 range and the grid measures a real A/B. On
+/// **x86_64** Issue 808 T1 narrowed the dispatch to k ≤ 4, so the k ∈ {8, 16}
+/// rows now compare `argtopk_scalar_heap` against ITSELF and read ~1.00 —
+/// that is the fix, not a measurement of the kernel. The kernel's own numbers
+/// above the bound are the ones recorded in Bench 810; this grid can no longer
+/// reach them on x86_64. `bench_simd_topk_issue808_t2_above_bound_is_not_a_loss`
+/// is the assertion built on that ~1.00.
 #[test]
 fn bench_simd_topk_issue808_distribution_matrix() {
     let k_values = [1usize, 2, 4, 8, 16];
@@ -454,6 +464,14 @@ fn bench_simd_topk_issue808_distribution_matrix() {
 /// distribution bookends (i.i.d. and the locality shape a real block-score
 /// stream plausibly has). One box, one microarchitecture — the Raptor-Lake
 /// row of the table the owner's T2 needs before any dispatch change.
+///
+/// ⚠ The owner picked option 2, not option 1 (Issue 808 T1, 2026-09-17), so on
+/// x86_64 this sweep no longer measures what it was built to measure above
+/// k = 4: both arms are the same code there and it crosses at the first n.
+/// KEPT anyway, and deliberately — it is the instrument that would have to
+/// re-run, on a second microarchitecture, before `AVX2_ARGTOPK_K_MAX` could be
+/// widened toward option 1. Deleting it would delete the reopen path. Its
+/// aarch64 run is unaffected.
 #[test]
 fn bench_simd_topk_issue808_crossover_nmin() {
     let k_values = [2usize, 4, 8, 12, 16];
@@ -510,4 +528,95 @@ fn bench_simd_topk_issue808_crossover_nmin() {
             }
         }
     }
+}
+
+// ── Issue 808 T1/T2 — the dispatch bound, asserted ─────────────────────────
+//
+// T1 landed option 2 (owner's call, 2026-09-17): on x86_64 the AVX2 kernel is
+// dispatched only for `k <= AVX2_ARGTOPK_K_MAX` (= 4), and larger k takes
+// `argtopk_scalar_heap`. The two tests above REPORT the grid; this one is the
+// timing half of T2's "the next regression is a test failure rather than a
+// table nobody reads".
+//
+// ⚠ The bar is deliberately far from the thing it detects. The defect was
+// 0.41–0.72× on `late_peak` at k = 8; post-dispatch both arms reach the same
+// kernel and the floor sits at 0.85.
+//
+// ⚠ The expected value is **~0.95, not 1.00**, and that is structural rather
+// than noise: arm a calls `argtopk_scalar_heap` directly, while arm b goes
+// through `argtopk` → `argtopk_with_scratch` → `argtopk_simd` and pays a
+// `is_x86_feature_detected!` probe and two extra calls before landing on the
+// same code. Measured over three consecutive runs on a quiet 4090: worst cell
+// 0.95 / 0.94 / 0.94 — the worst VALUE is stable to 0.01 even though which
+// cell is worst moves, which is what near-parity noise looks like. Do not
+// "fix" a 0.95 by raising the floor toward 1.00; that would gate the dispatch
+// overhead, not the kernel.
+// That margin is not timidity — this repo has measured perf bars producing four
+// different failing sets across four runs of ONE commit (Bench 806 T7), and a
+// bar that cries wolf is a bar nobody keeps. The load-immune half of the same
+// assertion is `test_avx2_argtopk_dispatch_bound_is_pinned` in the unit tests,
+// which reds on a widened bound without timing anything at all.
+//
+// ⛔ A red here is a BOX-CONDITIONS question first (Bench 806 T7's discipline):
+// re-run it alone before calling it a regression.
+
+/// Issue 808 T2 — above the dispatch bound, the recorded loss must be GONE.
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn bench_simd_topk_issue808_t2_above_bound_is_not_a_loss() {
+    use katgpt_rs::dash_attn::block_topk::AVX2_ARGTOPK_K_MAX;
+
+    // The floor. See the module comment above for why it is this far out.
+    const FLOOR: f64 = 0.85;
+
+    // Exactly the cells Bench 810 measured the loss in: k above the bound, at
+    // the sizes where `late_peak` reached 0.41–0.72×.
+    let k_values: Vec<usize> = [8usize, 16]
+        .into_iter()
+        .filter(|&k| k > AVX2_ARGTOPK_K_MAX)
+        .collect();
+    assert!(
+        !k_values.is_empty(),
+        "AVX2_ARGTOPK_K_MAX = {AVX2_ARGTOPK_K_MAX} is at or above every k this \
+         test measures, so it asserts NOTHING. Widen the k list to span the \
+         bound, or this is a green zero over the exact arm Issue 808 is about."
+    );
+    let n_values = [64usize, 128, 256, 512];
+    let rounds = 9;
+
+    println!("\n== Issue 808 T2 — above the dispatch bound (floor {FLOOR:.2}x) ==");
+    let mut worst: Option<(String, usize, usize, f64)> = None;
+
+    for &dist in &ALL_DISTS {
+        for &k in &k_values {
+            for &n in &n_values {
+                let base = dist.make(n, k, 0x808_7A2 + (n as u64) * 7919);
+                let r = measure_cell(&base, k, rounds);
+                println!(
+                    "{:<15} k={:<3} n={:<6} {:>8.2}x  band {:>5.2}..{:<5.2}",
+                    dist.name(),
+                    k,
+                    n,
+                    r.speedup,
+                    r.speedup_lo,
+                    r.speedup_hi,
+                );
+                if worst.as_ref().is_none_or(|w| r.speedup < w.3) {
+                    worst = Some((dist.name().to_string(), k, n, r.speedup));
+                }
+            }
+        }
+    }
+
+    let (d, k, n, s) = worst.expect("the grid is non-empty");
+    println!("--> worst cell: {d} k={k} n={n} at {s:.2}x (floor {FLOOR:.2}x)");
+    assert!(
+        s >= FLOOR,
+        "above the dispatch bound the AVX2 arm should not run at all, so both \
+         arms are the same code and the ratio should be ~1.00 — measured \
+         {s:.2}x at {d} k={k} n={n}, below the {FLOOR:.2}x floor. Either \
+         AVX2_ARGTOPK_K_MAX was widened past {AVX2_ARGTOPK_K_MAX} without \
+         Issue 808 T2's >=2-microarchitecture measurement, or this box is \
+         loaded. RE-RUN THIS TEST ALONE before calling it a regression."
+    );
 }

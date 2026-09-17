@@ -1,6 +1,7 @@
 # Bench 806 — the x86_64 execution matrix: nine cells executed, one product defect found
 
-**Owner:** [Issue 806](../.issues/806_x86_64_execution_matrix_followup.md).
+**Owner:** katgpt-rs Issue 806 (CLOSED 2026-09-17; file removed per the noise-reduction
+rule — record in [HISTORY.md](../HISTORY.md)).
 **Box:** shikuwa (the 4090 — i7-13700K, 16 cores, Windows 11, x86_64 native).
 **Repo:** `8da93896` (`git archive HEAD` into a SCRATCH tree on `F:`, per the
 method Issue 806 pins — never a sibling's checkout, and off `E:` because that
@@ -164,8 +165,9 @@ parity test.
 ⚠ The kernel is also a measured **performance loss** post-fix — 12 of 15
 (k, n) cells slower than the scalar fallback it replaces. That is a separate
 decision with its own options and is filed as
-[Issue 808](../.issues/808_avx2_argtopk_is_a_measured_loss_vs_scalar.md), not
-resolved here.
+katgpt-rs Issue 808 — RESOLVED 2026-09-17 as option 2 (the AVX2 dispatch
+narrowed to k <= 4 on x86_64); see [Bench 810](810_argtopk_distribution_crossover.md)
+and the HISTORY.md record, not resolved here.
 
 ## A profile note that is not a defect
 

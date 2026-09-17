@@ -417,6 +417,40 @@ inferred green would ship the stale file. Gone-only disagreement WITHOUT the
 marker reds naming both hypotheses; a repo on disk the file does not know
 reds in every posture, marker or not.
 
+**Known-extra boxes (Issue 815) — the MIRROR marker, and it takes NAMES.**
+`DOCS_GATE_PARTIAL_CLONE` covers repos that are ABSENT. The other bucket is
+PRESENT-and-unregistered, which AGENTS.md deliberately keeps loud ("a repo
+JOINING, reds in every posture") — and that is right until a box carries
+siblings the contract genuinely does not claim. Measured on the 4090:
+`seal-game-editor`, `seal-online-remaster` and `seal-remake` each carry a root
+`BOUNDARY.md` and a `.git`, so each satisfies `derive_repos` exactly, and two
+of the three population checks red on every run with **zero** content
+findings. Such a box exports
+`DOCS_GATE_KNOWN_EXTRA=seal-game-editor,seal-online-remaster,seal-remake`
+(comma- or space-separated) and gets the same loud instrument-alive disclosure
+on the final line, in both directions.
+- ⛔ **NAMES, never `=1`, and the asymmetry with the partial marker is the
+  whole design.** `=1` would excuse the NEXT unregistered repo too — the one
+  nobody has looked at. Naming them keeps the bucket loud for everything else,
+  and the arms assert exactly that case (an unnamed extra reds beside a named
+  one).
+- **Reds in BOTH directions:** a name that is gone from the box, or that
+  `repo_set.txt` has since registered, is a STALE acknowledgement and fails.
+  So the marker cannot only ever loosen, and an acknowledgement does not
+  outlive the repo it was written for.
+- Never auto-detected, the `DOCS_GATE_CI` idiom, for the partial marker's own
+  reason: a repo whose `repo_set.txt` row was simply forgotten is
+  set-identical, from the walk alone, to one that does not belong.
+- ⚠ It does NOT settle whether those repos belong in the workspace — that is a
+  contract question (Issue 815 options 1 and 3, owner-owned). The marker makes
+  the box readable; it does not make the box right.
+- ⛔ The scope line must count CANONICAL repos, not the walk. Measured on the
+  landing run: with the three acknowledged, `skill_repo_set_gate` printed
+  "16 of 20 canonical repos present" over 13 canonical + 3 extra — a count
+  crediting the extras as canonical and understating the absence by exactly
+  their number, which is the partial-set-as-whole-one defect that gate exists
+  to catch, committed by its own display.
+
 **Every sweep below answers the partial-clone question the same way, once
 (Issue 793): `scripts/sweep_population.py`.** Seven of them carried a
 copy-pasted "pinned but ABSENT from the derived walk" loop and hard-red on a

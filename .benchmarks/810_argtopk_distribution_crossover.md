@@ -1,7 +1,8 @@
 # Bench 810 — `argtopk` AVX2 dispatch: distribution matrix + per-k crossover (Issue 808 T2 evidence, Raptor Lake row)
 
 **Date:** 2026-09-17
-**Issue:** [Issue 808](../.issues/808_avx2_argtopk_is_a_measured_loss_vs_scalar.md) — the
+**Issue:** katgpt-rs Issue 808 (CLOSED 2026-09-17, T1 landed option 2; file removed per the
+noise-reduction rule — record in [HISTORY.md](../HISTORY.md)) — the
 AVX2 `argtopk` path is a measured loss vs its own scalar fallback. This bench
 supplies **option 4's re-measurement** (realistic block-score distributions
 instead of the recorded i.i.d. fixture) and **T2's per-k `N_MIN` data** on the
@@ -342,3 +343,40 @@ flipping 1.07× (win) → 0.96× (loss) — sits inside the parity noise band
   its k=2/4 wins get wider on `bimodal_sparse`.
 - Any dispatch change still needs T2's ≥2-microarchitecture bar — this is the
   Raptor Lake row only.
+
+---
+
+## Addendum (2026-09-17) — option 2 landed; the post-change grid
+
+Issue 808 T1 resolved to **option 2, x86_64-scoped**: `AVX2_ARGTOPK_K_MAX = 4`
+in `crates/katgpt-attn/src/dash_attn/block_topk.rs`, applied inside the x86_64
+`argtopk_simd` so the arch-independent `k ≤ 16` predicate in
+`argtopk_with_scratch` and the whole NEON range are untouched.
+
+Re-measured on the same box and instrument (4090, i7-13700K,
+`RUSTFLAGS="-C target-feature=+avx2"`, release, interleaved median-of-ratios,
+9 rounds), via the new `bench_simd_topk_issue808_t2_above_bound_is_not_a_loss`:
+
+| region | before (this bench) | after |
+|---|---|---|
+| k=8, `late_peak`, n<512 | **0.41–0.72×** | **0.98–0.99×** |
+| k ∈ {8,16}, all 6 dists, n ∈ {64..512} | 0.42–1.2× | **0.95–1.03×**, worst cell 0.95× |
+| k=2, `iid_uniform`, n=1024 | 5.1× | **5.11×** (unchanged) |
+| k=4, `gauss_sigmoid`, n=1024 | 3.5× | **3.51×** (unchanged) |
+| k=1, `locality`, n=1024 | — | **6.73×** |
+
+Read the "after" column for what it is: above the bound the AVX2 kernel is no
+longer dispatched, so both arms are `argtopk_scalar_heap` and ~1.00 is the
+**definition** of the fix rather than a measurement of the kernel. The kernel's
+own numbers above k=4 are the ones in the body of this document, and this bench
+can no longer reach them on x86_64 — which is why
+`bench_simd_topk_issue808_crossover_nmin` is KEPT rather than deleted: it is
+the instrument that would have to re-run, on a second microarchitecture, before
+the bound could widen toward option 1.
+
+⚠ **The last bullet above still stands, with a narrowed scope.** The
+≥2-microarchitecture bar was never load-bearing for NARROWING the dispatch —
+that direction is conservative, falling back to code that runs on every target.
+It gates WIDENING, and it is pinned as such in
+`test_avx2_argtopk_dispatch_bound_is_pinned`, which reds on any change to the
+constant without timing anything.
