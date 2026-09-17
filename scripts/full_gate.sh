@@ -44,6 +44,16 @@
 #                            defaults to OFF), so both arms run. Derived
 #                            package list; the sites no `-p … --lib` reaches
 #                            are pinned by membership.
+#   2c. x86_64 lint       → the INVERSE of what x86_64_execution_matrix.sh
+#                            closed: that instrument EXECUTES the x86_64 arms
+#                            and does not lint them, and every lane that lints
+#                            compiles them to nothing (2/3/6 are aarch64, 2b is
+#                            wasm32, test_gate does not lint). `avx2` is a
+#                            SECOND gate on top of `target_arch`, so both arms
+#                            run; measured 30-and-0 (Issue 819). Derived
+#                            package list, four named non-src targets, the
+#                            residue outside both pinned by membership. The
+#                            TRIPLE is disclosed on the verdict line.
 #   3. the gate itself     → clippy, workspace, all targets, all features
 #   4. zero errors         → any `error` line or unbuildable target is a finding
 #   6. profile axis        → the same tree with debug_assertions OFF; the four
@@ -398,6 +408,177 @@ fi
 
 # Layers 3-6 are the whole-surface claim — FULL mode only (Issue 737 T4).
 if [ "$WASM32_ONLY" -eq 0 ]; then   # full-mode body — closes just before the final summary
+
+
+# ── Layer 2c: x86_64 + avx2 LINT coverage (Issue 819) ───────────────────────
+# Layer 2b closed a platform axis by COMPILING a triple nothing else compiled.
+# This closes the same shape one arch over, and the hole it fills is the
+# INVERSE of the one `scripts/x86_64_execution_matrix.sh` closed on
+# 2026-09-16: that instrument EXECUTES the x86_64 arms and does not lint them,
+# and every lane that lints — Layers 2/3/6 here (macOS/aarch64), Layer 2b and
+# `wasm32_gate.yml` (a third triple), `test_gate.sh` (does not lint, and runs
+# at default target-features) — compiles the x86_64 arms to NOTHING.
+#
+# Measured on the workstation that found it (Issue 819 T1): 30 findings, every
+# one `unsafe_op_in_unsafe_fn` on edition 2024, every one in
+# `dash_attn/channel_aware.rs`, against 0 on the avx2-off arm. That file
+# carries two transcriptions of one kernel and only the aarch64 one had the
+# `unsafe { }` block — repaired on the arm a lane compiles, not on its twin.
+# It is Issue 737's 0-and-14 wasm32 measurement reproduced one platform over,
+# and it is the argument for running BOTH arms here: `target_feature = "avx2"`
+# is a SECOND gate on top of `target_arch`, so a lane that selects an x86_64
+# triple and forgets the RUSTFLAGS compiles the hot half to nothing and
+# reports a green ZERO wearing a triple.
+#
+# ⚠ Unlike 2b this lane is `--all-features`. Two reasons, neither taste:
+# (1) it makes the layer exactly Layer 3's feature coverage re-run on the
+# x86_64 arch, which is the claim being RESTORED rather than a new one;
+# (2) the four non-`src/` targets below each carry a `required-features` row,
+# and a hand-typed feature list beside them is this repo's own most-repeated
+# drift shape. `--all-features` is not a supported TEST configuration here
+# (fixture RNG streams and GOAT calibrations are per-feature) — this layer
+# does not RUN anything.
+#
+# ⚠ `--all-features` is not optional HERE in a way it is not elsewhere:
+# `katgpt-attn` has `default = []`, so at default features `dash_attn` — and
+# with it both files the 30 findings live in — compiles to NOTHING. A
+# default-features version of this lane is the green ZERO it exists to catch.
+# The cost it buys is a native one: `--all-features` turns on
+# `katgpt-tokenizer`'s optional `good_lp`, hence `highs-sys`, hence cmake and
+# a C++ toolchain. NOT capped here, deliberately — Layer 3 has the identical
+# exposure and capping one and not the other is this repo's most-repeated
+# drift shape — but the failure is loud and self-identifying, and the remedy
+# is one line: a 24-way `cmake --parallel` on a loaded box dies with
+# `cl : command line error D8040` (measured 2026-09-17, with a g200 training
+# run and three agent sessions resident); `CMAKE_BUILD_PARALLEL_LEVEL=4`
+# builds the same package clean. That is the BOX, not this lane.
+X86_FILES=$(git grep -lE 'target_arch[[:space:]]*=[[:space:]]*"x86_64"' -- '*.rs' 2>/dev/null | while IFS= read -r f; do
+    if git grep -hE 'target_arch[[:space:]]*=[[:space:]]*"x86_64"' -- "$f" 2>/dev/null \
+        | grep -v 'cfg!' \
+        | grep -vE 'not[[:space:]]*\([[:space:]]*target_arch' \
+        | grep -q .; then
+        printf '%s\n' "$f"
+    fi
+done || true)
+X86_AVX2_FILES=$(git grep -l 'target_feature = "avx2"' -- '*.rs' 2>/dev/null || true)
+X86_N=$(printf '%s\n' "$X86_FILES" | grep -c . || true)
+X86_AVX2_N=$(printf '%s\n' "$X86_AVX2_FILES" | grep -c . || true)
+
+# Same instrument floor as Layers 2 and 2b, same reasoning: a zero reads
+# exactly like a working grep over a surface that no longer exists, and both
+# readings need a human.
+if [ "$X86_N" -eq 0 ] || [ "$X86_AVX2_N" -eq 0 ]; then
+    echo "✗ x86_64 layer found NO x86_64 ($X86_N) or NO avx2 ($X86_AVX2_N) files"
+    echo "  Either the grep drifted from the tree, or the x86_64 surface is gone."
+    echo "  If it really is gone, delete this layer and"
+    echo "  scripts/x86_64_execution_matrix.sh together."
+    exit 1
+fi
+
+# Derived, for Layer 2b's reason: a new x86_64-bearing crate joins the lane by
+# EXISTING. Selecting the root package when it has x86_64 source is what makes
+# such a lane wide — clippy lints every workspace PATH dependency it pulls in.
+X86_PKGS=$(printf '%s\n' "$X86_FILES" | sed -n 's|^crates/\([^/]*\)/src/.*|\1|p' | sort -u)
+if printf '%s\n' "$X86_FILES" | grep -q '^src/'; then
+    X86_PKGS=$(printf '%s\n%s\n' "$X86_PKGS" "$ROOT_PKG" | sort -u)
+fi
+
+# pkg|selector|name|path — the non-`src/` x86_64 surface, named. Unlike 2b's
+# residue (empty by construction) this one is FOUR real test targets, and
+# `--all-targets` is not the way to reach them: it would pull every other
+# target in the workspace into a per-arch lane whose subject is 28 files.
+# The `path` field is what makes the pin below non-redundant with this table.
+X86_EXTRA_TARGETS="$ROOT_PKG|--test|bench_256_simd_topk|tests/bench_256_simd_topk.rs
+$ROOT_PKG|--test|issue_698_t5_kv_mean|tests/issue_698_t5_kv_mean.rs
+$ROOT_PKG|--test|latent_steering_t3_simd_vs_scalar|tests/latent_steering_t3_simd_vs_scalar.rs
+katgpt-types|--test|bench_578_avx2_goat|crates/katgpt-types/tests/bench_578_avx2_goat.rs"
+
+# The pin is the residue MINUS whatever a named row above covers, and it is
+# expected EMPTY — pinning the four paths themselves would just restate the
+# table one line down, and a pin that restates its own input cannot fail.
+# When this reds, a NEW compile-time positive x86_64 cfg has appeared outside
+# a `src/` dir: add a row to X86_EXTRA_TARGETS, or pin it here with the
+# measured reason it cannot be reached. Do NOT just re-pin the list.
+# `|| true` at the tail for Layer 2b's reason: under `set -euo pipefail` a
+# `grep -v` that filters everything exits 1, which would kill the gate on
+# exactly the all-covered case this comparison exists to report.
+# The OTHER direction — a row here whose file is gone — is caught by cargo
+# itself (`--test <name>` on a target that no longer exists is an error), so
+# the table cannot only ever loosen either.
+X86_COVERED=$(printf '%s\n' "$X86_EXTRA_TARGETS" | cut -d'|' -f4 | sort)
+X86_RESIDUE=$(printf '%s\n' "$X86_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' \
+    | sort | grep -vxF "$X86_COVERED" || true)
+X86_RESIDUE_EXPECTED=''
+if [ "$X86_RESIDUE" != "$X86_RESIDUE_EXPECTED" ]; then
+    echo "✗ the set of x86_64 sites reached by NO --lib lane and NO named row"
+    echo "  has changed. Add a row to X86_EXTRA_TARGETS (if it compiles) or to"
+    echo "  X86_RESIDUE_EXPECTED with the measured reason it cannot. Do NOT"
+    echo "  just re-pin the list."
+    echo "  --- expected ---"; printf '%s\n' "$X86_RESIDUE_EXPECTED"
+    echo "  --- measured ---"; printf '%s\n' "$X86_RESIDUE"
+    exit 1
+fi
+
+# ⛔ The TRIPLE is the one real design decision in this layer, and the lane
+# DISCLOSES it on its own verdict line. Layer 2b can name
+# `wasm32-unknown-unknown` literally because there is exactly one; x86_64 has
+# three in play here and they differ in `target_os`, which gates OTHER code in
+# this repo (Layer 2's whole subject). So: the HOST triple when the host is
+# already x86_64 — the configuration the Issue 819 measurement was taken in,
+# and the only one needing no extra `rustup target add` — and a named cross
+# triple otherwise. A green whose triple is not printed means something
+# different on every box.
+X86_HOST=$(rustc -vV | sed -n 's/^host: //p')
+case "$X86_HOST" in
+    x86_64-*) X86_TRIPLE="$X86_HOST" ;;
+    *) case "$(uname -s)" in
+           Darwin) X86_TRIPLE=x86_64-apple-darwin ;;
+           *)      X86_TRIPLE=x86_64-unknown-linux-gnu ;;
+       esac ;;
+esac
+
+# `grep -qx`, not `grep -q`: `x86_64-apple-darwin` is a SUBSTRING of nothing
+# here today, but `rustup target list --installed` is a line-oriented answer
+# and a substring match on triples is a class of wrong answer waiting for the
+# next triple to be added.
+if ! rustup target list --installed 2>/dev/null | grep -qx "$X86_TRIPLE"; then
+    echo "⚠ $X86_TRIPLE not installed — $X86_N x86_64 file(s) and"
+    echo "  $X86_AVX2_N avx2 file(s) will NOT be linted in this run."
+    echo "  This run is a PARTIAL gate (rustup target add $X86_TRIPLE)."
+    if [ "$ALLOW_PARTIAL" -eq 0 ]; then
+        echo "✗ refusing to report a partial run as a pass (--allow-partial-platform to override)"
+        exit 1
+    fi
+    note_partial "x86_64 lint lane SKIPPED — $X86_N x86_64 + $X86_AVX2_N avx2 file(s) NOT linted (rustup target add $X86_TRIPLE)"
+else
+    X86_P_ARGS=$(printf -- '-p %s ' $X86_PKGS)
+    for x86arm in on off; do
+        if [ "$x86arm" = on ]; then
+            X86_RUSTFLAGS='-C target-feature=+avx2'
+        else
+            X86_RUSTFLAGS=''
+        fi
+        # `--keep-going` for Layer 3's reason: without it the run stops at the
+        # first failing crate and under-reports the rest.
+        # shellcheck disable=SC2086  # word splitting is the point: one -p per crate
+        if ! RUSTFLAGS="$X86_RUSTFLAGS" cargo clippy $X86_P_ARGS --lib --all-features \
+                --target "$X86_TRIPLE" --keep-going --quiet -- -D warnings; then
+            echo "✗ x86_64 --lib lane failed (avx2 $x86arm, $X86_TRIPLE)" >&2
+            exit 1
+        fi
+        while IFS='|' read -r xpkg xsel xname _xpath; do
+            [ -n "$xpkg" ] || continue
+            if ! RUSTFLAGS="$X86_RUSTFLAGS" cargo clippy -p "$xpkg" "$xsel" "$xname" \
+                    --all-features --target "$X86_TRIPLE" --quiet -- -D warnings; then
+                echo "✗ x86_64 target lane failed (avx2 $x86arm, $X86_TRIPLE): $xpkg $xsel $xname" >&2
+                exit 1
+            fi
+        done <<X86EOF
+$X86_EXTRA_TARGETS
+X86EOF
+        echo "✓ x86_64 clean (avx2 $x86arm, $X86_TRIPLE): $(printf '%s' "$X86_PKGS" | tr '\n' ' ')+ 4 named targets"
+    done
+fi
 
 # ── Layer 3: the gate ───────────────────────────────────────────────────────
 # `--keep-going` is not optional: without it cargo stops at the first failing

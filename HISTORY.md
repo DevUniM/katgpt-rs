@@ -11,6 +11,83 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 819 (2026-09-17) — CLOSED. The x86_64 arm was LINTED by nothing; the finding is not the 30, it is the sibling
+
+Found while measuring clippy on the Issue 808 workstation: `cargo clippy -p katgpt-attn --all-features --lib` with
+`RUSTFLAGS="-C target-feature=+avx2"` returned **30** warnings, every one `E0133` / `unsafe_op_in_unsafe_fn` on
+edition 2024, every one in `crates/katgpt-attn/src/dash_attn/channel_aware.rs`, every one inside the x86_64 AVX2
+arm — against **0** on the avx2-off arm.
+
+**The finding is the SIBLING.** That file carries two transcriptions of one kernel:
+
+| arm | cfg | body |
+|---|---|---|
+| `simd_dot_neon` | `target_arch = "aarch64"` | `// SAFETY: …` + a whole-body `unsafe { … }` |
+| `simd_dot_avx2` | `all(target_arch = "x86_64", target_feature = "avx2")` | **neither** |
+
+The edition-2024 repair was made on one arm and not on its twin, and the reason is mechanical rather than an
+oversight a reader could catch: `full_gate.sh` is macOS/**aarch64**, so it compiles and lints `simd_dot_neon` while
+`simd_dot_avx2` compiles to **nothing** there — under `--all-features` too, because the gate is arch-gated rather
+than feature-gated. *A repair applied to the arm somebody can see is not a repair; it is a measurement of which
+arms are visible.*
+
+**Why every lane was blind, one reason each.** Layers 2/3/6 of `full_gate.sh` are macOS/aarch64. Layer 2b and
+`wasm32_gate.yml` build a third triple. `test_gate.sh` does not lint, and runs at default target-features.
+`x86_64_execution_matrix.sh` — landed the day before, 2026-09-16 — is the right arch with `+avx2` ON and
+**EXECUTES** rather than lints. That last one is the sharp case: it closed AGENTS.md's `compile vs EXECUTE` row for
+x86_64 and left the **inverse** hole standing for a day, an arch whose execution was covered and whose lint surface
+was not. Nothing in the tree had ever declared the x86_64 lint surface a surface, so `--allow-partial-platform`
+could not name it as unmeasured either — a gate cannot report a lane it does not have.
+
+**`target_feature = "avx2"` is a SECOND gate on top of `target_arch`**, which is Issue 737's wasm32/simd128 shape
+one platform over — there, the simd128-off arm was clean and the on arm had 14 findings; here, 0 and 30. Both arms
+run in the lane for that reason.
+
+**T2 — the repair.** Whole-body `unsafe { … }` plus a `// SAFETY:` comment, the shape the NEON sibling has carried
+since it was written. Not a `cargo heal` job: the healer is silent on this class and the repair is one block, not
+30 edits. Measured after: 0 warnings, `katgpt-attn --all-features --lib` 427/0 unchanged. Diff 46/43 because the
+body is indented into the block to match the sibling — verified by `git numstat` not to be a whole-file
+line-ending rewrite.
+
+**T3 — `full_gate.sh` Layer 2c**, mirroring Layer 2b: derived `-p` list off the positive `target_arch = "x86_64"`
+surface (so a new x86_64-bearing crate joins by EXISTING), BOTH avx2 arms, `-D warnings`, `--keep-going`, an
+instrument floor that refuses a confident zero, and a missing target reported as a PARTIAL gate that refuses
+without `--allow-partial-platform`.
+
+- ⛔ **The TRIPLE is the one real design decision, and the lane discloses it on its own verdict line.** 2b names
+  `wasm32-unknown-unknown` literally because there is exactly one; x86_64 has three in play here and they differ
+  in `target_os`, which is Layer 2's whole subject. Host triple when the host is x86_64 — the configuration T1 was
+  measured in, and the only one needing no extra `rustup target add` — and a named cross triple otherwise
+  (`x86_64-apple-darwin` on Darwin, `x86_64-unknown-linux-gnu` elsewhere). A green whose triple is not printed
+  means something different on every box. `grep -qx`, not `grep -q`, against `rustup target list --installed`: a
+  substring match on triples is a wrong answer waiting for the next triple.
+- ⚠ **`--all-features`, unlike 2b, and it is not optional here.** `katgpt-attn` has `default = []`, so at default
+  features `dash_attn` — and with it BOTH files the 30 findings live in — compiles to nothing. A default-features
+  version of this lane is the green ZERO it exists to catch. It also makes the layer exactly Layer 3's feature
+  coverage re-run on the x86_64 arch, which is the claim being RESTORED rather than a new one, and it removes a
+  hand-typed feature list beside the four named targets, each of which carries a `required-features` row.
+- **The residue pin is the non-`src/` surface MINUS what a named row covers, expected EMPTY.** Pinning the four
+  paths themselves would restate the table one line down, and *a pin that restates its own input cannot fail.*
+  Proven in four arms including the `set -euo pipefail` all-filtered case (`grep -v` exits 1 when it outputs
+  nothing). The other direction — a row whose file is gone — is caught by cargo itself, so the table cannot only
+  ever loosen either.
+
+**T4 — the other packages.** The lane's population is five (`katgpt-attn`, `katgpt-core`, `katgpt-pruners`,
+`katgpt-tokenizer`, `katgpt-types`) plus four named non-`src/` targets, over 28 x86_64 files and 6 avx2 files.
+Measured: **0 findings** outside `channel_aware.rs`, both arms. Recorded as a measurement and not an expectation —
+Issue 737 measured 14 on wasm32 where 0 was expected.
+
+**Two-sided, known-answer validation.** The lane is green on the repaired tree and reds with exactly `30 previous
+errors` on `HEAD~1`'s `channel_aware.rs`. A lane that would be green either way certifies nothing.
+
+⚠ **An operational hazard the lane deliberately does NOT paper over.** `--all-features` turns on
+`katgpt-tokenizer`'s optional `good_lp`, hence `highs-sys`, hence cmake and a C++ toolchain. On this box, under a
+g200 training run and three resident agent sessions, the 24-way `cmake --parallel` died with
+`cl : command line error D8040` and took the lane red on a defect that was not in any Rust file;
+`CMAKE_BUILD_PARALLEL_LEVEL=4` built the same package clean. It is NOT capped in the layer: Layer 3 has the
+identical exposure, and capping one and not the other is this repo's most-repeated drift shape. The failure is
+loud and self-identifying and the remedy is one line, both recorded at the layer.
+
 ## Issue 815 (2026-09-17) — CLOSED by its own criterion: the box is green. Option 2 landed as `DOCS_GATE_KNOWN_EXTRA`, and options 1 and 3 remain the owner's
 
 ⚠ **Read this as the REVERSIBLE option taken in the absence of a decision, not as the decision.** The issue asked the

@@ -127,6 +127,36 @@ of its own — surfaced. `--all-targets` is NOT the way to widen further: it
 dies on dev-deps (`statrs`, `proptest`) that do not resolve for wasm32, so
 extra coverage goes in as **named targets**.
 
+**And `x86_64` is a THIRD one — Layer 2c (Issue 819), the axis the wasm32
+work named and did not generalise.** The 2026-09-16 execution matrix closed
+`compile vs EXECUTE` for x86_64 and left its inverse standing: every lane in
+this repo that LINTS compiles the x86_64 arms to **nothing** (Layers 2/3/6 are
+macOS/aarch64, Layer 2b and `wasm32_gate` build a third triple, `test_gate`
+does not lint and runs at default target-features), and the execution matrix
+is the right arch with `+avx2` on and **executes** rather than lints. Measured
+the day it was found: **30** findings, every one `unsafe_op_in_unsafe_fn` on
+edition 2024, every one in `dash_attn/channel_aware.rs`, against **0** on the
+avx2-off arm — the same 0-and-14 double-gating shape Issue 737 measured for
+wasm32/simd128, which is why both arms run here too. ⛔ The finding is not the
+30, it is the **sibling**: that file carries two transcriptions of one kernel
+and only `simd_dot_neon` had the `unsafe { }` block, because the aarch64 arm
+is the one a lane compiles. A repair applied to the arm somebody can see is
+not a repair; it is a measurement of which arms are visible.
+- ⚠ The **triple** is this lane's one real design decision and it is printed
+  on the verdict line. 2b can name `wasm32-unknown-unknown` literally because
+  there is one; x86_64 has three in play and they differ in `target_os`, which
+  is Layer 2's whole subject. Host triple when the host is x86_64, a named
+  cross triple otherwise. A green whose triple is not disclosed means
+  something different on every box.
+- The lane is **`--all-features`**, unlike 2b, so that it is exactly Layer 3's
+  feature coverage re-run on the x86_64 arch rather than a new claim — and
+  because the four non-`src/` targets each carry a `required-features` row,
+  where a hand-typed feature list beside them is this repo's most-repeated
+  drift shape.
+- The residue pin is the non-`src/` surface **minus** what a named row covers,
+  expected EMPTY — pinning the four paths themselves would restate the table
+  one line down, and a pin that restates its own input cannot fail.
+
 **The inverse holds too:** running **on** macOS silently drops every
 `not(target_os = "macos")` backend, `--all-features` included — **a platform
 is part of the claim, exactly as the profile is.** Typecheck that half from
@@ -238,6 +268,11 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   failure.
 - ⚠ It does NOT cover the macOS device backends, wasm32, or `--all-features`
   for the integration targets.
+- ⛔ **And it does not LINT** — that is the inverse hole, and it stood for a
+  day: this instrument executes the x86_64 arms with `+avx2` on and reads no
+  warnings, while every lane that lints compiles those arms to nothing. 30
+  findings were sitting behind it (Issue 819). `full_gate.sh` **Layer 2c** is
+  the lint half; do not read a green matrix as a green arch.
 
 ## Docs gate + drift sweeps
 
