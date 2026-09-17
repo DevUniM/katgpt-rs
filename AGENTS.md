@@ -431,7 +431,7 @@ develop work. One line per check:
 | `platform_dead_code_floor_gate.py` | an item declared ungated whose every use sits behind a platform cfg — dead code on a platform no automatic lane compiles (Issue 775) |
 | `subprocess_encoding_gate.py` | a `subprocess` call that decodes with the SYSTEM locale — silent mojibake, or `stdout = None` with the returncode intact (Issue 778) |
 | `instrument_reachability_gate.py` | a tracked `scripts/*.py` no root and no documented instrument names — invisible to the census that would find it (Issue 787) |
-| `sweep_advisory_membership_gate.py` | a `*_drift_sweep.py` that does not call the Issue-797 worktree advisory — its findings and floors then describe whatever the working tree happened to say; gated by MEMBERSHIP, because a count is green on a swap and went stale two hours after it was typed (Issue 797 T5) |
+| `sweep_advisory_membership_gate.py` | a `*_drift_sweep.py` that does not call a FAMILY-WIDE MECHANISM — the Issue-797 worktree advisory (findings and floors then describe whatever the working tree happened to say) or the Issue-815/821 known-extra exemption (the sweep hard-reds on a repo the contract does not claim, with zero content findings); a REGISTRY, per mechanism and never pooled, because this gate governed one mechanism by name and watched Issue 821 miss 3 of 19 beside it (Issues 797 T5, 824) |
 | `console_encoding_gate.py` | a tracked `scripts/*.py` that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with **no verdict**, so a sweep's findings are not *unknown* but *unlooked at*; `docs_gate.sh`'s `PYTHONIOENCODING` only covers runs that go through the wrapper, and every workstation audit is documented as a DIRECT invocation (Issue 804). The shared defence is `scripts/console_safe.py`: `errors="backslashreplace"`, because the console encoding is not ours to choose, and forcing it gives mojibake instead of an exception |
 | `global_rng_gate.py` | an unseeded-global draw with no pin row — free-function `fastrand::<prim>()` OR the unseeded `Rng::new()`/`Rng::default()` constructor (T3 folded the constructor class in): the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809) |
 | `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
@@ -1970,12 +1970,65 @@ subject is records drifting away from what they describe.
   member, the only one with the row-level split — as UNWIRED, because the
   predicate named one of the mechanism's **two** entry points. A criterion that
   condemns the most careful caller is the criterion that is wrong.
-- The row-level UNCOMMITTED/MASKED split is wired into `citation_drift_sweep.py`
+- The row-level UNCOMMITTED/MASKED split began in `citation_drift_sweep.py`
   alone, because it is the one whose findings carry a `file:line` address and
   the one where the class was measured. `audit()` takes an injected
   `read(path) -> str | None` so the SAME classifier can be pointed at HEAD's
   blobs; `None` means "absent from the source being read" and must stay
   distinguishable from empty text.
+- ⛔ **"Alone" was the ninth instance of the never-generalised shape, and it
+  was measured breaching a live ratchet** (Issue 822, 2026-09-17). Its first
+  clause had stopped being true — six sweeps carry file-addressed rows — and
+  **14 of 19 sweeps carry at least one COUNT ceiling**, membership-pinned ones
+  included where they pin some buckets and ratchet others. Measured:
+  `console_encoding` reported `undefended 56 > pinned 53` where one of the
+  three new rows sat on a file `git log` could not see at all, staged by
+  another session mid-commit. The pressure to type 56 into the pin is the
+  whole hazard, and nothing in the run distinguished the case.
+- **`worktree_state.head_delta()` is the shared helper**, and its answer is a
+  `HeadDelta` whose `.head` — `committed + masked`, **never `committed`** — is
+  what a PIN adjudicates. That arithmetic lives in one place because getting
+  it right independently in fourteen sweeps is fourteen chances to understate
+  a ceiling by exactly the silent direction.
+- ⚠ **The PREMISE is per-file row independence, and it is what makes it
+  affordable.** T2 asked whether re-reading is affordable for a 2415-file Rust
+  walk; the question was the wrong shape. A clean file's rows are identical at
+  HEAD by construction, so the cost is |dirty ∩ population| `git show` calls —
+  the quantity `dirty_in_scope()` already prints on the advisory line, and
+  **zero** on an ordinary run. A tree-sized re-walk buys nothing.
+- ⛔ So a **CROSS-FILE** classifier must NOT use it: `len_derived` resolves
+  provenance through other files and other repos, `instrument_reachability`
+  computes a closure from roots (a dirty `AGENTS.md` changes other scripts'
+  verdicts), `numbering` and `citation` are cross-document by construction.
+  The premise is a property of the CALLER's classifier, which no check in the
+  helper can decide — so it is STATED, not asserted.
+- **`head_overlay()` + `delta_of()` are that second instrument**, and they are
+  the two pieces `citation_drift_sweep`'s inline version consists of, lifted so
+  the next caller does not copy it. `head_overlay` answers `{path: HEAD bytes}`
+  for the dirty files in scope — **`None` is a VALUE there** (tracked but not
+  in HEAD: a staged-but-never-committed file, Issue 822's measured case), and
+  an **EMPTY dict means skip the second classification entirely**, not
+  "overlay nothing". ⚠ The patterns must name every file that can CHANGE a
+  verdict, not just the ones findings sit on: for a closure that is the ROOTS
+  as well, and `instrument_reachability`'s own advisory had a second
+  hand-typed glob list naming `.yml` and not `.yaml`, so a dirty `.yaml`
+  workflow — a root — was silently out of scope. One `SCOPE` constant now.
+- **The display stays honest in both directions** (T3): the per-repo line
+  reads `undefended 56 (53 committed + 3 uncommitted)` and each listed row is
+  labelled, because hiding the three is the lie Issue 797 refuses. **MASKED
+  needs no separate teeth** (T4) — the pins read `.head`, so a committed row
+  the worktree hides breaches the ceiling on its own.
+- ⚠ **Wired into TWO sweeps so far — the two where the class was MEASURED**,
+  one per instrument: `console_encoding_drift_sweep.py` (per-file,
+  `head_delta`) and `instrument_reachability_drift_sweep.py` (cross-file,
+  `head_overlay` + `delta_of`). The other twelve are owed, tabulated in Issue
+  822 T5. Do not read the helper's existence as the fan-out having happened —
+  that substitution is this document's own most-repeated error.
+- ⚠ **Budget the canary cost before wiring one.** Each sweep's `--canary` runs
+  `main()` once per arm over every contract repo, so four new arms is roughly
+  a 45% increase: `console_encoding` went 9 arms/~15s to 14 arms/**~42s**.
+  Workstation-only — none of these runs per push — but it is why the arms are
+  four and not fourteen.
 - ⛔ **The row key is deliberately LINE-FREE** — `(document, kind, number)`.
   Any edit above a citation shifts its line, so a line-bearing key reports
   every row in an edited document as UNCOMMITTED *and* MASKED at once. The arm

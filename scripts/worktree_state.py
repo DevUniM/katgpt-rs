@@ -57,6 +57,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 # Issue 804: this instrument is documented as directly invokable, and its
 # verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
@@ -159,6 +160,20 @@ def _coerce(patterns) -> tuple:
     return tuple(patterns)
 
 
+def _matches(rel: str, patterns) -> bool:
+    """ONE path against a sweep's population globs — the single copy.
+
+    Extracted from `_match_count` when `head_delta` needed the same predicate
+    per path rather than as a total. A second implementation of "is this file
+    in the sweep's population" is how the advisory and the row split would come
+    to disagree about which rows they are talking about.
+    """
+    from fnmatch import fnmatch
+    base = rel.rsplit("/", 1)[-1]
+    return any(fnmatch(rel, pat) or fnmatch(base, pat)
+               for pat in _coerce(patterns))
+
+
 def _match_count(rels, patterns) -> int:
     """How many repo-relative paths a sweep's own walk would have read.
 
@@ -174,19 +189,177 @@ def _match_count(rels, patterns) -> int:
     matches only at the root), so the two axes would have disagreed about what
     a sweep's population IS.
     """
-    from fnmatch import fnmatch
     patterns = _coerce(patterns)
-    n = 0
-    for rel in rels:
-        base = rel.rsplit("/", 1)[-1]
-        if any(fnmatch(rel, pat) or fnmatch(base, pat) for pat in patterns):
-            n += 1
-    return n
+    return sum(1 for rel in rels if _matches(rel, patterns))
 
 
 def dirty_in_scope(root, patterns) -> int:
     """How many of a repo's dirty files this sweep's own walk would have read."""
     return _match_count(dirty_files(root), patterns)
+
+
+class HeadDelta(NamedTuple):
+    """`head_delta`'s answer. Unpacks as `(committed, uncommitted, masked)`.
+
+    `.head` is the reason this is not a bare tuple. The rows HEAD carries are
+    `committed + masked`, NOT `committed` — a MASKED row is by definition one
+    the worktree does not show — and that sum is what a PIN adjudicates. Every
+    caller getting it right independently is 14 chances to understate a
+    ceiling by exactly the silent direction this class exists to surface, so
+    the arithmetic lives here once.
+    """
+
+    committed: list
+    uncommitted: list
+    masked: list
+
+    @property
+    def head(self) -> list:
+        """What a COMMIT of this repo would produce — the pins' population."""
+        return list(self.committed) + list(self.masked)
+
+
+def _rel_of(path) -> str | None:
+    """A caller's row address as a repo-relative POSIX string, or None.
+
+    The normalisation bites on the CALLER's side, not on git's: `git status
+    --porcelain` emits POSIX separators on every platform (asserted as a
+    premise by `premise_arms`), while a row built from `pathlib` on this
+    workstation carries backslashes.
+    """
+    if not path:
+        return None
+    return str(path).replace(chr(92), "/")
+
+
+def dirty_in_population(root, patterns) -> frozenset[str]:
+    """The dirty files this sweep's own walk would have READ — the set whose
+    COUNT `dirty_in_scope` prints on the advisory line. One predicate, two
+    shapes, so the banner and the row split cannot disagree."""
+    return frozenset(r for r in dirty_files(root) if _matches(r, patterns))
+
+
+def head_delta(root, patterns, rows, path_of, key_of, rescan):
+    """(committed, uncommitted, masked) for a sweep's FILE-ADDRESSED rows.
+
+    Issue 822 T2. `split_rows` above answers half the question — it withholds
+    the rows whose file is dirty — and a sweep that stops there can only ever
+    report *fewer* findings than it has. It cannot see MASKED (HEAD carries a
+    row the worktree hides: a committed defect reported clean, the silent
+    direction), and it withholds a row that HEAD carries too, which understates
+    the number the pins are supposed to adjudicate. `citation_drift_sweep` gets
+    the full three-way answer by re-running its ENTIRE classifier with an
+    injected reader; this is that pattern, once, for the other thirteen.
+
+    ⚠ **THE PREMISE IS PER-FILE ROW INDEPENDENCE**, and it is what makes this
+    affordable. A row's existence must depend only on its OWN file's bytes —
+    then every clean file's rows are identical at HEAD by construction, and the
+    only files that need re-reading are the dirty ones IN this sweep's own
+    population. Issue 822 T2 asked whether re-reading is affordable for a
+    2415-file Rust walk; the answer is that the question was the wrong shape.
+    The cost is |dirty ∩ population| `git show` calls — the quantity
+    `dirty_in_scope()` already prints on the advisory line, typically 0 and
+    measured in this workspace at a handful. A tree-sized re-walk buys nothing.
+
+    ⛔ So a CROSS-FILE classifier must NOT use this: `len_derived` resolves a
+    caller's provenance through other files (and other repos),
+    `instrument_reachability` computes a closure from roots, `numbering` and
+    `citation` are cross-document by construction. For those the whole-run
+    re-classification with an injected `read` is the correct instrument and
+    this shortcut would invent verdicts. The premise is a property of the
+    CALLER's classifier, which no check here can decide — so it is stated, not
+    asserted.
+
+    `rescan(rel, head_src)` re-classifies ONE file from HEAD's bytes and
+    returns that file's rows. `head_src` is None when the path is absent from
+    HEAD (a STAGED-but-never-committed file — the measured case: Issue 822's
+    breach included a row on a file `git log` cannot see at all), and a caller
+    must answer None with no rows rather than crash.
+
+    `key_of(row)` must be LINE-FREE for the same reason `citation_drift_sweep`'s
+    is: any edit above a finding shifts its line, so a line-bearing key reports
+    every row in an edited file as UNCOMMITTED *and* MASKED at once.
+    """
+    scope = dirty_in_population(root, patterns)
+    rows = list(rows)
+    if not scope:
+        # The common case, and it must cost NOTHING: no `git show`, no rescan.
+        # A helper that walks anyway on a clean tree is one sweeps drop.
+        # ⚠ This guard is provably EQUIVALENT to falling through (an empty
+        # scope puts every row in `committed` anyway), so no perturbation of it
+        # reds an arm — measured. It is here for the COST, and the arm that
+        # bites is the one asserting zero rescan calls.
+        return HeadDelta(rows, [], [])
+
+    head_rows: list = []
+    seen: set = set()
+    for rel in sorted(scope):
+        for row in rescan(rel, head_text(root, rel)) or ():
+            k = key_of(row)
+            # Deduplicated by KEY, because MASKED is walled at 0 by its
+            # callers: a non-injective key would red a sweep repeatedly for one
+            # committed row, and a ceiling that cries wolf is one nobody runs.
+            if k not in seen:
+                seen.add(k)
+                head_rows.append(row)
+
+    live = {key_of(r) for r in rows if _rel_of(path_of(r)) in scope}
+    committed, uncommitted = [], []
+    for row in rows:
+        if _rel_of(path_of(row)) in scope and key_of(row) not in seen:
+            uncommitted.append(row)
+        else:
+            # An address-less row, a row on a clean file, and a row HEAD
+            # carries too all land here — `split_rows`'s conservative
+            # direction, for its reason: this bucket is the one the pins read.
+            committed.append(row)
+    masked = [r for r in head_rows if key_of(r) not in live]
+    return HeadDelta(committed, uncommitted, masked)
+
+
+def head_overlay(root, patterns) -> dict[str, str | None]:
+    """{repo-relative path: HEAD's bytes} for every dirty file in `patterns`.
+
+    The CROSS-FILE half of Issue 822 T2. `head_delta` is unsound where a row's
+    existence depends on another file's bytes — `instrument_reachability`
+    computes a closure from roots, so a dirty `AGENTS.md` changes OTHER
+    scripts' verdicts — and such a classifier has to be re-run whole against
+    HEAD. This is the input that re-run needs, and the reason it is a helper
+    rather than four lines at each call site is that all four of its subtleties
+    have already been got wrong once somewhere in this family:
+
+    - **`None` is a VALUE, not an absence.** It means "tracked but not in
+      HEAD" — a staged-but-never-committed file, Issue 822's measured case —
+      and a caller that cannot distinguish it from empty text will classify
+      another session's in-flight file as a committed finding. `in` and
+      `.get()` say different things here; use `in`.
+    - **An EMPTY dict means skip the second classification entirely**, not
+      "overlay nothing". A sweep that re-runs its classifier unconditionally
+      doubles its cost on every clean run, which is how a helper stops being
+      called.
+    - The patterns must name every file that can CHANGE a verdict, not just
+      the ones findings sit on. For a closure that is the roots as well.
+    - `dirty_files` excludes untracked files, so an untracked script cannot
+      appear here — which is correct: a sweep's population is what git tracks.
+    """
+    return {rel: head_text(root, rel)
+            for rel in sorted(dirty_in_population(root, patterns))}
+
+
+def delta_of(worktree_rows, head_rows, key_of) -> HeadDelta:
+    """The three buckets from two ROW SETS, for a classifier re-run WHOLE.
+
+    `head_delta`'s tail does the same arithmetic against a scoped comparison,
+    because there the HEAD rows come only from the dirty files. Here both sides
+    are complete, so the comparison is complete too — and pooling the two
+    implementations would silently apply one's scoping rule to the other's
+    input.
+    """
+    wk = {key_of(r) for r in worktree_rows}
+    hk = {key_of(r) for r in head_rows}
+    return HeadDelta([r for r in worktree_rows if key_of(r) in hk],
+                     [r for r in worktree_rows if key_of(r) not in hk],
+                     [r for r in head_rows if key_of(r) not in wk])
 
 
 def behind_origin(root, patterns) -> tuple[int, int] | None:
@@ -244,7 +417,9 @@ def behind_origin(root, patterns) -> tuple[int, int] | None:
     return (total, _match_count(rels, patterns))
 
 
-def sweep_advisory(repos, patterns, root=None) -> list[str]:
+def sweep_advisory(repos, patterns, root=None,
+                   uncommitted_rows: int = 0,
+                   masked_rows: int = 0) -> list[str]:
     """The one-line wiring for a sweep with no per-row file address.
 
     `repos`    — what this run actually MEASURED, as paths or as bare names.
@@ -254,6 +429,13 @@ def sweep_advisory(repos, patterns, root=None) -> list[str]:
     `patterns` — the globs naming this sweep's own population, so a sweep over
                  `*.lean` stays silent while somebody is editing Rust.
     `root`     — the workspace, required only when `repos` are names.
+
+    `uncommitted_rows` / `masked_rows` — the row-level totals from
+                 `head_delta`, forwarded so a sweep that has computed the
+                 three-way split reports it on the SAME final line as the
+                 repo-level banner. A sweep that has not computed it passes
+                 nothing and the lines simply do not appear: the repo-level
+                 advisory alone was Issue 822's finding, not its repair.
 
     A name this run cannot resolve to a directory is SKIPPED rather than
     guessed at: `population_verdict()` already owns the "a repo is missing"
@@ -276,7 +458,8 @@ def sweep_advisory(repos, patterns, root=None) -> list[str]:
         beh = behind_origin(path, patterns)
         if beh is not None and beh[1]:
             stale[path.name] = beh
-    return worktree_advisory(scope, stale=stale)
+    return worktree_advisory(scope, uncommitted_rows, masked_rows,
+                             stale=stale)
 
 
 def worktree_advisory(scope_counts: dict[str, int],
@@ -487,6 +670,237 @@ def split_arms() -> list[str]:
     # Nothing dirty -> nothing withheld.
     keep, held = split_rows(rows, lambda r: r[0], frozenset())
     check(held == [] and len(keep) == 4, f"a clean tree withheld rows: {held}")
+    return fails
+
+
+def delta_arms() -> list[str]:
+    """`head_delta`, two-sided, against a REAL git tree.
+
+    Every arm has both directions where both exist: UNCOMMITTED alone passes on
+    an implementation that ignores HEAD, MASKED alone passes on one that
+    ignores the worktree, and neither catches the row HEAD *also* carries —
+    which is the bucket `split_rows` gets wrong and the reason this exists.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    # A row is (path, token); a file's rows are its `FIND:<token>` lines. The
+    # key is LINE-FREE, exactly as the docstring demands, so padding a file
+    # above a finding must not reclassify it.
+    def rescan(rel, src):
+        if src is None:
+            return []
+        return [(rel, ln.split("FIND:", 1)[1].strip())
+                for ln in src.splitlines() if "FIND:" in ln]
+
+    def rows_of(repo: Path, rel: str):
+        return rescan(rel, (repo / rel).read_text(encoding="utf-8"))
+
+    key = lambda r: (r[0], r[1])          # noqa: E731 — line-free by design
+    path = lambda r: r[0]                 # noqa: E731
+
+    PY = ("*.py",)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        me = _repo(tmp, "r")
+        (me / "scripts").mkdir()
+        (me / "src").mkdir()
+        (me / "scripts/a.py").write_text("FIND:alpha\n", encoding="utf-8")
+        (me / "scripts/b.py").write_text("FIND:beta\n", encoding="utf-8")
+        (me / "src/c.rs").write_text("FIND:gamma\n", encoding="utf-8")
+        _run(me, "add", "-A")
+        _run(me, "commit", "-qm", "base")
+
+        # ── a CLEAN tree costs NOTHING and withholds nothing ────────────────
+        calls: list[str] = []
+
+        def counting(rel, src, _c=calls):
+            _c.append(rel)
+            return rescan(rel, src)
+
+        wt = rows_of(me, "scripts/a.py") + rows_of(me, "scripts/b.py")
+        com, unc, mas = head_delta(me, PY, wt, path, key, counting)
+        check(calls == [], f"a clean tree re-read HEAD: {calls}")
+        check(len(com) == 2 and not unc and not mas,
+              f"a clean tree did not report every row COMMITTED: "
+              f"{len(com)}/{len(unc)}/{len(mas)}")
+
+        # ── UNCOMMITTED: the worktree INVENTS a row HEAD does not have ──────
+        (me / "scripts/a.py").write_text(
+            "padding\npadding\nFIND:alpha\nFIND:delta\n", encoding="utf-8")
+        wt = rows_of(me, "scripts/a.py") + rows_of(me, "scripts/b.py")
+        com, unc, mas = head_delta(me, PY, wt, path, key, rescan)
+        check([r[1] for r in unc] == ["delta"],
+              f"UNCOMMITTED direction: {unc}")
+        check(not mas, f"an added row was also reported MASKED: {mas}")
+        # The row HEAD carries TOO stays COMMITTED even though its file is
+        # dirty. `split_rows` withholds it, which is the understatement this
+        # helper exists to remove — so the arm asserts the DIFFERENCE.
+        check(sorted(r[1] for r in com) == ["alpha", "beta"],
+              f"a row HEAD also carries was withheld from the count: {com}")
+        _, held = split_rows(wt, path, dirty_files(me))
+        check(len(held) == 2 and len(unc) == 1,
+              f"split_rows and head_delta agree, so one of them is wrong: "
+              f"held={len(held)} uncommitted={len(unc)}")
+
+        # ── MASKED: the worktree HIDES a committed row ──────────────────────
+        (me / "scripts/a.py").write_text("FIND:delta\n", encoding="utf-8")
+        wt = rows_of(me, "scripts/a.py") + rows_of(me, "scripts/b.py")
+        com, unc, mas = head_delta(me, PY, wt, path, key, rescan)
+        check([r[1] for r in mas] == ["alpha"], f"MASKED direction: {mas}")
+        # ⛔ `.head` is the PINS' population and it is NOT `committed`: a
+        # masked row is committed-and-hidden, so omitting it understates a
+        # ceiling by exactly the silent direction. Asserted against the same
+        # classifier run over HEAD's bytes, not against a restatement.
+        d = head_delta(me, PY, wt, path, key, rescan)
+        check(sorted(key(r) for r in d.head)
+              == sorted(key(r) for r in rescan("scripts/a.py",
+                                               head_text(me, "scripts/a.py"))
+                        + rescan("scripts/b.py",
+                                 head_text(me, "scripts/b.py"))),
+              f"the .head view is not what HEAD's bytes classify to: {d.head}")
+        check(len(d.head) == len(d.committed) + len(d.masked)
+              and len(d.head) != len(d.committed),
+              f"the MASKED row is missing from the pins' view: {d}")
+        check([r[1] for r in unc] == ["delta"],
+              f"the same file's two directions were pooled: {unc} {mas}")
+        # ⛔ and they are NOT the same row wearing two labels.
+        check(not ({key(r) for r in unc} & {key(r) for r in mas}),
+              "one row was reported as both UNCOMMITTED and MASKED")
+
+        # ── an out-of-population dirty file is never even READ ──────────────
+        (me / "src/c.rs").write_text("FIND:gamma\nFIND:epsilon\n",
+                                     encoding="utf-8")
+        calls.clear()
+        com, unc, mas = head_delta(me, PY, wt, path, key, counting)
+        check("src/c.rs" not in calls,
+              f"a *.rs edit was re-read by a *.py sweep: {calls}")
+        check(sorted(calls) == ["scripts/a.py"],
+              f"the rescan set is not |dirty ∩ population|: {calls}")
+
+        # ── a STAGED-but-never-committed file: HEAD has no blob ─────────────
+        # The measured case — Issue 822's breach included a row on a file
+        # `git log` cannot see at all. `head_text` answers None and the row is
+        # UNCOMMITTED, never MASKED and never counted.
+        (me / "scripts/new.py").write_text("FIND:zeta\n", encoding="utf-8")
+        _run(me, "add", "scripts/new.py")
+        wt = (rows_of(me, "scripts/a.py") + rows_of(me, "scripts/b.py")
+              + rows_of(me, "scripts/new.py"))
+        com, unc, mas = head_delta(me, PY, wt, path, key, rescan)
+        check(("scripts/new.py", "zeta") in {key(r) for r in unc},
+              f"a staged-only file's row was not UNCOMMITTED: {unc}")
+        check(all(r[0] != "scripts/new.py" for r in mas),
+              f"a file absent from HEAD produced a MASKED row: {mas}")
+
+        # ── a file DELETED in the worktree still yields its HEAD rows ───────
+        (me / "scripts/b.py").unlink()
+        wt = rows_of(me, "scripts/a.py") + rows_of(me, "scripts/new.py")
+        com, unc, mas = head_delta(me, PY, wt, path, key, rescan)
+        check(("scripts/b.py", "beta") in {key(r) for r in mas},
+              f"a deleted file's committed row was not MASKED: {mas}")
+
+        # ── the CALLER's separators normalise ───────────────────────────────
+        com, unc, mas = head_delta(
+            me, PY, [("scripts" + chr(92) + "a.py", "alpha")], path, key,
+            rescan)
+        check(len(unc) == 1,
+              "a Windows-separator row address did not match the dirty set")
+
+        # ── a non-injective key counts a MASKED row ONCE ────────────────────
+        # MASKED is walled at 0 by its callers, so a duplicate is a red nobody
+        # can repair.
+        (me / "scripts/dup.py").write_text("FIND:eta\nFIND:eta\n",
+                                           encoding="utf-8")
+        _run(me, "add", "-A")
+        _run(me, "commit", "-qm", "dup")
+        (me / "scripts/dup.py").write_text("clean\n", encoding="utf-8")
+        com, unc, mas = head_delta(me, PY, rows_of(me, "scripts/a.py"),
+                                   path, key, rescan)
+        check(sum(1 for r in mas if r[1] == "eta") == 1,
+              f"a duplicated HEAD key was counted twice as MASKED: {mas}")
+
+        # ── the MASKED comparison is SCOPED to the dirty files ──────────────
+        # ⛔ Widening `live` to every worktree row reds nothing above, because
+        # that fixture's key carries its path and no two files can then collide.
+        # It is not equivalent in general, and this is the case that separates
+        # them: a key that does NOT carry its address (a bare script NAME — the
+        # shape `console_encoding`'s rows have) lets a CLEAN file's identical
+        # row suppress a genuinely masked one. Scoping is the correct direction
+        # and the arm that says so has to use such a key.
+        two = _repo(tmp, "r2")
+        (two / "scripts").mkdir()
+        (two / "scripts/x.py").write_text("FIND:alpha\n", encoding="utf-8")
+        (two / "scripts/y.py").write_text("FIND:alpha\n", encoding="utf-8")
+        _run(two, "add", "-A")
+        _run(two, "commit", "-qm", "base")
+        (two / "scripts/x.py").write_text("clean\n", encoding="utf-8")
+        bare = lambda r: r[1]             # noqa: E731 — deliberately address-less
+        com, unc, mas = head_delta(two, PY, rows_of(two, "scripts/y.py"),
+                                   path, bare, rescan)
+        check([r[0] for r in mas] == ["scripts/x.py"],
+              f"a clean file's identical row suppressed a MASKED one: {mas}")
+
+    return fails
+
+
+def overlay_arms() -> list[str]:
+    """`head_overlay` / `delta_of`, two-sided against a real git tree."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        me = _repo(tmp, "o")
+        (me / "a.md").write_text("committed\n", encoding="utf-8")
+        (me / "b.md").write_text("untouched\n", encoding="utf-8")
+        (me / "c.rs").write_text("other population\n", encoding="utf-8")
+        _run(me, "add", "-A")
+        _run(me, "commit", "-qm", "base")
+
+        # A clean tree overlays NOTHING, and the EMPTY dict is the signal to
+        # skip the second classification entirely — not "overlay nothing".
+        check(head_overlay(me, ("*.md",)) == {},
+              "a clean tree produced an overlay")
+
+        (me / "a.md").write_text("edited\n", encoding="utf-8")
+        (me / "c.rs").write_text("edited too\n", encoding="utf-8")
+        ov = head_overlay(me, ("*.md",))
+        check(list(ov) == ["a.md"],
+              f"the overlay is not |dirty n population|: {list(ov)}")
+        check(ov["a.md"] == "committed\n",
+              f"the overlay carries the WORKTREE bytes: {ov['a.md']!r}")
+
+        # ⛔ None is a VALUE, not an absence: tracked (staged) but not in HEAD.
+        # `in` and `.get()` say different things, and a caller that cannot tell
+        # them apart reports another session's in-flight file as committed.
+        (me / "new.md").write_text("staged only\n", encoding="utf-8")
+        _run(me, "add", "new.md")
+        ov = head_overlay(me, ("*.md",))
+        check("new.md" in ov and ov["new.md"] is None,
+              f"a staged-only file is not distinguishable from an absent "
+              f"one: {ov}")
+
+    # delta_of compares two COMPLETE row sets — unlike head_delta, whose HEAD
+    # side comes only from the dirty files.
+    wt = [("x", 1), ("y", 2)]
+    hd = [("x", 1), ("z", 3)]
+    d = delta_of(wt, hd, lambda r: r[0])
+    check([r[0] for r in d.committed] == ["x"], f"committed: {d.committed}")
+    check([r[0] for r in d.uncommitted] == ["y"], f"uncommitted: {d.uncommitted}")
+    check([r[0] for r in d.masked] == ["z"], f"masked: {d.masked}")
+    check(sorted(r[0] for r in d.head) == ["x", "z"],
+          f"the .head view is not HEAD's own set: {d.head}")
+    # Identical sets produce no split in EITHER direction.
+    d = delta_of(wt, list(wt), lambda r: r[0])
+    check(not d.uncommitted and not d.masked,
+          f"identical row sets produced a split: {d}")
     return fails
 
 
@@ -835,7 +1249,8 @@ def premise_arms() -> list[str]:
 
 
 def selftest() -> list[str]:
-    return (dirty_arms() + split_arms() + scope_arms()
+    return (dirty_arms() + split_arms() + delta_arms() + overlay_arms()
+            + scope_arms()
             + advisory_arms() + stale_arms() + counter_arms()
             + premise_arms())
 
@@ -859,7 +1274,18 @@ def main() -> int:
           "pattern while a foreign population stays silent (and a BARE STRING "
           "is one pattern, not a character sequence), split withholds "
           "exactly the dirty rows "
-          "(address-less row kept, separators normalised both sides), a bare "
+          "(address-less row kept, separators normalised both sides), "
+          "head_delta reports the THIRD bucket split withholds — a row HEAD "
+          "carries too stays COMMITTED, an added one is UNCOMMITTED, a hidden "
+          "one is MASKED and never both at once, a staged-only file has no "
+          "HEAD blob, a deleted one still yields its committed rows, the "
+          "rescan set is |dirty n population| and a clean tree costs zero "
+          "reads, a duplicated HEAD key counts once, and the MASKED "
+          "comparison is scoped so an ADDRESS-LESS key cannot be suppressed "
+          "by a clean file, head_overlay carries HEAD's bytes for "
+          "|dirty n population| and distinguishes a STAGED-only file (None) "
+          "from an absent one while delta_of compares two COMPLETE sets, "
+          "a bare "
           "NAME + root resolves as a path does while an unresolvable one "
           "is SKIPPED, behind_origin separates None (no upstream, never "
           "guessed) from (0, 0) (up to date) and refuses to read AHEAD as "

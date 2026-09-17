@@ -106,7 +106,7 @@ console_safe.apply()
 import console_encoding_gate as ceg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import head_delta, sweep_advisory  # noqa: E402
 
 # The repo that owns the membership pin — derived, never typed.
 SELF = ceg.REPO_ROOT.name
@@ -167,6 +167,72 @@ def classify(repo: Path) -> tuple[int, list[str], list[str], list[str]]:
             continue
         (defended if ceg.is_defended(src) else undefended).append(name)
     return len(names), defended, undefended, unparsed
+
+
+
+def head_undefended(repo: Path, walk: set[str]):
+    """`head_delta`'s per-file reclassifier for THIS sweep's ceiling.
+
+    Issue 822. The ratchet is a claim about the repo, and a repo's state is its
+    commits — but `classify` above reads the working tree, which in this
+    workspace is shared with concurrent sessions. The measured breach was
+    `undefended 56 > pinned 53` where one of the three new rows sat on a file
+    `git log` could not see at all, staged by another session mid-commit.
+
+    Per-file row independence holds here by construction: `in_population` and
+    `is_defended` are pure functions of ONE module's source, so the cheap
+    shortcut `head_delta` documents is sound and costs |dirty ∩ scripts/*.py|
+    `git show` calls — zero on an ordinary run.
+
+    `walk` is the sweep's OWN population (`tracked_scripts`), passed in rather
+    than recomputed: `fnmatch`'s `*` crosses `/`, so the scope globs admit the
+    nested `scripts/kimi_ref/…` reference dumps that `tracked_scripts`
+    deliberately excludes, and a row invented there would read as MASKED —
+    a hard red nobody can repair.
+    """
+
+    def rescan(rel: str, src: str | None) -> list[str]:
+        name = rel.rsplit("/", 1)[-1]
+        # None = absent from HEAD (a STAGED-but-never-committed file): there is
+        # nothing committed to classify, so it yields no row and the worktree's
+        # row is UNCOMMITTED.
+        if src is None:
+            return []
+        # `tracked_scripts`'s own two rules, restated at the only other place
+        # a path enters this sweep's population — and they are INDEPENDENT, so
+        # each has its own arm. `fnmatch`'s `*` crosses `/`, so the scope glob
+        # `scripts/*.py` admits `scripts/kimi_ref/dump.py`, whose directory is
+        # the boundary; and the walk is what git TRACKS, so a scratch copy is
+        # not a member. A row invented either way reads as MASKED, which is a
+        # hard red nobody can repair.
+        if rel.count("/") != 1:
+            return []
+        if name not in walk:
+            return []
+        member = ceg.in_population(src)
+        # UNPARSED (None) and out-of-population (False) are both "not an
+        # undefended row" here, and neither is folded into the answer — the
+        # same rule `classify` states one function up.
+        if not member or ceg.is_defended(src):
+            return []
+        return [name]
+
+    return rescan
+
+
+def adjudicate(repo: Path, undefended: list[str]):
+    """The worktree's undefended rows, split COMMITTED / UNCOMMITTED / MASKED.
+
+    A named seam rather than four lines inline, for the reason `arm_reach`
+    keeps finding in this repo: verdict arithmetic that sits inside `main()`
+    beside its own error messages is unreachable by construction, and this is
+    the arithmetic Issue 822 exists to get right. The canary monkeypatches it
+    exactly as it monkeypatches `classify`.
+    """
+    return head_delta(
+        repo, ("scripts/*.py",), undefended,
+        lambda n: "scripts/" + n, lambda n: n,
+        head_undefended(repo, set(ceg.tracked_scripts(repo))))
 
 
 def selftest() -> list[str]:
@@ -241,6 +307,45 @@ def selftest() -> list[str]:
         if "plain.py" in dfd or "plain.py" in und:
             fails.append("classify: an ASCII-only module entered the population")
 
+        # ── Issue 822: the per-file HEAD reclassifier ──────────────────────
+        # `classify` reads the tree; this reads one file's COMMITTED bytes. The
+        # two must agree about what "undefended" means (they share `ceg`), and
+        # disagree about nothing else.
+        walk = {"bare.py", "inline.py", "plain.py", "broken.py"}
+        rescan = head_undefended(ws / "fakerepo", walk)
+        if rescan("scripts/bare.py", ceg.GLYPH + ceg.MAIN) != ["bare.py"]:
+            fails.append("head_undefended: an undefended module yielded no row")
+        if rescan("scripts/inline.py", ceg.INLINE + ceg.MAIN) != []:
+            fails.append("head_undefended: a DEFENDED module yielded a row")
+        if rescan("scripts/plain.py", ceg.ASCII_ONLY + ceg.MAIN) != []:
+            fails.append("head_undefended: an out-of-population module yielded "
+                         "a row")
+        # A STAGED-but-never-committed file — the measured case. There is
+        # nothing committed to classify, and inventing a row here would report
+        # another session's in-flight file as a committed finding.
+        if rescan("scripts/bare.py", None) != []:
+            fails.append("head_undefended: a file absent from HEAD yielded a "
+                         "row")
+        # UNPARSED is not undefended, in EITHER direction: counting it would
+        # invent exposure, and `classify` keeps its own bucket for it.
+        # DRY by construction: the arm reads the very fixture `classify`
+        # just bucketed as UNPARSED, so the two halves of this sweep
+        # cannot come to disagree about what UNPARSED means.
+        if rescan("scripts/broken.py",
+                  (fake / "broken.py").read_text(encoding="utf-8")) != []:
+            fails.append("head_undefended: an UNPARSED module yielded a row")
+        # ⛔ The NESTED rule, on a basename that IS a walk member — otherwise
+        # the membership test rejects the row and this arm asserts nothing.
+        if rescan("scripts/kimi_ref/bare.py", ceg.GLYPH + ceg.MAIN) != []:
+            fails.append("head_undefended: a NESTED reference dump entered the "
+                         "population the sweep's own walk excludes")
+        # ⛔ ...and the MEMBERSHIP rule, on a top-level path — otherwise the
+        # nested test rejects it and this one asserts nothing either. An
+        # untracked scratch copy in `scripts/` is not a member of the contract.
+        if rescan("scripts/scratch.py", ceg.GLYPH + ceg.MAIN) != []:
+            fails.append("head_undefended: an untracked scratch copy entered "
+                         "the population git says it is not in")
+
     return fails
 
 
@@ -251,12 +356,13 @@ def canary() -> int:
     import contextlib
     import io
 
-    global PINS, classify
+    global PINS, classify, adjudicate
 
     td = Path(tempfile.mkdtemp())
     pins_src = PINS.read_text(encoding="utf-8")
     real_pins = PINS
     real_classify = classify
+    real_adjudicate = adjudicate
     results: list[bool] = []
 
     fails = selftest()
@@ -266,11 +372,13 @@ def canary() -> int:
             print(f"    {f}")
         return 2
 
-    def arm(name, want_rc, want_text, pins=None, classify_fn=None):
-        global PINS, classify
+    def arm(name, want_rc, want_text, pins=None, classify_fn=None,
+            adjudicate_fn=None):
+        global PINS, classify, adjudicate
         PINS = td / "p.txt"
         PINS.write_text(pins if pins is not None else pins_src, encoding="utf-8")
         classify = classify_fn or real_classify
+        adjudicate = adjudicate_fn or real_adjudicate
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
@@ -278,6 +386,7 @@ def canary() -> int:
         finally:
             PINS = real_pins
             classify = real_classify
+            adjudicate = real_adjudicate
         out = buf.getvalue()
         ok = rc == want_rc and want_text in out
         print(f"  {'✓' if ok else '✗'} {name}  (rc={rc}, want {want_rc})")
@@ -317,9 +426,51 @@ def canary() -> int:
                     p + [f"ghost_p{i}.py" for i in range(extra_unparsed)])
         return fn
 
+    def hold(n=1):
+        """Issue 822: the same ghost rows, but UNCOMMITTED — a file that
+        differs from HEAD, so no commit contains the finding."""
+        def fn(repo, undefended):
+            d = real_adjudicate(repo, undefended)
+            if repo.name != SELF:
+                return d
+            ghosts = [f"ghost_u{i}.py" for i in range(n)]
+            return type(d)([r for r in d.committed if r not in ghosts],
+                           list(d.uncommitted) + ghosts, list(d.masked))
+        return fn
+
+    def hide(n=1):
+        """And the silent direction: HEAD carries rows this worktree does not.
+        They are NOT in `undefended` — that is what MASKED means — so a run
+        that adjudicated the worktree would report this repo clean."""
+        def fn(repo, undefended):
+            d = real_adjudicate(repo, undefended)
+            if repo.name != SELF:
+                return d
+            return type(d)(list(d.committed), list(d.uncommitted),
+                           list(d.masked) + [f"ghost_m{i}.py"
+                                             for i in range(n)])
+        return fn
+
     arm("baseline green", 0, "sweep PASSED")
     arm("new undefended reds", 1, "> pinned",
         classify_fn=inject(extra_undefended=1))
+    # ⛔ The pair that IS Issue 822: one row, two provenances, opposite
+    # verdicts. Injecting the row into `classify` alone reds (above); the same
+    # row held as UNCOMMITTED must NOT, or the pins are reading the worktree.
+    arm("an UNCOMMITTED row does NOT breach the ratchet", 0, "sweep PASSED",
+        classify_fn=inject(extra_undefended=1), adjudicate_fn=hold())
+    arm("...and is still SHOWN, never hidden", 0, "UNCOMMITTED: 1 row(s)",
+        classify_fn=inject(extra_undefended=1), adjudicate_fn=hold())
+    # T4: MASKED is the silent direction — a committed row the worktree hides.
+    # It must red WITHOUT appearing in `undefended` at all.
+    arm("a MASKED row reds though the worktree is clean", 1, "> pinned",
+        adjudicate_fn=hide())
+    arm("...and is labelled at the ROW", 1, "[MASKED", adjudicate_fn=hide())
+    # ⛔ Two DISPLAYS, two arms. The first version asserted only "MASKED"
+    # appears somewhere, which the row label satisfies — so dropping the total
+    # from the final advisory line red NOTHING. Measured.
+    arm("...and is counted on the ADVISORY line", 1, "MASKED: 1 row(s)",
+        adjudicate_fn=hide())
     arm("UNPARSED reds (never folded into the pass column)", 1, "UNPARSED",
         classify_fn=inject(extra_unparsed=1))
     arm("walk floor reds", 1, "walk FLOOR breached", pins=bump(0, 10_000))
@@ -368,12 +519,24 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
 
     bad = False
     tot_w = tot_p = tot_d = tot_u = 0
+    n_uncommitted = n_masked = 0
     per_repo: dict[str, tuple[int, int]] = {}
 
     for name in names:
         repo = WORKSPACE / name
         n_walk, defended, undefended, unparsed = classify(repo)
         n_pop = len(defended) + len(undefended)
+
+        # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───
+        # `undefended` is what the files say today and is printed as such.
+        # `delta.head` is what a commit of this repo would produce, and it is
+        # the only thing the ratchet may adjudicate: a ceiling breached by
+        # somebody's in-flight edit is a red nobody can repair, and a ceiling
+        # re-pinned from one bakes that edit into a tracked file where it reds
+        # on every other box.
+        delta = adjudicate(repo, undefended)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
         tot_w += n_walk
         tot_p += n_pop
         tot_d += len(defended)
@@ -403,17 +566,38 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
                              f"blind over an unchanged walk (an ast.parse "
                              f"regression looks exactly like this), and then "
                              f"every ceiling passes vacuously")
-            if len(undefended) > row["max_undefended"]:
+            if len(delta.head) > row["max_undefended"]:
                 flags.append(
-                    f"undefended {len(undefended)} > pinned "
+                    f"undefended {len(delta.head)} committed > pinned "
                     f"{row['max_undefended']} — a new instrument that prints a "
                     f"non-ASCII glyph and defends neither stream")
-                for p in undefended:
-                    print(f"      ⛔ {name}/scripts/{p}")
+                held = {r for r in delta.uncommitted}
+                for p in sorted(set(delta.head) | set(undefended)):
+                    # Never hidden — hiding them is the lie Issue 797 refuses —
+                    # but labelled, so the reader can see which rows the pin
+                    # did and did not adjudicate.
+                    if p in held:
+                        print(f"      ⛔ {name}/scripts/{p}  [UNCOMMITTED — "
+                              f"not adjudicated]")
+                    elif p in set(delta.masked):
+                        print(f"      ⛔ {name}/scripts/{p}  [MASKED — "
+                              f"committed, and this worktree hides it]")
+                    else:
+                        print(f"      ⛔ {name}/scripts/{p}")
 
         status = "✗" if flags else ("·" if undefended else "✓")
+        # T3: the count stays honest in BOTH directions. A bare total invites
+        # the one action this issue exists to prevent — typing it into the pin.
+        split = ""
+        if delta.uncommitted or delta.masked:
+            split = (f" ({len(delta.head)} committed"
+                     + (f" + {len(delta.uncommitted)} uncommitted"
+                        if delta.uncommitted else "")
+                     + (f", {len(delta.masked)} MASKED"
+                        if delta.masked else "") + ")")
         print(f"{status} {name:22s} walk={n_walk:<3d} pop={n_pop:<3d} "
-              f"defended={len(defended):<3d} undefended={len(undefended)}")
+              f"defended={len(defended):<3d} "
+              f"undefended={len(undefended)}{split}")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
@@ -424,7 +608,9 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
     # concurrent sessions are editing, so a row may sit on a line no commit
     # contains. ADVISORY, never a failure. The globs are THIS sweep's own
     # population: the tracked top-level scripts it walks.
-    deferred.extend(sweep_advisory(names, ("scripts/*.py",), root=WORKSPACE))
+    deferred.extend(sweep_advisory(names, ("scripts/*.py",), root=WORKSPACE,
+                                   uncommitted_rows=n_uncommitted,
+                                   masked_rows=n_masked))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

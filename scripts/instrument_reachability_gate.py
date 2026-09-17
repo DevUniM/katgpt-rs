@@ -130,7 +130,8 @@ def collect(repo: Path) -> tuple[list[str], list[str]]:
     return sorted(scripts), sorted(roots)
 
 
-def reachable(repo: Path, scripts: list[str], roots: list[str]) -> set[str]:
+def reachable(repo: Path, scripts: list[str], roots: list[str],
+              read=read) -> set[str]:
     """Transitive closure: roots name scripts, scripts name scripts.
 
     A script is matched by BASENAME as well as by full path, because prose and
@@ -138,6 +139,12 @@ def reachable(repo: Path, scripts: list[str], roots: list[str]) -> set[str]:
     or spawn `HERE / "x.py"`. Basename collisions are refused by the caller —
     with two `x.py` in the tree, a basename hit cannot say which one is meant,
     and guessing would credit coverage to the wrong file.
+
+    `read` is injectable for Issue 822: this closure is CROSS-FILE — a dirty
+    `AGENTS.md` changes other scripts' verdicts — so `worktree_state.head_delta`'s
+    per-file shortcut is unsound here and the whole classifier has to be re-run
+    against HEAD's bytes. The default is the module function, so every existing
+    caller is byte-identical.
     """
     by_name: dict[str, str] = {Path(p).name: p for p in scripts}
     reached: set[str] = set()

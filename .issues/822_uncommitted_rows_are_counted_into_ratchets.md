@@ -1,6 +1,6 @@
 # Issue 822 (2026-09-17) — an UNCOMMITTED row is counted into a RATCHET, and one just breached a pin over a file that exists in no commit
 
-**Status:** OPEN
+**Status:** OPEN — T1-T4 landed, T5 (the fan-out to 13 more sweeps) owed
 **Severity:** a sweep reds on another session's in-flight edit; the obvious remedy is to re-pin from it
 **Owner:** unassigned — filed with the measurement, not started
 
@@ -98,18 +98,116 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       - `citation_drift_sweep` is the one sweep WITH the row-level split, and
         it is the one whose rows are **documents** rather than source files.
         The class was measured there first and bites hardest everywhere else.
-- [ ] **T2** — lift `worktree_state.split_rows`'s injected-`read` pattern into
-      a shared helper those sweeps can call with their own row->path function.
-      `citation_drift_sweep` re-runs its whole classifier against HEAD blobs;
-      whether that is affordable for a 2415-file Rust walk is **unmeasured**
-      and is the first thing to find out — the answer may be that only the
-      FINDING paths need re-reading, not the whole tree.
-- [ ] **T3** — the count must stay honest in both directions. Report
-      `undefended 56 (53 committed + 3 uncommitted)` and adjudicate the
-      committed number. Do NOT hide the 3: hiding them is the lie 797 refuses.
-- [ ] **T4** — MASKED is the silent direction and is still **0 by
-      measurement, not by absence of the class** — a committed defect the
-      worktree hides. Any wiring must report it.
+- [x] **T2 — LANDED 2026-09-17. `worktree_state.head_delta()`, and the
+      affordability question was the wrong shape.** The hoped-for answer was
+      the right one: only the FINDING paths need re-reading, and not even all
+      of those. A clean file's rows are identical at HEAD **by construction**,
+      so the only files that need a `git show` are the dirty ones inside the
+      sweep's own population — the quantity `dirty_in_scope()` already prints
+      on the advisory line, and **zero on an ordinary run**. A 2415-file Rust
+      walk never has to be re-walked at all.
+
+      Three things the implementation had to get right, each with its own arm:
+
+      - **`HeadDelta.head` is `committed + masked`, NOT `committed`.** A masked
+        row is committed-and-hidden, so a pin reading `committed` alone
+        understates its ceiling by exactly the silent direction. The
+        arithmetic lives in the helper because getting it right independently
+        in fourteen sweeps is fourteen chances to get it wrong.
+      - **The MASKED comparison is SCOPED to the dirty files.** Widening it to
+        every worktree row reds nothing under a path-bearing key and is not
+        equivalent in general: an address-less key (a bare script NAME — the
+        shape this sweep's rows have) lets a CLEAN file's identical row
+        suppress a genuinely masked one. Measured — the first arm written for
+        it perturbed green, and the arm that separates them had to use such a
+        key.
+      - **The premise is PER-FILE row independence**, and it is stated rather
+        than asserted because it is a property of the caller's classifier.
+        `len_derived` (provenance through other repos),
+        `instrument_reachability` (a closure from roots — a dirty `AGENTS.md`
+        changes other scripts' verdicts), `numbering` and `citation` are
+        cross-file and must keep re-running the classifier whole.
+
+      78 assertions in `worktree_state.py`, every new rule perturbed and red.
+      The one perturbation that does NOT red is recorded at the line: the
+      empty-scope fast path is provably equivalent to falling through and is
+      there for the COST, so the arm that bites is the one asserting zero
+      rescan calls.
+- [x] **T3 — LANDED.** `console_encoding_drift_sweep.py` prints
+      `undefended 56 (53 committed + 3 uncommitted)` and labels each listed
+      row `[UNCOMMITTED — not adjudicated]` / `[MASKED — committed, and this
+      worktree hides it]`. Nothing is hidden; the ratchet reads `.head`.
+- [x] **T4 — LANDED, and it needs no separate teeth.** The pins read `.head`,
+      so a committed row the worktree hides breaches the ceiling on its own —
+      AGENTS.md's existing rule, now true for this sweep too. It is *named* as
+      MASKED in the row list and on the advisory line so the reader is not
+      left hunting for a row the file does not contain. Still **0 by
+      measurement** in this workspace.
+- [x] **T5a — the CROSS-FILE instrument, and the second MEASURED sweep.**
+      `worktree_state.head_overlay()` + `delta_of()` are the two pieces
+      `citation_drift_sweep`'s inline version consists of, lifted so the next
+      caller does not copy them, and
+      `instrument_reachability_drift_sweep.py` is wired with them.
+      `instrument_reachability_gate.reachable()` takes an injected `read` (the
+      default is the module function, so every existing caller is
+      byte-identical).
+
+      Two things this half had that the per-file half did not:
+
+      - **The POPULATION moves, not just the rows.** A staged-only script is in
+        `git ls-files` and in no commit, so it is not part of what HEAD would
+        report and cannot be an unreachable row there. Same for a root. Issue
+        797 measured this for citations (`n_cites` 601 vs 607) and it is the
+        part a row-level read alone misses.
+      - ⛔ **The advisory's glob list was a SECOND hand-typed copy of the
+        scope, and it disagreed.** It named `.yml` and not `.yaml`, so a dirty
+        `.yaml` workflow — a ROOT, able to move scripts in and out of the
+        unreachable set — was silently outside the sweep's declared
+        population. One `SCOPE` constant now, used by both.
+- [ ] **T5b — the FAN-OUT, which is the part that is not done.** T1 measured 14
+      sweeps with a count ceiling; **two** are wired. Do not read the helpers'
+      existence as the fan-out having happened — that substitution is this
+      repo's most-repeated error and it is what made this issue the *ninth*
+      instance. The per-sweep instrument is decided by T2's premise, not by
+      preference:
+
+      | sweep | instrument |
+      |---|---|
+      | `subprocess_encoding`, `orphaned_attr`, `markdown_fence`, `percentile`, `toolchain_override`, `pipefail_discard`, `platform_dead_code` | `head_delta` — per-file classifiers |
+      | ~~`instrument_reachability`~~ | **done (T5a)** — `head_overlay` + `delta_of` |
+      | `len_derived` | whole-classifier re-run, and its HALF C reaches other REPOS |
+      | `numbering` | whole-classifier re-run; its rows are numbers, not files |
+      | `cfg_gated`, `required_features`, `wasm32_surface` | manifest+source joins — read each before choosing |
+
+      ⚠ **Budget the canary cost.** Each `--canary` runs `main()` once per arm
+      over every contract repo, so four new arms is roughly a 45% increase:
+      `console_encoding` went 9 arms/~15s to 14 arms/**~42s**. Workstation-only
+      — none of these runs per push — but it is why the arms are four and not
+      fourteen.
+
+## What landed (2026-09-17)
+
+- `scripts/worktree_state.py` — `HeadDelta`, `head_delta()`,
+  `dirty_in_population()`, `_matches()` (extracted from `_match_count`, one
+  copy), `sweep_advisory(uncommitted_rows=, masked_rows=)`, `delta_arms()`.
+- `scripts/console_encoding_drift_sweep.py` — `head_undefended()` (the
+  per-file HEAD reclassifier), `adjudicate()` (the named seam the canary
+  monkeypatches, extracted so the verdict arithmetic is not stranded inside
+  `main()` beside its own error messages), the honest display, and five canary
+  arms including the pair that IS this issue: **one ghost row, two
+  provenances, opposite verdicts.** 14/14 arms pass.
+- `scripts/worktree_state.py` (T5a) — `head_overlay()`, `delta_of()`,
+  `overlay_arms()`. 87 assertions.
+- `scripts/instrument_reachability_gate.py` — `reachable(read=)`.
+- `scripts/instrument_reachability_drift_sweep.py` — `SCOPE` (one list, was
+  two that disagreed), `adjudicate()`, the honest display, five canary arms.
+
+⛔ **Two DISPLAYS need two arms.** The MASKED arm first asserted only that the
+string `MASKED` appeared somewhere, which the ROW LABEL satisfies — so dropping
+the total from the final ADVISORY line red nothing. Measured. The row label
+says *which* row; the final line says the class exists at all, and Issue 797's
+own rule is that a notice printed in one place is one nobody reads on the run
+that needs it.
 
 ## Not in scope
 
