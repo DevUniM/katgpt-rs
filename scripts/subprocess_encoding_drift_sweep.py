@@ -298,6 +298,34 @@ def split_arms() -> list[str]:
         check(all(r[1] != "broken.py" for r in d.masked),
               f"an UNPARSED HEAD blob produced a MASKED row: {d.masked}")
 
+        # ── the KEY must carry every field a CEILING reads ──────────────────
+        # ⛔ `head_delta` puts a key-matched row in `committed` carrying the
+        # WORKTREE's object, so a field the key omits is one where the worktree
+        # silently overrides HEAD. This sweep has TWO ceilings partitioned by
+        # KIND, so kind is identity, not an attribute. Measured on a peer's
+        # toolchain_override, where omitting the analogous field made a
+        # committed DRIFT count as zero.
+        #
+        # One call that is BOTH classes at HEAD, and only CHILD in the worktree.
+        BOTH = ("import subprocess, sys" + chr(10)
+                + "subprocess.run([sys.executable], text=True)" + chr(10))
+        CHILD_ONLY = ("import subprocess, sys" + chr(10)
+                      + "subprocess.run([sys.executable], encoding=" + chr(34)
+                      + "utf-8" + chr(34) + ")" + chr(10))
+        git(repo, "checkout", "--", ".")
+        (repo / "both.py").write_text(BOTH, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "both")
+        (repo / "both.py").write_text(CHILD_ONLY, encoding="utf-8")
+        dec, chi, d = now()
+        kinds_masked = {r[2] for r in d.masked if r[1] == "both.py"}
+        check("DECODE" in kinds_masked,
+              f"the DECODE row HEAD carries was ABSORBED by the worktree's "
+              f"CHILD row — kind is not in the key: masked={d.masked}")
+        check(not any(r[1] == "both.py" and r[2] == "DECODE"
+                      for r in d.head if r in d.committed),
+              "a vanished DECODE row was reported as committed")
+
         # ── the WALK guard ──────────────────────────────────────────────────
         # `fnmatch`'s `*` crosses `/`, so the scope glob admits a path the
         # walk excludes; a row invented there reads as MASKED.

@@ -339,6 +339,45 @@ def adjudicate_arms() -> list[str]:
         check(len([r for r in d.head if r[1] == "degenerate"]) == 2,
               f"the ceiling undercounts a repeated site: {len(d.head)}")
 
+        # ── the KEY must carry every field a CEILING reads ──────────────────
+        # ⛔ Four ceilings partitioned by CLASS, and `degenerate_asserted` is a
+        # SUBSET of `degenerate` that turns on one boolean. A site that stays
+        # degenerate but stops being load-bearing changes CLASS and nothing
+        # else; with class out of the key the worktree's row would absorb
+        # HEAD's and `max_degenerate_asserted` would count zero. A peer's
+        # toolchain_override shipped exactly that shape.
+        git(repo, "checkout", "--", ".")
+        (repo / "src/new.rs").unlink(missing_ok=True)
+        try:
+            git(repo, "rm", "-q", "--cached", "src/new.rs")
+        except Exception:
+            pass
+        (repo / "src/a.rs").write_text(BAD, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "asserted")
+        got, _d = now()
+        check(len(got["degenerate_asserted"]) == 1,
+              f"fixture: the committed site is not load-bearing: "
+              f"{len(got['degenerate_asserted'])}")
+        # Drop the assert! so the site stays DEGENERATE and stops being asserted.
+        (repo / "src/a.rs").write_text(
+            BAD.replace("    assert!(p99 < 5_000);" + chr(10), ""),
+            encoding="utf-8")
+        got, d = now()
+        check(len(got["degenerate"]) == 1 and not got["degenerate_asserted"],
+              f"fixture: want degenerate-but-not-asserted, got "
+              f"{len(got['degenerate'])}/{len(got['degenerate_asserted'])}")
+        # ⛔ Assert the KEY, not the tuple's class field. The first version of
+        # this arm read `r[1]` — which carries the class whether or not the KEY
+        # does — and passed with class removed from the address, because the
+        # ordinal happens to order `degenerate` before `degenerate_asserted`
+        # and the counts came out right by accident. An arm that reads the
+        # field the rule is about is the only one that tests the rule.
+        check(any("degenerate_asserted" in r[0] for r in d.masked),
+              f"class is not in the KEY — a committed degenerate_asserted row "
+              f"is absorbed by the worktree's degenerate row at the same "
+              f"address: {[r[0] for r in d.masked]}")
+
         # ── the WALK guard ──────────────────────────────────────────────────
         check(head_sites(set())("src/a.rs", BAD) == [],
               "a path outside the sweep's own walk produced a row")
