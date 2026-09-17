@@ -11,6 +11,25 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 818 CLOSED (2026-09-17) — the four no-default `--all-targets` breaks gated both halves; bench_412's green-zero row found in the same sweep
+
+Fix `78a1ac5d7`. The repro (`cargo check -p katgpt-core --no-default-features --all-targets`) named four targets, all
+fixed per the issue's own fix shape — whole-file `#![cfg]` + the matching `required-features` row, both halves (the
+cfg protects the count, the row protects the reader; the Plan 599 fanout-row comment is the house spelling):
+`bench_371` re-gained the row deleted at its Plan-371-Phase-6 promotion (the promotion removed the gate instead of
+moving it; a harness=false bench emptied by its own `#![cfg]` has no `main` → E0601, so there the ROW is the
+load-bearing half and the in-file cfg stays); `bench_416` gated `region_subspace_steering` (implies
+`subspace_steering`, both imports); `bench_778` gated `subspace_intervention` (implies `subspace_phase_gate`; the
+bench_779 row is the naming precedent — note it was ALSO broken at plain default `--all-targets`, the state nobody
+runs, since `subspace_phase_gate` is opt-in); `velocity_field_ensemble_alloc_check` gated
+`velocity_field_ensemble` (row placed beside its heterogeneous sibling in the alloc-check cluster). **The sweep's
+fifth target**: `bench_412` had the cfg half but no row — the green-zero class (compiles empty, `ok. 0 passed`
+under no-default), not a break, caught because bench_416's doc names it as the convention mirror; row added. All
+four fixed targets verified NON-VACUOUS at their feature sets (3+1i / 4+1i / 2 / 1 passed — the counts fire, not
+green zeros); no-default, default, and all-features `--all-targets` all check clean; default lib 2063/0
+bit-unchanged. Standing corollary for promotions: DEMOTING/promoting a default-on feature must MOVE its target
+gates in the same commit, never delete them (bench_371 is the measured instance).
+
 ## Issue 808 T4 LANDED (2026-09-17) — `argtopk` AVX2 dispatch re-measured on six realistic block-score distributions + per-k `N_MIN` crossover (Bench 810); Issue 817 single-pass AVX2 `argmax` port measured NEGATIVE + reverted (Bench 812)
 
 Two units on the 4090 box, one evidence-gathering, one a same-day negative. **Bench 810** (Issue 808's option-4 half + T2's
