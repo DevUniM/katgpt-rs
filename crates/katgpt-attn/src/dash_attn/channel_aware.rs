@@ -589,59 +589,62 @@ unsafe fn simd_dot_neon(a: *const f32, b: *const f32, n: usize) -> f32 {
 unsafe fn simd_dot_avx2(a: *const f32, b: *const f32, n: usize) -> f32 {
     use std::arch::x86_64::*;
 
-    let mut acc0 = _mm256_setzero_ps();
-    let mut acc1 = _mm256_setzero_ps();
-    let mut acc2 = _mm256_setzero_ps();
-    let mut acc3 = _mm256_setzero_ps();
+    // SAFETY: Caller guarantees valid pointers with at least `n` elements.
+    unsafe {
+        let mut acc0 = _mm256_setzero_ps();
+        let mut acc1 = _mm256_setzero_ps();
+        let mut acc2 = _mm256_setzero_ps();
+        let mut acc3 = _mm256_setzero_ps();
 
-    // Process 32 elements per iteration (4 AVX2 vectors × 8 f32)
-    let chunks32 = n / 32;
-    let mut i = 0usize;
+        // Process 32 elements per iteration (4 AVX2 vectors × 8 f32)
+        let chunks32 = n / 32;
+        let mut i = 0usize;
 
-    for _ in 0..chunks32 {
-        let v0 = _mm256_loadu_ps(a.add(i));
-        let v1 = _mm256_loadu_ps(b.add(i));
-        acc0 = _mm256_fmadd_ps(v0, v1, acc0);
+        for _ in 0..chunks32 {
+            let v0 = _mm256_loadu_ps(a.add(i));
+            let v1 = _mm256_loadu_ps(b.add(i));
+            acc0 = _mm256_fmadd_ps(v0, v1, acc0);
 
-        let v2 = _mm256_loadu_ps(a.add(i + 8));
-        let v3 = _mm256_loadu_ps(b.add(i + 8));
-        acc1 = _mm256_fmadd_ps(v2, v3, acc1);
+            let v2 = _mm256_loadu_ps(a.add(i + 8));
+            let v3 = _mm256_loadu_ps(b.add(i + 8));
+            acc1 = _mm256_fmadd_ps(v2, v3, acc1);
 
-        let v4 = _mm256_loadu_ps(a.add(i + 16));
-        let v5 = _mm256_loadu_ps(b.add(i + 16));
-        acc2 = _mm256_fmadd_ps(v4, v5, acc2);
+            let v4 = _mm256_loadu_ps(a.add(i + 16));
+            let v5 = _mm256_loadu_ps(b.add(i + 16));
+            acc2 = _mm256_fmadd_ps(v4, v5, acc2);
 
-        let v6 = _mm256_loadu_ps(a.add(i + 24));
-        let v7 = _mm256_loadu_ps(b.add(i + 24));
-        acc3 = _mm256_fmadd_ps(v6, v7, acc3);
+            let v6 = _mm256_loadu_ps(a.add(i + 24));
+            let v7 = _mm256_loadu_ps(b.add(i + 24));
+            acc3 = _mm256_fmadd_ps(v6, v7, acc3);
 
-        i += 32;
+            i += 32;
+        }
+
+        // Process remaining 8-element chunks
+        while i + 8 <= n {
+            let va = _mm256_loadu_ps(a.add(i));
+            let vb = _mm256_loadu_ps(b.add(i));
+            acc0 = _mm256_fmadd_ps(va, vb, acc0);
+            i += 8;
+        }
+
+        // Horizontal add
+        let sum256 = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
+        let hi = _mm256_extractf128_ps(sum256, 1);
+        let lo = _mm256_castps256_ps128(sum256);
+        let sum128 = _mm_add_ps(hi, lo);
+        let mut result = [0.0f32; 4];
+        _mm_storeu_ps(result.as_mut_ptr(), sum128);
+        let mut sum = (result[0] + result[1]) + (result[2] + result[3]);
+
+        // Handle remaining elements
+        while i < n {
+            sum += *a.add(i) * *b.add(i);
+            i += 1;
+        }
+
+        sum
     }
-
-    // Process remaining 8-element chunks
-    while i + 8 <= n {
-        let va = _mm256_loadu_ps(a.add(i));
-        let vb = _mm256_loadu_ps(b.add(i));
-        acc0 = _mm256_fmadd_ps(va, vb, acc0);
-        i += 8;
-    }
-
-    // Horizontal add
-    let sum256 = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
-    let hi = _mm256_extractf128_ps(sum256, 1);
-    let lo = _mm256_castps256_ps128(sum256);
-    let sum128 = _mm_add_ps(hi, lo);
-    let mut result = [0.0f32; 4];
-    _mm_storeu_ps(result.as_mut_ptr(), sum128);
-    let mut sum = (result[0] + result[1]) + (result[2] + result[3]);
-
-    // Handle remaining elements
-    while i < n {
-        sum += *a.add(i) * *b.add(i);
-        i += 1;
-    }
-
-    sum
 }
 
 // ---------------------------------------------------------------------------
