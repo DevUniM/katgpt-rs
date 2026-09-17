@@ -76,7 +76,8 @@ sys.path.insert(0, str(HERE))
 import toolchain_override_audit as toa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, delta_of, head_overlay,  # noqa: E402
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -84,30 +85,93 @@ PINS = toa.PINS
 
 ACTION = ("DRIFT", "UNRESOLVED", "UNRESOLVED-MARKED")
 
+# ONE list, read by the worktree advisory AND by the HEAD re-classification.
+# ⚠ It must name every file that can CHANGE a verdict, not only the ones rows
+# sit on — `rust-toolchain.toml` is judge rather than defendant here, and it
+# rides in under `*.toml`. Issue 822 T5a measured the cost of a second copy:
+# `instrument_reachability` carried a hand-typed list naming `.yml` and not
+# `.yaml`, so a dirty ROOT sat silently outside its own declared population.
+SCOPE = ("*.sh", "*.yml", "*.yaml", "*.toml", "*.py", "Dockerfile*")
 
-def repo_flags(scan: toa.RepoScan, row: dict | None) -> list[str]:
+
+def occ_key(o: toa.Occ) -> tuple:
+    """An occurrence's identity, LINE-FREE.
+
+    Any edit above an override shifts its line, so a line-bearing key reports
+    every row in an edited file as UNCOMMITTED *and* MASKED at once.
+
+    ⛔ **`verdict` IS in the identity, and the first version of this function
+    left it out.** The reasoning for leaving it out sounded right — a row
+    whose verdict merely CHANGED is the same override, so why report it as one
+    row appearing and another vanishing — and the arms refuted it in the only
+    way that matters. `delta_of` puts a key-matched row in `committed`
+    carrying the WORKTREE's object, so an uncommitted marker (`# toolchain-
+    override-deliberate`, which does not touch the override LINE at all) made
+    a committed DRIFT read as DELIBERATE and the ceiling counted zero. That is
+    Issue 822's exact failure, rebuilt inside its own repair.
+
+    With the verdict in, the two provenances separate correctly: the marked
+    worktree row is UNCOMMITTED (not adjudicated) and the bare HEAD row is
+    MASKED (counted). The display cost is that such a row is labelled in both
+    buckets, which is what is true — the worktree says one thing and the last
+    commit says another.
+    """
+    return (o.rel, o.form, o.value, o.verdict, o.line.strip())
+
+
+def adjudicate(root: Path, scan: toa.RepoScan) -> HeadDelta:
+    """This repo's occurrences split COMMITTED / UNCOMMITTED / MASKED.
+
+    ⛔ **CROSS-FILE, and not for the reason the other cross-file sweep is.**
+    `head_delta`'s shortcut needs a row to depend only on its OWN file's
+    bytes. Here every occurrence in the repo is judged against ONE value —
+    the root `rust-toolchain.toml` — so a dirty pin file moves every verdict
+    at once. Issue 822's T5b table groups this sweep with the per-file ones;
+    that is decided by reading `scan_repo`, not by the table.
+
+    Cost is a second `scan_repo` for repos that have dirt in SCOPE, and zero
+    on a clean tree: an empty overlay means skip the second classification
+    entirely, never "overlay nothing".
+    """
+    overlay = head_overlay(root, SCOPE)
+    if not overlay:
+        return HeadDelta(list(scan.occs), [], [])
+    head = toa.scan_repo(root, scan.name, overlay=overlay)
+    return delta_of(scan.occs, head.occs, occ_key)
+
+
+def repo_flags(scan: toa.RepoScan, row: dict | None,
+               delta: HeadDelta | None = None) -> list[str]:
     """The per-repo verdict policy — self-tested below, so the arithmetic is
-    not welded to main() (the Issue-789 extraction lesson)."""
+    not welded to main() (the Issue-789 extraction lesson).
+
+    `delta` is Issue 822's HEAD split. The FLOOR reads the worktree (it
+    detects the walk going blind on the tree that was actually read); the
+    CEILINGS read `.head`, which is the only thing a commit of this checkout
+    would reproduce. `None` means "no split available" and falls back to the
+    worktree for both, so this function stays callable from its own arms.
+    """
     if row is None:
         return ["UNPINNED — add a row (or it can never red)"]
     flags: list[str] = []
+    judged = scan.occs if delta is None else delta.head
     if scan.walked < row["min_files"]:
         flags.append(
             f"walk FLOOR breached: {scan.walked} scannable file(s) < "
             f"{row['min_files']} — files were removed, or `git ls-files` "
             f"went blind and the zero below means nothing")
-    n_drift = scan.count("DRIFT")
+    n_drift = sum(1 for o in judged if o.verdict == "DRIFT")
     if n_drift > row["max_drift"]:
         flags.append(
-            f"DRIFT {n_drift} > pinned {row['max_drift']} — an unmarked "
-            f"override building at a different toolchain than the pin "
-            f"declares; add the in-source marker or fix the value, never "
+            f"DRIFT {n_drift} committed > pinned {row['max_drift']} — an "
+            f"unmarked override building at a different toolchain than the "
+            f"pin declares; add the in-source marker or fix the value, never "
             f"raise the wall")
-    n_unres = scan.count("UNRESOLVED")
+    n_unres = sum(1 for o in judged if o.verdict == "UNRESOLVED")
     if n_unres > row["max_unresolved"]:
         flags.append(
-            f"UNRESOLVED {n_unres} > pinned {row['max_unresolved']} — a "
-            f"TOKEN override the classifier cannot evaluate")
+            f"UNRESOLVED {n_unres} committed > pinned {row['max_unresolved']} "
+            f"— a TOKEN override the classifier cannot evaluate")
     if scan.unparsed:
         flags.append(
             f"{len(scan.unparsed)} file(s) the scanner could not fully read "
@@ -238,6 +302,148 @@ def selftest() -> list[str]:
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
+
+    fails += head_arms()
+    if SCOPE != ("*.sh", "*.yml", "*.yaml", "*.toml", "*.py", "Dockerfile*"):
+        fails.append(f"SCOPE is {SCOPE} — the advisory and the HEAD "
+                     f"re-classification read this one list, and `*.toml` is "
+                     f"in it for rust-toolchain.toml, which is the JUDGE "
+                     f"rather than a defendant")
+    return fails
+
+
+def head_arms() -> list[str]:
+    """`adjudicate` end to end against REAL git — Issue 822.
+
+    A mock of git would assert the mock, and each of the three pieces
+    (`head_overlay` finding the dirty file, `scan_repo` re-reading HEAD's
+    bytes, `delta_of`'s arithmetic) has its own way of being silently inert.
+    """
+    fails: list[str] = []
+    drift = _plant("1.95.0")
+    marked = _plant("1.95.0", marked=True)
+
+    def fixture(td: str, committed: dict, worktree: dict) -> Path:
+        repo = Path(td) / "r"
+        repo.mkdir(parents=True)
+        _git(repo.parent, "init", "-q", "r")
+        _git(repo, "config", "user.email", "arm@example.invalid")
+        _git(repo, "config", "user.name", "arm")
+        files = {"rust-toolchain.toml": toa.PIN_TOML,
+                 "Cargo.toml": toa.CARGO_TOML, **committed}
+        for rel, text in files.items():
+            (repo / rel).write_text(text, encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        for rel, text in worktree.items():
+            (repo / rel).write_text(text, encoding="utf-8")
+        return repo
+
+    def run(repo: Path):
+        scan = toa.scan_repo(repo, "t")
+        return scan, adjudicate(repo, scan)
+
+    # a. UNCOMMITTED — the worktree drifts, HEAD does not. SHOWN, never
+    #    adjudicated: no ceiling may red on a line no commit contains.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, {"a.sh": marked}, {"a.sh": drift})
+        scan, d = run(repo)
+        if scan.count("DRIFT") != 1:
+            fails.append("head arm: the worktree pass found no DRIFT — every "
+                         "comparison in this arm is vacuous")
+        if len(d.uncommitted) != 1 or any(o.verdict == "DRIFT"
+                                          for o in d.head):
+            fails.append(f"adjudicate: a worktree-only DRIFT is not "
+                         f"UNCOMMITTED — the ceiling reads the tree ({d})")
+        if repo_flags(scan, {"min_files": 1, "max_drift": 0,
+                             "max_unresolved": 0}, d):
+            fails.append("repo_flags: an UNCOMMITTED DRIFT breached the wall")
+
+    # b. MASKED — the silent direction: HEAD carries the drift, the worktree
+    #    hides it, and a sweep adjudicating the tree calls the repo clean.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, {"a.sh": drift}, {"a.sh": marked})
+        scan, d = run(repo)
+        if scan.count("DRIFT"):
+            fails.append("head arm: the worktree pass found DRIFT where the "
+                         "MASKED direction needs none")
+        if len(d.masked) != 1:
+            fails.append(f"adjudicate: a committed DRIFT the worktree hides "
+                         f"was not recovered as MASKED ({d})")
+        if not repo_flags(scan, {"min_files": 1, "max_drift": 0,
+                                 "max_unresolved": 0}, d):
+            fails.append("repo_flags: a MASKED DRIFT did not breach the wall "
+                         "— the committed defect reads as repaired")
+
+    # c. ⛔ THE CROSS-FILE CASE, and the reason this sweep is not on the
+    #    per-file shortcut: the source line is UNTOUCHED and the verdict
+    #    moves, because the root pin it is judged against is what changed.
+    #    A per-file `head_delta` would never re-read `a.sh` and would report
+    #    the repo clean.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, {"a.sh": _plant("1.98.1")},
+                       {"rust-toolchain.toml":
+                        toa.PIN_TOML.replace("1.98.1", "1.95.0")})
+        scan, d = run(repo)
+        if scan.count("DRIFT") != 1:
+            fails.append("head arm: bumping the ROOT pin did not make an "
+                         "untouched line drift — the arm is vacuous")
+        if len(d.uncommitted) != 1 or len(d.masked) != 1:
+            fails.append(f"adjudicate: a verdict that moved because the ROOT "
+                         f"PIN moved was not split — this is the cross-file "
+                         f"case the per-file shortcut cannot see ({d})")
+
+    # d. A staged-but-never-committed file — Issue 822's measured shape.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, {"a.sh": marked}, {})
+        (repo / "new.sh").write_text(drift, encoding="utf-8")
+        _git(repo, "add", "new.sh")
+        scan, d = run(repo)
+        if len(d.uncommitted) != 1 or d.masked:
+            fails.append(f"adjudicate: a kill in a file absent from HEAD was "
+                         f"adjudicated as committed ({d})")
+
+    # e. ⛔ The key is LINE-FREE **and** survives a REPEAT. Padding above an
+    #    override must not report it as UNCOMMITTED *and* MASKED at once; two
+    #    IDENTICAL overrides in one file must stay two rows, or HEAD dedupes
+    #    to one and the ceiling silently tolerates the second copy.
+    twice = drift + drift
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, {"a.sh": twice},
+                       {"a.sh": "# padding\n# padding\n" + twice})
+        scan, d = run(repo)
+        if scan.count("DRIFT") != 2:
+            fails.append(f"head arm: the repeat fixture yielded "
+                         f"{scan.count('DRIFT')} DRIFT, not 2 — the ordinal "
+                         f"is not being exercised")
+        if d.uncommitted or d.masked or len(d.committed) != 2:
+            fails.append(f"row key: two identical overrides in one file did "
+                         f"not survive a line shift as two COMMITTED rows "
+                         f"({d})")
+
+    # f. A CLEAN tree costs nothing — no overlay, no second scan. A helper
+    #    that re-reads anyway on every run is one sweeps stop calling.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, {"a.sh": drift}, {})
+        real = toa.scan_repo
+        calls = []
+
+        def counted(root, name, overlay=None):
+            if overlay is not None:
+                calls.append(overlay)
+            return real(root, name, overlay=overlay)
+
+        toa.scan_repo = counted
+        try:
+            scan, d = run(repo)
+        finally:
+            toa.scan_repo = real
+        if calls:
+            fails.append(f"adjudicate: re-scanned a CLEAN repo ({len(calls)} "
+                         f"overlay call(s)) — an empty overlay must mean SKIP")
+        if len(d.committed) != 1 or d.uncommitted or d.masked:
+            fails.append(f"adjudicate: a clean tree's rows are not all "
+                         f"COMMITTED ({d})")
     return fails
 
 
@@ -280,8 +486,16 @@ def main() -> int:
     tot = {v: 0 for v in toa.VERDICTS}
     tot_unpinned = tot_unparsed = 0
 
+    n_uncommitted = n_masked = 0
     for name in names:
         scan = toa.scan_repo(WORKSPACE / name, name)
+        # Issue 822 — the DISPLAY reads the worktree (it is what the files say
+        # today, and hiding that would be its own lie); the CEILINGS read
+        # `.head`, the only thing a commit of this checkout would reproduce.
+        delta = adjudicate(WORKSPACE / name, scan)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
+        held = {occ_key(o) for o in delta.uncommitted}
         # Issue 821: guard at the CALL SITE, not inside repo_flags —
         # that function is pure policy and its own arm asserts the
         # UNPINNED branch, which must keep firing for repos that do
@@ -289,7 +503,7 @@ def main() -> int:
         # one, and this sweep is the family's one non-uniform shape.
         row = pins.get(name)
         flags = ([] if (row is None and pin_row_exempt(name))
-                 else repo_flags(scan, row))
+                 else repo_flags(scan, row, delta))
         for v in toa.VERDICTS:
             tot[v] += scan.count(v)
         tot_walked += scan.walked
@@ -311,7 +525,17 @@ def main() -> int:
             if o.verdict not in ACTION:
                 continue
             mark = "⛔" if o.verdict == "DRIFT" else "⚠"
-            print(f"      {mark} {o.verdict:<18s} {o.addr():<58s} {o.line}")
+            print(f"      {mark} {o.verdict:<18s} {o.addr():<58s} {o.line}"
+                  + (" [UNCOMMITTED — not adjudicated]"
+                     if occ_key(o) in held else ""))
+        # A MASKED row is NOT in `scan.occs` — that is what MASKED means — so
+        # it prints from the HEAD side or it prints nowhere, and the ceiling
+        # reds over a row nobody can see. Every verdict is shown here, not
+        # only ACTION: a row that is DELIBERATE in the worktree and DRIFT at
+        # HEAD is exactly the case somebody needs to look at.
+        for o in delta.masked:
+            print(f"      ⛔ {o.verdict:<18s} {o.addr():<58s} {o.line} "
+                  f"[MASKED — committed, hidden by this worktree]")
         if scan.unpinned_repo:
             print("      ℹ UNPINNED-REPO — root Cargo.toml with no "
                   "rust-toolchain.toml (intake P14 (k)(ii))")
@@ -333,8 +557,12 @@ def main() -> int:
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — every scannable file plus the root toolchain pin they are read against.
+    # ...and Issue 822's row counts ride with it: the per-row labels above say
+    # WHICH, this says the class exists at all, and a notice printed in only
+    # one of those places is one nobody reads on the run that needs it.
     deferred.extend(sweep_advisory(
-        names, ("*.sh", "*.yml", "*.yaml", "*.toml", "*.py", "Dockerfile*"), root=WORKSPACE))
+        names, SCOPE, root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

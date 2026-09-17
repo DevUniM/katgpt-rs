@@ -407,9 +407,48 @@ def scan_lines(rel: str, raw_lines: list[str], pin: str | None,
     return occs
 
 
-def repo_pin(root: Path) -> str | None:
-    """The ROOT rust-toolchain.toml channel — v1 scope, documented caveat."""
-    p = root / "rust-toolchain.toml"
+PIN_REL = "rust-toolchain.toml"
+
+
+def head_source(p: Path, root: Path, overlay: dict | None) -> str | None:
+    """One file's bytes, taken from the OVERLAY when it names this path.
+
+    Issue 822 T5f. A pin is a claim about the repo and a repo's state is its
+    COMMITS, but this walk reads a working tree several concurrent sessions
+    write into. `worktree_state.head_overlay()` answers `{rel: HEAD bytes}`
+    for the dirty files; this is the one place a path becomes text.
+
+    ⚠ `None` in the overlay is a VALUE — "tracked but absent from HEAD", a
+    staged-but-never-committed file — and it must SKIP the file rather than
+    fall through to the worktree copy, or another session's in-flight source
+    is classified as committed. `in` and `.get()` say different things here.
+    """
+    if overlay is not None:
+        rel = p.relative_to(root).as_posix()
+        if rel in overlay:
+            return overlay[rel]
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def repo_pin(root: Path, overlay: dict | None = None) -> str | None:
+    """The ROOT rust-toolchain.toml channel — v1 scope, documented caveat.
+
+    ⛔ This is why the sweep's Issue 822 instrument is the CROSS-FILE one.
+    Every occurrence in the repo is judged against this ONE value, so a dirty
+    `rust-toolchain.toml` moves every verdict in the repo at once and the
+    per-file `head_delta` shortcut — whose premise is that a row depends only
+    on its own file's bytes — would invent rows wholesale.
+    """
+    p = root / PIN_REL
+    if overlay is not None and PIN_REL in overlay:
+        src = overlay[PIN_REL]
+        if src is None:
+            return None             # absent from HEAD: no pin to read
+        m = PIN_RE.search(src)
+        return m.group(1) if m else None
     if not p.is_file():
         return None
     m = PIN_RE.search(p.read_text(encoding="utf-8", errors="replace"))
@@ -433,8 +472,25 @@ class RepoScan:
         return sum(1 for o in self.occs if o.verdict == verdict)
 
 
-def scan_repo(root: Path, name: str) -> RepoScan:
-    pin = repo_pin(root)
+def _present(root: Path, rel: str, overlay: dict | None) -> bool:
+    """Does this path exist in the tree being classified?
+
+    With an overlay the answer is HEAD's, not the worktree's: a staged-only
+    `rust-toolchain.toml` does not exist in any commit, and one deleted in the
+    worktree but still committed does.
+    """
+    if overlay is not None and rel in overlay:
+        return overlay[rel] is not None
+    return (root / rel).is_file()
+
+
+def scan_repo(root: Path, name: str, overlay: dict | None = None) -> RepoScan:
+    """Scan one repo. With `overlay`, scan what HEAD would produce.
+
+    The default is `None` — every existing caller is byte-identical, the
+    `instrument_reachability_gate.reachable(read=)` precedent (Issue 822 T5a).
+    """
+    pin = repo_pin(root, overlay)
     files, vendored = tracked_files(root, "*")
     occs: list[Occ] = []
     unparsed: list[str] = []
@@ -443,8 +499,14 @@ def scan_repo(root: Path, name: str) -> RepoScan:
         rel = f.relative_to(root).as_posix()
         if not is_scannable(rel):
             continue
+        text = head_source(f, root, overlay)
+        if text is None:
+            # Absent from HEAD (or unreadable): nothing committed to scan.
+            # Deliberately NOT counted into `walked` either — the walk figure
+            # has to describe the tree that was actually read.
+            continue
         walked += 1
-        raw = f.read_text(encoding="utf-8", errors="replace").splitlines()
+        raw = text.splitlines()
         if rel.endswith(".py"):
             code, open_q = _py_code_slices(raw)
             if open_q is not None:
@@ -452,9 +514,9 @@ def scan_repo(root: Path, name: str) -> RepoScan:
         else:
             code = raw
         occs.extend(scan_lines(rel, raw, pin, code))
-    return RepoScan(name, root, pin, (root / "rust-toolchain.toml").is_file(),
+    return RepoScan(name, root, pin, _present(root, PIN_REL, overlay),
                     walked, vendored, occs,
-                    (root / "Cargo.toml").is_file() and pin is None,
+                    _present(root, "Cargo.toml", overlay) and pin is None,
                     unparsed)
 
 
