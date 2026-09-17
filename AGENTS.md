@@ -2169,6 +2169,35 @@ default-on requires the GOAT gate to pass:
 is NOT a modelless gain — it's a speedup of a wrong result. The quality gate
 (G1 or equivalent) must pass modellessly for the GOAT to hold.
 
+⛔ **A latency number without its BOX STATE is not a measurement** (2026-09-17).
+Step 2 above is where perf numbers are born, and the rule that governs them was
+written down in §Docs gate — *"cite CPU **with the load class it was measured
+under**"*, measured at 44.97s vs 13.37s for identical work — where nobody
+producing a benchmark walks past it. Measured the day that cost something: a
+session took `minutes/record` against a plan's `~2.6 s/record`, on a box at
+**0.58 GB free**, and was about to re-derive a budget from it. That is a
+**paging measurement wearing a throughput number** — plausible shape, real run,
+wrong quantity — and the only thing separating it from a finding was somebody
+else happening to be watching the process table.
+- Record free RAM, commit-vs-limit, and concurrent heavy jobs **next to** any
+  latency figure taken on a shared box, or it is not reproducible. This is the
+  same rule §Docs gate states for CPU seconds; it is restated here because
+  *written-down beats remembered only if the write-up is in the path you
+  actually walk*, and that one lives in a section about docs-gate timing.
+- ⚠ **Rank concurrent jobs by COMMIT, never by working set**, and compare the
+  total to the commit **limit read at launch** — not to physical RAM and not to
+  a constant. Measured the same evening: `22.17 GB commit at 0.01 GB working
+  set` (fully evicted, so invisible to a working-set view), and the commit
+  limit itself moved **62.8 → 78.3 GB** mid-session as Windows grew the
+  pagefile, which is why the rule is a comparison rather than a number.
+- ⚠ Free RAM read **right after another job exits** is a trough between phases,
+  not a window. 18.2 GB was read as clear and an 11 GB job launched into it;
+  the next stage of the same sibling pipeline ramped behind it and the box went
+  to 0.2 GB.
+- G2 is the gate this protects, and `--release` is already mandatory there for
+  the adjacent reason: a latency gate in a debug build measures an unoptimised
+  binary, and a latency gate on a thrashing box measures the pagefile.
+
 **Lossy-surface promotion rule (riir-ai Issue 750 T3):** a **lossy** surface
 (quantization, compression, any bit-changing transform) gates on
 **deployed-path behavior — per-family, conditional retention**, not on
