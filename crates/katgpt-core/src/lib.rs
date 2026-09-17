@@ -1079,6 +1079,13 @@ pub mod certified_frontier;
 #[cfg(feature = "set_admission")]
 pub mod set_admission;
 
+// set_admission_freeze — the T4.4 self-adaptive freeze surface (Plan 599
+// track b): re-freeze improved direction banks from runtime evidence into a
+// BLAKE3-committed 1 KB artifact (the local MerkleFrozenEnvelope pattern),
+// consumed through `fan_cap_ladder_into_bank`. Opt-in with `set_admission`.
+#[cfg(feature = "set_admission")]
+pub mod set_admission_freeze;
+
 // Usage-Rate (Mass/Age) KV Eviction Scoring + Generation-Runaway Canary
 // (Plan 585, Research 523, arXiv:2608.19920 "Learning how to Forget" Seeger
 // et al., AWS 2026). The paper's normalized H2O score `cum_mass / max(1,

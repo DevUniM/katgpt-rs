@@ -200,8 +200,10 @@ fn identity() -> [[f32; DIM]; DIM] {
 
 /// Normalize a latent onto the cosine kernel's unit shell.
 /// `None` for zero/non-finite vectors (rejected, never NaN).
+/// `pub(crate)`: the re-freeze lane (set_admission_freeze) reuses the exact
+/// shell normalization — a second copy would be a second convention.
 #[inline]
-fn normalize(x: &[f32; DIM]) -> Option<[f32; DIM]> {
+pub(crate) fn normalize(x: &[f32; DIM]) -> Option<[f32; DIM]> {
     if x.iter().any(|v| !v.is_finite()) {
         return None;
     }
@@ -1105,6 +1107,39 @@ pub fn fan_cap_ladder_into(
     out_pool: &mut [[f32; DIM]],
     fan: &mut FanScratch,
 ) -> FanOutReport {
+    fan_cap_ladder_into_bank(
+        query,
+        corpus,
+        rungs,
+        tau,
+        out_idx,
+        out_pool,
+        fan,
+        &DIRECTION_BANK,
+    )
+}
+
+/// The bank-parameterized twin of [`fan_cap_ladder_into`] — the re-frozen
+/// bank's consumption path (Plan 599 T4.4): identical walk, candidates built
+/// from the caller's `bank` rows (tangent-projected per query, first `n`
+/// projections that survive). Bit-identical to [`fan_cap_ladder_into`] when
+/// `bank == &DIRECTION_BANK` (pinned by test in `set_admission_freeze`).
+/// Rows are expected unit directions; a non-unit row degrades its own slot's
+/// grounding (candidates stay finite — `tangent_project` handles the rest).
+///
+/// # Panics
+/// Same as [`fan_cap_ladder_into`].
+#[allow(clippy::too_many_arguments)] // the fan + bank seam — every param is a distinct role
+pub fn fan_cap_ladder_into_bank(
+    query: &[f32; DIM],
+    corpus: &[[f32; DIM]],
+    rungs: &[f32],
+    tau: f32,
+    out_idx: &mut [u16],
+    out_pool: &mut [[f32; DIM]],
+    fan: &mut FanScratch,
+    bank: &[[f32; DIM]],
+) -> FanOutReport {
     assert_eq!(out_idx.len(), out_pool.len(), "out length mismatch");
     assert!(
         out_idx.len() <= BANK_SIZE,
@@ -1131,11 +1166,8 @@ pub fn fan_cap_ladder_into(
     // Tangent projections once (θ-independent); compacted in bank order.
     let mut t_hats = [[0.0_f32; DIM]; BANK_SIZE];
     let mut t_count = 0_usize;
-    for t in DIRECTION_BANK {
-        if t_count == BANK_SIZE {
-            break;
-        }
-        if let Some(hat) = tangent_project(&q_hat, &t) {
+    for t in bank.iter().take(BANK_SIZE) {
+        if let Some(hat) = tangent_project(&q_hat, t) {
             t_hats[t_count] = hat;
             t_count += 1;
         }
