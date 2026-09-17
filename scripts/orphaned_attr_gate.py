@@ -130,29 +130,47 @@ class Scan(NamedTuple):
     cfg_sites: int
 
 
+def scan_text(rel: str, text: str) -> tuple[list[tuple[str, int, str, str]], int]:
+    """One SOURCE TEXT's offenders, plus its `#[cfg]` site count.
+
+    The classifier proper, split out of `scan` for Issue 822: a caller holding
+    the bytes from somewhere other than the working tree — a HEAD blob, for the
+    worktree-vs-commit split — reaches the rules here without a second copy of
+    them. `markdown_fence_gate.scan_text` and `percentile_index_audit.
+    audit_text`, same shape, same reason.
+
+    `rel` only ADDRESSES the rows; no decision reads it.
+    """
+    out: list[tuple[str, int, str, str]] = []
+    lines = text.splitlines()
+    cfg_seen = sum(1 for line in lines if OUTER_CFG.match(line))
+    for i in range(len(lines) - 2):
+        if not OUTER_CFG.match(lines[i]) or lines[i + 1].strip():
+            continue
+        nxt = lines[i + 2]
+        # A following comment or another attribute is not the item, and
+        # a blank-line run means the attribute is dangling further
+        # down; both are reported only when a real item follows.
+        if not nxt.strip() or nxt.lstrip().startswith("//") or ANY_ATTR.match(nxt):
+            continue
+        out.append((rel, i + 1, lines[i].strip(), nxt.strip()[:60]))
+    return out, cfg_seen
+
+
 def scan(repo: Path) -> Scan:
+    """The walk around `scan_text` — the half that can go blind per-repo."""
     out: list[tuple[str, int, str, str]] = []
     files_seen = 0
     cfg_seen = 0
     for p in tracked_files(repo, "*.rs")[0]:
         try:
-            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+            text = p.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         files_seen += 1
-        cfg_seen += sum(1 for line in lines if OUTER_CFG.match(line))
-        for i in range(len(lines) - 2):
-            if not OUTER_CFG.match(lines[i]) or lines[i + 1].strip():
-                continue
-            nxt = lines[i + 2]
-            # A following comment or another attribute is not the item, and
-            # a blank-line run means the attribute is dangling further
-            # down; both are reported only when a real item follows.
-            if not nxt.strip() or nxt.lstrip().startswith("//") or ANY_ATTR.match(nxt):
-                continue
-            out.append(
-                (str(p.relative_to(repo)), i + 1, lines[i].strip(), nxt.strip()[:60])
-            )
+        rows, n_cfg = scan_text(str(p.relative_to(repo)), text)
+        cfg_seen += n_cfg
+        out += rows
     return Scan(sorted(out), files_seen, cfg_seen)
 
 
