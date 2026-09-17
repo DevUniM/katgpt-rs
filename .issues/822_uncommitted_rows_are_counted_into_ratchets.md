@@ -218,6 +218,25 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 
       Fixed: `console_encoding.adjudicate_arms()` in `selftest`, which reds
       with 6 failures against the stub. Canary still 14/14.
+
+      ⛔ **And no automatic instrument could have found it — measured, and the
+      obvious statement of why is wrong.** A peer suggested `arm_reach_gate`
+      structurally cannot see the drift sweeps. Checked directly rather than
+      taken on trust, and the true shape is sharper:
+
+      | population | modules | drift sweeps in it |
+      |---|---|---|
+      | `arm_reach_audit.population(include_all=False)` — what the GATE walls | 25 | **0** |
+      | `arm_reach_audit.population(include_all=True)` — the report | 68 | **17** |
+
+      So the sweeps are not invisible to the *instrument*; they are invisible
+      to the *verdict*. The gate's population is the `docs_gate.sh` CHECKS set
+      plus itself, and AGENTS.md already records that `--include-all`'s
+      survivors are a deliberate unread backlog kept out of the gate. The
+      consequence for this issue is the same either way: **every
+      `adjudicate`/`split` seam landed by T5b is arm-reach-unwalled**, so a
+      future one going inert reds nothing. The manual stub probe is the only
+      thing covering it, which is why T5b makes it a step rather than a habit.
 - [x] **T5d — `percentile`, fourth wired, and the first with FOUR ceilings.**
       The delta carries the class in its key and `.head` splits back by class
       for the four pins. Two things specific to it:
@@ -261,9 +280,17 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       | `numbering` | whole-classifier re-run; its rows are numbers, not files |
       | `cfg_gated`, `required_features`, `wasm32_surface` | manifest+source joins — read each before choosing |
 
-      ⛔ **Every one of these owes an `adjudicate_arms` in its `selftest`,
-      not only canary arms** — T5e is why. And run the stub probe afterwards,
-      aimed at the helper that sweep actually calls.
+      ⛔ **Every one of these owes, as STEPS and not as tips:**
+
+      1. an `adjudicate_arms` in its `selftest`, not only canary arms — T5e is
+         why, and nothing automatic walls the seam (the table above);
+      2. the stub probe afterwards, **aimed at the helper that sweep actually
+         calls** — two of the first three probes reported a false all-clear
+         because they were aimed at a function the target never invokes;
+      3. an ordinal fixture that actually **REPEATS**. Dropping the ordinal red
+         nothing on `percentile` until a file carried two identical sites. An
+         arm over inputs that cannot exercise the rule passes for the wrong
+         reason — the same family as (2), one level down.
 
       ⚠ **Budget the canary cost.** Each `--canary` runs `main()` once per arm
       over every contract repo, so four new arms is roughly a 45% increase:
@@ -272,6 +299,18 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       fourteen. A sweep with no canary (like `subprocess_encoding`) pays
       nothing here and needs `selftest` arms instead, which are cheaper and
       run on every invocation.
+
+## ⚠ Workspace hazard this issue kept tripping over
+
+Every commit in this shared worktree is authored `katopz <katopz@gmail.com>`,
+so **git cannot distinguish the sessions writing it** and a SHA carries no
+ownership. This issue was worked by at least three sessions concurrently, and
+the visible cost was two misattributions in one hour — `202e8241` and the
+`worktree_state` key helpers were both credited to the wrong session, and a
+split was proposed to a session that had never touched the task. The
+inference is unavoidable from the repository alone; the repair is to name the
+task and the session in the commit BODY, or to not infer ownership at all and
+ask. Recorded here because the next multi-session task inherits it.
 
 ## What landed (2026-09-17)
 
@@ -291,7 +330,9 @@ to decide whether to re-pin, and the banner gives them no way to tell.
   two that disagreed), `adjudicate()`, the honest display, five canary arms.
 - `scripts/percentile_index_audit.py` (T5d) — `audit_text()` extracted out of
   `audit_file()`, which is now a thin wrapper. Pure refactor.
-- `scripts/percentile_drift_sweep.py` (T5d) — `GATED`, `keyed()`,
+- `scripts/percentile_drift_sweep.py` (T5d) — `GATED`, `keyed()` (converted to
+  the shared `ordinal_keys`; `line_free` deliberately NOT called, as these rows
+  carry no `"<lineno>: "` prefix and it would read as stripping one),
   `head_sites()`, `adjudicate()`, `adjudicate_arms()`, the honest display, and
   `audit()` now returns its `walk` so the guard has the real population.
 - `scripts/console_encoding_drift_sweep.py` (T5e) — `adjudicate_arms()`, the

@@ -79,7 +79,8 @@ sys.path.insert(0, str(HERE))
 # DEGENERATE site is.
 import percentile_index_audit as pia  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import head_delta, sweep_advisory  # noqa: E402
+from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -113,16 +114,17 @@ def keyed(got: dict) -> list:
     reason — pooling them would make one row's ordinal depend on the other's
     presence, and a row that stops being `asserted` would then look like it
     moved.
+
+    The ordinal itself is `worktree_state.ordinal_keys`, shared with the rest
+    of the family; only the ADDRESS is this sweep's own. ⚠ `line_free` is
+    deliberately NOT called: these rows carry no `"<lineno>: "` prefix — the
+    address takes `r["text"]`, already the bare source line — so calling it
+    would be a no-op that reads as though a prefix were being stripped.
     """
-    seen: dict = {}
-    out = []
-    for cls in GATED:
-        for r in got[cls]:
-            addr = (r["file"].replace(chr(92), "/"), cls, r["kind"], r["text"])
-            n = seen.get(addr, 0)
-            seen[addr] = n + 1
-            out.append(((*addr, n), cls, r))
-    return out
+    flat = [(cls, r) for cls in GATED for r in got[cls]]
+    return [(key, cls, r) for key, (cls, r) in ordinal_keys(
+        flat, lambda t: (t[1]["file"].replace(chr(92), "/"), t[0],
+                         t[1]["kind"], t[1]["text"]))]
 
 
 def head_sites(walk: set):
