@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-17
 **Plan:** [600_flashar_confidence_commit_upgrade.md](../.plans/600_flashar_confidence_commit_upgrade.md)
-**PoC:** [Issue 811](../.issues/811_confidence_commit_anchor_rule.md) (2026-09-16 arm table, steps/termination PASS at quality parity)
+**PoC:** [Issue 811](../HISTORY.md) (2026-09-16 arm table, steps/termination PASS at quality parity)
 **Research:** [563_DBTM_Discrete_Beckmann_One_Step_Language.md](../.research/563_DBTM_Discrete_Beckmann_One_Step_Language.md)
 **Source paper:** arXiv:2609.15903 §5.1 (Eq 26 commit rule) — Tang & Wang
 **Feature flag:** `flashar_anchor` (opt-in — **stays opt-in; see Promotion below**)

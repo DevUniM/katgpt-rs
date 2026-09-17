@@ -289,7 +289,7 @@ was a code change:
    repo: **555 `Rng::with_seed` sites against 11 global-`fastrand` ones**, two
    of them in a shipped pruner's hot path. Fixed (seed derived from the input)
    and filed as
-   [Issue 809](../.issues/809_unseeded_global_rng_in_shipped_primitives.md),
+   [Issue 809](../HISTORY.md),
    which keeps the other nine as an unread census rather than batch-converting
    them.
 

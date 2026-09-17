@@ -1,7 +1,7 @@
 # Bench 807: CLR Verifier Calibration GOAT — riir-ai Issue 964 C1 (first `sigmoid_calibration` consumer)
 
 **Date:** 2026-09-16
-**Issue:** [riir-ai 964 C1](../../riir-ai/.issues/964_sigmoid_calibration_consumers.md) · substrate: katgpt-rs Issue 810 (Bench 284's G2 is the standing ECE gate)
+**Issue:** [riir-ai 964 C1](../../riir-ai/HISTORY.md) · substrate: katgpt-rs Issue 810 (Bench 284's G2 is the standing ECE gate)
 **Feature:** `clr_calibration` (katgpt-claim + root forwarder) — opt-in per the no-default-consumer rule
 **Gate:** `tests/bench_807_clr_calibration_goat.rs`
 **Run:**

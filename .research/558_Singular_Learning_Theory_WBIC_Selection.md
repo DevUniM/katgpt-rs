@@ -6,7 +6,7 @@
 > **Date:** 2026-09-14
 > **Status:** Done — GOAT-tier Gain (two-track: modelless selection primitive + riir-train diagnostic plan). NOT Super-GOAT (novelty gate §6: the math is published; the fusion applications are the open lanes).
 > **Related Research:** 551 (BMR + EFE-over-models — the exact-evidence cousin over count models), 315 (scaling exponents — the paper's own future-work names unrealisable-DSL power laws), 238 (LoRA low-rank manifold — rank-selection consumer), 125 (weight norm ↔ Kolmogorov complexity — complexity-generalization cousin), 488 (effective-degree polynomial simplicity), 284 (simplicity bias sampler)
-> **Related Plans:** 597 (BMR — shipped closed-form evidence), [riir-train Plan 404](../../../riir-train/.plans/404_llc_lambda_guided_selection.md) (LLC λ̂ diagnostic + λ-guided LoRA rank selection — the training-track half)
+> **Related Plans:** 597 (BMR — shipped closed-form evidence), [riir-train Plan 404](../../riir-train/.plans/404_llc_lambda_guided_selection.md) (LLC λ̂ diagnostic + λ-guided LoRA rank selection — the training-track half)
 > **Related Issues:** 781 (this repo — `slt` selection primitive, feature-gated)
 > **Classification:** Public (katgpt-rs — generic modelless selection math; consumer wiring stays private)
 

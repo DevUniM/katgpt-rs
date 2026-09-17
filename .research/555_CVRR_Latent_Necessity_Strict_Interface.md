@@ -94,7 +94,7 @@ Two advocates spawned in parallel with the prior-art search; coordinator merge i
 
 ## Filed follow-ups
 
-- katgpt-rs [Issue 776](../.issues/776_contrastive_matched_swap_norm_matched_noise.md) — intervention-set upgrade (probe + battery).
+- katgpt-rs [Issue 776](../HISTORY.md) — intervention-set upgrade (probe + battery).
 - riir-ai Issue 953 — frozen-evidence deliberation kernel + step-drift metric + think-brain necessity audit (feature-gated, GOAT-gated).
 - riir-train Plan 402 — text-side strict-interface ladder (P1 boundary sweep → P2 answer-CE pilot → P3 gated lane).
 

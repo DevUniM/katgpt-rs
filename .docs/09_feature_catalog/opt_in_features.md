@@ -3914,7 +3914,7 @@ module) and `katgpt-dec` (the `wave_kernel` module; zero-dep by contract).
 Opt-in pending game-relevant-depth consumers; the closed-form laws travel
 with the flag either way.
 
-📖 Issue: [775](../../.issues/775_dual_wave_kernel_pcalm.md) ·
+📖 Issue: [775](../../HISTORY.md) ·
 Research: [554](../../.research/554_PC_ALM_Ballistic_Dual_Wave_Credit_Propagation.md) ·
 Bench: [763](../../.benchmarks/763_dual_wave_goat.md) ·
 Substrate: `crates/katgpt-core/src/dual.rs` +

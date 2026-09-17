@@ -1,7 +1,7 @@
 # Bench 808: ActionBridge Confidence-Calibration GOAT — riir-ai Issue 964 C2 (second `sigmoid_calibration` consumer)
 
 **Date:** 2026-09-16
-**Issue:** [riir-ai 964 C2](../../riir-ai/.issues/964_sigmoid_calibration_consumers.md) · substrate: katgpt-rs Issue 810 · first consumer: Bench 807 (`clr_calibration`)
+**Issue:** [riir-ai 964 C2](../../riir-ai/HISTORY.md) · substrate: katgpt-rs Issue 810 · first consumer: Bench 807 (`clr_calibration`)
 **Surface:** `sigmoid_calibration` feature (no new flag) — `bridge::calibrated::CalibratedActionBridge<A, D>`
 **Gate:** `benches/bench_808_action_bridge_calibration_goat.rs` (katgpt-core, `harness = false`)
 **Run:**

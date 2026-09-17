@@ -50,7 +50,7 @@ Nine cells, ~11,000 assertions executed on x86_64 for the first time.
    a function of its arguments and `test_decompose_neuron_discovers_channels`
    was a coin flip — caught by running the matrix TWICE, not by the platform.
    Fixed at `2081138f`, filed as
-   [Issue 809](809_unseeded_global_rng_in_shipped_primitives.md).
+   [Issue 809](../HISTORY.md).
 
 **The issue's own cell list was narrower than the surface.** It named three
 packages; a grep for `target_arch = "x86_64"` over the tracked tree finds
