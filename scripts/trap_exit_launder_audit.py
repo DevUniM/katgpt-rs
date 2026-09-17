@@ -309,6 +309,22 @@ def analyse(path):
     lines = read(path)
     if lines is None:
         return None
+    return analyse_lines(lines)
+
+
+def analyse_lines(lines):
+    """`analyse`'s rule over LINES — Issue 822 T5i.
+
+    The classifier is per-FILE (every verdict is decided by this script's own
+    text; `function_bodies` folds in only bodies defined in the same file), so
+    the HEAD side of a provenance split needs the identical rule over bytes
+    that are not on disk — `git show HEAD:<rel>` rather than `read(path)`.
+    Extracted rather than re-implemented for the reason this module already
+    records about its own false-positive history: a `trap - EXIT`
+    deregistration, a `BOOTSTRAP_PID=$!` late assignment and an unterminated
+    brace in DATA each produced a wrong verdict once, and a second copy of
+    those exclusions is a second thing to get them wrong in.
+    """
     src = "\n".join(lines)
     nounset = bool(SET_U.search(src))
     errexit = bool(SET_E.search(src))

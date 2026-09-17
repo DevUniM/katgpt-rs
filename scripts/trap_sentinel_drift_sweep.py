@@ -87,6 +87,7 @@ untrustworthy** — an unreliable instrument is not the same finding as drift.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -98,7 +99,8 @@ sys.path.insert(0, str(HERE))
 import trap_exit_launder_audit as tela  # noqa: E402
 import trap_sentinel_gate as tsg  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, head_delta,  # noqa: E402
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -108,6 +110,33 @@ FIELDS = ("min_scripts", "min_population", "max_exposed", "max_precautionary",
           "max_live_forward", "max_unparsed", "max_replaced")
 CLASSES = (("exposed", tela.EXPOSED), ("precautionary", tela.PRECAUTIONARY),
            ("live_forward", tela.LIVE_FORWARD), ("unparsed", tela.UNPARSED))
+
+# ONE list, read by the worktree advisory AND by the HEAD re-classification.
+# `walk_sh` IS the population — `git ls-files -z '*.sh'`, nothing else — so a
+# single pattern states it exactly, and the advisory's own copy used to say the
+# same thing separately. T5g measured a hand-typed copy of a population
+# disagreeing with its classifier in three ways at once; one constant is why
+# there cannot be a second.
+SCOPE = ("*.sh",)
+
+
+def row_key(r: dict) -> tuple:
+    """A population row's LINE-FREE identity: `(file, verdict, replaced)`.
+
+    ⛔ **The VERDICT is in the key, and `replaced` with it**, for the reason
+    T5f measured and T5g repeated: `head_delta` files a key-matched row as
+    COMMITTED carrying the WORKTREE's object, so any field the key omits is a
+    field where the worktree silently overrides HEAD — and here EVERY ceiling
+    partitions by exactly these two. A script that is EXPOSED at HEAD and
+    SENTINELLED in somebody's uncommitted fix must stay on `max_exposed`
+    (Issue 798: a repair is not landed until it is committed), and a second
+    EXIT trap added uncommitted must not breach `max_replaced`.
+
+    No line number and no ordinal: `analyse` returns at most ONE row per file,
+    so the address is unique by construction — asserted by an arm rather than
+    remembered, since it is the premise the whole key rests on.
+    """
+    return (r["file"], r["verdict"], bool(r["replaced"]))
 
 
 def parse_pins(path: Path) -> dict[str, dict[str, int]]:
@@ -126,22 +155,77 @@ def parse_pins(path: Path) -> dict[str, dict[str, int]]:
 
 def audit(repo: Path) -> dict:
     """One repo -> the gated classes + BOTH populations that produced them."""
-    got = {"n_scripts": 0, "n_pop": 0, "replaced": 0, "rows": []}
+    got = {"n_scripts": 0, "n_pop": 0, "replaced": 0, "rows": [], "walked": set()}
     for name, _ in CLASSES:
         got[name] = []
     for path in tela.walk_sh(str(repo)):
         got["n_scripts"] += 1
+        # The WALK's own membership, recorded because the HEAD side needs this
+        # repo's index set to adjudicate `min_scripts` — and re-deriving it
+        # there would be a second copy of "the population is tracked *.sh".
+        got["walked"].add(str(Path(path).relative_to(repo)).replace("\\", "/"))
         r = tela.analyse(path)
         if r is None:
             continue
         got["n_pop"] += 1
-        r = dict(r, file=str(Path(path).relative_to(repo)))
+        r = dict(r, file=str(Path(path).relative_to(repo)).replace("\\", "/"))
         got["rows"].append(r)
         got["replaced"] += bool(r["replaced"])
         for name, verdict in CLASSES:
             if r["verdict"] == verdict:
                 got[name].append(r)
     return got
+
+
+def adjudicate(repo: Path, got: dict) -> tuple:
+    """-> (`HeadDelta` over the population rows, the dict the PINS read).
+
+    Issue 822 T5i. The classifier is per-FILE — every verdict is decided by one
+    script's own text, and `function_bodies` folds in only bodies defined in
+    that same file — so `head_delta`'s premise holds and the cost is
+    |dirty ∩ `*.sh`| `git show` calls, zero on an ordinary run.
+
+    ⛔ **ONE delta over the POPULATION rows, never one per class.** Each row
+    carries its verdict, so four class deltas would re-partition the same rows
+    four times and lose the case this exists for: a script whose verdict MOVED
+    between HEAD and the worktree belongs in two buckets at once (UNCOMMITTED
+    under its new verdict, MASKED under its old), which one shared key set
+    gives for free and four independent ones cannot express.
+
+    ⛔ **`min_scripts` is a FLOOR and floors are pins too** (Issue 797 measured
+    the class on a population, not on a finding). HEAD's walk size is derived
+    from the deltas rather than re-listed: every dirty path contributes 1 to
+    the worktree side if this run's INDEX walk saw it, and 1 to the HEAD side
+    if `git show` answered — so a staged-new script subtracts one and a staged
+    deletion adds one, and the common case cancels exactly. Re-listing HEAD's
+    `*.sh` instead would be a second copy of "the population is tracked `*.sh`"
+    living one module away from `walk_sh`, which is the thing this file's own
+    DRY note refuses.
+    """
+    seen_head: dict[str, bool] = {}
+
+    def rescan(rel: str, src: str | None):
+        seen_head[rel] = src is not None
+        if src is None:
+            return []
+        r = tela.analyse_lines(src.splitlines())
+        # `analyse` answers None for a script with no abort-on-error and no
+        # EXIT handler: it is WALKED but not in the population, and the two
+        # counts are floored separately for exactly that reason.
+        return [] if r is None else [dict(r, file=rel)]
+
+    delta = head_delta(repo, SCOPE, got["rows"],
+                       lambda r: r["file"], row_key, rescan)
+    head = dict(got)
+    head["rows"] = delta.head
+    head["n_pop"] = len(delta.head)
+    head["n_scripts"] = (got["n_scripts"]
+                         - sum(1 for rel in seen_head if rel in got["walked"])
+                         + sum(1 for present in seen_head.values() if present))
+    head["replaced"] = sum(1 for r in delta.head if r["replaced"])
+    for name, verdict in CLASSES:
+        head[name] = [r for r in delta.head if r["verdict"] == verdict]
+    return delta, head
 
 
 def selftest() -> list[str]:
@@ -226,6 +310,187 @@ def selftest() -> list[str]:
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
+    return fails + adjudicate_arms()
+
+
+EXPOSED_SH = ("#!/usr/bin/env bash\nset -euo pipefail\n"
+              'A="$(mktemp)"\n'
+              "trap 'rm -f \"$A\"' EXIT\n"
+              'echo "$SOMETHING"\necho ALL GREEN\n')
+SENTINEL_SH = ("#!/usr/bin/env bash\nset -euo pipefail\nDONE=0\n"
+               'A="$(mktemp)"\n'
+               "cleanup() {\n  rm -f \"$A\"\n"
+               "  if [ \"$DONE\" -ne 1 ]; then exit 1; fi\n}\n"
+               "trap cleanup EXIT\n"
+               'echo "$SOMETHING"\nDONE=1\necho ALL GREEN\n')
+
+
+def adjudicate_cases() -> list[str]:
+    """`adjudicate` end to end against REAL git — Issue 822 T5i.
+
+    In `selftest`, behind no flag: this sweep has no `--canary`, and an arm
+    that only runs when somebody types a flag runs on no invocation anybody
+    makes (Issue 789). The fixtures are this file's own EXPOSED specimen and
+    its sentinelled repair, which is the pair every arm here turns on.
+    """
+    import tempfile
+
+    fails: list[str] = []
+
+    def git(root, *args):
+        subprocess.run(("git", "-C", str(root)) + args,
+                       capture_output=True, check=True)
+
+    def fixture(td: str, committed: str):
+        repo = Path(td) / "r"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "scripts" / "g.sh").write_text(committed, encoding="utf-8")
+        git(repo.parent, "init", "-q", "r")
+        git(repo, "config", "user.email", "arm@example.invalid")
+        git(repo, "config", "user.name", "arm")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        return repo
+
+    def run(repo):
+        got = audit(repo)
+        return (got,) + adjudicate(repo, got)
+
+    # a. ⛔ The direction Issue 798 names: a repair that is not COMMITTED is
+    #    not landed. An uncommitted sentinel must NOT clear `max_exposed`.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, EXPOSED_SH)
+        (repo / "scripts" / "g.sh").write_text(SENTINEL_SH, encoding="utf-8")
+        got, delta, judged = run(repo)
+        if got["exposed"]:
+            fails.append(f"arm a: the fixture is INERT — the worktree must "
+                         f"read SENTINELLED ({got['exposed']})")
+        if len(judged["exposed"]) != 1 or len(delta.masked) != 1:
+            fails.append(f"adjudicate: an UNCOMMITTED fix cleared the exposed "
+                         f"ceiling ({judged['exposed']}) — the committed "
+                         f"script still aborts to exit 0 for everyone else")
+
+    # b. And its mirror: a defect introduced in the worktree must not red a
+    #    ceiling over a line no commit contains.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, SENTINEL_SH)
+        (repo / "scripts" / "g.sh").write_text(EXPOSED_SH, encoding="utf-8")
+        got, delta, judged = run(repo)
+        if len(got["exposed"]) != 1:
+            fails.append(f"arm b: the fixture is INERT — the worktree must "
+                         f"read EXPOSED ({got['exposed']})")
+        if judged["exposed"] or len(delta.uncommitted) != 1:
+            fails.append(f"adjudicate: an uncommitted EXPOSED row reached the "
+                         f"ceiling ({judged['exposed']}) instead of "
+                         f"UNCOMMITTED")
+
+    # c. ⛔ The VERDICT must be in the key. Keyed on the file alone, (b)'s row
+    #    matches HEAD's and `head_delta` keeps the WORKTREE object — so a
+    #    verdict flip reads as one COMMITTED row and both buckets stay empty.
+    #    Asserted, not trusted: the row must split in BOTH directions.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, SENTINEL_SH)
+        (repo / "scripts" / "g.sh").write_text(EXPOSED_SH, encoding="utf-8")
+        got, delta, judged = run(repo)
+        if not (delta.uncommitted and delta.masked) or delta.committed:
+            fails.append(f"row key: a script whose VERDICT moved was not split "
+                         f"in both directions (committed={delta.committed}, "
+                         f"uncommitted={len(delta.uncommitted)}, "
+                         f"masked={len(delta.masked)})")
+
+    # d. The WALK floor. A staged-new script is in `git ls-files` and in no
+    #    commit, so HEAD's walk is one SMALLER — and `min_scripts` is a pin.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, SENTINEL_SH)
+        (repo / "scripts" / "new.sh").write_text(SENTINEL_SH, encoding="utf-8")
+        git(repo, "add", "-A")
+        got, delta, judged = run(repo)
+        if got["n_scripts"] != 2 or judged["n_scripts"] != 1:
+            fails.append(f"adjudicate: the walk floor read the worktree "
+                         f"({got['n_scripts']}) instead of HEAD "
+                         f"({judged['n_scripts']}) — a floor re-pinned from "
+                         f"such a run bakes another session's `git add` into "
+                         f"a tracked file")
+        if judged["n_pop"] != 1:
+            fails.append(f"adjudicate: HEAD's population is "
+                         f"{judged['n_pop']}, expected 1")
+
+    # e. ...and its mirror, which is the one that cannot be derived from (d):
+    #    a script DELETED in the worktree is gone from `ls-files` and still in
+    #    HEAD, so HEAD's walk is one LARGER. A floor that only ever shrinks
+    #    with the worktree is a floor that cannot catch this.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, SENTINEL_SH)
+        (repo / "scripts" / "gone.sh").write_text(EXPOSED_SH, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "two")
+        git(repo, "rm", "-q", "scripts/gone.sh")
+        got, delta, judged = run(repo)
+        if got["n_scripts"] != 1 or judged["n_scripts"] != 2:
+            fails.append(f"adjudicate: a worktree deletion shrank the HEAD "
+                         f"walk ({judged['n_scripts']}, expected 2) — the "
+                         f"committed script is still everyone else's")
+        if not judged["exposed"]:
+            fails.append("adjudicate: a committed EXPOSED script deleted in "
+                         "this worktree left the ceiling — MASKED is the "
+                         "silent direction")
+
+    # f. The PREMISE the key rests on: `analyse` answers at most ONE row per
+    #    file, so no ordinal is needed. Remembered premises are how a key
+    #    collapses silently; this one is measured against the real classifier.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, EXPOSED_SH + "\ntrap 'echo second' EXIT\n")
+        got, _d, _j = run(repo)
+        if len({r["file"] for r in got["rows"]}) != len(got["rows"]):
+            fails.append(f"premise: a file produced more than one population "
+                         f"row ({got['rows']}) — the key then needs an ordinal")
+
+    # g. A clean tree must cost NOTHING: `head_delta` short-circuits before any
+    #    `git show`, and the arm that bites is the one asserting zero rescans.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, SENTINEL_SH)
+        # Counted at `head_text`, which is the COST itself (one `git show` per
+        # dirty file), and not at `analyse_lines` — the worktree pass calls
+        # that once per script legitimately, so an arm aimed there measures
+        # the classifier working rather than the short-circuit holding.
+        import worktree_state as _ws
+        calls = []
+        real = _ws.head_text
+        _ws.head_text = lambda root, rel: calls.append(rel) or real(root, rel)
+        try:
+            got, delta, judged = run(repo)
+        finally:
+            _ws.head_text = real
+        if calls:
+            fails.append(f"adjudicate: re-classified a CLEAN repo "
+                         f"({len(calls)} `git show` call(s)) — the common case "
+                         f"must cost nothing at all")
+        if delta.uncommitted or delta.masked or not delta.committed:
+            fails.append(f"adjudicate: a clean tree's rows are not all "
+                         f"COMMITTED ({delta})")
+    return fails
+
+
+def adjudicate_arms() -> list[str]:
+    """The cases above, plus the STUB PROBE proving they sit on the seam.
+
+    ⛔ Aimed at `head_delta` — the helper `adjudicate` ACTUALLY calls — because
+    two of this family's first three probes reported a false all-clear by
+    being aimed at a function the target never invokes. A `head_delta` that
+    files every row as COMMITTED is the exact regression this wiring prevents.
+    """
+    fails = adjudicate_cases()
+    real = globals()["head_delta"]
+    globals()["head_delta"] = lambda root, pat, rows, p, k, rescan: HeadDelta(
+        list(rows), [], [])
+    try:
+        probed = adjudicate_cases()
+    finally:
+        globals()["head_delta"] = real
+    if len(probed) < 4:
+        fails.append(f"STUB PROBE: a `head_delta` that files every row as "
+                     f"COMMITTED red only {len(probed)} of the provenance "
+                     f"arms — they are not sitting under the seam")
     return fails
 
 
@@ -293,8 +558,16 @@ def main() -> int:
     for name, _ in CLASSES:
         tot[name] = 0
 
+    n_uncommitted = n_masked = 0
     for name in names:
         got = audit(WORKSPACE / name)
+        # Issue 822 — the DISPLAY reads the worktree (it is what the files say
+        # today); every CEILING and both FLOORS read what a commit of this
+        # checkout would produce.
+        delta, judged = adjudicate(WORKSPACE / name, got)
+        held = {row_key(r) for r in delta.uncommitted}
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
         row = pins.get(name)
         tot["n_scripts"] += got["n_scripts"]
         tot["n_pop"] += got["n_pop"]
@@ -318,34 +591,53 @@ def main() -> int:
             if not pin_row_exempt(name):
                 flags.append("UNPINNED — add a row (or it can never red)")
         else:
-            if got["n_scripts"] < row["min_scripts"]:
-                flags.append(f"walk FLOOR breached: {got['n_scripts']} tracked "
+            if judged["n_scripts"] < row["min_scripts"]:
+                flags.append(f"walk FLOOR breached: {judged['n_scripts']} tracked "
                              f"*.sh < {row['min_scripts']} — scripts were "
                              f"removed, or walk_sh/git ls-files went blind")
-            if got["n_pop"] < row["min_population"]:
-                flags.append(f"population FLOOR breached: {got['n_pop']} < "
+            if judged["n_pop"] < row["min_population"]:
+                flags.append(f"population FLOOR breached: {judged['n_pop']} < "
                              f"{row['min_population']} — a script lost its "
                              f"`set -e`/`set -u` or its EXIT trap, or the "
                              f"classifier stopped seeing them")
             for cls, _ in CLASSES:
-                if len(got[cls]) > row[f"max_{cls}"]:
-                    flags.append(f"{cls} {len(got[cls])} > pinned {row[f'max_{cls}']}")
-            if got["replaced"] > row["max_replaced"]:
-                flags.append(f"replaced {got['replaced']} > pinned "
+                if len(judged[cls]) > row[f"max_{cls}"]:
+                    flags.append(f"{cls} {len(judged[cls])} committed > pinned "
+                                 f"{row[f'max_{cls}']}")
+            if judged["replaced"] > row["max_replaced"]:
+                flags.append(f"replaced {judged['replaced']} > pinned "
                              f"{row['max_replaced']}")
 
         findings = [r for cls, _ in CLASSES for r in got[cls]]
         status = "✗" if flags else ("·" if findings else "✓")
+        split = ""
+        if held or delta.masked:
+            split = (f" [{len(delta.committed)} committed"
+                     + (f", {len(held)} uncommitted" if held else "")
+                     + (f", {len(delta.masked)} MASKED" if delta.masked else "")
+                     + "]")
+        if judged["n_scripts"] != got["n_scripts"]:
+            split += f" [sh at HEAD={judged['n_scripts']}]"
         print(f"{status} {name:22s} sh={got['n_scripts']:<4d} pop={got['n_pop']:<3d} "
               f"exposed={len(got['exposed'])} precautionary="
               f"{len(got['precautionary'])} live_forward="
               f"{len(got['live_forward'])} unparsed={len(got['unparsed'])} "
-              f"replaced={got['replaced']}")
+              f"replaced={got['replaced']}{split}")
         for r in sorted(findings, key=lambda r: -r["triggers"]):
             inert = "  <- ZERO abort sites in the window: provably cannot launder" \
                 if r["triggers"] == 0 else ""
+            wip = " [UNCOMMITTED — not adjudicated]" if row_key(r) in held else ""
             print(f"      {r['file']}  {r['verdict']}  "
-                  f"[window {r['window']} line(s), {r['triggers']} trigger(s)]{inert}")
+                  f"[window {r['window']} line(s), {r['triggers']} trigger(s)]"
+                  f"{inert}{wip}")
+        # A MASKED row is NOT in the worktree buckets — that is what MASKED
+        # means — so it prints from the HEAD side or it prints nowhere, and a
+        # ceiling reds over a script nobody can see. Printed for EVERY verdict,
+        # not only the four gated ones: a file SENTINELLED here and EXPOSED at
+        # HEAD is precisely the row somebody must look at.
+        for r in sorted(delta.masked, key=lambda r: r["file"]):
+            print(f"      ⛔ {r['file']}  {r['verdict']}  [MASKED — committed, "
+                  f"hidden by this worktree]")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
@@ -363,7 +655,8 @@ def main() -> int:
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — the shell gates.
     deferred.extend(sweep_advisory(
-        names, ("*.sh",), root=WORKSPACE))
+        names, SCOPE, root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
     for _line in pop_lines:
         print(_line)
     if pop_fail:
