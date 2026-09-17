@@ -394,13 +394,26 @@ pub fn certify_scratch(cfg: &SetAdmissionConfig, scratch: &AdmissionScratch) -> 
 /// surface consumers and audits use on already-delivered sets.
 pub fn certify_set(cfg: &SetAdmissionConfig, set: &[[f32; DIM]]) -> CertificateReport {
     let mut scratch = AdmissionScratch::new();
+    certify_set_into(cfg, set, &mut scratch)
+}
+
+/// The scratch-driven [`certify_set`]: same certificate, caller-owned
+/// scratch — zero steady-state allocation for set-certify hot paths (the
+/// `admit_into`/`certify_scratch` split, applied to the owned convenience;
+/// riir-ai Issue 966's zone-attention triad is the first consumer).
+pub fn certify_set_into(
+    cfg: &SetAdmissionConfig,
+    set: &[[f32; DIM]],
+    scratch: &mut AdmissionScratch,
+) -> CertificateReport {
+    scratch.clear();
     scratch.admitted.reserve(set.len());
     for x in set {
         if let Some(hat) = normalize(x) {
-            admit_latent(&mut scratch, &hat);
+            admit_latent(scratch, &hat);
         }
     }
-    certify_scratch(cfg, &scratch)
+    certify_scratch(cfg, scratch)
 }
 
 // ── Phase 2: latent fan-out construction (query expansion, modelless) ──
@@ -1554,6 +1567,41 @@ mod tests {
             kappa_div: kappa,
             theta_coll: 0.95,
             rho_vendi: rho,
+        }
+    }
+
+    /// certify_set_into must be EXACTLY certify_set over a caller-owned
+    /// scratch — one body, two entries (the fan_cap_ladder_into_bank
+    /// precedent). Bit-identity on the report, both flags, and the PR.
+    #[test]
+    fn certify_set_into_bit_identical_to_certify_set() {
+        let worlds: [Vec<[f32; DIM]>; 4] = [
+            wobble_set(0.25, 6),
+            wobble_set(0.37, 4),
+            (0..DIM)
+                .map(|i| {
+                    let mut x = [0.0_f32; DIM];
+                    x[i] = 1.0;
+                    x
+                })
+                .collect(),
+            vec![[1.0_f32; DIM]; 5],
+        ];
+        for cfg in [
+            SetAdmissionConfig::default(),
+            cfg_with(0.0, 0.2, 0.2),
+            cfg_with(0.6, 0.0, 0.0),
+        ] {
+            for set in &worlds {
+                let owned = certify_set(&cfg, set);
+                let mut scratch = AdmissionScratch::new();
+                let into = certify_set_into(&cfg, set, &mut scratch);
+                assert_eq!(owned, into, "certify_set_into diverged from certify_set");
+                // And a REUSED scratch reproduces the same report (no
+                // cross-call state leakage).
+                let again = certify_set_into(&cfg, set, &mut scratch);
+                assert_eq!(into, again, "scratch reuse leaked state across cycles");
+            }
         }
     }
 
