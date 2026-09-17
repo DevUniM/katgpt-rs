@@ -54,10 +54,12 @@ certifies nothing (`platform_dead_code_audit.py`'s first `vendor/` arm).
 from __future__ import annotations
 
 import contextlib
+import os
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 from typing import NamedTuple
 
@@ -524,6 +526,51 @@ def behind_origin(root, patterns) -> tuple[int, int] | None:
     return (total, _match_count(rels, patterns))
 
 
+# How long a `(0, 0)` "up to date" reading stays credible. NOT a tuning knob:
+# measured across this workspace 2026-09-18, twelve of sixteen repos had
+# fetched within 1-2h, while riir-viewbridge's `behind=0` rested on a 60h-old
+# fetch and seal-game-editor reported `0 behind / 0 ahead` on a ~36h-old one
+# while hiding 260 commits — the gap that produced Issue 827's false red in a
+# THIRD repo. 24h sits above the ordinary working rhythm and below both
+# measured failures.
+STALE_FETCH_HOURS = 24.0
+
+
+def fetch_age_hours(root) -> float | None:
+    """Hours since this checkout last heard from its remote, or `None`.
+
+    Issue 827 T5. `behind_origin()` compares HEAD to a LOCAL remote-tracking
+    ref, so its answer is only as fresh as the last fetch: `(0, 0)` means "up
+    to date as of whenever anybody last fetched", and nothing downstream
+    distinguishes that from "up to date now". **A staleness detector that never
+    fetches does not measure staleness — it measures staleness KNOWN as of the
+    last fetch, and it returns the reassuring answer exactly when it knows
+    least.** That is this repo's own blindness-floor shape (an instrument whose
+    failure mode is a confident zero) reached by the advisory itself.
+
+    ⛔ `None` means CANNOT TELL, never "fresh". A tree with no `.git`, or one
+    cloned and never fetched, has no `FETCH_HEAD`; treating that as age 0 would
+    invent the exact reassurance this exists to withdraw. Callers must fold it
+    into the LOUD bucket, which is what `sweep_advisory` does.
+
+    Reads a MTIME and makes no network call — deliberately. Fetching to answer
+    this would mutate another session's refs to make our own verdict true,
+    which on a box running five concurrent sessions is a race; Issue 827 T2
+    refuses it for the sweeps on the same grounds.
+    """
+    git_dir = Path(root) / ".git"
+    if not git_dir.is_dir():
+        return None
+    try:
+        mtime = os.stat(git_dir / "FETCH_HEAD").st_mtime
+    except OSError:
+        return None
+    # Clamp: a clock skew or a future-dated mtime must not read as "fetched
+    # ages ago" AND must not read as negative. Unknown-ness has one spelling
+    # here and it is None.
+    return max(0.0, (time.time() - mtime) / 3600.0)
+
+
 def sweep_advisory(repos, patterns, root=None,
                    uncommitted_rows: int = 0,
                    masked_rows: int = 0) -> list[str]:
@@ -551,6 +598,7 @@ def sweep_advisory(repos, patterns, root=None,
     """
     scope: dict[str, int] = {}
     stale: dict[str, tuple[int, int]] = {}
+    unverified: dict[str, float | None] = {}
     for r in repos:
         s = str(r)
         if isinstance(r, Path) or '/' in s or chr(92) in s:
@@ -565,14 +613,23 @@ def sweep_advisory(repos, patterns, root=None,
         beh = behind_origin(path, patterns)
         if beh is not None and beh[1]:
             stale[path.name] = beh
+        elif beh == (0, 0):
+            # Only the `(0, 0)` reading is challenged here. A repo already
+            # reported STALE needs no second line, and one with no upstream
+            # answers `None` and claims nothing to begin with — it is the
+            # confident "up to date" that can rest on nothing.
+            age = fetch_age_hours(path)
+            if age is None or age > STALE_FETCH_HOURS:
+                unverified[path.name] = age
     return worktree_advisory(scope, uncommitted_rows, masked_rows,
-                             stale=stale)
+                             stale=stale, unverified=unverified)
 
 
 def worktree_advisory(scope_counts: dict[str, int],
                       uncommitted_rows: int = 0,
                       masked_rows: int = 0,
-                      stale: dict[str, tuple[int, int]] | None = None
+                      stale: dict[str, tuple[int, int]] | None = None,
+                      unverified: dict[str, float | None] | None = None
                       ) -> list[str]:
     """The lines that ride a sweep's FINAL line. Empty when nothing is dirty.
 
@@ -587,7 +644,9 @@ def worktree_advisory(scope_counts: dict[str, int],
     # nobody reads. Filtered here, like the zero counts above, so no caller has
     # to remember it.
     instale = {k: v for k, v in (stale or {}).items() if v[1]}
-    if not inscope and not uncommitted_rows and not masked_rows and not instale:
+    unver = dict(unverified or {})
+    if (not inscope and not uncommitted_rows and not masked_rows
+            and not instale and not unver):
         return []
     out: list[str] = []
     if inscope:
@@ -606,6 +665,18 @@ def worktree_advisory(scope_counts: dict[str, int],
             "finding there may already be FIXED upstream; this box's checkout "
             "is what the sweep read, so confirm against origin before "
             "repairing (Issue 798)")
+    if unver:
+        detail = ", ".join(
+            f"{k} (never fetched)" if v is None else f"{k} ({v:.0f}h)"
+            for k, v in sorted(unver.items()))
+        out.append(
+            f"⚠ UNVERIFIED UPSTREAM: {len(unver)} repo(s) report 'up to date' "
+            f"from a remote-tracking ref last refreshed over "
+            f"{STALE_FETCH_HOURS:.0f}h ago — {detail}. That is not a "
+            "measurement of the remote, it is what this box last heard, so it "
+            "cannot support either verdict: a finding there may already be "
+            "fixed upstream, and a CLEAN row there may be a false green. "
+            "`git fetch` in the named repo before trusting it (Issue 827 T5)")
     if uncommitted_rows:
         out.append(
             f"⚠ UNCOMMITTED: {uncommitted_rows} row(s) sit on a file that "
@@ -1358,6 +1429,118 @@ def stale_arms() -> list[str]:
     return fails
 
 
+def fetch_age_arms() -> list[str]:
+    """`fetch_age_hours` + the UNVERIFIED bucket, against real git trees.
+
+    Issue 827 T5. The arm that matters is the MIDDLE one: a repo that is
+    genuinely `(0, 0)` against its local tracking ref, whose ref is old. Today
+    that prints silence, and silence is the reassuring answer.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+
+        # No `.git` — the `git archive` shape. CANNOT TELL, never 0.
+        plain = tmp / "plain"
+        plain.mkdir()
+        check(fetch_age_hours(plain) is None,
+              "a non-repo directory did not answer None for fetch age")
+
+        up = _repo(tmp, "up")
+        (up / "a.sh").write_text("one\n", encoding="utf-8")
+        _run(up, "add", "-A")
+        _run(up, "commit", "-qm", "base")
+
+        # A repo with an upstream but NO FETCH_HEAD: cloned, never fetched.
+        # None, and the caller must treat it as loud — folding it into "fresh"
+        # would invent the reassurance this withdraws.
+        dn = tmp / "dn"
+        _run(tmp, "clone", "-q", str(up), str(dn))
+        _run(dn, "config", "user.email", "t@t")
+        _run(dn, "config", "user.name", "t")
+        fh = dn / ".git" / "FETCH_HEAD"
+        with contextlib.suppress(OSError):
+            fh.unlink()
+        check(fetch_age_hours(dn) is None,
+              "a clone with no FETCH_HEAD did not answer None")
+        check(behind_origin(dn, ("*.sh",)) == (0, 0),
+              "fixture precondition: the clone should be up to date")
+        check(any("UNVERIFIED UPSTREAM" in ln
+                  for ln in sweep_advisory([dn], ("*.sh",))),
+              "a never-fetched repo reporting (0, 0) was SILENT — its 'up to "
+              "date' rests on nothing at all")
+
+        # A FRESH fetch: credible, and silent. The negative side of the arm —
+        # without it the line could fire always and still pass.
+        _run(dn, "fetch", "-q", "origin")
+        age = fetch_age_hours(dn)
+        check(age is not None and age < 1.0,
+              f"a just-fetched repo did not read as recent: {age}")
+        check(not any("UNVERIFIED UPSTREAM" in ln
+                      for ln in sweep_advisory([dn], ("*.sh",))),
+              "a freshly-fetched, up-to-date repo produced an advisory — the "
+              "banner nobody reads")
+
+        # ── THE ARM THIS EXISTS FOR ────────────────────────────────────────
+        # Backdate FETCH_HEAD past the threshold. Nothing about the repo's
+        # relationship to its LOCAL tracking ref changed — it is still exactly
+        # (0, 0) — so before T5 this state was indistinguishable from the one
+        # directly above, which is the whole defect.
+        old = time.time() - (STALE_FETCH_HOURS + 12) * 3600
+        os.utime(fh, (old, old))
+        aged = fetch_age_hours(dn)
+        check(aged is not None and aged > STALE_FETCH_HOURS,
+              f"a backdated FETCH_HEAD did not read as stale: {aged}")
+        check(behind_origin(dn, ("*.sh",)) == (0, 0),
+              "backdating must not change the behind-ness reading — if it "
+              "did, this arm would be testing the wrong thing")
+        lines = sweep_advisory([dn], ("*.sh",))
+        check(any("UNVERIFIED UPSTREAM" in ln for ln in lines),
+              f"a (0, 0) resting on a {STALE_FETCH_HOURS + 12:.0f}h-old fetch "
+              f"was reported as up to date: {lines}")
+
+        # The buckets are NOT pooled: a repo already reported STALE gets the
+        # STALE line and not a second one, even with an ancient FETCH_HEAD.
+        (up / "a.sh").write_text("two\n", encoding="utf-8")
+        _run(up, "add", "-A")
+        _run(up, "commit", "-qm", "moved")
+        _run(dn, "fetch", "-q", "origin")
+        os.utime(fh, (old, old))
+        lines = sweep_advisory([dn], ("*.sh",))
+        check(any("STALE:" in ln for ln in lines),
+              f"a genuinely-behind repo lost its STALE line: {lines}")
+        check(not any("UNVERIFIED UPSTREAM" in ln for ln in lines),
+              f"a repo already reported STALE was ALSO called unverified — "
+              f"two lines for one repo is the pooling the family refuses: "
+              f"{lines}")
+
+    # A future-dated mtime clamps to 0 rather than going negative, and
+    # unknown-ness keeps its single spelling.
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        r = _repo(tmp, "skew")
+        (r / ".git" / "FETCH_HEAD").write_text("", encoding="utf-8")
+        ahead = time.time() + 7200
+        os.utime(r / ".git" / "FETCH_HEAD", (ahead, ahead))
+        check(fetch_age_hours(r) == 0.0,
+              "a future-dated FETCH_HEAD did not clamp to 0")
+
+    # The renderer, independent of git: an explicit None reads as the loud
+    # "never fetched" rather than as an hour count.
+    lines = worktree_advisory({}, unverified={"r": None})
+    check(any("never fetched" in ln for ln in lines),
+          f"a None age was not rendered as never-fetched: {lines}")
+    lines = worktree_advisory({}, unverified={"r": 99.0})
+    check(any("99h" in ln for ln in lines),
+          f"an age was not rendered in hours: {lines}")
+    return fails
+
+
 def n_assertions(src: str | None = None) -> int:
     """How many `check(...)` calls the arms below actually make.
 
@@ -1487,8 +1670,8 @@ def premise_arms() -> list[str]:
 def selftest() -> list[str]:
     return (dirty_arms() + split_arms() + delta_arms() + overlay_arms()
             + key_arms() + tree_arms() + scope_arms()
-            + advisory_arms() + stale_arms() + counter_arms()
-            + premise_arms())
+            + advisory_arms() + stale_arms() + fetch_age_arms()
+            + counter_arms() + premise_arms())
 
 
 def main() -> int:
@@ -1532,7 +1715,11 @@ def main() -> int:
           "NAME + root resolves as a path does while an unresolvable one "
           "is SKIPPED, behind_origin separates None (no upstream, never "
           "guessed) from (0, 0) (up to date) and refuses to read AHEAD as "
-          "behind, and the "
+          "behind, a (0, 0) resting on a FETCH_HEAD older than the threshold "
+          "is called UNVERIFIED while a freshly-fetched one stays silent and "
+          "a never-fetched clone is loud (None is cannot-tell, never age 0; "
+          "a future-dated mtime clamps) and a repo already reported STALE "
+          "does not also get that line, and the "
           "advisory is SILENT on a clean run with the four classes unpooled")
     return 0
 
