@@ -146,6 +146,49 @@ repos for having no pin row. Excused by NAME now, both directions asserted.
 against origin first (Issue 798 — this box was 7 behind and the defect was
 upstream too). Repaired at riir-clippy `672ba8a8`.
 
+## Verification addendum (2026-09-17) — the floor was argued, then EXECUTED
+
+Prompted by katgpt-rs-9a's Issue 823 finding: `heading_style_blind` printed
+`0/0 records read` — a **perfect** score — when its own regex went blind. The
+generalisable question they posed is worth applying to every triage quantity
+here: *what does this print when it breaks?*
+
+T2's `min_numbers` was **argued** ("a git-log regression leaves `min_files`
+untouched and collapses `n_numbers` to the on-disk count") and never run. The
+two `selftest` arms pin the mechanism on a synthetic fixture — that recovery
+WIDENS the population, and that a collapsed population trips the ceiling — but
+neither can tell you whether the **real** pins are tight enough that a real
+blinding actually crosses them. Arms use invented numbers.
+
+Executed by blinding `citation_weight.removed_by_number` exactly as a failing
+`git log -M --diff-filter=D` does today (it returns `{}` on error), across the
+derived population:
+
+| repo | nums | blinded | `min_numbers` | hist | blinded | fires? |
+|---|---:|---:|---:|---:|---:|---|
+| katgpt-rs | 1412 | 1047 | 1200 | 71 | 0 | ✓ |
+| riir-ai | 1436 | 678 | 1200 | 71 | 0 | ✓ |
+| riir-chain | 225 | 80 | 180 | 6 | 0 | ✓ |
+| riir-clippy | 444 | 332 | 350 | 3 | 0 | ✓ |
+| riir-dapps | 92 | 44 | 70 | 0 | 0 | ✓ |
+| riir-game-sdk | 42 | 9 | 33 | 0 | 0 | ✓ |
+| riir-mmorpg-examples | 135 | 32 | 108 | 4 | 0 | ✓ |
+| riir-neuron-db | 111 | 52 | 88 | 3 | 0 | ✓ |
+| riir-shader | 23 | 5 | 18 | 0 | 0 | ✓ |
+| riir-train | 553 | 372 | 440 | 11 | 0 | ✓ |
+| riir-viewbridge | 8 | 0 | 6 | 0 | 0 | ✓ |
+
+**All 184 collisions vanish under the blinding and not one repo reports a green
+zero** — every non-zero floor reds first. `riir-auth` and `riir-kat` carry
+`min_numbers 0` because they have 3 and 0 numbers respectively; there is
+genuinely nothing to floor there, which is a disclosed gap rather than a
+silent one.
+
+⚠ Deliberately NOT landed as a tracked script. It is a one-shot validation of a
+frozen design argument — the `--prove-fires` shape — and a tracked
+`scripts/*.py` that no root names is the `instrument_reachability_gate` finding
+one level down. The durable artifacts are the floor and this table.
+
 ## What this does NOT claim
 
 - The 113 sibling collisions are **not** adjudicated. The ratchet makes them
