@@ -243,7 +243,8 @@ sys.path.insert(0, str(HERE))
 import issue_citation_gate as icg  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (  # noqa: E402
-    dirty_files, head_text, worktree_advisory)
+    STALE_FETCH_HOURS, behind_origin, dirty_files, fetch_age_hours, head_text,
+    worktree_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -363,9 +364,66 @@ def _worktree_read(p: Path) -> str | None:
     return p.read_text(encoding="utf-8", errors="replace")
 
 
+ORACLE_STALE = "ORACLE-STALE"
+
+# The globs naming every directory a number can be allocated in. An oracle
+# repo is unreliable for THIS question only if its upstream moved inside one
+# of these — a sibling that is behind on source code still answers
+# "do you own Plan 226" correctly.
+NUMBERED_GLOBS = tuple(f"{d}/*" for d in icg.KINDS.values())
+
+
+def unreliable_oracles(sibs: list[Path]) -> dict[str, str]:
+    """Sibling repos whose "I do not own that number" cannot be believed.
+
+    Issue 827. `is_qualified()` asks a sibling's checkout whether it owns a
+    number, and a checkout answers for the commits it has. Measured: a citation
+    reading `seal-game-editor Plan 226` — correct, and the qualified form this
+    family prescribes — was reported ⛔MISATTRIBUTED and counted CROSS in
+    **riir-shader**, because seal-game-editor's checkout sat 260 commits behind
+    origin and the allocation landed in that gap. The repo being blamed was
+    clean, current, and not the repo whose state produced the verdict.
+
+    Two ways an oracle stops being credible, and they are NOT the same fact:
+
+    * it is BEHIND its upstream on commits touching a numbered directory — the
+      allocation may be sitting in those commits;
+    * it reports up to date, but from a remote-tracking ref nobody has
+      refreshed (Issue 827 T5). `(0, 0)` means "as of the last fetch", and
+      before the fetch that exposed it seal-game-editor read exactly `0 behind`
+      while hiding those 260 commits.
+
+    ⛔ No network call. Fetching to make our own verdict true would mutate
+    another session's refs, which on a box running five concurrent sessions is
+    a race — T2's standing refusal.
+
+    Returns `{repo name: why}`, empty when every oracle is current. A repo with
+    no upstream is NOT listed: `behind_origin` answers `None` there and the
+    repo claims nothing, so its allocation set is simply what it has.
+    """
+    out: dict[str, str] = {}
+    for s in sibs:
+        beh = behind_origin(s, NUMBERED_GLOBS)
+        if beh is None:
+            continue
+        if beh[1]:
+            out[s.name] = (f"{beh[0]} commits behind upstream, {beh[1]} of "
+                           f"them touching a numbered directory")
+            continue
+        if beh == (0, 0):
+            age = fetch_age_hours(s)
+            if age is None:
+                out[s.name] = "reports up to date, but has never been fetched"
+            elif age > STALE_FETCH_HOURS:
+                out[s.name] = (f"reports up to date from a remote-tracking ref "
+                               f"last refreshed {age:.0f}h ago")
+    return out
+
+
 def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
           docs: list[str], crates: dict[str, str],
-          patterns: dict[str, re.Pattern], read=_worktree_read) -> dict:
+          patterns: dict[str, re.Pattern], read=_worktree_read,
+          unreliable: dict[str, str] | None = None) -> dict:
     """One repo -> the three finding classes + BOTH populations under them.
 
     `read(path) -> str | None` is injected (Issue 797) so the SAME classifier
@@ -386,7 +444,7 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
            "misattributed": 0, MISATTR_IN_RANGE: [],
            "cross_units": set(), "repeat": 0,
            "unseen_width": 0, "alias_trailing": 0,
-           CROSS: [], IN_RANGE: [], ORPHAN: []}
+           CROSS: [], IN_RANGE: [], ORPHAN: [], ORACLE_STALE: []}
     for doc in docs:
         text = read(repo / doc)
         if text is None:
@@ -420,6 +478,29 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
             # citation, and the named repo must OWN the number (Issue 752).
             named, adj = icg.qualifiers(lines, ln, lead, sibs)
             if icg.is_qualified(named, owners):
+                continue
+            # ── Issue 827: the ORACLE's freshness is part of the verdict ────
+            # Qualification just failed, and it failed by asking sibling
+            # checkouts who owns this number. If the author named a repo whose
+            # answer this box cannot believe, the failure is not evidence about
+            # the citation — it is evidence about our checkout of that repo.
+            # UNDECIDED: never clean (the citation may really be wrong), never
+            # counted (a ceiling breached by another repo's fetch schedule is
+            # the cries-wolf failure this family refuses).
+            #
+            # ⛔ It must sit HERE and not on the ⛔MISATTRIBUTED tag below.
+            # The measured case was counted as CROSS, and the tag is only its
+            # sub-label — suppressing the label alone would have left the
+            # ceiling breached and the red standing.
+            stale_named = sorted(set(named) & set(unreliable or {}))
+            if stale_named:
+                why = "; ".join(f"{nm}: {(unreliable or {})[nm]}"
+                                for nm in stale_named)
+                got[ORACLE_STALE].append(
+                    f"{doc}:{ln}  {kind} {n} names {'/'.join(stale_named)} "
+                    f"[⚠ ORACLE-STALE — {why}. This box cannot say whether "
+                    f"that repo owns the number, so this row is UNDECIDED: "
+                    f"not clean, not counted. `git fetch` there and re-run]")
                 continue
             ctx = "\n".join(lines[max(0, ln - 3):ln])
             hint = _crate_hits(ctx, crates, patterns) - {repo.name}
@@ -719,6 +800,62 @@ def selftest() -> list[str]:
         if mis["misleading"] != 1 or len(mis[CROSS]) != 1:
             fails.append(f"MISLEADING sub-class did not fire: {mis['misleading']} "
                          f"{mis[CROSS]}")
+
+        # ── Issue 827: the ORACLE's freshness is part of the verdict ────────
+        # The measured shape, exactly: the citation NAMES a repo, that repo
+        # really owns the number, and this box's checkout of it has not seen
+        # the allocation — so `owners` lists somebody ELSE and the named repo
+        # reads as a wrong address. `riir-fakesib` owns 500 here, so naming
+        # `riir-otherlib` is the accusation; injecting `unreliable` is what
+        # says "we cannot believe that answer".
+        #
+        # `unreliable` is INJECTED rather than derived, so the arm tests the
+        # RULE and not this box's fetch schedule — the whole defect was a
+        # verdict that moved with a checkout's age.
+        (me / "AGENTS.md").write_text("riir-otherlib Issue 500 moved there.\n")
+
+        # (a) oracle believed current -> the ordinary accusation. Without this
+        #     side the rule could suppress everything and still pass.
+        fresh = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2)
+        if not fresh[CROSS] or not fresh["misattributed"]:
+            fails.append(f"827 control: the fixture did not produce the "
+                         f"accusation it must suppress — cross={fresh[CROSS]} "
+                         f"misat={fresh['misattributed']}")
+        if fresh[ORACLE_STALE]:
+            fails.append(f"827: a CURRENT oracle was called stale: "
+                         f"{fresh[ORACLE_STALE]}")
+
+        # (b) the SAME text, that oracle unreliable -> UNDECIDED. Not merely
+        #     unlabelled: it must leave the COUNTED buckets. The measured case
+        #     breached a ceiling, and suppressing the ⛔ tag alone would have
+        #     left the red standing.
+        st = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2,
+                   unreliable={"riir-otherlib": "260 commits behind upstream"})
+        if len(st[ORACLE_STALE]) != 1:
+            fails.append(f"827: a stale oracle did not produce an UNDECIDED "
+                         f"row: {st[ORACLE_STALE]}")
+        if st[CROSS] or st[ORPHAN] or st[IN_RANGE] or st[MISATTR_IN_RANGE]:
+            fails.append(
+                f"827: a stale-oracle row was still COUNTED — cross="
+                f"{st[CROSS]} orphan={st[ORPHAN]} in_range={st[IN_RANGE]} "
+                f"wrong_addr={st[MISATTR_IN_RANGE]}; the ceiling stays "
+                f"breachable by another repo's fetch schedule")
+        if st["misattributed"] or st["misleading"]:
+            fails.append("827: a stale oracle still produced an accusation "
+                         "sub-count")
+        if st["n_cites"] != fresh["n_cites"]:
+            fails.append("827: the citation left the POPULATION — UNDECIDED "
+                         "must not shrink the denominator")
+
+        # (c) staleness in a repo the citation does NOT name changes nothing.
+        #     Without this the rule could suppress on any staleness anywhere.
+        un = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2,
+                   unreliable={"riir-somebody-else": "never fetched"})
+        if un[ORACLE_STALE]:
+            fails.append(f"827: staleness in an UNNAMED repo suppressed a row: "
+                         f"{un[ORACLE_STALE]}")
+        if not un[CROSS]:
+            fails.append("827: an unrelated stale repo suppressed the finding")
 
         # ── the two RULE-COST probes must FIRE, and their controls must NOT
         # (Issue 753). Both report a 0 in the live workspace, which is exactly
@@ -1024,16 +1161,26 @@ def main() -> int:
             shp += t
         blind[r.name] = (acc, shp)
 
+    # Issue 827: which sibling checkouts cannot be trusted to answer "do you
+    # own this number?" — computed ONCE for the whole run, because it is a
+    # property of the oracle repos and not of the repo being audited.
+    unreliable = unreliable_oracles(repos)
+
     bad = False
     tot = {"docs": 0, "cites": 0, "amb": 0, "mis": 0, "misat": 0,
            "units": 0, "rep": 0, "width": 0, "trail": 0, MISATTR_IN_RANGE: 0,
-           CROSS: 0, IN_RANGE: 0, ORPHAN: 0}
+           CROSS: 0, IN_RANGE: 0, ORPHAN: 0, ORACLE_STALE: 0}
     mine_row = None
     dirty_scope: dict[str, int] = {}
     n_uncommitted = n_masked = 0
     for repo in repos:
         sibs = [s for s in repos if s != repo]
-        got = audit(repo, sibs, alloc, docs, crates, patterns)
+        # A repo is never its own oracle — `n in mine` short-circuits first —
+        # so its own staleness is irrelevant here and is filtered out rather
+        # than left to confuse the disclosure line.
+        got = audit(repo, sibs, alloc, docs, crates, patterns,
+                    unreliable={k: v for k, v in unreliable.items()
+                                if k != repo.name})
 
         # ── Issue 797: the worktree is not the repo ──────────────────────────
         # This workspace runs concurrent sessions against SHARED worktrees, so
@@ -1083,7 +1230,12 @@ def main() -> int:
         # is TWO adjudications in two documents, not one. A union reported 142
         # where the work is 164.
         tot["units"] += units
-        for cls in (CROSS, IN_RANGE, ORPHAN, MISATTR_IN_RANGE):
+        # ORACLE_STALE rides this loop for the TOTAL only. It is deliberately
+        # absent from every pin comparison: a ceiling that can be breached by
+        # another repo's fetch schedule is the cries-wolf failure Issue 827
+        # exists to stop, and a ratchet on an UNDECIDED bucket is a backlog
+        # wearing a pin (Issue 785's rule).
+        for cls in (CROSS, IN_RANGE, ORPHAN, MISATTR_IN_RANGE, ORACLE_STALE):
             tot[cls] += len(got[cls])
         if repo.resolve() == REPO_ROOT:
             mine_row = got
@@ -1151,6 +1303,11 @@ def main() -> int:
             print(f"      undecided:{r}")
         for r in got[ORPHAN]:
             print(f"      orphan:   {r}")
+        # Issue 827. Never truncated and never counted: a row here is a
+        # statement about OUR checkout of somebody else's repo, and the reader
+        # needs the whole list to know which fetch would settle it.
+        for r in got[ORACLE_STALE]:
+            print(f"      ⚠oracle:  {r}")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
@@ -1203,7 +1360,16 @@ def main() -> int:
     print(f"{len(repos)} contract repo(s) · {tot['docs']} document(s) · "
           f"{tot['cites']} citation(s) · {tot[CROSS]} CROSS over "
           f"{tot['units']} per-repo adjudication(s) · "
-          f"{tot[IN_RANGE]} IN-LOCAL-RANGE · {tot[ORPHAN]} ORPHAN")
+          f"{tot[IN_RANGE]} IN-LOCAL-RANGE · {tot[ORPHAN]} ORPHAN · "
+          f"{tot[ORACLE_STALE]} ORACLE-STALE")
+    if tot[ORACLE_STALE]:
+        detail = ", ".join(f"{k} ({v})" for k, v in sorted(unreliable.items()))
+        print(f"  ⚠ ORACLE-STALE is UNDECIDED, never clean and never counted "
+              f"(Issue 827): {tot[ORACLE_STALE]} row(s) name a repo whose "
+              f"checkout here cannot answer whether it owns the number — "
+              f"{detail}. Measured once already as four ⛔MISATTRIBUTED rows "
+              f"and a breached ceiling in riir-shader, over citations that "
+              f"were CORRECT. `git fetch` in the named repo and re-run.")
     print(f"  AMBIGUOUS (local AND sibling — undecidable by number, NOT a pass): "
           f"{tot['amb']}  ·  ⛔MISLEADING crate hints: {tot['mis']}"
           f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}"
