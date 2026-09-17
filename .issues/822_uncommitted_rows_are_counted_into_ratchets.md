@@ -67,11 +67,37 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 
 ## Proposed tasks (not started)
 
-- [ ] **T1** — re-measure the population first, the Issue 789 T4 discipline.
-      Which sweeps have file-addressed rows AND a count-based pin? A sweep
-      whose pin is a MEMBERSHIP set is already immune (a new uncommitted row
-      reds by name, and the name is the diagnosis), so this may be a smaller
-      set than the family.
+- [x] **T1 — MEASURED 2026-09-17, and the set is not small.** The hope written
+      here was that membership-pinned sweeps would be immune and the exposure
+      would be a handful. Extracted every `… > row["max_*"]` comparison in the
+      family: **14 of 19 sweeps carry at least one COUNT ceiling**, and nearly
+      every counted bucket is file-addressed.
+
+      | sweep | counted bucket(s) | rows addressed by |
+      |---|---|---|
+      | `console_encoding` | `undefended` | script path ← **measured breach** |
+      | `instrument_reachability` | `unreachable` | script path ← **measured breach** |
+      | `subprocess_encoding` | `decode`, `child` | file + call site |
+      | `toolchain_override` | `drift`, `unresolved` | file + line |
+      | `orphaned_attr` | `offenders` | file + line |
+      | `markdown_fence` | `unterminated` | file + line |
+      | `len_derived` | `findings` | file + kernel |
+      | `pipefail_discard` | `findings`, `unparsed` | file + line |
+      | `percentile` | four severity classes | file + line |
+      | `cfg_gated` | `silent_now`, `load_bearing` | target |
+      | `trap_sentinel` | per-class | script path |
+      | `required_features` | `invalid` | manifest row |
+      | `wasm32_surface` | `unresolved` | package (not a file) |
+      | `numbering` | `dup`/`above`/`malformed`/`resets`/`hist` | number / dir |
+
+      Two corrections to this issue's own framing:
+      - **Membership does not confer immunity where a sweep has BOTH.**
+        `wasm32_surface`, `pipefail_discard` and `toolchain_override` pin some
+        buckets by membership *and* ratchet others by count; the count half is
+        exposed regardless.
+      - `citation_drift_sweep` is the one sweep WITH the row-level split, and
+        it is the one whose rows are **documents** rather than source files.
+        The class was measured there first and bites hardest everywhere else.
 - [ ] **T2** — lift `worktree_state.split_rows`'s injected-`read` pattern into
       a shared helper those sweeps can call with their own row->path function.
       `citation_drift_sweep` re-runs its whole classifier against HEAD blobs;
