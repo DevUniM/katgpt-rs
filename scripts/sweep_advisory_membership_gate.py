@@ -109,6 +109,33 @@ MECHANISMS: dict[str, tuple[str, tuple[str, ...]]] = {
     "known-extra-exemption": (
         "Issue 815/821 — otherwise a sweep hard-reds on a repo the contract "
         "does not claim, with zero content findings", ("pin_row_exempt",)),
+    # Issue 822 T6. The third mechanism, and the one this registry was
+    # generalised FOR: Issue 822 is the ninth recorded instance of a rule
+    # landing in one instrument and never generalising, and its own fan-out
+    # was tracked by a hand-ticked table in an issue file — in a family that
+    # grew twice while the table was being written. Without a row here the
+    # SEVENTEENTH sweep lands unwired and nothing objects, which is exactly
+    # what Issue 821 did with `pin_row_exempt` (16 of 19, "16" in its own
+    # close-out) and what 797 did with the advisory (16 of 18 within hours).
+    #
+    # FOUR names, because the mechanism has four entry points and naming a
+    # subset reports the most careful caller as the defect (the rule this
+    # dict's own comment already states, learned when the advisory predicate
+    # named one of two and condemned `citation_drift_sweep`):
+    #   head_delta    per-file classifiers
+    #   head_overlay  cross-file, whole-run re-classification from a dict
+    #   head_tree     multi-seam classifiers — a materialised HEAD checkout
+    #   head_text     the raw HEAD blob, which is what `citation_drift_sweep`
+    #                 uses: it carries the INLINE original the other three were
+    #                 lifted out of, so it is WIRED, not exempt. Crediting it
+    #                 by its actual call is the honest reading; an exemption
+    #                 row would say "this sweep may count uncommitted rows",
+    #                 which is false.
+    "head-provenance": (
+        "Issue 822 — otherwise a sweep counts rows that sit on a line NO "
+        "COMMIT CONTAINS into a ceiling, and the obvious remedy is to re-pin "
+        "from another session's in-flight edit",
+        ("head_delta", "head_overlay", "head_tree", "head_text")),
 }
 
 # Two floors, failing differently.
@@ -252,12 +279,15 @@ EXEMPT_ONLY_SRC = ("from sweep_population import pin_row_exempt\n"
                    "def main():\n"
                    "    if not pin_row_exempt(name):\n"
                    "        fails.append('unpinned')\n")
-BOTH_SRC = ("from worktree_state import sweep_advisory\n"
-            "from sweep_population import pin_row_exempt\n"
-            "def main():\n"
-            "    deferred.extend(sweep_advisory(names, ('*.rs',), root=W))\n"
-            "    if not pin_row_exempt(name):\n"
-            "        fails.append('unpinned')\n")
+# ⛔ DERIVED from the registry, not typed. Issue 822 T6 added a third mechanism
+# and this fixture — a hand-written "fully wired sweep" — was the one place the
+# arms did NOT walk `MECHANISMS`, so the gate's own selftest failed on a
+# correctly-wired registry and reported the ADDITION as the defect. A fixture
+# that has to be edited whenever the thing it tests grows is the same shape as
+# the hand-ticked table this mechanism exists to replace.
+BOTH_SRC = ("def main():\n"
+            + "".join(f"    {names[0]}(a)\n"
+                      for _why, names in MECHANISMS.values()))
 
 
 def classifier_arms() -> list[str]:

@@ -8,6 +8,8 @@
 # Mechanisms (the live set is `MECHANISMS` in the gate — this list is prose):
 #   worktree-advisory       sweep_advisory() / worktree_advisory()  (Issue 797)
 #   known-extra-exemption   pin_row_exempt()                        (Issue 815/821)
+#   head-provenance         head_delta() / head_overlay() / head_tree() /
+#                           head_text()                             (Issue 822)
 #
 # ⛔ The row is QUALIFIED by mechanism, and that is not bookkeeping. A bare
 # per-sweep row would excuse that sweep from the NEXT mechanism too — the one
@@ -22,3 +24,10 @@
 #   - every sweep adjudicates PER-REPO PINS, so every one can hard-red on a
 #     repo the contract does not claim; a row would say "this sweep may fail
 #     over a repo nobody owns, with zero content findings, and that is fine".
+#   - every sweep reads a WORKTREE and compares counts to a tracked ceiling, so
+#     every one can count a row that sits on a line no commit contains; a row
+#     would say "this sweep may red on another session's in-flight edit, and
+#     the reader may re-pin from it". The fan-out reached 19 of 19 before this
+#     mechanism was registered, deliberately: a registry row added over unwired
+#     sweeps reds the docs gate on develop, and pinning them meanwhile is a
+#     backlog wearing a pin (Issue 785).
