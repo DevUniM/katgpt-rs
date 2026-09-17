@@ -1034,6 +1034,28 @@ def selftest() -> list[str]:
                          f"negatives, 46 is a Plan")
         if icg.heading_allocated(hd, ".plans", names) != {46}:
             fails.append("heading allocation: the KIND is not read from the subdir")
+        # Issue 828 T4: the COST meter, both directions on the SAME fixture.
+        # It is the quantity that decides whether the `resolved --` family is
+        # worth an unsound rule, so a meter that always says 0 would retire
+        # the question by looking like an answer.
+        nov = icg.heading_unread_novel(hd, ".issues", names, known=set())
+        if nov != 3:
+            fails.append(f"heading unread COST: got {nov}, expected 3 -- "
+                         f"43/48/49 are unread and no other oracle knows them")
+        nov = icg.heading_unread_novel(hd, ".issues", names, known={43, 48, 49})
+        if nov != 0:
+            fails.append(f"heading unread COST: got {nov} with every unread "
+                         f"number already KNOWN -- a record another oracle "
+                         f"covers cannot change a verdict and must not be "
+                         f"priced as if it could")
+        # The ACCEPTED ones are never priced: 42/47/50 are already in the
+        # owners set, so counting them would inflate the blast radius by
+        # exactly the records the rule change does not touch.
+        nov = icg.heading_unread_novel(hd, ".issues", names, known={43, 48})
+        if nov != 1:
+            fails.append(f"heading unread COST: got {nov}, expected 1 -- only "
+                         f"the still-unknown unread record prices anything")
+
         if icg.allocated(hd, ".issues", names) != {42, 47, 50}:
             fails.append("allocated() does not union the heading path")
 
@@ -1167,14 +1189,26 @@ def main() -> int:
     # ⛔MISATTRIBUTED — Issue 754's failure, inherited by Issue 794's
     # in-range class), and a latent cost that is only remembered is one that
     # gets forgotten.
+    #
+    # Issue 828 T4 prices it. A record whose number is ALREADY known from a
+    # file - in the worktree or in `git log` - contributes nothing whichever
+    # way the rule goes, so only the residue can change a verdict and the
+    # residue IS the blast radius. `novel` is that residue, and it is what
+    # decides Issue 823 T5's open question: the unread COUNT looks like a
+    # backlog and the unread COST is two rows workspace-wide.
     blind = {}
     for r in repos:
-        acc = shp = 0
-        for d in icg.KINDS.values():
+        acc = shp = nov = 0
+        for k, d in icg.KINDS.items():
             a, t = icg.heading_style_blind(r, d, [q.name for q in repos])
             acc += a
             shp += t
-        blind[r.name] = (acc, shp)
+            # `alloc` holds the FULL union (heading path included), so the
+            # non-heading half is recomputed rather than subtracted: a number
+            # in both halves must not be credited to the heading oracle, and
+            # a set difference cannot tell the two apart.
+            nov += icg.heading_unread_novel(r, d, [q.name for q in repos])
+        blind[r.name] = (acc, shp, nov)
 
     # Issue 827: which sibling checkouts cannot be trusted to answer "do you
     # own this number?" — computed ONCE for the whole run, because it is a
@@ -1295,8 +1329,13 @@ def main() -> int:
         # riir-viewbridge's 17 rows are FOUR decisions. Same standing as tail
         # support in the percentile audit — it ORDERS the work, it is not a
         # second verdict, and neither number is the finding count on its own.
-        acc, shp = blind[repo.name]
-        style = f" heading_unread={shp - acc}/{shp}" if shp else ""
+        acc, shp, nov = blind[repo.name]
+        # `novel` is the part of `heading_unread` that could change ANY
+        # verdict (Issue 828 T4): the rest is already known from a file. Shown
+        # beside the count, never instead of it - the count is what says
+        # whether this repo's IN-LOCAL-RANGE figure can be read as an
+        # editorial quantity at all.
+        style = (f" heading_unread={shp - acc}/{shp} novel={nov}") if shp else ""
         print(f"{status} {repo.name:22s} docs={got['n_docs']} cites={got['n_cites']:<5d} "
               f"cross={len(got[CROSS]):<4d} over {units:<3d} num "
               f"in_local_range={len(got[IN_RANGE]):<3d} "
@@ -1390,8 +1429,9 @@ def main() -> int:
           f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}"
           f"  ·  ⛔MISATTRIBUTED-IN-RANGE (Issue 794 — FOLLOWABLE to the wrong "
           f"repo, walled at {glob_wall}): {tot[MISATTR_IN_RANGE]}")
-    b_acc = sum(a for a, _ in blind.values())
-    b_shp = sum(t for _, t in blind.values())
+    b_acc = sum(a for a, _, _ in blind.values())
+    b_shp = sum(t for _, t, _ in blind.values())
+    b_nov = sum(n for _, _, n in blind.values())
     # Issue 823 T6. The meter's own blindness detector. Its failure mode is a
     # PERFECT-LOOKING score: a regressed shaped pattern takes `b_shp` to 0 and
     # the line below reads `0/0 records read, 0 UNREAD`. GLOBAL, because
@@ -1407,6 +1447,18 @@ def main() -> int:
               f"oracle's blindness has itself gone blind, and its output in "
               f"that state ({b_acc}/{b_shp}) reads as PERFECT COVERAGE. This "
               f"is a PARSE regression, not a population change.")
+    # Issue 828 T4 - the COST of the unread, which decides Issue 823 T5's
+    # open question and had never been taken. Printed every run because it
+    # moves whenever a sibling edits a heading, and because a bare UNREAD
+    # count reads as a backlog while its price reads as a rounding error.
+    print(f"  heading oracle COST (Issue 828 T4): of the {b_shp - b_acc} "
+          f"UNREAD, {b_nov} contribute a number NO other oracle knows "
+          f"(worktree file or `git log`). Only those can change a verdict, "
+          f"so that is the entire blast radius of the `## Issue NNN resolved "
+          f"— title (date)` family Issue 823 T5 left open. The rule stays "
+          f"UNSOUND to widen (arm 2 pins `follow-up` as a negative, and no "
+          f"punctuation rule separates commentary from allocation) — and now "
+          f"it is also not worth widening. Take both figures from THIS line.")
     print(f"  heading oracle (Issue 781): {b_acc}/{b_shp} self-allocation "
           f"records read, {b_shp - b_acc} UNREAD **on style alone** — a "
           f"triage quantity, never a verdict. `heading_allocated()` requires "

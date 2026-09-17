@@ -1,6 +1,8 @@
 # Issue 828 (2026-09-18) — Issue 823's anchor class, third position: the heading oracle was anchored to a DELIMITER SET, and the biggest unread family is this repo's own house style
 
-**Status: RESOLVED same day (T1–T3). T4 = Issue 823 T5's residual, unchanged.**
+**Status: RESOLVED same day (T1–T4). T4 answers Issue 823 T5 by PRICING it —
+the blast radius of the widening is 2 rows workspace-wide, so the rule that is
+unsound to widen is also not worth widening.**
 
 ## The symptom
 
@@ -94,16 +96,48 @@ IN-LOCAL-RANGE rows and fewer false `⛔MISATTRIBUTED` — every ratchet in
 DOWNWARD is deliberately **not** done here: they are ceilings, and tightening
 them on one box's run is the diary AGENTS.md refuses.
 
-## T4 — OPEN, and it is Issue 823 T5 verbatim
+## T4 — ANSWERED by pricing it: the blast radius is TWO rows
 
-The ~153 genuinely interstitial records stand. The open question is unchanged
-and this issue must not be read as having narrowed it: `resolved`, `closed`,
-`T3`, `Arm C` and `follow-up` are the same SHAPE, no punctuation rule separates
-them, and the distinction is semantic. What changed is the **denominator** —
-60 rows that were being counted against that question were never part of it.
+Issue 823 T5's open question — *"whether the `resolved —` family admits a
+sound discriminator at all"* — was argued twice, semantically, by two
+sessions, and never priced. The semantic answer is NO and stands: `resolved`,
+`closed`, `T3`, `Arm C` and `follow-up` are the same SHAPE, no punctuation
+rule separates commentary from allocation, and
+`citation_drift_sweep.selftest()` arm 2 pins `follow-up` as a negative in
+every position and delimiter.
 
-⚠ Read the live figure off `citation_drift_sweep.py`'s own `heading oracle`
-summary line. A number typed here is a claim about one run.
+**The question nobody asked is what the rule would BUY.** `heading_allocated`
+is one member of a union; every other member answers from a FILE — in the
+worktree, or recovered from `git log`. A record whose number is already known
+that way contributes nothing whichever way the rule goes. Only the residue can
+change a verdict, so **the residue is the blast radius**.
+
+Measured over 16 repos: of **153 unread records, 2** contribute a number no
+other oracle knows — riir-ai's `## Issue 969 resolved — …` and riir-clippy's
+`## Issue 097 resolved — …`, both exactly the Issue-754 never-committed shape
+the heading path exists for. Everything else is redundant.
+
+So the 153 was never a backlog. It is a cost figure that is **98.7%
+redundant**, and the case for adopting a rule this document calls unsound in
+order to recover it does not survive its own arithmetic. ⛔ **Not "the class
+is closed"** — the two rows are real and land as IN-LOCAL-RANGE, which is
+UNDECIDED and never a pass. What is closed is the question of whether the
+*count* justifies the *rule*.
+
+⚠ Both figures are DERIVED per run and printed on
+`citation_drift_sweep.py`'s own `heading oracle COST` line, per repo as
+`novel=` beside `heading_unread=a/b`. They move whenever a sibling edits a
+heading; two sessions already quoted the unread count at each other hours
+apart as 209 and 213, each correct for its own run. **Take both from the
+line, never from this paragraph.**
+
+`issue_citation_gate.file_and_history_allocated()` is `allocated()` with the
+heading path removed, split out so the heading oracle's own CONTRIBUTION is
+measurable rather than argued about; `_heading_records()` is ONE walker under
+both meters, because the width bound and the cost bound disagreeing about
+what a record IS would make the pair useless. Armed both directions on arm
+2's own fixture — a meter that always says 0 retires the question by looking
+like an answer.
 
 ## ⛔ The arm that could not pass, and why it is a separate issue
 

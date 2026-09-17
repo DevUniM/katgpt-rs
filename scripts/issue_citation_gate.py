@@ -435,16 +435,32 @@ def heading_style_blind(repo: Path, subdir: str,
     Issue 754's exact failure, inherited by Issue 794's MISATTRIBUTED-IN-RANGE.
     Latent, so it is printed rather than remembered.
     """
+    accepted = shaped = 0
+    for _n, ok in _heading_records(repo, subdir, repo_names):
+        shaped += 1
+        accepted += 1 if ok else 0
+    return (accepted, shaped)
+
+
+def _heading_records(repo: Path, subdir: str,
+                     repo_names: list[str] | None = None):
+    """Yield `(number, accepted)` for every heading-shaped self-allocation
+    record of this KIND, foreign-filtered.
+
+    ONE walker for both meters. `heading_style_blind` counts it and
+    `heading_unread_novel` tests each unread number against the other
+    oracles; two copies of this loop is two chances for the width bound and
+    the cost bound to disagree about what a record IS.
+    """
     kind = _SUBDIR_KIND.get(subdir)
     if kind is None:
-        return (0, 0)
+        return
     global _NAMES_CACHE
     if repo_names is None:
         if _NAMES_CACHE is None:
             _NAMES_CACHE = [p.name for p in contract_repos(WORKSPACE)]
         repo_names = _NAMES_CACHE
     foreign = [n for n in repo_names if n != repo.name]
-    accepted = shaped = 0
     for doc in _self_docs():
         p = repo / doc
         if not p.is_file():
@@ -459,10 +475,40 @@ def heading_style_blind(repo: Path, subdir: str,
                 continue
             if any(_NAME[n].search(m.group(3)) for n in foreign):
                 continue          # rejected for NAMING a sibling, not on style
-            shaped += 1
-            if _self_heading(line) is not None:
-                accepted += 1
-    return (accepted, shaped)
+            yield int(m.group(2)), _self_heading(line) is not None
+
+
+def heading_unread_novel(repo: Path, subdir: str,
+                         repo_names: list[str] | None = None,
+                         known: set[int] | None = None) -> int:
+    """Unread records whose number NO OTHER oracle knows - the COST of not
+    widening the rule, measured rather than argued (Issue 828 T4).
+
+    Issue 823 T5 left open whether the `## Issue NNN resolved - title (date)`
+    family admits a sound discriminator, and both AGENTS.md and
+    `citation_drift_sweep.selftest()` arm 2 answer NO: `resolved` and
+    `follow-up` are the same SHAPE, no punctuation rule separates commentary
+    from allocation, and a false allocation does not drop a row, it INVERTS
+    one. That answer is correct and it is not the whole question, because
+    nobody had priced it.
+
+    A record whose number is already known from a FILE - in the worktree or
+    in `git log` - contributes nothing whichever way the rule goes. Only the
+    residue can change a verdict, so the residue IS the blast radius.
+    Measured 2026-09-18 over 16 repos: **153 unread, 2 novel** (riir-ai's
+    `Issue 969 resolved`, riir-clippy's `Issue 097 resolved`), both exactly
+    the Issue-754 never-committed shape. So the 153 is a cost figure that is
+    98.7% redundant, and the case for taking an UNSOUND rule to recover it
+    does not survive its own arithmetic.
+
+    Printed on every run rather than remembered, because it is the quantity
+    that decides the question and it moves whenever a sibling edits a
+    heading.
+    """
+    if known is None:
+        known = file_and_history_allocated(repo, subdir)
+    return sum(1 for n, acc in _heading_records(repo, subdir, repo_names)
+               if not acc and n not in known)
 
 
 def allocated(repo: Path, subdir: str,
@@ -476,7 +522,20 @@ def allocated(repo: Path, subdir: str,
     Nor is the FILE walk sufficient (Issue 754): remove a file that was never
     committed and `git log` is empty too. `heading_allocated()` recovers those.
     """
-    out: set[int] = set(heading_allocated(repo, subdir, repo_names))
+    return (set(heading_allocated(repo, subdir, repo_names))
+            | file_and_history_allocated(repo, subdir))
+
+
+def file_and_history_allocated(repo: Path, subdir: str) -> set[int]:
+    """`allocated()` WITHOUT the heading path - the worktree walk + `git log`.
+
+    Split out so the heading oracle's own CONTRIBUTION is measurable rather
+    than argued about (Issue 828 T4). Every other member of the union answers
+    from a FILE that existed; the heading path exists only for the Issue-754
+    shape, where a document was created and removed without an intervening
+    commit and its own heading is the whole record.
+    """
+    out: set[int] = set()
     d = repo / subdir
     if d.is_dir():
         for f in d.iterdir():

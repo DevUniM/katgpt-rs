@@ -862,10 +862,23 @@ ASCII hyphen is a delimiter only when space-separated on both sides.
 - This is **not** the widening the paragraph above calls unsound, by that
   paragraph's own test: adding a delimiter keeps the rule, dropping the
   discriminator abandons it.
-- ⚠ It does **not** narrow Issue 823 T5's open question — it corrects its
+- ⚠ It does **not** narrow Issue 823 T5's question — it corrects the
   DENOMINATOR. The `resolved` / `closed` / `T3` / `Arm C` family is untouched
   and still has no punctuation rule separating it from `follow-up`; ~60 rows
   that were being counted against that question were never part of it.
+- ⛔ **T5 is ANSWERED, by PRICING it rather than by settling the semantics**
+  (Issue 828 T4). The semantic answer stays NO and arm 2 still pins it. The
+  question nobody had asked is what the rule would BUY: `heading_allocated`
+  is one member of a union whose every other member answers from a FILE, so a
+  record whose number is already known contributes nothing whichever way the
+  rule goes, and **only the residue can change a verdict**. Measured over 16
+  repos: of the unread records, **2** name a number no other oracle knows —
+  both the Issue-754 never-committed shape. A figure two sessions had read as
+  a backlog is ~99% redundant, and adopting a rule this file calls unsound to
+  recover it does not survive its own arithmetic. Both quantities are printed
+  every run on the sweep's `heading oracle COST` line and per repo as
+  `novel=` beside `heading_unread=a/b`; **take them from there**, which is the
+  rule the bullet above already states for the unread count itself.
 - ⛔ The arms could not have been written before the fixture's `write_text`
   gained an `encoding=`: on this cp874 box the em dashes in the FIXTURE were
   silently written as byte `0x97` and read back as U+FFFD, so a delimiter arm
