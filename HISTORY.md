@@ -11,6 +11,101 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 822 (2026-09-18) — CLOSED. An UNCOMMITTED row was counted into a RATCHET; all 19 sweeps adjudicate against HEAD now, and the mechanism is GATED
+
+**The defect.** Every `*_drift_sweep.py` walks the WORKING TREE, and this
+workspace runs five-plus concurrent sessions against shared worktrees. So a
+count compared to a tracked ceiling was a function of one box's checkout AND
+one session's uncommitted index. Measured on `console_encoding`: `undefended
+56 > pinned 53`, where one of the three new rows sat on a file `git log` could
+not see at all — staged by another session mid-commit. The pressure to type 56
+into the pin is the whole hazard, and nothing in the run distinguished the case.
+
+**The repair, in three instruments** (`worktree_state.py`), chosen by the
+CLASSIFIER's shape and never by preference:
+
+| instrument | for | cost |
+|---|---|---|
+| `head_delta` | per-file classifiers | \|dirty ∩ population\| `git show` calls, **zero** on a clean run |
+| `head_overlay` + `delta_of` | cross-file, re-classified whole from a dict | same reads, one extra classification |
+| `head_tree` | MULTI-SEAM classifiers — `git grep` + `git ls-files` + direct reads | a materialised HEAD checkout: **22-32s per dirty repo**, 0.04-0.26s clean |
+
+`head_tree` (Issue 822 T5g) `git archive`s HEAD, extracts it, and runs `git
+init` + `git add -A -f` so the tree answers `git grep` and `git ls-files` as a
+real checkout does — the classifier runs UNMODIFIED. `-f` is load-bearing: an
+extracted `.gitignore` would otherwise exclude content HEAD tracks. It gained
+`paths=` (narrow the archive; riir-train 604 MB → 30.6 MB, worth **2.2x** end
+to end and not the 20x the size suggests) and `extra_dirty=` (widen the
+TRIGGER for a sweep whose walk is `os.walk` rather than `git ls-files`, so an
+untracked file is in its population and produces zero `git status` dirt). Its
+checkout is named after the SOURCE repo, because `len_derived` keys every row
+on the directory name and two repos materialised at once would both be `head`.
+
+**Rules that came out of it, each measured rather than reasoned:**
+
+* ⛔ **The VERDICT belongs in the row KEY.** `delta_of`/`head_delta` file a
+  key-matched row as COMMITTED carrying the WORKTREE's object, so any field the
+  key omits is a field where the worktree silently overrides HEAD — and every
+  ceiling in the family partitions by verdict. Reached independently in four
+  sweeps (T5f, T5g, T5i, T5j).
+* ⛔ **A FLOOR is a pin too.** Issue 797 measured this class on a POPULATION
+  (607 → 601 citations), not on a finding. HEAD's walk size is DERIVED rather
+  than re-listed: a staged-new file makes HEAD's walk one SMALLER and a
+  worktree deletion one LARGER, and only the second is reachable by something
+  nobody committed.
+* ⛔ **The classes can split by ORACLE, not by instrument.** `numbering`'s
+  `dup`/`above`/`malformed` read the worktree, `hist`/`resets` read `git log`
+  and a dirty tree cannot move them, and `unbumped` is a WORKTREE quantity by
+  construction — adjudicating it to HEAD would destroy it.
+* ⛔ **A census over ONE REPRESENTATION is blind to what that representation
+  omits.** The task re-derived the exposed set by grepping every
+  `> row["max_*"]` and concluded `docs_drift` had no ceiling; it has a wall at
+  0 written `if b_mis:`. Issue 787's finding, committed by the census looking
+  for instances of it.
+* ⚠ **An arm over inputs that cannot express its rule passes for the wrong
+  reason.** A line-in-key perturbation over a fixture whose content never moves
+  is an EQUIVALENT mutant; `cfg_gated`'s `features` field can never vary
+  between two findings because the finding IS "no `required-features` row";
+  `required-features = []` is not in `cfg_row_implication`'s population at all.
+  Three fixtures had to be rewritten before their arms asserted anything.
+
+**A diagnostic rule, bought by a peer session's hour** (katgpt-rs-54): it ran
+the numbering sweep during ~90 seconds of another session's `git rebase` and
+got two ceiling breaches that were TRUE of that instant and false of every
+commit. It then verified the worktree, HEAD's blob, 30 commits and
+`.git/rebase-merge`, found nothing, and concluded the instrument was broken.
+**Every one of those checks inspects STATE, and state had moved.** A
+transient-worktree finding is in no commit by definition, so scanning commits
+is structurally incapable of separating "phantom" from "true but gone" — it can
+only return the reassuring answer. **The one cheap decisive test is to RE-RUN
+THE INSTRUMENT.**
+
+**Closed with a REGISTRY row, not a tick** (T6): `head-provenance` in
+`sweep_advisory_membership_gate.MECHANISMS`, four entry points
+(`head_delta`/`head_overlay`/`head_tree`/`head_text` — the last so
+`citation_drift_sweep`, which carries the inline original, is credited as WIRED
+rather than exempted). 19/19 on all three mechanisms, exemption file still
+empty. Registered only AFTER the fan-out completed: a registry row over unwired
+sweeps reds the docs gate on `develop`, and pinning them meanwhile is a backlog
+wearing a pin (Issue 785). **Take the family size and the wiring verdict from
+that gate's PASS line, never from a count in prose** — this issue is the class
+where that goes wrong, and its own tables went stale twice while being written.
+
+⛔ **The workspace hazard it kept tripping over, worth more than the issue.**
+Every session commits as `katopz <katopz@gmail.com>`, so a SHA's author line
+identifies NOBODY, and "Nth of mine" in a commit body identifies somebody you
+cannot resolve. Reading one such line as a messaging peer's claim produced a
+wrong WORK SPLIT — two sweeps left untouched by both sessions that were
+talking, each believing the other had them. Even the session NAME is not a key:
+`ListAgents` showed TWO live sessions called `katgpt-rs-54`, distinguished only
+by ref, and a fourth session existed that two independent eliminations had both
+missed. The only reliable signal is an explicit `Session: <name>` line in the
+body. ⚠ Second-order specimen from the same hour: a claim of *"ListAgents shows
+only the two of us live"* was asserted, in a message arguing against inferring
+things from git, **without having run `ListAgents`**. A claimed verification is
+exactly as unreliable as the inference it replaces when the verification was
+not performed.
+
 ## Issue 819 (2026-09-17) — CLOSED. The x86_64 arm was LINTED by nothing; the finding is not the 30, it is the sibling
 
 ⚠ **819 is held by two documents.** A concurrent session allocated it the same
