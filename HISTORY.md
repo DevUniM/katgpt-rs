@@ -11,6 +11,28 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 811 CLOSED (2026-09-17) — DBTM confidence-commit anchor rule: PoC PASS → Plan 600 landed end-to-end, promotion EXECUTED via Plan 601
+
+The full arc, PoC to production: [`.research/563_DBTM_Discrete_Beckmann_One_Step_Language.md`](.research/563_DBTM_Discrete_Beckmann_One_Step_Language.md)
+(`e0e63f47b`) distilled arXiv:2609.15903 §5.1's κ ∪ floor commit rule + §4.3's t\* law; the three-arm PoC
+(`ee105eb78`) measured the DBTM rule converging 3.1–4.7× faster than the matched strided arm at quality
+parity with termination-within-k property-proven at every (κ, k) cell; [Plan 600](.plans/600_flashar_confidence_commit_upgrade.md)
+landed the production seam — `ConfidenceAnchorConfig` + `select_confidence_anchors` + `anchor_then_fill_with`
+(`8bd6d7132`), docs (`261d80fd2`), T8+T9 GOAT gates green on the lane's non-saturated pattern corpus
+(`df49ed4c5`, `5c6cb58e5`, Bench 600) — and [Plan 601](.plans/601_flashar_realtext_eval.md) grew the real-text
+D2F eval the acceptance bar demanded and re-ran every gate green on char-level Austen (`a769a42ec`, Bench 601:
+paired Δ +0.03…+0.11, 1.2–2.8× steps / 0.72–0.91× wall, realized-KL 0.48–0.87× incumbent) →
+**promotion executed**: `ConfidenceAnchorConfig::default()` = κ 0.9 + floor is the anchor-then-fill decode
+default; the strided entry stays as the no-floor comparator (demote-on-loss rule stands).
+Both of the issue's deferrals were discharged on the way: the deferred T3 sweep-bench arm landed through the
+Issue-813 custom-order seam + Bench 809 (`d392600d6`) and its NO-SEPARATION verdict was resolved same-day by
+the Issue-816 masked-target trainer (`b3016516e`) — prob-t\* WINS the table on both eval seeds (2.59/2.61 vs
+uniform 2.89/2.88 nats), the DBTM ordering hypothesis measured green on real text; the deferred T5 UGC
+cross-check is Plan 600 T9, measured green (MC 8192×2 seeds: greedy reveal distorts LESS than the incumbent,
+KL ratio 0.996 pattern / 0.48–0.87× real text; Caveat #1 empirically benign). The t\* half landed pure in
+katgpt-core: `commit_time_star` (`ignition_schedule`) + `probability_order` (`set_diffusion_schedule`).
+Follow-on work continues under Plans 600/601 (complete) and the sweep lane's Bench 809 addendum, not here.
+
 ## riir-ai Issue 964 C2 LANDED (2026-09-16) — `CalibratedActionBridge`: decision-level confidence calibration for the ABSTAIN threshold (Bench 808)
 
 The second `sigmoid_calibration` consumer. `ActionBridge`'s `sigmoid_confidence` gates the ABSTAIN threshold — a threshold on an
