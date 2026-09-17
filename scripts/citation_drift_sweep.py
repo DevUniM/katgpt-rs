@@ -837,6 +837,19 @@ def selftest() -> list[str]:
         except ValueError:
             pass
 
+        # ── Issue 823 T6: the width bound's own floor is READ from the pin
+        # file and is a real global, not a default nobody set. A floor that is
+        # silently absent is the same as no floor, and this one exists because
+        # the quantity it guards fails by looking PERFECT.
+        live_glob, _ = parse_pins(PINS)
+        if "min_heading_shaped" not in live_glob:
+            fails.append("min_heading_shaped is not pinned — the heading meter "
+                         "has no blindness detector, and its blind output "
+                         "(0/0) reads as perfect coverage")
+        elif live_glob["min_heading_shaped"] < 1:
+            fails.append("min_heading_shaped pinned at 0 or less — a floor that "
+                         "cannot fail")
+
         # ── heading-only allocations (Issue 754). The one path in this
         # instrument that can SUPPRESS a finding, so all four arms are pinned:
         # the positive must fire, and each of the three measured negatives
@@ -1198,6 +1211,21 @@ def main() -> int:
           f"repo, walled at {glob_wall}): {tot[MISATTR_IN_RANGE]}")
     b_acc = sum(a for a, _ in blind.values())
     b_shp = sum(t for _, t in blind.values())
+    # Issue 823 T6. The meter's own blindness detector. Its failure mode is a
+    # PERFECT-LOOKING score: a regressed shaped pattern takes `b_shp` to 0 and
+    # the line below reads `0/0 records read, 0 UNREAD`. GLOBAL, because
+    # per-repo is legitimately 0 wherever a repo has no self-allocation
+    # headings. Deliberately NOT gated on the partial-clone marker: this floor
+    # asserts the PARSER, not the population, and it is pinned far enough under
+    # a partial-clone measurement that an absent repo cannot breach it.
+    if b_shp < glob["min_heading_shaped"]:
+        bad = True
+        print(f"✗ heading WIDTH BOUND breached: {b_shp} heading-shaped "
+              f"self-allocation record(s) < pinned "
+              f"{glob['min_heading_shaped']} — the meter that prints the "
+              f"oracle's blindness has itself gone blind, and its output in "
+              f"that state ({b_acc}/{b_shp}) reads as PERFECT COVERAGE. This "
+              f"is a PARSE regression, not a population change.")
     print(f"  heading oracle (Issue 781): {b_acc}/{b_shp} self-allocation "
           f"records read, {b_shp - b_acc} UNREAD **on style alone** — a "
           f"triage quantity, never a verdict. `heading_allocated()` requires "

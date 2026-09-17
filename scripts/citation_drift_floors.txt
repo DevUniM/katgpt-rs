@@ -214,3 +214,22 @@ mmorpg-remake                39      0               0       0
 # The IN-RANGE column is n = 1: "0 false positives" there is one row's worth of
 # evidence, not a rate.
 max_misattributed_in_range = 0
+
+# ── the WIDTH BOUND needs its own blindness detector (Issue 823 T6) ──────────
+# `heading_style_blind` is the meter whose entire job is printing the cost of
+# the heading oracle's blindness. Nothing floored it, and its failure mode is
+# the one this whole file is about: if the shaped patterns regress, `shaped`
+# goes to 0 and the summary line reads `0/0 records read, 0 UNREAD` — which is
+# PERFECT COVERAGE. A blindness detector going silently blind.
+#
+# That is not hypothetical here. Before 823, riir-dapps printed exactly `0/0`
+# over 23 real records and riir-chain printed `0/1` — a perfect score — over
+# 21, because the meter could not see a whole house style.
+#
+# A GLOBAL floor, not per-repo: per-repo would be legitimately 0 in every repo
+# with no self-allocation headings, which is the vacuous-floor shape the
+# wasm32 sweep solved the same way (a reserved TOTALS row floors the
+# population globally). Pinned well under the 319 measured on a 16-of-20
+# PARTIAL clone, so a full checkout clears it by construction and the floor
+# only ever catches a PARSE regression, never a population change.
+min_heading_shaped = 260

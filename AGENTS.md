@@ -785,10 +785,14 @@ blind spot was hiding underneath it for as long as the sentence stood**
 that nothing may sit between the number and its delimiter, which is what
 rejects `follow-up` and `resolved`. That rule says nothing about WHERE in the
 heading the number sits, and both patterns had been anchored, incidentally, to
-the kind LEADING the line. Six repos write the date first — `## 2026-09-16 —
-Issue 113: the auto-oracle` — and the whole family was unreadable, 74 records
-deep. The repair keeps the discriminator exactly and moves it one position
-over; arm 2's negative is now pinned in BOTH positions and still rejects.
+the kind LEADING the line. Six repos write the date first — riir-clippy's
+`## 2026-09-16 — Issue 113: the auto-oracle` — and the whole family was
+unreadable, 74 records deep. The repair keeps the discriminator exactly and
+moves it one position over; arm 2's negative is now pinned in BOTH positions
+and still rejects. (That `riir-clippy` is load-bearing, not decoration: the
+specimen is a citation, the instrument cannot tell a quoted one from a live
+one, and naming the owner in its own window is this file's own prescribed
+repair — reached, again, by a paragraph documenting the class.)
 - ⛔ **The meter was anchored to the same position, so the blindness detector
   was blind to the same thing — in the direction that reads as clean.**
   `heading_style_blind` is the width bound whose entire job is printing the
