@@ -207,7 +207,22 @@ roughly 36 hours stale, reporting `0 behind / 0 ahead` while hiding the 260
 commits that produced this issue's false red. The only reason it now reads
 honestly is that somebody went looking.
 
-- [ ] **T5 — `(0, 0)` must not mean "not measured".** `behind_origin()` reads a
+- [x] **T5 — `(0, 0)` must not mean "not measured".** LANDED `6d084c38`.
+      `fetch_age_hours()` + an `⚠ UNVERIFIED UPSTREAM` advisory line, **additive
+      rather than a change to `behind_origin`'s return type** — eight arms and
+      a caller depend on that contract, and *how fresh is our view of the
+      remote* is a different question from *how far behind are we*. Only the
+      `(0, 0)` reading is challenged; a repo already reported STALE gets no
+      second line, and one with no upstream claims nothing to begin with.
+      `None` = CANNOT TELL and goes in the LOUD bucket. `STALE_FETCH_HOURS =
+      24` sits above this box's 1–2h working rhythm and below both measured
+      failures. Six arms, perturbation-verified (disabling the detection reds
+      the never-fetched and backdated arms); 121 assertions green. Live on the
+      first real run: `UNVERIFIED UPSTREAM: 1 repo(s) … riir-viewbridge (62h)`.
+      ⚠ Still an ADVISORY — it rides the final line and never fails a sweep,
+      because the alternative is the cries-wolf banner this family refuses.
+
+- [ ] **T5 (original statement, kept for the record)** `behind_origin()` reads a
       remote-tracking ref whose own freshness it never reports, so a repo last
       fetched days ago reads *up to date*. Stat `.git/FETCH_HEAD` (no network)
       and return a distinct UNKNOWN-ish answer beyond some age, printed the way
