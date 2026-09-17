@@ -668,6 +668,9 @@ pub fn classify_all_sinks(
     let mean_row_logit = mean_row_logit_sum(attn, n);
     for &(j, strength_j) in process {
         let col = [strength_j];
+        // `mut` is consumed only under sink_margin_forecast (the margin write
+        // below); without it this combo would carry unused_mut under -D warnings.
+        #[cfg_attr(not(feature = "sink_margin_forecast"), allow(unused_mut))]
         let mut diag = classify_sink_at_with_stats(j, &col, values, None, cfg, scratch, stats);
         #[cfg(feature = "sink_margin_forecast")]
         {
@@ -1437,6 +1440,8 @@ pub fn classify_all_sinks_flat(
     let mean_row_logit = mean_row_logit_sum_flat(attn, n);
     for &(j, strength_j) in process {
         let col = [strength_j];
+        // Same feature-conditional `mut` as the Vec path above.
+        #[cfg_attr(not(feature = "sink_margin_forecast"), allow(unused_mut))]
         let mut diag =
             classify_sink_at_flat_with_sum_sq(j, &col, values, n, d, None, cfg, scratch, sum_sq);
         #[cfg(feature = "sink_margin_forecast")]

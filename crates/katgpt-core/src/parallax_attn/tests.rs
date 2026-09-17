@@ -490,6 +490,10 @@ fn reference_attn_matrix(
 /// Result: column `sink_pos` receives mean strength ≈ 0.94 across rows,
 /// dominating all other columns. The AV update is rank-1 (output rows
 /// proportional to v[sink]) when v[sink] is non-zero.
+// Consumers are the sink-aware + 3-way ssmax/sink modules below — without
+// this gate the parallax_attn-only combo (a documented single-feature lane)
+// carries dead_code under -D warnings.
+#[cfg(feature = "sink_aware_attn")]
 fn build_sink_case(
     n: usize,
     d: usize,
