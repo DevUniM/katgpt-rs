@@ -110,7 +110,7 @@ The highest-value latent Super-GOATs cluster in seven module trees. `list_direct
 
 | Module | What ships | Super-GOAT angle |
 |---|---|---|
-| `katgpt-rs/crates/katgpt-core/src/sense/` | belief-state kernels (`evolve_belief`, `SenseModule::project`, ternary bit-plane projection) | Per-NPC recurrent latent state — runtime substrate for any "hidden state"/"belief"/"activation" paper |
+| `katgpt-rs/crates/katgpt-sense/src/` (NOT katgpt-core/src/sense — that dir does not exist; only `sense_threat.rs` lives in katgpt-core) | belief-state kernels (`evolve_belief`, `reconstruction.rs`), ternary bit-plane projection | Per-NPC recurrent latent state — runtime substrate for any "hidden state"/"belief"/"activation" paper |
 | `riir-ai/crates/riir-engine/src/latent_functor/` | `zone_gating.rs`, `reestimation.rs`, `arithmetic.rs`, `cross_game.rs`, `k_selector.rs`, `quality_gate.rs` | **Game-theory in latent space** — vector-op functors, coherence-driven re-estimation, zone-gated activation. Maps "stage"/"application"/"bypass"/"collapse" papers |
 | `riir-ai/crates/riir-engine/src/hla/` | `kernel.rs`, `forward.rs`, `types.rs` — **Higher-order Linear Attention** (Transformer attention-layer replacement). Paper: Zhang et al. 2026. **NOT the per-NPC belief** (different layer, different repo). | Maps "attention layer"/"linear attention"/"recurrent state" papers to Transformer-scale ops |
 | `riir-ai/crates/riir-engine/src/cgsp_runtime/` | Curiosity-guided self-play, latent prediction SSL, MCTS collapse bridge | Runtime curiosity/exploration — maps "self-learn"/"entropy-driven"/"collapse recovery" |
