@@ -1,8 +1,24 @@
 # Issue 827 (2026-09-18) — Issue 798's STALE advisory watches the repo a sweep READS; the citation oracle's authority comes from the repos it CONSULTS, and a stale one reds a third repo over four correct citations
 
-**Status:** OPEN — measured, with the false red standing in `riir-shader` at
-the time of filing. No pin was added: absorbing this into a ratchet is the
-exact repair the finding argues against.
+**Status:** T1/T2/T3/T5 LANDED (`6d084c38`, `7464fc6e`); **T4 OPEN and
+owner-gated** (the known-extra oracle question). No pin was ever added:
+absorbing this into a ratchet is the exact repair the finding argues against.
+
+**Landed shape.** `unreliable_oracles()` names the siblings whose *"I do not
+own that number"* cannot be believed, from two distinct facts — behind
+upstream on commits touching a numbered directory, or reporting up to date
+from a ref nobody refreshed (T5). Such a row lands in **ORACLE-STALE**:
+never clean, never counted, never ratcheted. ⛔ The suppression sits at the
+**qualification** step, not on the ⛔ tag — the measured rows were *counted* as
+CROSS and the tag is only their sub-label, so suppressing the label alone would
+have left the ceiling breached and the red standing.
+
+Probed against the live workspace so the detector is armed rather than merely
+present: `riir-dapps` (4 behind, 2 numbered), `riir-viewbridge` (up to date
+from a 62h-old ref), `seal-game-editor` (260 behind, 29 numbered),
+`seal-remake` (65 behind, 10 numbered). The workspace reports **0
+ORACLE-STALE** today because the rows that motivated this qualify cleanly once
+the objects were fetched — the correct reading, not a dead detector.
 
 ⚠ **Filed as 825, renumbered to 827 before push.** A concurrent session had
 already pushed `825_coulomb_crowd_redistribution_dec` **and**
@@ -158,7 +174,7 @@ with no network call at all.
 
 ## Tasks
 
-- [ ] **T1 — the oracle repos are part of the claim.** When a CROSS row's
+- [x] **T1 — the oracle repos are part of the claim.** When a CROSS row's
       verdict turns on `allocated()` in some other repo, that repo's
       `behind_origin()` state belongs on the output beside the ⛔ label —
       per-row, not as a banner, since a run may consult a dozen repos of which
@@ -166,7 +182,7 @@ with no network call at all.
       answers it and already returns `None` rather than guessing when there is
       no upstream (five workspace repos have none), so the mechanism is
       present and only the call site is missing.
-- [ ] **T2 — a stale oracle must not produce a ⛔ label at all.** Printing the
+- [x] **T2 — a stale oracle must not produce a ⛔ label at all.** Printing the
       staleness next to a wrong verdict is not enough: the verdict is
       **wrong**, and the wall counts it. A CROSS row whose named repo is
       behind its upstream on commits touching that repo's numbered directories
@@ -177,7 +193,7 @@ with no network call at all.
       ⛔ Do NOT resolve this by auto-fetching. A sweep that mutates other
       repos' refs to make its own verdict true is a sweep with a side effect,
       and on a box with five concurrent sessions it is a race.
-- [ ] **T3 — arms, and they must be two-sided.** A fixture pair of throwaway
+- [x] **T3 — arms, and they must be two-sided.** A fixture pair of throwaway
       repos where the cited number exists only on `origin/<branch>` and not in
       the worktree: the row must NOT be labelled ⛔ and must NOT be counted;
       with the same number present in the worktree it must be clean; absent
@@ -222,7 +238,7 @@ honestly is that somebody went looking.
       ⚠ Still an ADVISORY — it rides the final line and never fails a sweep,
       because the alternative is the cries-wolf banner this family refuses.
 
-- [ ] **T5 (original statement, kept for the record)** `behind_origin()` reads a
+- [x] **T5 (original statement, kept for the record)** `behind_origin()` reads a
       remote-tracking ref whose own freshness it never reports, so a repo last
       fetched days ago reads *up to date*. Stat `.git/FETCH_HEAD` (no network)
       and return a distinct UNKNOWN-ish answer beyond some age, printed the way
