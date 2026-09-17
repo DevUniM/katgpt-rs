@@ -360,6 +360,14 @@ runs); only the timing figure moved. So the invariance claim is
 inflate and destabilize (mechanism unmeasured — E-core placement is the
 suspect, not the finding). Cite CPU *with the load class it was measured
 under*, or the number carries a quiet-box premise onto a busy box.
+↔ **This paragraph is the INSTANCE; the general rule lives at §Feature Flag
+Discipline's G2 bullet ("A latency number without its BOX STATE is not a
+measurement").** Two copies that can drift, named in both directions on
+purpose: this one owns the docs-gate CPU figures and their measured
+quiet-box scoping, that one owns *any* perf number and the commit-vs-limit
+and trough rules. **Nothing asserts they agree** — deliberately, because the
+alternative is a prose-diffing check, which is the shape this file already
+refuses for landing claims. Editing either, read the other.
 ⛔ A discredited fourth figure is why this paragraph is worded so insistently:
 an earlier version called 11.7s wall a *quiet-box baseline*, and it was taken
 at load 5-7 — the 15.0s run (2026-09-11) is the first one actually measured on
@@ -2184,6 +2192,17 @@ else happening to be watching the process table.
   same rule §Docs gate states for CPU seconds; it is restated here because
   *written-down beats remembered only if the write-up is in the path you
   actually walk*, and that one lives in a section about docs-gate timing.
+- ↔ **This bullet is the GENERAL rule; §Docs gate's "load-invariant has a
+  measured LIMIT" paragraph is the INSTANCE** — it owns the docs-gate CPU
+  figures and their quiet-box scoping, this owns any perf number plus the
+  commit-vs-limit and trough rules below. A restatement is two copies that can
+  drift, and this repo gates that shape elsewhere (`docs_gate_paths_sync` for
+  the duplicated trigger lists; the sweeps that ASSERT a restated floor against
+  the gate owning it). **Nothing asserts these two agree**, and that is a
+  deliberate stop: the only mechanism would parse prose, which is what this
+  file refuses for landing claims — *the sweep IS the verification and a prose
+  check is not one*. The mitigation is this pointer, in both directions, so an
+  editor of either knows the other exists.
 - ⚠ **Rank concurrent jobs by COMMIT, never by working set**, and compare the
   total to the commit **limit read at launch** — not to physical RAM and not to
   a constant. Measured the same evening: `22.17 GB commit at 0.01 GB working
