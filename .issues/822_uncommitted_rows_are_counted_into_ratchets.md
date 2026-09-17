@@ -1,8 +1,16 @@
 # Issue 822 (2026-09-17) — an UNCOMMITTED row is counted into a RATCHET, and one just breached a pin over a file that exists in no commit
 
-**Status:** OPEN — T1-T4 landed, T5 (the fan-out to 13 more sweeps) owed
+**Status:** RESOLVED 2026-09-18 — T1-T6 landed. All **19** tracked
+`*_drift_sweep.py` adjudicate their findings against HEAD (eighteen through the
+shared helpers, `citation` through the inline original they were lifted from),
+and `head-provenance` is a MECHANISMS row in
+`sweep_advisory_membership_gate.py`, so the twentieth cannot land unwired.
+**Take the family size and the wiring verdict from that gate's PASS line, never
+from a count in this document** — the whole issue is an instance of the class
+where that goes wrong.
 **Severity:** a sweep reds on another session's in-flight edit; the obvious remedy is to re-pin from it
-**Owner:** unassigned — filed with the measurement, not started
+**Owner:** katgpt-rs-39 (T5g-T5j, T6); earlier tasks by other sessions — see
+the workspace hazard note below before attributing anything from git
 
 ## The finding
 
@@ -282,7 +290,7 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       the second copy of a defect. `subprocess_encoding` had that arm from the
       start and this one did not, which is the same asymmetry as T5e one level
       down. Both perturbations red now.
-- [ ] **T5b — the FAN-OUT, which is the part that is not done.** T1 measured 14
+- [x] **T5b — the FAN-OUT, DONE 2026-09-18 (19 of 19).** T1 measured 14
       sweeps with a count ceiling; **four** are wired. Do not read the helpers'
       existence as the fan-out having happened — that substitution is this
       repo's most-repeated error and it is what made this issue the *ninth*
@@ -382,8 +390,8 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       nothing here and needs `selftest` arms instead, which are cheaper and
       run on every invocation.
 
-- [ ] **T5j — ⛔ T1's "14 sweeps with a count ceiling" was a MEASUREMENT of the
-      set to wire, and it is not the set.** Re-measured 2026-09-18 by grepping
+- [x] **T5j — LANDED. ⛔ T1's "14 sweeps with a count ceiling" was a MEASUREMENT
+      of the set to wire, and it is not the set.** Re-measured 2026-09-18 by grepping
       every `> row["max_*"]`/`> f["max_*"]` comparison in the family:
       `restatement` (`max_restatement`, `max_identity`), `trap_sentinel` (SIX
       — `max_exposed`, `max_precautionary`, `max_live_forward`, `max_unparsed`,
@@ -410,8 +418,8 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       looked at and is not a derived set, which is why the closing step of this
       issue is a REGISTRY row rather than a tick — see T6.
 
-- [ ] **T6 — make the fan-out impossible to forget, the way Issue 824 did for
-      its two mechanisms.** `scripts/sweep_advisory_membership_gate.py` is
+- [x] **T6 — LANDED 2026-09-18 (`d590c2e9`). Make the fan-out impossible to
+      forget, the way Issue 824 did for its two mechanisms.** `scripts/sweep_advisory_membership_gate.py` is
       already a per-mechanism REGISTRY gated by MEMBERSHIP, and its whole
       warrant is that Issue 821 "landed a mechanism in 16 of 19 sweeps and
       wrote 16 in its own close-out". This issue is that shape again: a table
@@ -423,6 +431,25 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       pinning them as exemptions in the meantime is a backlog wearing a pin
       (Issue 785's rule). `docs` is the only legitimate exemption row: no
       count ceiling, so nothing to overstate.
+
+      **LANDED, and with three things worth carrying forward:**
+
+      * ⛔ **`head_text` is in the mechanism's name set**, so
+        `citation_drift_sweep` is credited as WIRED rather than exempted. It
+        carries the INLINE original the other three helpers were lifted out of;
+        an exemption row would have said "this sweep may count uncommitted rows
+        into a ceiling", which is false. Naming a SUBSET of a mechanism's entry
+        points is how this gate's own predicate once condemned the most careful
+        caller in the family.
+      * ⛔ **Landing it found a hole in the gate's own arms.** `BOTH_SRC` — the
+        "fully wired sweep" fixture — was the one place the arms did not walk
+        `MECHANISMS`, so a third mechanism made the gate's SELFTEST fail on a
+        correctly-wired registry and report the addition as the defect. A
+        fixture that must be edited whenever the thing it tests grows is the
+        same shape as the table this row replaces. Derived now.
+      * ⚠ `docs` was NOT the exemption candidate this task predicted — see
+        T5j; it has a wall at 0 written `if b_mis:`. The exemption file is
+        still empty, and every one of the three mechanisms now reads 19/19.
 
 ## ⚠ Workspace hazard this issue kept tripping over
 
