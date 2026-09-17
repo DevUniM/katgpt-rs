@@ -1,8 +1,19 @@
-# Issue 825 (2026-09-18) — Issue 798's STALE advisory watches the repo a sweep READS; the citation oracle's authority comes from the repos it CONSULTS, and a stale one reds a third repo over four correct citations
+# Issue 827 (2026-09-18) — Issue 798's STALE advisory watches the repo a sweep READS; the citation oracle's authority comes from the repos it CONSULTS, and a stale one reds a third repo over four correct citations
 
 **Status:** OPEN — measured, with the false red standing in `riir-shader` at
 the time of filing. No pin was added: absorbing this into a ratchet is the
 exact repair the finding argues against.
+
+⚠ **Filed as 825, renumbered to 827 before push.** A concurrent session had
+already pushed `825_coulomb_crowd_redistribution_dec` **and**
+`826_flashmemory_needle_quality_gate`; `dual_allocation_gate.py` classified the
+pair **INDEPENDENT** (different stems, two documents claiming one number) and
+this side moved — the remote side was pushed and carried both numbers, while
+this one was unpushed with self-references only. **Three commit messages below
+still say "Issue 825"** (`8eaf3435`, `869cd146`, `25a8fb08`, plus the floors
+re-pin `a5e222d3`); they are immutable and this note is what makes them
+followable. Caught at allocation time rather than merge time, which is exactly
+what that gate exists for.
 
 ## The symptom
 
