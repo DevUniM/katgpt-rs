@@ -1,3 +1,4 @@
+#![cfg(feature = "region_subspace_steering")]
 //! Plan 416 GOAT Gate — Region-Conditioned Subspace Field.
 //!
 //! Runs the G1–G5 GOAT gate for the `region_subspace_steering` feature.

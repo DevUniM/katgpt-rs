@@ -1142,7 +1142,11 @@ direction_bank_audit = []
 [[bench]]
 name = "bench_371_mean_field_regime_goat"
 harness = false
-# required-features removed: mean_field_regime is now DEFAULT-ON (Plan 371 Phase 6).
+# Issue 818: the row STAYS even though mean_field_regime is DEFAULT-ON
+# (Plan 371 Phase 6) — a promotion MOVES the gate, never deletes it. Without
+# the row, `--no-default-features --all-targets` builds this harness=false
+# bench whose whole-file #![cfg] empties it → E0601 (no `main`).
+required-features = ["mean_field_regime"]
 
 # Plan 375 Phase 3 — Factorized Transition Action Abstraction GOAT gate.
 # G1 in-distribution reconstruction MSE vs monolithic, G2 distractor-suppression
@@ -2882,6 +2886,10 @@ name = "heterogeneous_velocity_field_ensemble_alloc_check"
 required-features = ["velocity_field_ensemble_heterogeneous"]
 
 [[test]]
+name = "velocity_field_ensemble_alloc_check"
+required-features = ["velocity_field_ensemble"]
+
+[[test]]
 name = "occupancy_alloc_check"
 required-features = ["occupancy_ratio"]
 
@@ -3193,6 +3201,28 @@ required-features = ["meld"]
 [[test]]
 name = "bench_779_real_bank_affinity"
 required-features = ["subspace_intervention"]
+
+# Issue 778 / Research 557 POC — subspace intervention protocol validation
+# (Issue 818: whole-file #![cfg] + this row — skipped loud, never E0432;
+# mirrors the bench_779 row above).
+[[test]]
+name = "bench_778_subspace_intervention_poc"
+required-features = ["subspace_intervention"]
+
+# Plan 416 GOAT gate — region-conditioned subspace field (Issue 818: the
+# whole-file #![cfg] + this row; region_subspace_steering implies
+# subspace_steering, covering both imports).
+[[test]]
+name = "bench_416_region_subspace_goat"
+required-features = ["region_subspace_steering"]
+
+# Plan 412 GOAT gate — subspace steering field. Has the whole-file #![cfg]
+# (bench_416's convention mirror) but was missing the row half: under
+# --no-default-features it compiled to an empty binary and printed
+# `ok. 0 passed` — the green-zero class, caught during the Issue 818 fix.
+[[test]]
+name = "bench_412_subspace_steering_goat"
+required-features = ["subspace_steering"]
 
 # Plan 599 Phase 2 — the fan-out construction gate tests (frozen bank regen
 # pin, cap/PCA grounding + corpus identity, bounded recovery loop, exp-tilt
