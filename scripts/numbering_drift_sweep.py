@@ -98,6 +98,7 @@ to be fetched.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -105,7 +106,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
 import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, delta_of, head_text,  # noqa: E402
+                            sweep_advisory)
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -115,6 +117,15 @@ PINS = Path(__file__).resolve().parent / "numbering_drift_floors.txt"
 # DATA, not derived from the tree — see the module docstring's scope section.
 SERIAL_DIRS = (".plans", ".issues", ".research", ".proposals")
 ALL_DIRS = SERIAL_DIRS + (".benchmarks", ".docs")
+
+# ONE list, read by the worktree advisory AND by the HEAD re-classification,
+# and DERIVED from the directories above rather than typed beside them. It must
+# name every file that can CHANGE a verdict: here that is any numbered document
+# (a holder appearing or leaving moves `dup`, `above` and the `n_files` floor)
+# and each `.highwater`, which `.../*` already covers — the allocator is a file
+# in the directory it governs, so a second pattern for it would be a fifth
+# hand-typed copy of the shape T5g measured going wrong three ways at once.
+SCOPE = tuple(f"{d}/*" for d in ALL_DIRS)
 
 
 def contract_repos(workspace: Path) -> list[Path]:
@@ -227,6 +238,139 @@ def audit(repo: Path) -> dict:
     return {"dup": dup, "above": above, "malformed": malformed,
             "resets": resets, "unbumped": unbumped, "hist": hist,
             "n_files": n_serial, "n_numbers": n_numbers}
+
+
+def head_listing(repo: Path) -> dict[str, list[str]] | None:
+    """`{dirname: [direct child names]}` as HEAD carries them, or None.
+
+    Issue 822 T5h. `None` is "this run has nothing committed to compare
+    against" — not a repository, or `git ls-tree` refused — and it must stay
+    distinguishable from an empty listing, which is a repository whose numbered
+    directories are genuinely empty at HEAD. Pooling them would report every
+    number in the repo as UNCOMMITTED.
+
+    ⛔ **DIRECT children only, because `scan` iterates `d.iterdir()`.** `-r`
+    recurses, so a nested path contributes its first component (the
+    subdirectory entry `iterdir` would have yielded) and NOT its leaf: a
+    `.benchmarks/806_x/fig.png` must not read as a numbered document named
+    `fig.png`, and the directory `806_x` must not vanish from the count.
+
+    `-z` rather than the default: git QUOTES a non-ASCII path in its plain
+    output, and a quoted name is a different string from the one `iterdir`
+    yields, which would split one document into two rows across the two sides.
+    """
+    if not (repo / ".git").is_dir():
+        return None
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo), "ls-tree", "-r", "-z", "--name-only",
+             "HEAD", "--", *ALL_DIRS],
+            capture_output=True, encoding="utf-8", errors="replace", check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return None
+    names: dict[str, set[str]] = {d: set() for d in ALL_DIRS}
+    for rel in out.split("\0"):
+        rel = rel.strip()
+        if not rel:
+            continue
+        dirname, _, rest = rel.partition("/")
+        if dirname in names and rest:
+            names[dirname].add(rest.split("/", 1)[0])
+    return {d: sorted(v) for d, v in names.items()}
+
+
+def head_audit(repo: Path) -> dict | None:
+    """The three WORKTREE-derived classes + `n_files`, as HEAD carries them.
+
+    Issue 822 T5h — and the class split is the whole design, so it is written
+    down rather than implied:
+
+    * `dup` / `above` / `malformed` / `n_files` read the worktree (a listing,
+      and `.highwater`'s bytes). They are what a commit of this checkout would
+      reproduce only by accident, so the PINS read this side.
+    * `hist` / `resets` / `n_numbers` read `git log`. A dirty worktree cannot
+      move them, so re-deriving them here would be a second copy of an
+      identical answer.
+    * ⛔ `unbumped` is a WORKTREE quantity BY CONSTRUCTION — "worktree N <
+      history max M", the checkout-state class Issue 770 made report-only. It
+      is the one row in this sweep that would be destroyed by adjudicating it
+      to HEAD, where the comparison is vacuous. It is also unpinned, so it
+      reaches no ceiling.
+
+    ⚠ No `head_tree` and no skip branch, unlike T5g's sweep. This classifier
+    reads only NAMES plus one small file per directory, so HEAD costs ~7 cheap
+    git calls (measured: `ls-tree` over riir-ai's 1601 numbered paths, 0.05s)
+    against the ~30s a materialised tree costs there. Running it
+    unconditionally is what closes the UNTRACKED hole `markdown_fence` had to
+    split by hand: an untracked file is in no `git status` diff and in no HEAD
+    listing, so its row lands in UNCOMMITTED here by construction rather than
+    by a second predicate somebody has to remember to write.
+    """
+    listing = head_listing(repo)
+    if listing is None:
+        return None
+    tracked = {f"{d}/{n}" for d, ns in listing.items() for n in ns}
+    dup, above, malformed = [], [], []
+    n_serial = 0
+    for dirname in ALL_DIRS:
+        by_num, n = ng.group_numbered(listing[dirname], dirname, tracked)
+        hw, hw_bad = ng.parse_highwater(head_text(repo, f"{dirname}/{ng.HIGHWATER}"))
+        if hw_bad is not None:
+            malformed.append(f"{dirname}/.highwater = {hw_bad!r}")
+        if dirname not in SERIAL_DIRS:
+            continue
+        n_serial += n
+        for num, files in sorted(by_num.items()):
+            if sum(1 for _, tr in files if tr) < 2:
+                continue
+            names = " · ".join(nm for nm, _ in files)
+            dup.append(f"{dirname}/{num:03d} ×{len(files)}: {names}")
+        if hw is not None and by_num and max(by_num) > hw:
+            above.append(f"{dirname}: max {max(by_num)} > .highwater {hw}")
+    return {"dup": dup, "above": above, "malformed": malformed,
+            "n_files": n_serial}
+
+
+ADJUDICATED = ("dup", "above", "malformed")
+
+
+def adjudicate(repo: Path, got: dict) -> tuple[dict, dict]:
+    """-> (`{class: HeadDelta}`, the dict `pin_flags` should read).
+
+    The named seam, extracted rather than left inline in `main()` beside its
+    own error messages — Issue 822 T5e's finding, which is that nothing
+    automatic walls this join and only an arm aimed AT IT can.
+
+    ⛔ **The row IS the key.** These rows are strings that already carry their
+    own detail (`".issues/121 ×2: a · b"`), so a number whose HOLDER SET moved
+    splits in both directions: the worktree's shape is UNCOMMITTED and HEAD's
+    is MASKED. That is the same rule T5f and T5g reached from the other side —
+    a key that omits a field the ceiling reads lets the worktree silently
+    override HEAD — and here it costs nothing to get right, because there is no
+    field to omit.
+
+    A repo with no HEAD to read (`head_audit` → None) yields every row
+    COMMITTED: the conservative direction for a bucket whose purpose is to
+    WITHHOLD rows from a ceiling, and `split_rows`' own rule for an
+    undeterminable address.
+    """
+    head = head_audit(repo)
+    if head is None:
+        return ({cls: HeadDelta(list(got[cls]), [], []) for cls in ADJUDICATED},
+                got)
+    deltas = {cls: delta_of(got[cls], head[cls], lambda r: r)
+              for cls in ADJUDICATED}
+    judged = dict(got)
+    for cls in ADJUDICATED:
+        judged[cls] = deltas[cls].head
+    # ⚠ A FLOOR is a pin too, and Issue 797 measured this exact class on one:
+    # another session's uncommitted deletion took a citation population from
+    # 607 to 601, and a floor re-pinned from such a run bakes an in-flight edit
+    # into a tracked file. `n_files` is the population behind `min_files`, so
+    # it is HEAD's count that the floor adjudicates.
+    judged["n_files"] = head["n_files"]
+    return deltas, judged
 
 
 def pin_flags(got: dict, row: dict[str, int]) -> list[str]:
@@ -435,6 +579,193 @@ def selftest() -> list[str]:
             fails.append(f"verdict: a blind history walk must name itself: {blind}")
         if not (grew and "historical collisions" in grew[0]):
             fails.append(f"verdict: a new collision must name itself: {grew}")
+    return fails + adjudicate_arms()
+
+
+def adjudicate_cases() -> list[str]:
+    """`head_audit` / `adjudicate` end to end against REAL git — Issue 822 T5h.
+
+    In `selftest` and behind no flag: this sweep has no `--canary`, and an arm
+    that only runs when somebody types a flag runs on no invocation anybody
+    makes (Issue 789's finding, measured on eight arms that had landed the day
+    before). They cost ~1s.
+
+    Stubbing git here would assert an abstraction and leave the production path
+    free to disagree with it — which is the defect this file's own
+    `pin_flags` extraction exists to avoid, one seam over. Every arm drives a
+    real repository through a real commit.
+    """
+    import tempfile
+
+    fails: list[str] = []
+
+    def git(root, *args):
+        subprocess.run(("git", "-C", str(root)) + args,
+                       capture_output=True, check=True)
+
+    def fixture(td: str):
+        repo = Path(td) / "r"
+        (repo / ".issues").mkdir(parents=True)
+        (repo / ".issues" / "001_a.md").write_text("x", encoding="utf-8")
+        (repo / ".issues" / ng.HIGHWATER).write_text("1\n", encoding="utf-8")
+        git(repo.parent, "init", "-q", "r")
+        git(repo, "config", "user.email", "arm@example.invalid")
+        git(repo, "config", "user.name", "arm")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        return repo
+
+    def run(repo):
+        got = audit(repo)
+        return (got,) + adjudicate(repo, got)
+
+    # a. A STAGED second holder is tracked, so the worktree reports a duplicate
+    #    — and no commit contains it. This is the whole issue: without the
+    #    split, `max_dup = 0` reds on another session's in-flight `git add`.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".issues" / "001_b.md").write_text("y", encoding="utf-8")
+        git(repo, "add", ".issues/001_b.md")
+        got, deltas, judged = run(repo)
+        if len(got["dup"]) != 1:
+            fails.append(f"arm a: the fixture is INERT — a staged second "
+                         f"holder must be a worktree duplicate ({got['dup']})")
+        if len(deltas["dup"].uncommitted) != 1 or judged["dup"]:
+            fails.append(f"adjudicate: a STAGED-only duplicate reached the "
+                         f"ceiling ({judged['dup']}) instead of UNCOMMITTED "
+                         f"({deltas['dup'].uncommitted})")
+
+    # b. The silent direction: a COMMITTED duplicate that an uncommitted
+    #    deletion hides. The worktree says clean and the pin must still red.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".issues" / "001_b.md").write_text("y", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "dup")
+        (repo / ".issues" / "001_b.md").unlink()
+        got, deltas, judged = run(repo)
+        if got["dup"]:
+            fails.append(f"arm b: the fixture is INERT — the worktree must "
+                         f"read clean ({got['dup']})")
+        if len(deltas["dup"].masked) != 1 or len(judged["dup"]) != 1:
+            fails.append(f"adjudicate: a COMMITTED duplicate hidden by this "
+                         f"worktree was not MASKED ({deltas['dup']}) — a "
+                         f"committed collision reported clean is the silent "
+                         f"direction, and `.head` is what the pin reads")
+
+    # c. ⛔ The UNTRACKED half, which `markdown_fence` had to split by hand.
+    #    An untracked numbered file is in `git status --porcelain
+    #    --untracked-files=no` NOWHERE, so a dirty-set-scoped instrument cannot
+    #    see it — and it still pushes `max` above `.highwater`. Running the
+    #    HEAD pass unconditionally is what closes it: HEAD's listing simply has
+    #    no such file.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".issues" / "009_wip.md").write_text("z", encoding="utf-8")
+        got, deltas, judged = run(repo)
+        if len(got["above"]) != 1:
+            fails.append(f"arm c: the fixture is INERT — an untracked 009 "
+                         f"above .highwater 1 must be a worktree stale-"
+                         f"allocator row ({got['above']})")
+        if judged["above"] or len(deltas["above"].uncommitted) != 1:
+            fails.append(f"adjudicate: an UNTRACKED file's stale-allocator "
+                         f"row reached the ceiling ({judged['above']}) — a "
+                         f"finding on a file `git log` cannot see, counted "
+                         f"against a pin, is this issue's whole subject")
+
+    # d. `.highwater` in BOTH directions, because it is one small file whose
+    #    bytes decide two classes and every session edits it.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".issues" / ng.HIGHWATER).write_text("-n 5\n", encoding="utf-8")
+        got, deltas, judged = run(repo)
+        if len(got["malformed"]) != 1 or judged["malformed"]:
+            fails.append(f"adjudicate: an uncommitted malformed allocator "
+                         f"reached the ceiling ({judged['malformed']})")
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".issues" / ng.HIGHWATER).write_text("-n 5\n", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "bad hw")
+        (repo / ".issues" / ng.HIGHWATER).write_text("5\n", encoding="utf-8")
+        got, deltas, judged = run(repo)
+        if got["malformed"] or len(judged["malformed"]) != 1:
+            fails.append(f"adjudicate: a COMMITTED malformed allocator that "
+                         f"this worktree repairs must stay on the ceiling "
+                         f"({judged['malformed']}) — the repair is not landed "
+                         f"until it is committed (Issue 798)")
+
+    # e. A FLOOR is a pin too (Issue 797's measured case was a population, not
+    #    a finding): `min_files` adjudicates HEAD's count, never the worktree's.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".issues" / "002_new.md").write_text("q", encoding="utf-8")
+        git(repo, "add", "-A")
+        got, deltas, judged = run(repo)
+        if got["n_files"] != 2 or judged["n_files"] != 1:
+            fails.append(f"adjudicate: the population floor read the worktree "
+                         f"({got['n_files']}) instead of HEAD "
+                         f"({judged['n_files']}) — a floor re-pinned from such "
+                         f"a run bakes another session's edit into a tracked "
+                         f"file")
+
+    # f. DIRECT children only, because `scan` iterates `iterdir()`: a nested
+    #    artifact contributes the DIRECTORY entry, never its leaf. Without
+    #    this the two sides disagree about what a document even is.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td)
+        (repo / ".benchmarks" / "806_x").mkdir(parents=True)
+        (repo / ".benchmarks" / "806_x" / "007_fig.md").write_text(
+            "f", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "nested")
+        listing = head_listing(repo)
+        if listing is None or listing[".benchmarks"] != ["806_x"]:
+            fails.append(f"head_listing: a nested path must contribute its "
+                         f"DIRECTORY entry and not its leaf: {listing}")
+
+    # g. Not a repository -> every row COMMITTED, never a fabricated empty
+    #    HEAD, which would report the whole repo as UNCOMMITTED and silence
+    #    every ceiling in it.
+    with tempfile.TemporaryDirectory() as td:
+        plain = Path(td) / "plain"
+        (plain / ".issues").mkdir(parents=True)
+        (plain / ".issues" / "001_a.md").write_text("x", encoding="utf-8")
+        if head_audit(plain) is not None:
+            fails.append("head_audit: a non-repository produced a HEAD view")
+        got = {"dup": ["r"], "above": [], "malformed": [], "n_files": 1}
+        deltas, judged = adjudicate(plain, got)
+        if judged["dup"] != ["r"] or deltas["dup"].uncommitted:
+            fails.append(f"adjudicate: a repo with no HEAD must leave every "
+                         f"row COMMITTED ({deltas['dup']})")
+
+    return fails
+
+
+def adjudicate_arms() -> list[str]:
+    """The cases above, plus the STUB PROBE that proves they sit on the seam.
+
+    ⛔ Aimed at `delta_of` — the helper `adjudicate` ACTUALLY calls — because
+    two of this family's first three probes reported a false all-clear by
+    being aimed at a function the target never invokes. A `delta_of` that
+    files everything as COMMITTED is exactly the regression the wiring exists
+    to prevent, and the cases above must red on it.
+
+    ⚠ `n_files` is deliberately not counted here: it comes from `head_audit`
+    and never passes through `delta_of`, so an arm that expected the probe to
+    red it would be asserting the stub rather than the seam.
+    """
+    fails = adjudicate_cases()
+    real = globals()["delta_of"]
+    globals()["delta_of"] = lambda wt, hd, key: HeadDelta(list(wt), [], [])
+    try:
+        probed = adjudicate_cases()
+    finally:
+        globals()["delta_of"] = real
+    if len(probed) < 4:
+        fails.append(f"STUB PROBE: a `delta_of` that files every row as "
+                     f"COMMITTED red only {len(probed)} of the provenance "
+                     f"arms — they are not sitting under the seam")
     return fails
 
 
@@ -478,9 +809,17 @@ def main() -> int:
     seen = {p.name for p in repos}
     bad = False
     tot_dup = tot_above = tot_mal = tot_reset = tot_unb = tot_hist = 0
+    tot_uncommitted = tot_masked = 0
 
     for repo in repos:
         got = audit(repo)
+        # Issue 822 — the DISPLAY reads the worktree (it is what the files say
+        # today, and hiding that would be its own lie); every CEILING and the
+        # `min_files` FLOOR read what a commit of this checkout would produce.
+        deltas, judged = adjudicate(repo, got)
+        held = {r for d in deltas.values() for r in d.uncommitted}
+        tot_uncommitted += sum(len(d.uncommitted) for d in deltas.values())
+        tot_masked += sum(len(d.masked) for d in deltas.values())
         row = pins.get(repo.name)
         tot_hist += len(got["hist"])
         tot_dup += len(got["dup"])
@@ -496,16 +835,26 @@ def main() -> int:
             flags = ([] if pin_row_exempt(repo.name)
                      else ["UNPINNED — add a row (or it can never red)"])
         else:
-            flags = pin_flags(got, row)
+            flags = pin_flags(judged, row)
         # unbumped is REPORT-ONLY (Issue 770 finding 4): a checkout-state
         # quantity is a function of which branch the box carries — printed
         # like the citation sweep's undecided rows, never pinned, never red.
         status = "✗" if flags else ("·" if (got["dup"] or got["above"] or got["malformed"]
                                     or got["resets"] or got["unbumped"]) else "✓")
+        n_masked = sum(len(d.masked) for d in deltas.values())
+        split = ""
+        if held or n_masked:
+            split = (f" [{len(held)} uncommitted"
+                     + (f", {n_masked} MASKED" if n_masked else "") + "]")
+        if judged["n_files"] != got["n_files"]:
+            split += f" [files at HEAD={judged['n_files']}]"
         print(f"{status} {repo.name:22s} files={got['n_files']:<5d} nums={got['n_numbers']:<5d} "
               f"dup={len(got['dup'])} hist={len(got['hist'])} "
               f"stale={len(got['above'])} malformed={len(got['malformed'])} "
-              f"resets={len(got['resets'])} unbumped={len(got['unbumped'])}")
+              f"resets={len(got['resets'])} unbumped={len(got['unbumped'])}{split}")
+
+        def mark(r: str) -> str:
+            return " [UNCOMMITTED — not adjudicated]" if r in held else ""
         # ⚠ hist rows are printed only when the pin BREACHES, or on demand via
         # --hist-rows. The standing backlog is 183 rows workspace-wide and
         # dumping it every run is how a sweep stops being read (the cries-wolf
@@ -515,11 +864,18 @@ def main() -> int:
             for r in got["hist"]:
                 print(f"      historical: {r}")
         for r in got["malformed"]:
-            print(f"      malformed:  {r}")
+            print(f"      malformed:  {r}{mark(r)}")
         for r in got["above"]:
-            print(f"      stale:      {r}")
+            print(f"      stale:      {r}{mark(r)}")
         for r in got["dup"]:
-            print(f"      duplicate:  {r}")
+            print(f"      duplicate:  {r}{mark(r)}")
+        # A MASKED row is NOT in the worktree buckets — that is what MASKED
+        # means — so it prints from the HEAD side or it prints nowhere, and a
+        # ceiling reds over a row nobody can see.
+        for cls in ADJUDICATED:
+            for r in deltas[cls].masked:
+                print(f"      ⛔ {cls:<10s} {r}  [MASKED — committed, hidden "
+                      f"by this worktree]")
         for r in got["resets"]:
             print(f"      reset:      {r}")
         for r in got["unbumped"]:
@@ -566,9 +922,17 @@ def main() -> int:
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — the numbered directories + the HISTORY headings the oracle reads.
+    # ⛔ This call carried a hand-typed FIFTH copy of the population —
+    # `(".issues/*", ".plans/*", ".docs/*", ".research/*", ".proposals/*",
+    # "HISTORY.md")` — and it disagreed with the classifier in both directions:
+    # `.benchmarks/*` was MISSING (it is in ALL_DIRS, and its `.highwater`
+    # feeds `malformed` and `resets`), while `HISTORY.md` is read by NOTHING
+    # here — the history classes come from `git log`, not from that document.
+    # T5g measured the same shape one sweep over; `SCOPE` is why there is no
+    # sixth copy.
     deferred.extend(sweep_advisory(
-        seen, (".issues/*", ".plans/*", ".docs/*", ".research/*",
-     ".proposals/*", "HISTORY.md"), root=WORKSPACE))
+        seen, SCOPE, root=WORKSPACE,
+        uncommitted_rows=tot_uncommitted, masked_rows=tot_masked))
     for _line in pop_lines:
         print(_line)
     if pop_fail:

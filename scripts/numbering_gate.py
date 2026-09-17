@@ -86,9 +86,26 @@ def read_highwater(d: Path) -> tuple[int | None, str | None]:
     check for its directory.
     """
     f = d / HIGHWATER
-    if not f.is_file():
+    return parse_highwater(f.read_text(errors="replace")
+                           if f.is_file() else None)
+
+
+def parse_highwater(raw: str | None) -> tuple[int | None, str | None]:
+    """`read_highwater`'s rule over TEXT — Issue 822 T5h.
+
+    ABSENT is `None` text, not empty text: `git show HEAD:<dir>/.highwater`
+    answers `None` for a file HEAD does not carry and `""` for one it carries
+    empty, and those are different verdicts here (legal vs MALFORMED). A caller
+    that pooled them would report a directory that never had an allocator as a
+    disarmed one, and the reverse.
+
+    Extracted so a HEAD-side re-classification reads the SAME rule rather than
+    a second copy of it (Issue 755) — the `read_highwater` docstring above is
+    the whole warrant for why this parse is subtle enough to matter.
+    """
+    if raw is None:
         return None, None
-    raw = f.read_text(errors="replace").strip()
+    raw = raw.strip()
     try:
         return int(raw), None
     except ValueError:
@@ -98,21 +115,36 @@ def read_highwater(d: Path) -> tuple[int | None, str | None]:
 def scan(repo: Path, dirname: str, tracked: set[str]):
     """-> (numbers -> [(name, is_tracked)], highwater, n_files, malformed_raw)."""
     d = repo / dirname
-    by_num: dict[int, list[tuple[str, bool]]] = {}
     if not d.is_dir():
-        return by_num, None, 0, None
+        return {}, None, 0, None
+    by_num, n = group_numbered((e.name for e in d.iterdir()), dirname, tracked)
+    hw, hw_bad = read_highwater(d)
+    return by_num, hw, n, hw_bad
+
+
+def group_numbered(names, dirname: str, tracked: set[str]):
+    """-> (numbers -> [(name, is_tracked)], n_numbered). PURE over a LISTING.
+
+    Issue 822 T5h. `scan` above takes its listing from the filesystem, and the
+    HEAD side of a provenance split has no filesystem to take it from — a
+    committed listing is `git ls-tree`, which is 0.05s against the ~30s a
+    materialised tree costs (measured on riir-ai, 1601 paths). Splitting the
+    rule out is what lets both sides run it instead of one side re-deriving it.
+
+    The subtlety being shared, and it is the reason this is not re-typed at the
+    call site: `int()`, never the literal prefix — `075` and `75` are the same
+    "Plan 75" to every citation in the corpus, so they must collide here too.
+    """
+    by_num: dict[int, list[tuple[str, bool]]] = {}
     n = 0
-    for entry in sorted(d.iterdir()):
-        m = NUMBERED.match(entry.name)
+    for name in sorted(names):
+        m = NUMBERED.match(name)
         if not m:
             continue
         n += 1
-        rel = f"{dirname}/{entry.name}"
-        # int(), not the literal prefix: `075` and `75` are the same "Plan 75"
-        # to every citation in the corpus, so they must collide here too.
-        by_num.setdefault(int(m.group(1)), []).append((entry.name, rel in tracked))
-    hw, hw_bad = read_highwater(d)
-    return by_num, hw, n, hw_bad
+        by_num.setdefault(int(m.group(1)), []).append(
+            (name, f"{dirname}/{name}" in tracked))
+    return by_num, n
 
 
 def unmeasurable(repo: Path) -> str | None:
