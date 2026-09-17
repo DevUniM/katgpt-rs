@@ -61,6 +61,14 @@ pub fn simd_argmax_f32(x: &[f32]) -> (usize, f32) {
 /// maximum pays two full scans (`late_peak` k=1 lost ~0.9× in the argtopk
 /// k=1 rows). That loss is ACCEPTED: fixing it costs more everywhere else
 /// (Bench 811).
+///
+/// Gated to exactly the platforms the dispatch arm above serves (x86_64 and
+/// the generic non-SIMD triples) — on aarch64 / wasm32+simd128 the NEON and
+/// wasm kernels own the dispatch, and an ungated copy here is dead code there.
+#[cfg(not(any(
+    target_arch = "aarch64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+)))]
 #[inline]
 fn two_pass_argmax_f32(x: &[f32]) -> (usize, f32) {
     let max_val = simd_max_f32(x);
