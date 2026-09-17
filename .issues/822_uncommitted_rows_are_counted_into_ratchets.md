@@ -98,6 +98,26 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       - `citation_drift_sweep` is the one sweep WITH the row-level split, and
         it is the one whose rows are **documents** rather than source files.
         The class was measured there first and bites hardest everywhere else.
+
+      ⛔ **This column answers "where does the row POINT?", NOT "is the
+      classifier per-file?" — and the second is what picks the instrument.**
+      Added 2026-09-17 after the T5b table inherited the confusion and put two
+      sweeps in the wrong bucket. They are independent properties:
+
+      | sweep | row address | classifier scope | instrument |
+      |---|---|---|---|
+      | `toolchain_override` | file + line | **repo** — every occurrence judged against the root `rust-toolchain.toml` | NOT the shortcut |
+      | `platform_dead_code` | item | **unit** — a dirty file moves its siblings' verdicts | `head_overlay` + `delta_of` |
+
+      A file+line address says nothing about whether a dirty file can change
+      another file's verdict, and only the latter decides whether the per-file
+      `head_delta` shortcut is sound — the shortcut **invents rows** where it
+      isn't. I derived this column from the SHAPE OF THE PIN COMPARISON
+      (`len(x) > row["max_*"]`), which is a cheap static read and cannot see
+      classifier scope at all. katgpt-rs-fa found both errors the only way they
+      are findable: by **reading each classifier**. Treat the column above as a
+      starting hypothesis for *which sweeps are exposed*, and never as the
+      instrument choice.
 - [x] **T2 — LANDED 2026-09-17. `worktree_state.head_delta()`, and the
       affordability question was the wrong shape.** The hoped-for answer was
       the right one: only the FINDING paths need re-reading, and not even all
