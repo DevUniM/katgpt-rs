@@ -89,7 +89,7 @@
 min_repos = 15
 
 #                        cites  cross  in_local_range  orphan
-katgpt-rs                  84      0               0       0
+katgpt-rs                  84      0               1       0  # 2026-09-18 (Issue 830 housekeeping): 0 -> 1, and it is the MEASURED PRICE of Issue 828 T4's answer, not a diary entry. Archiving Issues 823/828 under the noise-reduction rule moved three quoted heading SPECIMENS from `.issues/` (out of this sweep's scope by design) into HISTORY.md (in scope). Two were cleared by AGENTS.md's prescribed window repair - name the owner in the citation's 3-line BACKWARD window, which is where it has to sit. The third cannot be: it quotes riir-clippy's `## Issue 097 resolved - ...`, and `is_qualified` requires the named repo to OWN the number, while that record is precisely one of the TWO the heading oracle declines workspace-wide (Issue 828 T4's `novel` pair - a number no oracle knows). So no prose can qualify it, and the row is the cost of the widening this repo measured and refused, visible at a second place. It grows only if another such specimen is archived; try the window repair FIRST every time.
 katgpt-web                  3      0               0       0
 riir-ai                   305      0               6       0
 riir-auth                   8      0               0       0

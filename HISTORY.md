@@ -115,8 +115,8 @@ by the old one, and T2 pins that in both delimiters.
 - `_SELF_HEADING_DASH`: the same discriminator, either position (the date
   prefix is optional), delimiter = `—`/`–`, or an ASCII `-` **that is
   space-separated on both sides**.
-  - ⛔ The ASCII hyphen must NOT be accepted bare: `## Issue 366-class
-    (pos-uniform chunk forward) FIXED in riir-gpu` is a live riir-ai heading
+  - ⛔ The ASCII hyphen must NOT be accepted bare: riir-ai ships the live
+    heading `## Issue 366-class (pos-uniform chunk forward) FIXED in riir-gpu`,
     where the hyphen is part of a WORD. The `\s+…-(?=\s)` shape rejects it and
     an arm pins the case.
 - `_SELF_HEADING_DATED` gains `(` — the leading form always accepted it, and
@@ -245,8 +245,8 @@ nothing may sit between the number and its delimiter, so `## Issue 043
 follow-up (…)` is rejected while `## Issue 043 (…)` is read. That rule is
 about the text **after** the number. It had been anchored, silently and
 incidentally, to the kind **leading the heading**. Six repos write the date
-first (`## 2026-09-16 — Issue 113: the auto-oracle`), and the whole family was
-unreadable.
+first — riir-clippy's `## 2026-09-16 — Issue 113: the auto-oracle` — and the
+whole family was unreadable.
 
 Consequence chain, measured end to end on a live specimen: riir-clippy's
 Issue 113 exists in **no** `.issues/` file and **no** `git log` deletion — the

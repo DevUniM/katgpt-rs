@@ -157,6 +157,27 @@ COMMITTED in the sibling repo*):
 rows likewise. A floor that did not move would mean the new forms found
 nothing.
 
+## T6 — the sibling seam does NOT carry the same anchor (a measured negative)
+
+The obvious next move after T3 is to assume the PIPE seam (Issue 778) is
+anchored the same way and go widen it. **It is not**, and the probe was run
+before the assumption was acted on:
+
+* `universal_newlines=True` — `text=True`'s legacy alias with identical
+  semantics — is **already** in `subprocess_encoding_gate.scan_text`, with its
+  own positive arm. Whoever wrote that gate did not anchor to one spelling.
+* `os.popen()` is always text at the locale codec and has no `encoding=`
+  parameter at all, so it IS in the class and is outside the gate's
+  `subprocess` predicate. Measured: **0 sites over 16 repos**. It is not added,
+  because the remedy is not mechanical — there is no keyword to insert, the
+  repair is "use `subprocess`" — and a wall with no load, no repair path and no
+  measured risk is documentation pretending to be a gate.
+
+Recorded because *"the rule landed in one instrument and never generalised"* is
+this repo's most-repeated finding, and the reflex it breeds is to generalise
+without re-measuring. Here the answer was no, and finding that out cost one
+probe.
+
 ## What this issue does NOT claim
 
 - That the FILE seam is now closed. `codecs.open` and `io.TextIOWrapper` are
