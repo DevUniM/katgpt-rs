@@ -560,6 +560,17 @@ floors are not interchangeable and neither is redundant — `min_calls` is **0
 in 10 of 16 repos**, because they have `.py` files and no `subprocess` at all,
 so in exactly those repos `min_py_files` is the only blindness detector there
 is),
+`locale_io_drift_sweep.py` (every contract repo, on demand — the Issue 829
+verdict half of `locale_io_gate.py`, landed in the SAME change as its gate
+because shipping one half is the failure this document records nine times.
+Ceiling a RATCHET on the derivative rather than a wall, on a measurement: 118
+of the 273 sites were in seven repos the filing session did not own, and
+ratcheting a bucket nobody has read is Issue 785's forbidden shape. All 118
+were then read and repaired, each row carrying its sibling SHA — but the file
+stays a ratchet, because the next repo to join arrives with whatever it has
+and a wall would make that somebody's emergency. ⚑ Its head-provenance wiring
+earned its keep on its first run, reporting **128 MASKED rows** — committed
+defects an uncommitted repair was hiding — instead of a clean sweep),
 `console_encoding_drift_sweep.py` (every contract repo, on demand — the
 Issue 804 verdict half of `console_encoding_gate.py`, and the **tenth**
 instance of the never-generalised shape. Its issue wrote the cross-repo axis

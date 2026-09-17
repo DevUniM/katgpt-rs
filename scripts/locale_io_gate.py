@@ -360,9 +360,22 @@ def main(argv: list[str]) -> int:
 
     args = [a for a in argv[1:] if not a.startswith("--")]
     repo = Path(args[0]).resolve() if args else REPO_ROOT
+    # A named sibling is a REPORT, not a verdict: the floors above are THIS
+    # repo's measured population, and applying them to a repo with three
+    # Python files reports a `parse FLOOR breached` that is true of the pin
+    # and false of the tree. Per-repo floors are the SWEEP's
+    # (`locale_io_drift_floors.txt`); here they would be a claim about
+    # somebody else's tree made from this one's numbers.
+    foreign = repo != REPO_ROOT
     exempt, bad = read_expected()
     offenders, py_files, calls, unparsed = scan(repo)
-    problems = bad + verdict(offenders, py_files, calls, unparsed, exempt)
+    if foreign:
+        exempt, bad = set(), []
+        problems = [p for p in verdict(offenders, py_files, calls, unparsed,
+                                       exempt)
+                    if "FLOOR breached" not in p]
+    else:
+        problems = bad + verdict(offenders, py_files, calls, unparsed, exempt)
 
     for rel in sorted(offenders):
         if rel in exempt:
@@ -383,6 +396,13 @@ def main(argv: list[str]) -> int:
               "wrong reason. See Issue 829.")
         return 1
 
+    if foreign:
+        print(f"✓ locale-io REPORT — 0 locale-dependent text-I/O call(s), 0 "
+              f"unparsed over {py_files} tracked .py file(s) / {calls} "
+              f"text-I/O call site(s) in {repo.name}. Floors and exemptions "
+              f"are katgpt-rs's and are NOT applied here — the per-repo pins "
+              f"live in locale_io_drift_floors.txt.")
+        return 0
     print(f"✓ locale-io gate PASSED — 0 locale-dependent text-I/O call(s), "
           f"0 unparsed, {len(exempt)} exemption(s) over {py_files} tracked .py "
           f"file(s) (floor {FLOOR_PY_FILES}) / {calls} text-I/O call site(s) "
