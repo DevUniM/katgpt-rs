@@ -46,6 +46,64 @@ fn argmax_empty_slice() {
     assert_eq!(simd_argmax_f32(&[]), (0, f32::NEG_INFINITY));
 }
 
+/// Issue 817: the AVX2 single-pass kernel must match the two-pass reference
+/// at its OWN tail boundaries (len % 8) and at cross-lane-tie scale — the
+/// inherited sweep stops at 130, which exercises every NEON width but only
+/// the first 16 AVX2 chunk boundaries.
+#[test]
+fn argmax_matches_two_pass_at_simd8_tail_boundaries() {
+    fn naive(x: &[f32]) -> (usize, f32) {
+        let m = simd_max_f32(x);
+        (x.iter().position(|&v| v == m).unwrap_or(0), m)
+    }
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut rng = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    // Every AVX2 boundary ± 1, the 8-lane tie zone, and one large length.
+    for len in [7, 8, 9, 15, 16, 17, 63, 64, 65, 255, 256, 257, 511, 512, 1023, 4095, 4096]
+    {
+        // mod 5 values: frequent duplicates → cross-lane ties are common.
+        let v: Vec<f32> = (0..len).map(|_| (rng() % 5) as f32).collect();
+        assert_eq!(simd_argmax_f32(&v), naive(&v), "len={len}");
+    }
+    // Max in the scalar tail of an 8-wide body (len % 8 in 1..7, max last).
+    for tail in 1..8usize {
+        let len = 40 + tail;
+        let mut v = vec![1.0f32; len];
+        v[len - 1] = 9.0; // strictly last element is the max
+        assert_eq!(simd_argmax_f32(&v), (len - 1, 9.0), "tail={tail}");
+    }
+}
+
+/// Issue 817: NaN inputs are OUT OF CONTRACT for this primitive — attention
+/// scores are sigmoid outputs (finite by construction), and the INCUMBENT is
+/// already platform-inconsistent on NaN: the scalar fold is sticky-poison
+/// (`v > NaN` is false forever after), `avx2_max_f32`'s `_mm256_max_ps` HEALS
+/// (SRC2 replacement), NEON's `vmaxq_f32` heals, and the new kernel is
+/// lane-sticky. Asserting any semantic here would pin an accident. This test
+/// pins only what every platform must guarantee: no panic, no UB, and a
+/// valid in-range index.
+#[test]
+fn argmax_nan_input_stays_defined_and_in_range() {
+    let nan = f32::NAN;
+    let cases: Vec<Vec<f32>> = vec![
+        vec![nan, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, nan, 9.0],
+        vec![1.0, nan, 3.0, nan, 9.0, nan, 7.0, 8.0, 2.0, 5.0],
+        vec![nan, nan, nan, nan, nan, nan, nan, nan, nan, nan],
+        vec![nan],
+        vec![1.0, nan],
+    ];
+    for c in &cases {
+        let (idx, _val) = simd_argmax_f32(c);
+        assert!(idx < c.len(), "index {idx} out of range for {c:?}");
+    }
+}
+
 #[test]
 fn simd_level_matches_platform() {
     let level = simd_level();

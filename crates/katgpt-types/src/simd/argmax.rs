@@ -34,15 +34,38 @@ pub fn simd_argmax_f32(x: &[f32]) -> (usize, f32) {
         all(target_arch = "wasm32", target_feature = "simd128")
     )))]
     {
-        // Non-NEON/non-WASM-SIMD128: a scalar index-tracking loop does not
-        // auto-vectorize and measured *slower* than the existing SIMD-max +
-        // position idiom at large vocab, so reuse that two-pass path here (no
-        // regression). An AVX2 kernel mirroring the NEON one could replace this
-        // once it can be verified on x86.
-        let max_val = simd_max_f32(x);
-        let idx = x.iter().position(|&v| v == max_val).unwrap_or(0);
-        (idx, max_val)
+        two_pass_argmax_f32(x)
     }
+}
+
+/// The x86_64 (and generic non-SIMD) path: `simd_max_f32` reduce +
+/// `position(== max)`. Provenance: a scalar index-tracking loop does not
+/// auto-vectorize and measured SLOWER than this two-pass idiom at large
+/// vocab, so the two-pass is the incumbent — and it survived a second
+/// challenger on measured evidence. Issue 817 ported the NEON single-pass
+/// (8 lanes tracking (max, index), blend-on-strict-gt) and the dispatch A/B
+/// measured it a net LOSS on this box: the two-pass wins `iid` 2.8–3.5× and
+/// `early` 3–4.7× at n ≥ 256 (ILP'd `max_ps` reduce + a vectorized
+/// early-exiting `position` beat a latency-bound cmp/blend chain), while the
+/// kernel only wins when the maximum sits in the last few percent of the
+/// scan (1.5–1.9×) and at n=64 (fixed-overhead, ~20 ns). Both profile arms,
+/// tight round bands:
+/// [Bench 811](../../.benchmarks/812_argmax_avx2_single_pass_goat.md).
+/// Demote-on-loss applied; the dispatch was reverted the same day. Reopen
+/// trigger: re-run `tests/bench_817_argmax_dispatch_ab.rs` after a major
+/// toolchain/CPU change — if the two-pass absolute columns regress or the
+/// position-scan advantage disappears, re-try the port.
+///
+/// Cost note (measured, Bench 810): this path's cost depends on WHERE the
+/// maximum sits — the second pass rescans until it finds `max`, so a late
+/// maximum pays two full scans (`late_peak` k=1 lost ~0.9× in the argtopk
+/// k=1 rows). That loss is ACCEPTED: fixing it costs more everywhere else
+/// (Bench 811).
+#[inline]
+fn two_pass_argmax_f32(x: &[f32]) -> (usize, f32) {
+    let max_val = simd_max_f32(x);
+    let idx = x.iter().position(|&v| v == max_val).unwrap_or(0);
+    (idx, max_val)
 }
 
 /// NEON single-pass argmax: tracks 4 lanes of (max value, index) simultaneously.

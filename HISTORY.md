@@ -11,6 +11,25 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 808 T4 LANDED (2026-09-17) — `argtopk` AVX2 dispatch re-measured on six realistic block-score distributions + per-k `N_MIN` crossover (Bench 810); Issue 817 single-pass AVX2 `argmax` port measured NEGATIVE + reverted (Bench 812)
+
+Two units on the 4090 box, one evidence-gathering, one a same-day negative. **Bench 810** (Issue 808's option-4 half + T2's
+Raptor-Lake row): the recorded "AVX2 `argtopk` k≤16 is a measured loss" table was measured on ONE i.i.d. fixture — the re-measure across six
+realistic block-score distributions (iid / gauss-sigmoid / locality / early-peak / late-peak / bimodal-sparse) × both profile arms (default
+release; `+avx2`) found the loss SURVIVES every distribution except `early_peak` and DEEPENS on `late_peak` (0.41–0.72× below n=512,
+still 0.90–0.95× at n=1024 — **no n-floor rescues k=8 there**); k≤4 is the distribution-robust carve-out (win or tie past n=64–128, up to
+3.9×); and `N_MIN` is distribution-sensitive (k=8: 256 on `locality`, 768 on `iid_uniform`, >1024 on `late_peak`) — so the eventual T2 gate
+needs the distribution axis, not one n per k. Instrument: the shared Issue-723 interleaved median-of-ratios (`tests/common/ab_timing.rs`),
+new tests `bench_simd_topk_issue808_{distribution_matrix,crossover_nmin}` in `tests/bench_256_simd_topk.rs`. T1 stays the owner's call;
+T2's ≥2-microarchitecture bar is 1 of 2 met. **Bench 811** (Issue 817, filed+closed same day): the same matrix's k=1 rows exposed the
+x86_64 `simd_argmax_f32` two-pass cost depending on WHERE the maximum sits (`position(== max)` rescans), and `argmax.rs` carried a standing
+offer to port the NEON single-pass kernel to AVX2. The port was built (8-lane (max,index) tracking, blend-on-strict-gt, correctness green on
+known-answer + tie + AVX2-tail + NaN-pin tests) and measured a NET LOSS on this box: `iid` 0.24–0.28× and `early` 0.20–0.23× at n ≥ 256 on
+both profiles (the two-pass's ILP'd `max_ps` reduce + vectorized early-exiting `position` beat the latency-bound cmp/blend chain); it only
+won `late` (1.5–1.9×) and n=64 (fixed overhead). Demote-on-loss applied: dispatch reverted same day, kernel deleted, two-pass doc comment
+carries the numbers + reopen trigger, the `bench_817_argmax_dispatch_ab.rs` harness KEPT as the reopen instrument (now reads ~1.00 — both
+arms the same code), and the new equivalence tests kept (cross-platform guards). The NEON single-pass premise does not transfer to x86_64.
+
 ## Issue 811 CLOSED (2026-09-17) — DBTM confidence-commit anchor rule: PoC PASS → Plan 600 landed end-to-end, promotion EXECUTED via Plan 601
 
 The full arc, PoC to production: [`.research/563_DBTM_Discrete_Beckmann_One_Step_Language.md`](.research/563_DBTM_Discrete_Beckmann_One_Step_Language.md)
