@@ -1,8 +1,10 @@
 # Issue 819: Sigmoid prior-logit lane + sink stability forecast (Research 566, arXiv:2601.15380)
 
-**Status:** Open — modelless poc/proof task; GOAT gate decides promote (feature-gated throughout)
+**Status:** Resolved 2026-09-17 — T1–T3 + T5 LANDED (Bench 813 G1–G4 ALL PASS); both features opt-in (no-default-consumer rule); T4 owner-gated, closed unclaimed
 
 **Source:** [Research 566](../.research/566_EOT_Attention_Prior_Logit_Sigmoid_Analog.md) — "You Need Better Attention Priors" (arXiv:2601.15380, ICML 2026) + the note's sigmoid-EOT derivation (no published prior art; verified 2026-09-17).
+
+**Landing record:** [Bench 813](../.benchmarks/813_prior_lane_margin_goat.md) — lane ratio 1.004× (≤1.10 gate), forecast 1.3 ns, 0 allocs, 14 new tests, feature-off builds bit-identical (2063 default-lib green). Honest deviations (lane home = ParallaxConfig multi-key, not SigmoidFusionConfig single-key; total-logit margin estimator; no scratch extension needed) recorded there.
 
 **Why:** Two actionable, zero-training extractions land on shipped substrate:
 
@@ -13,11 +15,11 @@ Modelless throughout: closed forms + measured logits; no training, no weight mut
 
 ## Tasks
 
-- [ ] **T1 — Margin + forecast on the sink classifier.** Extend `SinkDiagnostic` (feature-gated, e.g. `sink_margin_forecast`) with `margin: Option<f32>` (prior-logit margin for the sink lane proxy: measured sink-key logit minus context logit centroid, or content-score range ω when no structural lane exists — define and document the estimator) + `forecast_stable_positions(delta: f32) -> f32` returning `e^δ`. Zero-alloc, scratch extends `StableRankScratch` convention. G1: forecast agrees with brute-force sensitivity sims on toy margins; G3: O(1) post-scan.
-- [ ] **T2 — Per-key prior-logit lane.** `SigmoidFusionConfig` gains `#[cfg(feature = "prior_logit_lane")] prior_logits: Option<&[f32]>` (or an owned SmallVec-style fixed cap) consumed as `gate = σ(ndot/τ + bias_or_lane)`; `None` = bit-identical constant path (extend the `logit_bias_zero_is_bit_identical_at_every_input` test pattern to the lane-off path). Mirrors in `sigmoid_fuse_scaled_into`. G1 + G5 bit-identity, G4 zero-alloc.
-- [ ] **T3 — Length-aware law + docs.** Module doc: the sigmoid margin law `‖Δo‖ ≤ ε·(L−1)·e^{ω−δ}` ⇒ δ ≳ ω + ln L, the uniform-prior linear-growth instability, and the constant-bias reading as maximum-entropy-style default prior. Test: planted-distractor toy where per-key lane beats constant bias in low-signal selectivity (G2).
-- [ ] **T4 (optional, training-track, gated behind T1–T3 + owner pull).** 0.4B Kimi-K3 test-arch arm: RoPE baseline vs +learnable spectral prior lanes vs +sink lane (paper's App-F parameterization; MLA's existing content+rope lane split is the structural slot). Axes: ppl + passkey/NIAH extrapolation, ~hours-class on the 4090. Graduates to a riir-train plan only on owner pull.
-- [ ] **T5 — Cross-refs.** Landing note in Research 566 §4 table (filed → landed), one-line pointers from Research 258 / 392 if not already present.
+- [x] **T1 — Margin + forecast on the sink classifier.** LANDED: `SinkDiagnostic.margin: Option<f32>` + `forecast_stable_positions(δ) = e^δ` behind `sink_margin_forecast`. Estimator = mean sink-column logit − mean context logit (exact closed form `δ̂ = (n·c̄_s − R̄)/(n−1)`), `[1e-6, 1−1e-6]` logit clamp, computed by the full-map scan paths only (single-column = `None`, no context). G1: planted-margin recovery (constant + query-varying) + brute-force sensitivity sims agree with the bound; G3: O(1) forecast (1.3 ns) + O(n²) pass in the col_sums class. NOTE: the scratch extension proved unnecessary — two scalar accumulators.
+- [x] **T2 — Per-key prior-logit lane.** LANDED behind `prior_logit_lane`: `ParallaxConfig::prior_logits: Option<Arc<[f32]>>` (multi-key host — the engram kernel is single-key where the lane degenerates to `logit_bias` assignment; deviation documented in Bench 813). `None` = bit-identical (lane-off branch is the literal pre-lane loop; zeros-lane also output-identical — tested). Mirrors at BOTH score sites (core + parallax-correction loop); prior enters AFTER SSMax (unscaled), BEFORE normalization. G1 + G5 bit-identity, G4 zero-alloc (lane-on == lane-off == 0). An `Option<&[f32]>` field was tried and REVERTED (E0392 unused lifetime when the field is cfg'd out in parallax-without-lane builds).
+- [x] **T3 — Length-aware law + docs.** LANDED: `parallax_attn` module docs (law `‖Δo‖ ≲ ε·(L−1)·e^{ω−δ}` ⇒ δ ≳ ω + ln L; uniform-prior linear-growth instability; constant-bias = max-ent default prior), `SigmoidFusionConfig::logit_bias` doc (constant-prior special case + per-call expression), `sink_classify` module docs (estimator). G2 test: planted-distractor — constant bias provably cancels to uniform (b ∈ {−4,−1,0,2} verified), per-key lane breaks the symmetry at the KL-prior closed form.
+- [-] **T4 (optional, training-track, gated behind T1–T3 + owner pull).** Deferred per the gate — no owner pull; no riir-train plan filed. The recipe sketch stands in Research 566 §6 (0.4B Kimi-K3 test-arch, RoPE baseline vs +spectral lanes vs +sink lane, ppl + passkey/NIAH axes, ~hours-class on the 4090).
+- [x] **T5 — Cross-refs.** Research 566 §4 table (filed → landed), Research 258/392 one-line pointers, issue status line.
 
 ## Non-goals
 

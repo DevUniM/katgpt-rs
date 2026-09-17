@@ -59,6 +59,41 @@
 //! This reduces outer products from O(N²) to O(N), bringing CPU overhead
 //! from ~50× down to ~2× over base SDPA.
 //!
+//! ## Per-key prior-logit lane + the length-aware margin law (Issue 819, Research 566)
+//!
+//! Attention is the closed-form solution of a KL-regularized transport problem
+//! against a prior π; the log-prior is the missing additive term in the
+//! transport cost (arXiv:2601.15380, GOAT). For the softmax arm the paper's
+//! form is `p* = softmax(s/τ + log π)`. Our default sigmoid arm solves the
+//! same KL(g‖π) regularizer over independent gates on the hypercube to the
+//! closed form `g* = σ(s + logit π)` — see Research 566 §2 for the derivation
+//! (no published precedent, verified 2026-09-17).
+//!
+//! [`ParallaxConfig::prior_logits`] (gated `prior_logit_lane`) injects the
+//! per-key log-prior `ℓ_j = logit π_j` additively into the pre-normalization
+//! scores: one f32 add per key, applied AFTER SSMax's length rescale and
+//! BEFORE normalization — the prior is not a content score and must not be
+//! rescaled by the length temperature, mirroring GOAT's pre-scaling trick that
+//! keeps prior lanes unscaled by the kernel temperature. `None` (the default)
+//! is the bit-identical constant path: the lane-off branch is the literal
+//! pre-lane code, and a lane table of all zeros is also output-identical (the
+//! `±0.0` score perturbation dies at `exp(±0) = 1` in both activations).
+//!
+//! **Stability law (sigmoid margin bound).** With content-score dynamic range
+//! ω and prior-logit margin δ = ℓ_sink − min_{k∈context} ℓ_k, every context
+//! gate obeys `g_k ≤ e^{ω−δ}`, so context-noise sensitivity is bounded by
+//! `‖Δo‖ ≲ ε·(L−1)·e^{ω−δ}` — finite protection requires **δ ≳ ω + ln L**
+//! (the same logarithmic margin scaling as the paper's softmax Thm 5.4, and
+//! strictly more load-bearing on the sigmoid arm: with a uniform prior the
+//! context mass grows ≈ L·σ(ω) — linear and unbounded, where softmax
+//! saturates at Ψ→1. Softmax redistributes noise; sigmoid accumulates it).
+//! The shipped constant `logit_bias` (engram kernel, Plan 364) is the
+//! constant-prior special case; the xHC "boot CLOSED at −4" init is the
+//! maximum-entropy-style default prior this law says is load-bearing.
+//! `forecast_stable_positions(δ) = e^δ` (in `data_probe`, gated
+//! `sink_margin_forecast`) forecasts the context length a measured margin
+//! protects at the ε = ½ sensitivity budget.
+//!
 //! ## Sink-Aware Composition (Plan 289)
 //!
 //! When both `parallax_attn` and `sink_aware_attn` features are enabled, this
@@ -128,6 +163,29 @@ pub struct ParallaxConfig {
     /// Only present when the `ssmax_temperature` feature is enabled.
     #[cfg(feature = "ssmax_temperature")]
     pub ssmax: Option<crate::ssmax::SsmaxMode>,
+    /// Optional per-key additive prior-logit lane `ℓ_j = logit π_j`
+    /// (Issue 819 T2, Research 566 — the sigmoid/softmax counterpart of
+    /// GOAT's rank-1 key-only prior lane u(j)). Owned `Arc<[f32]>` (not a
+    /// borrow) so the config keeps a single lifetime-free shape across every
+    /// feature combination — the table is built once per head/window and
+    /// shared. When `Some`, the forward adds `ℓ_j` to key `j`'s
+    /// pre-normalization score — after SSMax's length rescale (the prior
+    /// enters unscaled) and before normalization — so softmax realizes
+    /// `softmax(s/τ + log π)` and normalized sigmoid the analogous KL-prior
+    /// injection. Cost: one f32 add per key per query row.
+    ///
+    /// Default `None` is the bit-identical constant path (the lane-off branch
+    /// is the literal pre-lane loop; a table of all zeros is output-identical
+    /// because the `±0.0` score perturbation dies at `exp(±0) = 1`).
+    ///
+    /// Length contract: the table MUST have length ≥ `seq_len` (debug_assert;
+    /// slice indexing fails loud otherwise). The margin law the lane serves:
+    /// a prior margin δ ≳ ω + ln L bounds context-noise sensitivity by
+    /// `‖Δo‖ ≲ ε·(L−1)·e^{ω−δ}` — see the module-level doc above.
+    /// Only present when the `prior_logit_lane` feature is enabled (and the
+    /// `parallax_attn` feature that compiles this module).
+    #[cfg(feature = "prior_logit_lane")]
+    pub prior_logits: Option<std::sync::Arc<[f32]>>,
 }
 
 impl Default for ParallaxConfig {
@@ -137,6 +195,8 @@ impl Default for ParallaxConfig {
             activation: ParallaxActivation::default(),
             #[cfg(feature = "ssmax_temperature")]
             ssmax: None,
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         }
     }
 }
@@ -188,6 +248,33 @@ fn apply_ssmax_to_row(row: &mut [f32], ssmax: Option<&crate::ssmax::SsmaxMode>) 
         if n > 1 {
             let log_n = (n as f32).ln();
             crate::ssmax::apply_ssmax_inplace(row, mode, log_n);
+        }
+    }
+}
+
+/// Apply the per-key additive prior-logit lane to a score row, if configured.
+/// No-op when `prior_logits` is `None` (the bit-identical constant path).
+///
+/// This is the prior-lane intervention point in the parallax forward path
+/// (Issue 819 T2, Research 566): the additive counterpart of SSMax — SSMax
+/// rescales content scores multiplicatively, the lane shifts them
+/// additively — applied AFTER SSMax so the prior enters unscaled by the
+/// length temperature, and BEFORE normalization.
+#[cfg(feature = "prior_logit_lane")]
+#[inline]
+fn apply_prior_lane_to_row(row: &mut [f32], prior_logits: Option<&[f32]>) {
+    if let Some(lane) = prior_logits {
+        let n = row.len();
+        debug_assert!(
+            lane.len() >= n,
+            "prior_logits lane shorter than seq_len ({}/{}): extend the table or pad with 0.0",
+            lane.len(),
+            n
+        );
+        // Slice (not zip-with-rest): a short lane fails loud in both profiles.
+        let lane = &lane[..n];
+        for (s, &l) in row.iter_mut().zip(lane) {
+            *s += l;
         }
     }
 }
@@ -434,12 +521,12 @@ pub fn tiled_attention_parallax_forward_retaining(
     // Allocate scratch on demand if caller didn't provide one
     let mut local_scratch;
     let scratch = if let Some(s) = scratch {
-            s.ensure_capacity(seq_len, head_dim);
-            s
-        } else {
-            local_scratch = ParallaxScratch::new(seq_len, head_dim);
-            &mut local_scratch
-        };
+        s.ensure_capacity(seq_len, head_dim);
+        s
+    } else {
+        local_scratch = ParallaxScratch::new(seq_len, head_dim);
+        &mut local_scratch
+    };
 
     let d = head_dim;
     let n = seq_len;
@@ -473,6 +560,8 @@ pub fn tiled_attention_parallax_forward_retaining(
             attn_matrix.as_deref_mut(),
             #[cfg(feature = "ssmax_temperature")]
             parallax_config.ssmax.as_ref(),
+            #[cfg(feature = "prior_logit_lane")]
+            parallax_config.prior_logits.as_deref(),
         );
         return;
     }
@@ -499,6 +588,15 @@ pub fn tiled_attention_parallax_forward_retaining(
         // No-op when ssmax is None (the default).
         #[cfg(feature = "ssmax_temperature")]
         apply_ssmax_to_row(&mut scratch.scores[..n], parallax_config.ssmax.as_ref());
+
+        // Per-key additive prior-logit lane (Issue 819 T2). Applied AFTER the
+        // SSMax rescale — the prior enters unscaled by the length temperature
+        // — and BEFORE normalization. No-op when None.
+        #[cfg(feature = "prior_logit_lane")]
+        apply_prior_lane_to_row(
+            &mut scratch.scores[..n],
+            parallax_config.prior_logits.as_deref(),
+        );
 
         // Normalize attention weights (softmax or sigmoid)
         let row = &mut scratch.scores[..n];
@@ -856,8 +954,9 @@ pub fn tiled_attention_parallax_forward_sink_aware_ssmax(
     scratch: Option<&mut ParallaxScratch>,
 ) -> crate::data_probe::SinkKind {
     // Inject SSMax into a cloned config when the explicit override is provided.
-    // The clone is a few f32 + a Copy enum — negligible vs the n×n classifier.
-    // When ssmax_mode is None, use the config as-is (it may already have ssmax set).
+    // The clone is a few f32 + a Copy enum + the lane Arc incref — negligible
+    // vs the n×n classifier. When ssmax_mode is None, use the config as-is
+    // (it may already have ssmax set).
     let owned_cfg;
     let cfg: &ParallaxConfig = match ssmax_mode {
         Some(mode) => {
@@ -908,6 +1007,7 @@ fn tiled_attention_core(
     activation: ParallaxActivation,
     mut attn_matrix: Option<&mut [f32]>,
     #[cfg(feature = "ssmax_temperature")] ssmax: Option<&crate::ssmax::SsmaxMode>,
+    #[cfg(feature = "prior_logit_lane")] prior_logits: Option<&[f32]>,
 ) {
     let d = head_dim;
     let n = seq_len;
@@ -941,6 +1041,12 @@ fn tiled_attention_core(
         // No-op when ssmax is None (the default).
         #[cfg(feature = "ssmax_temperature")]
         apply_ssmax_to_row(&mut scores[..n], ssmax);
+
+        // Per-key additive prior-logit lane (Issue 819 T2). Applied AFTER the
+        // SSMax rescale (the prior enters unscaled) and BEFORE normalization.
+        // No-op when None.
+        #[cfg(feature = "prior_logit_lane")]
+        apply_prior_lane_to_row(&mut scores[..n], prior_logits);
 
         // Normalize attention weights (softmax or sigmoid)
         let row = &mut scores[..n];

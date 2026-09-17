@@ -978,6 +978,9 @@ functional_substitution_gate = ["funcattn", "faithfulness_probe"]  # Plan 353 �
 chunked_content_store = ["dep:papaya"]  # ChunkedContentStore — Lore-distilled chunked content-addressed Merkle store (Plan 272, Research 262, Plan 448 execution). Open primitive; consumed by riir-ai Plan 319. DEFAULT-ON (2026-07-18 promotion fix-up, .benchmarks/262_chunked_content_store_goat.md): G1-G7 ALL PASS — G1 dedup 8.47× ≥ 5.0, G2 incremental push 1.35% ≤ 5% (CDC), G3 inclusion proof <2µs (release) via cached Merkle levels (2088× faster than O(n) rebuild), G4 light-client verify by type system, G5 hot-path read p99 <200ns (release, zero-alloc papaya), G6 default-off regression clean, G7 tamper detection 10000/10000. Pure modelless (content-addressing + BLAKE3 + Merkle proofs + CDC chunking; no training). Zero runtime cost unless ChunkedContentStore is constructed. The bench file had claimed promotion was done; this fix-up actually lands it in default.
 chunked_net_fetch = []  # NetChunkFetcher — network chunk fetcher stub for ChunkedContentStore (Plan 272 T3.3). Gates the `NetChunkFetcher` trait surface + URL construction; the stub returns `None` (no `reqwest` dep). When `reqwest` is added, this becomes `chunked_net_fetch = ["dep:reqwest"]` and the stub gains a real HTTP client. Opt-in; `TieredChunkFetcher` is generic over any `ChunkFetcher` so consumers compose it only when needed.
 sink_aware_attn = []  # Sink-Aware Attention — NOP/Broadcast classifier + dual-policy sigmoid gate (Plan 287, Research 258, arxiv 2606.08105, Fesser et al.). Per-head classifier (value-norm-ratio + stable-rank-of-update) decides whether a sink is Adaptive NOP (gate it) or Broadcast (preserve it). Opt-in — Plan 287 GOAT gate RAN (.plans/287_sink_aware_attention.md status 'Complete (Phases 1–5)', .benchmarks/059_sink_aware_goat.md): G1 ✅ PASS (8 unit tests), synthetic G2 ✅ PASS, **G3 ❌ FAIL (latency)** — 1671% overhead at n=128 d_h=64 (target ≤5%). NOT promoted to default — demoted to opt-in diagnostic only per Plan 287 verdict.
+sink_margin_forecast = []  # Sink stability forecast (Issue 819 T1, Research 566 — arXiv:2601.15380 GOAT margin law + the sigmoid analog derived in the note §2). Extends `SinkDiagnostic` with `margin: Option<f32>` (mean per-query sink-minus-context-centroid logit margin; estimator documented in `sink_classify.rs`) computed by the full-map scan paths, and ships `forecast_stable_positions(δ) = e^δ` — the context length a measured margin protects at the ε = ½ noise budget (Ψ ≤ (L−1)/(e^δ+L−1); δ ~ ln L). Pure modelless closed forms; zero deps; the margin pass is O(n²) — the same asymptotic class as the classifier's col_sums pass — and the forecast itself is O(1) scalar exp. REQUIRES `sink_aware_attn` (the host module). Opt-in per the no-default-consumer rule until a runtime consumer reads the forecast; Bench 813 G1–G4 ALL PASS.
+prior_logit_lane = []  # Per-key additive prior-logit lane (Issue 819 T2, Research 566 — the sigmoid/softmax counterpart of GOAT's rank-1 key-only prior lane u(j), arXiv:2601.15380). `ParallaxConfig::prior_logits: Option<Arc<[f32]>>` adds `ℓ_j = logit π_j` to each key's pre-normalization score — after SSMax's length rescale (the prior enters unscaled) and before normalization: softmax realizes `softmax(s/τ + log π)`, normalized sigmoid the analogous KL-prior injection `σ(s+ℓ_j)/Σσ(s+ℓ_k)`. `None` = bit-identical constant path (lane-off branch is the literal pre-lane loop; an all-zero table is output-identical — the ±0.0 score perturbation dies at exp(±0)=1). Cost: one f32 add per key per query row; zero hot-path alloc (the owned Arc table is built once per head/window). REQUIRES `parallax_attn`. The constant `SigmoidFusionConfig::logit_bias` (Plan 364) is the constant-prior special case; the served-GGUF models deliberately do NOT consume lanes (architecture change — Issue 819 non-goal), so this stays opt-in per the no-default-consumer rule; Bench 813 G1–G4 ALL PASS.
+
 closure_instrument = ["dep:papaya", "dep:ahash"]  # Closure-Expansion Instrument (CEI) — PTG recorder + motif miner + PRI/CDG/TaR metrics (Plan 290, Research 264, arxiv 2606.15386). DEFAULT-ON (Plan 290 T4.7 + G4 fix, 2026-06-26): G1 67us<100us (bit matrix, Issue 035), G2 638us<5ms, G3 synthetic-proxy monotone, G4 0.296MB<1MB (Option<[u8;32]> fix). 55/55 tests green. ahash powers the G1 hot-path bit-matrix PRI (Issue 035).
 ptg_functor_edges = ["closure_instrument"]  # Issue 040 — PTG × latent_functor edge composition. Adds `FunctorPtg` composite (wraps an unchanged `PrimitiveTransitionGraph` with a parallel `Vec<Option<FunctorEdgeParams>>`), `apply_functor_edge_into` (zero-alloc sigmoid-gated cosine·direction apply path), and `functor_edge_gate` (diagnostic gate query). Wire-format safe: the inner PTG is byte-identical to a bare PTG (T1 audit found postcard `#[serde(default)]` does NOT work for missing trailing fields — adding a field to `PtgEdge` would break deserialization of existing PTGs, so the composite approach is mandatory). DEFAULT-ON (Issue 040 T7, 2026-07-04): all GOAT gates pass (G1 6/6 + 17 unit tests, G2 34ns/call <200ns, G2-alloc 0, G3 default/no-default/all-features clean + 1046 lib tests, G4 44 bytes, G5/G6 modelless).
 ict_branching = []  # ICT Distributional Branching-Point Detector — collision_purity β(π), Rényi H₂, JS-divergence-to-group-mean, BranchingDetector (Plan 294, Research 270, arxiv 2606.19771). Opt-in — Plan 324 T9.4 GOAT G7+G8+G9 ALL PASS (2026-06-20+; G7 zero ICT data in SyncBlock across 1000 ticks, G8 ICT-gated CLR 89.72% quality at 9.40% cost, G9 ICT-gated HLA recall = 100% of baseline); stays opt-in pending in-game integration test at 1000-NPC scale (k_select floor finding: per-NPC cognitive savings smaller than paper's ~10% headline; crowd-scale savings come from Phase 4 rotating sampler).
@@ -2333,6 +2336,19 @@ name = "bench_411_gold_share_goat"
 harness = false
 required-features = ["gold_share_probe", "sink_aware_attn"]
 
+# Issue 819 (Research 566) — prior-lane + sink-margin-forecast GOAT gate:
+# G3 lane-on forward ratio vs lane-off (≤1.10× gate) + forecast ns/call,
+# G4 alloc counts (lane-on == lane-off steady state; forecast 0 allocs).
+[[bench]]
+name = "bench_813_prior_lane_margin_goat"
+harness = false
+required-features = [
+    "parallax_attn",
+    "prior_logit_lane",
+    "sink_aware_attn",
+    "sink_margin_forecast",
+]
+
 # Plan 410 — Linking-Fold GOAT gate (G1 correctness smoke + G2 detector cold-path
 # ≤50ms @ n=2×1000,d=8 + G2 fold hot-path ≤50ns @ d=8 / ≤500ns @ d=64 + G5
 # determinism). G4 (alloc-free hot path) is the separate CountingAllocator test
@@ -2992,6 +3008,24 @@ required-features = ["regime_probe"]
 [[test]]
 name = "data_probe_sink_classify"
 required-features = ["sink_aware_attn"]
+
+# Issue 819 T2 (Research 566) — per-key prior-logit lane: lane-off bit-identity
+# (zeros-lane == None, both activations), known-logit closed-form recovery,
+# lane monotonicity, planted-distractor G2 (per-key lane breaks the symmetry a
+# constant bias provably cannot — constant shifts cancel under normalization),
+# and the lane+SSMax composition smoke.
+[[test]]
+name = "issue819_prior_logit_lane"
+required-features = ["parallax_attn", "prior_logit_lane"]
+
+# Issue 819 T1 (Research 566) — sink stability forecast: forecast closed-form
+# basics, planted-margin recovery (constant + query-varying sink logits),
+# brute-force sensitivity-vs-bound agreement on toy margins (G1-vs-sim), the
+# Figure-2c ω-sweep signature (G2), flat/Vec path agreement, and the
+# single-column / n<2 None edges.
+[[test]]
+name = "issue819_sink_margin_forecast"
+required-features = ["sink_aware_attn", "sink_margin_forecast"]
 
 [[test]]
 name = "limit_recall"

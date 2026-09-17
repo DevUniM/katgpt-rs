@@ -4,7 +4,8 @@
 > **Date:** 2026-06-17
 > **Status:** Active
 > **Related Research:** 100 (EGA — spectral salience gate), 070 (GDN2 — decoupled erase/write), 018 (Free Transformer — latent injection), 113 (NITP), 125 (Weight Norm Kolmogorov), 140 (sigmoid parallax), 213 (Still Perceiver), 233 (Attention Matching)
-> **Related Plans:** 271 (attention matching compaction), 269 (chiaroscuro), 279 (manifold power iter MoE router)
+> **Related Plans:** 271 (attention matching compaction), 269 (chiaroscuro), 279 (manifold power iter MoE router), 287 (sink_aware_attn — SHIPPED)
+> **Follow-up:** Research 566 (arXiv:2601.15380 EOT priors) adds the PREDICTIVE half to this classifier — `SinkDiagnostic.margin` + `forecast_stable_positions` (`sink_margin_forecast`, Bench 813): a measured logit margin δ forecasts the context length the sink protects (N ≈ e^δ; δ ~ ln L).
 > **Classification:** Public
 
 ---

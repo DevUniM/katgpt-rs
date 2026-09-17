@@ -2,7 +2,7 @@
 
 > **Source:** "You Need Better Attention Priors" — Elon Litman (Stanford), arXiv:2601.15380, ICML 2026. https://arxiv.org/abs/2601.15380
 > **Date:** 2026-09-17
-> **Status:** Active
+> **Status:** Resolved — T1/T2/T3/T5 LANDED 2026-09-17 (`prior_logit_lane` + `sink_margin_forecast`, [Bench 813](../.benchmarks/813_prior_lane_margin_goat.md) G1–G4 ALL PASS; [Issue 819](../.issues/819_sigmoid_prior_logit_lane_sink_margin_forecast.md); T4 training arm deferred, owner-gated)
 > **Related Research:** 258 (Attention Sink NOP/Broadcast, Plan 287), 261 (FuncAttn sink verdict — closed negative), 392 (SSMax + GoldShare, Plan 411), 487 (Massive Activations / sink-aware KV quant), 549 (ASEntmax)
 > **Related Plans:** 411 (ssmax_temperature DEFAULT-ON, gold_share_probe opt-in), 287 (sink_aware_attn)
 > **Classification:** Public
@@ -76,8 +76,8 @@ Prior-art audit (2026-09-17, web): sink-margin stability law — original to thi
 
 | Fusion | Consumes | Produces | Where |
 |---|---|---|---|
-| **A — Sink stability forecast** | `sink_classify.rs` (NOP/Broadcast classifier) + measured logit rows | `SinkDiagnostic.margin` + `forecast_stable_positions(δ) = e^δ` — predictive "this head's sink protects up to N ≈ e^δ positions" | `katgpt-core/src/data_probe/` (Issue 819 T1) |
-| **S — Prior-logit lane** | `SigmoidFusionConfig.logit_bias` (constant π, shipped) | optional per-key `prior_logits: &[f32]` (the u(j) lane; `None` = bit-identical constant path), documented δ ~ ln L law | `katgpt-core/src/engram/kernel.rs` + parallax (Issue 819 T2/T3) |
+| **A — Sink stability forecast** ✅ LANDED (`sink_margin_forecast`, Bench 813) | `sink_classify.rs` (NOP/Broadcast classifier) + measured logit rows | `SinkDiagnostic.margin` + `forecast_stable_positions(δ) = e^δ` — predictive "this head's sink protects up to N ≈ e^δ positions" | `katgpt-core/src/data_probe/sink_classify.rs` (Issue 819 T1) |
+| **S — Prior-logit lane** ✅ LANDED (`prior_logit_lane`, Bench 813) | `SigmoidFusionConfig.logit_bias` (constant π, shipped — the constant special case, doc-annotated) | `ParallaxConfig::prior_logits: Option<Arc<[f32]>>` (the u(j) lane; `None` = bit-identical constant path), δ ~ ln L law in the module docs. NOTE: home is the multi-key parallax path, not the single-key engram kernel (deviation: single-key lane degenerates to logit_bias assignment) | `katgpt-core/src/parallax_attn/mod.rs` (Issue 819 T2/T3) |
 | **B — Belief prior drift** | think-brain `σ(−λ·Δt)` staleness decay | unified `ℓ_j = logit(base_rate_j) − λ·Δt_j` reading; no code change required — a design-law note for game-side fusion gates | `riir-ai` (recorded here; no plan unless a consumer asks) |
 | **C — Future-arch lanes** | MLA's existing content+rope two-lane structure (`katgpt-kv::shard_kv::rope`, `katgpt-attn::mla`) — structurally GOAT's content+prior split | replace/augment the rope lane with learnable spectral lanes + sink lane in a *from-scratch* run | riir-train, gated behind A/S results; 0.4B test-arch vehicle |
 | **D — Negative result (record)** | `riir-engine/src/hla`, `katgpt-hla` | linear-attention family **cannot** take learned negative-weight priors (Bochner positivity); do not attempt the transfer | this note only |

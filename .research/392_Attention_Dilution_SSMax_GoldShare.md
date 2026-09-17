@@ -4,7 +4,8 @@
 > **Date:** 2026-07-07
 > **Status:** Done — Plan 411 shipped (see `.plans/411_ssmax_goldshare.md` + `.benchmarks/411_ssmax_goldshare_goat.md`)
 > **Related Research:** 258 (Attention Sinks — NOP vs Broadcast), 261 (FuncAttn sink semantics — negative), 225 (MSA blockwise sparse distillation), 286 (attention drift — drafter side), 100 (EGA spectral salience gate), 140 (sigmoid parallax), 135 (Parallax), 061 (SLIME stabilized-likelihood margin), 362 (HydraHead causal head importance)
-> **Related Plans:** 287 (sink-aware attention — SHIPPED), 289 (forward-path wiring — Parallax only), 256 (MSA sparse attention family), 196 (VortexFlow programmable sparse attention)
+> **Related Plans:** 287 (sink-aware attention — SHIPPED), 289 (forward-path wiring — Parallax only), 256 (MSA sparse attention family), 196 (VortexFlow programmable sparse attention), 411 (this paper's implementation)
+> **Follow-up:** Research 566 (arXiv:2601.15380 EOT priors, Bench 813) lands the COMPOSING structural axis — `ParallaxConfig::prior_logits` (per-key additive prior-logit lane, `prior_logit_lane`): SSMax fixes the content channel multiplicatively, the prior lane adds a structural margin δ ≳ ω + ln L additively (different signals; compose in the same forward).
 > **Classification:** Public
 
 ---

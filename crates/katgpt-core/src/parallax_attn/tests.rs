@@ -94,6 +94,8 @@ fn test_parallax_recovers_softmax_gate_zero() {
         None,
         #[cfg(feature = "ssmax_temperature")]
         None,
+        #[cfg(feature = "prior_logit_lane")]
+        None,
     );
 
     for (i, (&a, &b)) in output_parallax.iter().zip(output_ref.iter()).enumerate() {
@@ -155,6 +157,8 @@ fn test_parallax_recovers_softmax_zero_r() {
         ParallaxActivation::Softmax,
         None,
         #[cfg(feature = "ssmax_temperature")]
+        None,
+        #[cfg(feature = "prior_logit_lane")]
         None,
     );
 
@@ -259,6 +263,8 @@ fn test_parallax_sigmoid_recovers_base() {
         ParallaxActivation::Sigmoid,
         None,
         #[cfg(feature = "ssmax_temperature")]
+        None,
+        #[cfg(feature = "prior_logit_lane")]
         None,
     );
 
@@ -1027,6 +1033,8 @@ mod ssmax_composition_tests {
             gate_scale: 0.0,
             activation: ParallaxActivation::Sigmoid,
             ssmax: None,
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
 
         let mut out_base = vec![0.0f32; n * d];
@@ -1089,6 +1097,8 @@ mod ssmax_composition_tests {
             gate_scale: 0.0,
             activation: ParallaxActivation::Sigmoid,
             ssmax: Some(SsmaxMode::Fixed { s_l: 1.0 }),
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
 
         let mut out_base = vec![0.0f32; d];
@@ -1153,6 +1163,8 @@ mod ssmax_composition_tests {
             gate_scale: 0.0,
             activation: ParallaxActivation::Sigmoid,
             ssmax: Some(SsmaxMode::Fixed { s_l: 1.0 }),
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
 
         let mut out_base = vec![0.0f32; n * d];
@@ -1218,6 +1230,8 @@ mod ssmax_composition_tests {
             gate_scale: 0.0,
             activation: ParallaxActivation::Sigmoid,
             ssmax: Some(mode),
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
         let cfg_folded = ParallaxConfig {
             gate_scale: 0.0,
