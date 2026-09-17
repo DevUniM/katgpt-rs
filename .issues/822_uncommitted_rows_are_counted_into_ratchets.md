@@ -188,8 +188,63 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       code that has never run. Five perturbations, all red. **Check whether a
       sweep's findings are empty before deciding its arms are optional** — an
       empty finding set is exactly when a display change is unexercised.
+- [x] **T5e — ⛔ THE ARMS WERE INERT ON THE FIRST SWEEP WIRED, and a peer
+      session's question found it, not a run.** The question was exactly right
+      and is worth reusing on anything with a seam: *if `head_delta` were
+      stubbed to return `committed = worktree` unconditionally, would any arm
+      red?* Measured, all three sweeps wired at the time:
+
+      | sweep | verdict against the stub |
+      |---|---|
+      | `subprocess_encoding` | **red, 5 failures** — load-bearing |
+      | `instrument_reachability` | **red, 6 failures** — but only once the probe was aimed at `delta_of`, the function it actually calls |
+      | `console_encoding` | ⛔ **14/14 canary arms PASSED** |
+
+      `console_encoding`'s `adjudicate()` body was asserted by **nothing**.
+      Every canary arm that exercises the split MONKEYPATCHES `adjudicate`, so
+      those arms assert that `main()` *uses* the delta correctly and assert
+      nothing about the delta being computed at all — and the baseline arm
+      cannot cover it, because this repo has 0 undefended rows and an empty
+      input yields an empty delta either way. `instrument_reachability` got
+      `adjudicate_arms` when it was wired and `console_encoding` did not; the
+      asymmetry was an oversight, not a judgement.
+
+      ⚠ **Two of the three first answers were the PROBE being wrong, not the
+      wiring being inert** — `instrument_reachability` uses `head_overlay` +
+      `delta_of` and never calls `head_delta`, and `console_encoding`'s
+      verification lives in `canary()` rather than `selftest()`. A stub probe
+      has to be aimed at the function the target actually calls, or it reports
+      a false all-clear in the same breath as a true one.
+
+      Fixed: `console_encoding.adjudicate_arms()` in `selftest`, which reds
+      with 6 failures against the stub. Canary still 14/14.
+- [x] **T5d — `percentile`, fourth wired, and the first with FOUR ceilings.**
+      The delta carries the class in its key and `.head` splits back by class
+      for the four pins. Two things specific to it:
+
+      - `degenerate_asserted` is a **subset** of `degenerate`, so one row
+        appears under two classes by design. The class is part of the address
+        for that reason — pooling them would make one row's ordinal depend on
+        the other's presence, and a row that stopped being `asserted` would
+        look like it moved.
+      - ⚠ The advisory's scope (`*.rs`, `Cargo.toml`) is **wider** than the
+        split's (`*.rs`): a dirty manifest can change what the sweep reads but
+        produces no ROW. Two scopes, one deliberate difference, stated at the
+        line.
+
+      It needed `audit_text` extracted out of `audit_file` first —
+      `subprocess_encoding` was cheap to wire *because* it already had that
+      split (`scan_text` / `scan`). Pure refactor; every caller byte-identical.
+
+      ⛔ **The ordinal arm was missing and the perturbation said so.** Dropping
+      the ordinal red NOTHING until a fixture actually carried a repeated site:
+      identical keys collapse, HEAD dedupes to one row, and the ceiling is
+      UNDERCOUNTED by the number of duplicates — a ratchet silently tolerating
+      the second copy of a defect. `subprocess_encoding` had that arm from the
+      start and this one did not, which is the same asymmetry as T5e one level
+      down. Both perturbations red now.
 - [ ] **T5b — the FAN-OUT, which is the part that is not done.** T1 measured 14
-      sweeps with a count ceiling; **three** are wired. Do not read the helpers'
+      sweeps with a count ceiling; **four** are wired. Do not read the helpers'
       existence as the fan-out having happened — that substitution is this
       repo's most-repeated error and it is what made this issue the *ninth*
       instance. The per-sweep instrument is decided by T2's premise, not by
@@ -197,13 +252,18 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 
       | sweep | instrument |
       |---|---|
-      | `orphaned_attr`, `markdown_fence`, `percentile`, `toolchain_override`, `pipefail_discard`, `platform_dead_code` | `head_delta` — per-file classifiers |
+      | `orphaned_attr`, `markdown_fence`, `toolchain_override`, `pipefail_discard`, `platform_dead_code` | `head_delta` — per-file classifiers |
+      | ~~`percentile`~~ | **done (T5d)** — `head_delta`, four ceilings, class in the key |
       | ~~`console_encoding`~~ | **done (T3/T4)** — `head_delta`, name-keyed |
       | ~~`subprocess_encoding`~~ | **done (T5c)** — `head_delta`, line-free key + ordinal |
       | ~~`instrument_reachability`~~ | **done (T5a)** — `head_overlay` + `delta_of` |
       | `len_derived` | whole-classifier re-run, and its HALF C reaches other REPOS |
       | `numbering` | whole-classifier re-run; its rows are numbers, not files |
       | `cfg_gated`, `required_features`, `wasm32_surface` | manifest+source joins — read each before choosing |
+
+      ⛔ **Every one of these owes an `adjudicate_arms` in its `selftest`,
+      not only canary arms** — T5e is why. And run the stub probe afterwards,
+      aimed at the helper that sweep actually calls.
 
       ⚠ **Budget the canary cost.** Each `--canary` runs `main()` once per arm
       over every contract repo, so four new arms is roughly a 45% increase:
@@ -229,6 +289,13 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 - `scripts/instrument_reachability_gate.py` — `reachable(read=)`.
 - `scripts/instrument_reachability_drift_sweep.py` — `SCOPE` (one list, was
   two that disagreed), `adjudicate()`, the honest display, five canary arms.
+- `scripts/percentile_index_audit.py` (T5d) — `audit_text()` extracted out of
+  `audit_file()`, which is now a thin wrapper. Pure refactor.
+- `scripts/percentile_drift_sweep.py` (T5d) — `GATED`, `keyed()`,
+  `head_sites()`, `adjudicate()`, `adjudicate_arms()`, the honest display, and
+  `audit()` now returns its `walk` so the guard has the real population.
+- `scripts/console_encoding_drift_sweep.py` (T5e) — `adjudicate_arms()`, the
+  arms that were missing.
 - `scripts/subprocess_encoding_drift_sweep.py` (T5c) — `row_key()` / `keyed()`
   / `flatten()` (the line-free key with its ordinal), `head_offenders()`,
   `adjudicate()`, the honest display with MASKED rows printed separately

@@ -452,10 +452,23 @@ ASSIGN_RE = re.compile(r"let\s+(\w+)\s*(?::[^=]*)?=")
 
 
 def audit_file(path, rel):
+    """One file's findings, read from disk.
+
+    A thin wrapper since Issue 822: the classifier proper is `audit_text`, so a
+    caller that has the bytes from somewhere other than the working tree — a
+    HEAD blob, for the worktree-vs-commit split — can reach it without a second
+    copy of the rules. `subprocess_encoding_gate`'s `scan_text` / `scan` pair,
+    same shape, same reason.
+    """
     try:
         text = open(path, encoding="utf-8", errors="replace").read()
     except OSError:
         return []
+    return audit_text(text, rel)
+
+
+def audit_text(text, rel):
+    """One SOURCE TEXT's findings. `rel` only addresses the rows."""
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):

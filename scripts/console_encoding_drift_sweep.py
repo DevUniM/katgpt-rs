@@ -89,6 +89,7 @@ untrustworthy**. `--canary` runs the adversary arms.
 
 from __future__ import annotations
 
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -345,6 +346,83 @@ def selftest() -> list[str]:
         if rescan("scripts/scratch.py", ceg.GLYPH + ceg.MAIN) != []:
             fails.append("head_undefended: an untracked scratch copy entered "
                          "the population git says it is not in")
+
+    # ⛔ The canary's split arms MONKEYPATCH `adjudicate`, so nothing there
+    # reaches its body — measured: 14/14 pass with `head_delta` stubbed.
+    return fails + adjudicate_arms()
+
+
+def adjudicate_arms() -> list[str]:
+    """`adjudicate`, two-sided, against a real git tree.
+
+    The canary's split arms monkeypatch this function, so they cannot reach its
+    body. These are the arms that red when `head_delta` is stubbed — measured,
+    because the canary alone does not.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    UNDEF = ceg.GLYPH + ceg.MAIN          # in population, streams undefended
+    DEF = ceg.INLINE + ceg.MAIN           # in population, defended
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "r"
+        (repo / "scripts").mkdir(parents=True)
+        git(repo.parent, "init", "-q", "-b", "main", "r")
+        git(repo, "config", "user.email", "t@t")
+        git(repo, "config", "user.name", "t")
+        (repo / "scripts/bad.py").write_text(UNDEF, encoding="utf-8")
+        (repo / "scripts/good.py").write_text(DEF, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "base")
+
+        def now():
+            _n, _d, und, _u = classify(repo)
+            return und, adjudicate(repo, und)
+
+        und, d = now()
+        check(und == ["bad.py"], f"fixture: undefended={und}, want bad.py")
+        check(d.committed == ["bad.py"] and not d.uncommitted and not d.masked,
+              f"a clean tree produced a split: {d}")
+
+        # ── UNCOMMITTED: the worktree INVENTS an undefended instrument ──────
+        (repo / "scripts/good.py").write_text(UNDEF, encoding="utf-8")
+        und, d = now()
+        check(sorted(und) == ["bad.py", "good.py"],
+              f"the fixture edit did not strand good.py: {und}")
+        check(d.uncommitted == ["good.py"],
+              f"UNCOMMITTED direction: {d.uncommitted}")
+        check(not d.masked, f"an invented row was also MASKED: {d.masked}")
+        # ⛔ And the row HEAD carries TOO stays in the pins' view — the bucket
+        # `split_rows` gets wrong, and the reason `head_delta` exists.
+        check(d.head == ["bad.py"],
+              f"the pins' view lost the committed row: {d.head}")
+
+        # ── MASKED: the worktree HIDES a committed one ──────────────────────
+        git(repo, "checkout", "--", "scripts/good.py")
+        (repo / "scripts/bad.py").write_text(DEF, encoding="utf-8")
+        und, d = now()
+        check(und == [], f"the fixture did not defend bad.py: {und}")
+        check(d.masked == ["bad.py"], f"MASKED direction: {d.masked}")
+        check(d.head == ["bad.py"],
+              f"a MASKED row is missing from the pins' view: {d.head}")
+
+        # ── a STAGED-only file has no HEAD blob ─────────────────────────────
+        git(repo, "checkout", "--", "scripts/bad.py")
+        (repo / "scripts/new.py").write_text(UNDEF, encoding="utf-8")
+        git(repo, "add", "scripts/new.py")
+        und, d = now()
+        check("new.py" in d.uncommitted,
+              f"a staged-only file's row was not UNCOMMITTED: {d.uncommitted}")
+        check("new.py" not in d.head,
+              f"a file in no commit entered the pins' view: {d.head}")
 
     return fails
 
