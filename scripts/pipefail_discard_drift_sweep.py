@@ -63,7 +63,8 @@ sys.path.insert(0, str(HERE))
 import pipefail_discard_audit as pda  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
+                            sweep_advisory)
 from tracked_walk import tracked_files  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -77,6 +78,16 @@ PROVE_REL = "scripts/perf_rematch.sh"
 
 FIELDS = ("min_sh_files", "min_sites", "max_findings", "max_unparsed")
 KEY_RE = re.compile(r"^(\S+):(\S+):([0-9a-f]{8})#(\d+)$")
+
+# ONE list, read by the worktree advisory AND by the HEAD re-classification.
+# Issue 822 T5a measured the cost of the second copy: `instrument_reachability`
+# carried a hand-typed glob list beside its advisory naming `.yml` and not
+# `.yaml`, so a dirty root sat silently outside its own declared population.
+# ⚠ The trailing comma is load-bearing — `("*.sh")` is a STRING, and iterating
+# it yields characters, so `fnmatch(rel, "*")` matches every file in the repo.
+# It was written that way here until Issue 822 T5e; `_coerce` caught it, which
+# is why the advisory was right anyway, and why the helper coerces at all.
+SCOPE = ("*.sh",)
 
 
 def parse_pins(path: Path) -> dict[str, dict[str, int]]:
@@ -115,19 +126,89 @@ def parse_expected(path: Path) -> dict[str, tuple[str, str]]:
     return rows
 
 
-def measure_keys(results) -> dict:
-    """{key: finding} — line-free membership keys over the measured
-    findings, ordinals scoped to the whole (repo, rel, digest) address."""
-    seen: dict = {}
-    ordinals: dict = {}
-    for res in results:
-        for f in sorted(res.findings, key=lambda f: (f["rel"], f["line"])):
-            addr = f"{res.name}:{f['rel']}:{pda.make_digest(f['text'])}"
-            ordinals[addr] = ordinals.get(addr, 0) + 1
-            key = pda.finding_key(res.name, f["rel"], f["text"],
-                                  ordinals[addr])
-            seen[key] = f
-    return seen
+def keyed_rows(name: str, findings) -> list:
+    """`[(membership key, finding)]` for one repo's findings.
+
+    ONE builder, called by the worktree pass, the HEAD pass and `measure_keys`
+    — the ordinal has to be assigned from the same base on both sides of an
+    Issue 822 comparison or every row looks moved. It can be assigned PER FILE
+    (which is how `head_delta`'s rescan calls it) precisely because `rel` is
+    part of the address, so a file's ordinals never depend on another file's.
+
+    The disambiguation itself is `worktree_state.ordinal_keys` (T5d), not a
+    third transcription of it; the ADDRESS stays this sweep's own, because the
+    membership pin file is keyed on `repo:rel:digest#n`.
+    """
+    ordered = sorted(findings, key=lambda f: (f["rel"], f["line"]))
+    return [(pda.finding_key(name, f["rel"], f["text"], key[-1] + 1), f)
+            for key, f in ordinal_keys(
+                ordered,
+                lambda f: (name, f["rel"], pda.make_digest(f["text"])))]
+
+
+def head_findings(name: str, walk: set[str]):
+    """`head_delta`'s per-file reclassifier for this sweep's two verdicts.
+
+    Per-file row independence holds by construction: `audit_repo` calls
+    `scan_text` on ONE file's bytes and every verdict this sweep reports —
+    GUARDED by an earlier `if grep -q` on the same pattern, LOCAL-MASKED,
+    INERT — is decided inside that one scan. So the cheap shortcut is sound
+    and costs |dirty n *.sh| `git show` calls, zero on an ordinary run.
+
+    `walk` is the sweep's OWN tracked population, passed in rather than
+    re-derived: `fnmatch`'s `*` crosses `/`, so the scope glob admits paths
+    `tracked_files` excludes, and a row invented there reads as MASKED — a
+    hard red nobody can repair.
+    """
+
+    def rescan(rel: str, src: str | None) -> list:
+        # None = absent from HEAD (staged but never committed). Nothing
+        # committed to classify, so the worktree's row is UNCOMMITTED.
+        if src is None or rel not in walk:
+            return []
+        sc = pda.scan_text(src)
+        if sc.unparsed:
+            # `audit_repo`'s own answer for an unparsed file: its sites are
+            # not trustworthy evidence. Never folded into either direction —
+            # counting them clean hides exposure, counting them findings
+            # INVENTS a MASKED row nobody can repair.
+            return []
+        return keyed_rows(name, [{"rel": rel, "line": s.line, "sub": s.sub,
+                                  "text": s.text} for s in sc.findings])
+
+    return rescan
+
+
+def adjudicate(repo: Path, res):
+    """One repo's findings split COMMITTED / UNCOMMITTED / MASKED (Issue 822).
+
+    A named seam rather than five lines inline: this is the verdict
+    arithmetic, and `arm_reach_audit`'s standing finding in this repo is that
+    the classifier is well armed and the verdict is not.
+
+    ⛔ BOTH of this sweep's verdicts read the result, not just the count. The
+    membership wall is the one that would otherwise fail in the DANGEROUS
+    direction: an uncommitted row demands a pin nobody can write, and a MASKED
+    row — pinned, committed, hidden by somebody's worktree — reads as "pinned
+    row no longer fires", whose documented remedy is to DELETE the row. That
+    drops the only pointer to a live defect.
+    """
+    kept, _vendored = tracked_files(repo, "*.sh")
+    walk = {p.relative_to(repo).as_posix() for p in kept}
+    return head_delta(
+        repo, SCOPE, keyed_rows(res.name, res.findings),
+        lambda r: r[1]["rel"], lambda r: r[0],
+        head_findings(res.name, walk))
+
+
+def measure_keys(deltas) -> dict:
+    """{key: finding} over what a COMMIT of these repos would produce.
+
+    Issue 822 — `.head` is `committed + masked`, never `committed`: a MASKED
+    row is by definition one the worktree does not show, and it is exactly the
+    row the membership wall must still demand a pin for.
+    """
+    return {key: f for delta in deltas for key, f in delta.head}
 
 
 def _temp_repo(files: dict[str, str]):
@@ -242,6 +323,116 @@ def selftest() -> list[str]:
         (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
         if derive_repos(ws) != ["real"]:
             fails.append(f"population derivation wrong: {derive_repos(ws)}")
+
+    # 8. Issue 822 — the worktree is not the repo. Both verdicts here read
+    #    the result, and the MEMBERSHIP one fails in the dangerous direction:
+    #    the documented remedy for "pinned row no longer fires" is to DELETE
+    #    the row, which drops the only pointer to a live defect.
+    fails += head_arms()
+    if SCOPE != ("*.sh",):
+        fails.append(f"SCOPE is {SCOPE} — the advisory and the HEAD "
+                     f"re-classification read this one list, and a BARE "
+                     f"STRING here is a character sequence, not one pattern")
+    return fails
+
+
+def head_arms() -> list[str]:
+    """`adjudicate` end to end against REAL git — Issue 822.
+
+    A mock of git would assert the mock, and every one of the three pieces
+    (`head_overlay` finding the dirty file, `scan_text` re-reading HEAD's
+    bytes, `delta_of`'s arithmetic) has its own way of being silently inert.
+    ~0.5s, and it is the only thing in this sweep proving the pins stopped
+    reading the working tree.
+    """
+    fails: list[str] = []
+    kill = ('set -euo pipefail\n'
+            'names="$(grep -E \'pid=\' "$cl" | head -1 | paste -sd \';\' -)"\n')
+    guarded = ('set -euo pipefail\n'
+               'names="$(grep -E \'pid=\' "$cl" | head -1 '
+               "| paste -sd ';' - || true)\"\n")
+
+    def git(root, *args):
+        subprocess.run(("git", "-C", str(root)) + args,
+                       capture_output=True, check=True)
+
+    def fixture(td: str, committed: str, worktree: str) -> Path:
+        repo = Path(td) / "r"
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "scripts" / "a.sh").write_text(committed, encoding="utf-8")
+        git(repo.parent, "init", "-q", "r")
+        git(repo, "config", "user.email", "arm@example.invalid")
+        git(repo, "config", "user.name", "arm")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        (repo / "scripts" / "a.sh").write_text(worktree, encoding="utf-8")
+        return repo
+
+    # a. UNCOMMITTED — the worktree kills, HEAD does not. SHOWN, never
+    #    adjudicated: neither the count ceiling nor the membership wall may
+    #    demand a pin for a line no commit contains.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, guarded, kill)
+        res = pda.audit_repo(repo)
+        if len(res.findings) != 1:
+            fails.append("head arm: the worktree pass found no kill — every "
+                         "comparison in this arm is vacuous")
+        d = adjudicate(repo, res)
+        if len(d.uncommitted) != 1:
+            fails.append(f"adjudicate: a worktree-only kill is not "
+                         f"UNCOMMITTED ({d}) — the pins read the tree")
+        if d.head or measure_keys([d]):
+            fails.append("adjudicate: an UNCOMMITTED row reached `.head`, so "
+                         "the membership wall demands a pin nobody can write")
+
+    # b. MASKED — the silent direction, and the one whose documented remedy
+    #    is destructive. HEAD carries the kill; this worktree hides it.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, kill, guarded)
+        res = pda.audit_repo(repo)
+        if res.findings:
+            fails.append("head arm: the worktree pass found a kill where the "
+                         "MASKED direction needs none")
+        d = adjudicate(repo, res)
+        if len(d.masked) != 1:
+            fails.append(f"adjudicate: a committed kill the worktree hides "
+                         f"was not recovered as MASKED ({d})")
+        if len(d.head) != 1 or len(measure_keys([d])) != 1:
+            fails.append("adjudicate: a MASKED row is missing from `.head`, "
+                         "so `pinned row no longer fires` would tell somebody "
+                         "to DELETE the pin on a live defect")
+
+    # c. A clean tree costs NOTHING — no overlay, no rescan. A helper that
+    #    re-reads anyway on every run is one sweeps stop calling.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, kill, kill)
+        res = pda.audit_repo(repo)
+        d = adjudicate(repo, res)
+        if len(d.committed) != 1 or d.uncommitted or d.masked:
+            fails.append(f"adjudicate: a clean tree's rows are not all "
+                         f"COMMITTED ({d})")
+
+    # d. A file absent from HEAD yields nothing — the measured Issue 822 case
+    #    was a row on a file `git log` could not see at all.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, guarded, guarded)
+        (repo / "scripts" / "new.sh").write_text(kill, encoding="utf-8")
+        git(repo, "add", "scripts/new.sh")
+        res = pda.audit_repo(repo)
+        d = adjudicate(repo, res)
+        if len(d.uncommitted) != 1 or d.head:
+            fails.append(f"adjudicate: a staged-but-never-committed file's "
+                         f"kill was adjudicated as committed ({d})")
+
+    # e. The key is LINE-FREE: padding above a kill must not report it as
+    #    UNCOMMITTED *and* MASKED at once.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, kill, "# padding\n# padding\n" + kill)
+        res = pda.audit_repo(repo)
+        d = adjudicate(repo, res)
+        if d.uncommitted or d.masked or len(d.committed) != 1:
+            fails.append(f"row key: a line shift reported one kill as both "
+                         f"UNCOMMITTED and MASKED ({d})")
     return fails
 
 
@@ -363,12 +554,20 @@ def main() -> int:
         return 2
 
     bad = False
-    results = []
+    deltas = []
     tot = {"sh": 0, "sites": 0, "find": 0, "unp": 0}
+    n_uncommitted = n_masked = 0
     for name in names:
         repo = WORKSPACE / name
         res = pda.audit_repo(repo)
-        results.append(res)
+        # Issue 822 — the DISPLAY reads the worktree (it is what the files say
+        # today, and hiding that would be its own lie); the PINS read `.head`,
+        # which is the only thing a commit of this checkout would reproduce.
+        delta = adjudicate(repo, res)
+        deltas.append(delta)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
+        held = {k for k, _f in delta.uncommitted}
         n_sites = (res.guarded + res.cond + res.inert + res.clean
                    + len(res.findings) + len(res.local))
         tot["sh"] += res.files
@@ -395,27 +594,44 @@ def main() -> int:
                 flags.append(f"classifier FLOOR breached: {n_sites} site(s) < "
                              f"{row['min_sites']} — the walk is intact but "
                              f"the classifier found nothing")
-            if len(res.findings) > row["max_findings"]:
-                flags.append(f"findings {len(res.findings)} > pinned "
+            if len(delta.head) > row["max_findings"]:
+                flags.append(f"findings {len(delta.head)} committed > pinned "
                              f"{row['max_findings']}")
+            # UNPARSED stays on the WORKTREE, deliberately, with the two
+            # floors above: it is the instrument admitting it cannot read the
+            # tree it just read, which is a property of THIS checkout and not
+            # of any commit.
             if len(res.unparsed) > row["max_unparsed"]:
                 flags.append(f"UNPARSED {len(res.unparsed)} > pinned "
                              f"{row['max_unparsed']} — the instrument "
                              f"admitting it cannot read, never a pass")
 
         status = "✗" if flags else ("·" if res.findings else "✓")
+        split = ""
+        if held or delta.masked:
+            split = (f" [{len(delta.committed)} committed"
+                     + (f", {len(held)} uncommitted" if held else "")
+                     + (f", {len(delta.masked)} MASKED" if delta.masked else "")
+                     + "]")
         print(f"{status} {name:22s} sh={res.files:<3d} sites={n_sites:<4d} "
               f"findings={len(res.findings)} guarded={res.guarded} "
-              f"local={len(res.local)} unparsed={len(res.unparsed)}")
-        for f in res.findings:
-            print(f"      ⛔ {f['sub']:14s} {f['rel']}:{f['line']}")
+              f"local={len(res.local)} unparsed={len(res.unparsed)}{split}")
+        for key, f in keyed_rows(res.name, res.findings):
+            print(f"      ⛔ {f['sub']:14s} {f['rel']}:{f['line']}"
+                  + (" [UNCOMMITTED — not adjudicated]" if key in held else ""))
+        # A MASKED row is NOT in the worktree list — that is what MASKED means
+        # — so it is printed from the HEAD side or it is printed nowhere, and
+        # the membership wall then demands a pin for a row nobody can see.
+        for _key, f in delta.masked:
+            print(f"      ⛔ {f['sub']:14s} {f['rel']}:{f['line']} "
+                  f"[MASKED — committed, hidden by this worktree]")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
 
     # membership: every measured key must be pinned (with its source line
     # intact), and every pinned row on a PRESENT repo must still fire.
-    seen = measure_keys(results)
+    seen = measure_keys(deltas)
     present = set(names)
     for key, f in sorted(seen.items()):
         if key not in expected:
@@ -449,8 +665,12 @@ def main() -> int:
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — the shell scripts and their pipelines.
+    # ...and Issue 822's row counts ride with it: the per-row labels above say
+    # WHICH, this says the class exists at all, and a notice printed in only
+    # one of those places is one nobody reads on the run that needs it.
     deferred.extend(sweep_advisory(
-        names, ("*.sh"), root=WORKSPACE))
+        names, SCOPE, root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
     for _line in pop_lines:
         print(_line)
     if pop_fail:
