@@ -86,7 +86,7 @@ def read_highwater(d: Path) -> tuple[int | None, str | None]:
     check for its directory.
     """
     f = d / HIGHWATER
-    return parse_highwater(f.read_text(errors="replace")
+    return parse_highwater(f.read_text(errors="replace", encoding="utf-8")
                            if f.is_file() else None)
 
 
@@ -264,7 +264,7 @@ def selftest() -> list[str]:
         p = Path(td) / "pins.txt"
         p.write_text(
             "# a comment\nmax_duplicate_numbers = 0\n"
-            "min_files.plans = 400  # trailing comment\n\nnot a pin line\n"
+            "min_files.plans = 400  # trailing comment\n\nnot a pin line\n", encoding="utf-8"
         )
         pins = parse_pins(p)
         if pins.get("max_duplicate_numbers") != 0:
@@ -281,8 +281,8 @@ def selftest() -> list[str]:
         repo = Path(td)
         (repo / ".plans").mkdir()
         for nm in ("001_a.md", "001_b.md", "002_c.md"):
-            (repo / ".plans" / nm).write_text("x")
-        (repo / ".plans" / HIGHWATER).write_text("2")
+            (repo / ".plans" / nm).write_text("x", encoding="utf-8")
+        (repo / ".plans" / HIGHWATER).write_text("2", encoding="utf-8")
         by_num, hw, n, hw_bad = scan(repo, ".plans", {".plans/001_a.md", ".plans/002_c.md"})
         if hw_bad is not None:
             fails.append(f"clean highwater misread as malformed: {hw_bad!r}")
@@ -297,7 +297,7 @@ def selftest() -> list[str]:
             fails.append(f"tracked split wrong: {flags}")
 
         # 5. above-highwater must be DETECTED, not just tolerated
-        (repo / ".plans" / "009_over.md").write_text("x")
+        (repo / ".plans" / "009_over.md").write_text("x", encoding="utf-8")
         by2, hw2, _, _ = scan(repo, ".plans", set())
         if max(by2) <= (hw2 or 0):
             fails.append("above-highwater case did not construct")
@@ -312,11 +312,11 @@ def selftest() -> list[str]:
         hw, bad = read_highwater(d)
         if (hw, bad) != (None, None):
             fails.append(f"absent highwater misclassified: {(hw, bad)}")
-        (d / HIGHWATER).write_text("-n 872\n")
+        (d / HIGHWATER).write_text("-n 872\n", encoding="utf-8")
         hw, bad = read_highwater(d)
         if hw is not None or bad != "-n 872":
             fails.append(f"malformed highwater not detected: {(hw, bad)}")
-        (d / HIGHWATER).write_text("  0872  \n")
+        (d / HIGHWATER).write_text("  0872  \n", encoding="utf-8")
         hw, bad = read_highwater(d)
         if (hw, bad) != (872, None):
             fails.append(f"padded/zero-padded highwater misread: {(hw, bad)}")

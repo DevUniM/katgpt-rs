@@ -338,16 +338,16 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         (repo / "tests").mkdir(parents=True)
-        (repo / "tests" / "goat_alpha_gate.rs").write_text("#[test] fn a() {}\n")
-        (repo / "tests" / "plain_helper.rs").write_text("pub fn h() {}\n")
+        (repo / "tests" / "goat_alpha_gate.rs").write_text("#[test] fn a() {}\n", encoding="utf-8")
+        (repo / "tests" / "plain_helper.rs").write_text("pub fn h() {}\n", encoding="utf-8")
         (repo / "tests" / "common").mkdir()
-        (repo / "tests" / "common" / "mod.rs").write_text("pub const X: u32 = 1;\n")
+        (repo / "tests" / "common" / "mod.rs").write_text("pub const X: u32 = 1;\n", encoding="utf-8")
         (repo / "Cargo.toml").write_text(
             '[package]\nname = "t"\n'
             '[[test]]\nname = "named_bench"\npath = "tests/named_bench.rs"\n'
             'required-features = ["f1"]\n'
             '[[test]]\npath = "tests/derived_name.rs"\n'
-            '[[bench]]\nname = "some_bench"\nharness = false\n'
+            '[[bench]]\nname = "some_bench"\nharness = false\n', encoding="utf-8"
         )
         rep = RepoReport(repo="t")
         scan_manifest(repo, repo / "Cargo.toml", rep)
@@ -366,8 +366,8 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         (repo / "tests").mkdir()
-        (repo / "tests" / "orphan.rs").write_text("#[test] fn a() {}\n")
-        (repo / "Cargo.toml").write_text('[package]\nname = "t"\nautotests = false\n')
+        (repo / "tests" / "orphan.rs").write_text("#[test] fn a() {}\n", encoding="utf-8")
+        (repo / "Cargo.toml").write_text('[package]\nname = "t"\nautotests = false\n', encoding="utf-8")
         rep = RepoReport(repo="t")
         scan_manifest(repo, repo / "Cargo.toml", rep)
         assert rep.targets == []
@@ -376,12 +376,12 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         (repo / "scripts").mkdir()
-        (repo / "scripts" / "gate.sh").write_text("cargo test --test pinned_target -- --nocapture\n")
+        (repo / "scripts" / "gate.sh").write_text("cargo test --test pinned_target -- --nocapture\n", encoding="utf-8")
         (repo / "Cargo.toml").write_text(
             '[package]\nname = "t"\n'
             '[[test]]\nname = "pinned_target"\npath = "tests/p.rs"\n\n'
             '[features]\nf1 = []\n'
-            '[[test]]\nname = "orphan_target"\npath = "tests/o.rs"\n'
+            '[[test]]\nname = "orphan_target"\npath = "tests/o.rs"\n', encoding="utf-8"
         )
         rep = audit(repo)
         names = {t.name for t in rep.targets}
@@ -420,10 +420,10 @@ def selftest() -> None:
         (repo / "scripts" / "gate.sh").write_text(
             "cargo test --workspace\n"
             "# a plain `cargo test` compiles the file to nothing\n"
-            "echo 'cargo test --workspace'\n"
+            "echo 'cargo test --workspace'\n", encoding="utf-8"
         )
         (repo / "scripts" / "notes.py").write_text(
-            'x = "cargo test --workspace"  # prose in a non-suite file\n'
+            'x = "cargo test --workspace"  # prose in a non-suite file\n', encoding="utf-8"
         )
         (repo / "scripts" / "bin.lock").write_bytes(b"\x00\x01cargo test --workspace")
         lines = command_lines(repo)
@@ -445,7 +445,7 @@ def selftest() -> None:
             "OUT=$(cargo test -p pkg --features f \\\n"
             "    --test named_gate \\\n"
             "    -- --nocapture)\n"
-            "cargo test --workspace --quiet\n"
+            "cargo test --workspace --quiet\n", encoding="utf-8"
         )
         lines = command_lines(repo)
         assert len(lines) == 2, lines

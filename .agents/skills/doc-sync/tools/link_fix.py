@@ -34,7 +34,7 @@ REPO_ALT = "|".join(REPO_NAMES)
 def parse_findings():
     rows, in_section = [], False
     want = f"== {REPO.name}:"
-    for line in FINDINGS.read_text().splitlines():
+    for line in FINDINGS.read_text(encoding="utf-8").splitlines():
         if line.startswith("== "):
             in_section = line.startswith(want)
             continue

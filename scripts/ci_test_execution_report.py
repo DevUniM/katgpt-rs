@@ -152,7 +152,7 @@ def test_sites(repo_dir: Path) -> int:
         if SKIP_DIRS & set(p.parts):
             continue
         try:
-            n += len(TEST_ATTR.findall(p.read_text(errors="replace")))
+            n += len(TEST_ATTR.findall(p.read_text(errors="replace", encoding="utf-8")))
         except OSError:
             continue
     return n

@@ -258,19 +258,19 @@ def build_synthetic(ws: Path) -> list[str]:
     """Every case the real walk distinguishes. Returns the expected answer."""
     for name in ("good", "also-good"):
         (ws / name).mkdir()
-        (ws / name / "BOUNDARY.md").write_text("x")
+        (ws / name / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (ws / name / ".git").mkdir()
     (ws / "no-boundary").mkdir()
     (ws / "no-boundary" / ".git").mkdir()
     (ws / "no-git").mkdir()
-    (ws / "no-git" / "BOUNDARY.md").write_text("x")
+    (ws / "no-git" / "BOUNDARY.md").write_text("x", encoding="utf-8")
     # A worktree's `.git` is a FILE. Admitting it double-counts a repo already
     # in the walk — the trap the DIRECTORY test exists for.
     (ws / "worktree-shaped").mkdir()
-    (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-    (ws / "worktree-shaped" / ".git").write_text("gitdir: /elsewhere/.git/worktrees/x")
+    (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+    (ws / "worktree-shaped" / ".git").write_text("gitdir: /elsewhere/.git/worktrees/x", encoding="utf-8")
     # A plain file must not be mistaken for a repo directory.
-    (ws / "BOUNDARY.md").write_text("x")
+    (ws / "BOUNDARY.md").write_text("x", encoding="utf-8")
     return ["also-good", "good"]
 
 

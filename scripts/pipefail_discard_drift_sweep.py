@@ -279,10 +279,10 @@ def selftest() -> list[str]:
     # 4. pin parser: arity ENFORCED, comments stripped
     with tempfile.TemporaryDirectory() as td:
         pins = Path(td) / "pins.txt"
-        pins.write_text("# c\nr 5 42 2 0  # trailing\n\n")
+        pins.write_text("# c\nr 5 42 2 0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {"r": dict(zip(FIELDS, (5, 42, 2, 0)))}:
             fails.append("pin parse: 5-field row not read correctly")
-        pins.write_text("r 1 2\n")
+        pins.write_text("r 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")
@@ -293,13 +293,13 @@ def selftest() -> list[str]:
         with tempfile.TemporaryDirectory() as td2:
             exp = Path(td2) / "exp.txt"
             exp.write_text("r:a.sh:" + pda.make_digest(kill) + "#1   why   #= "
-                           "names=\n")
+                           "names=\n", encoding="utf-8")
             got = parse_expected(exp)
             check(list(got) == [f"r:a.sh:{pda.make_digest(kill)}#1"]
                   and got[f"r:a.sh:{pda.make_digest(kill)}#1"] == ("why",
                                                                    "names="),
                   "expected parse: well-formed row misread")
-            exp.write_text("r:a.sh:" + "0" * 8 + "#1   #= x\n")
+            exp.write_text("r:a.sh:" + "0" * 8 + "#1   #= x\n", encoding="utf-8")
             try:
                 parse_expected(exp)
                 fails.append("expected parse: REASONLESS row accepted")
@@ -314,13 +314,13 @@ def selftest() -> list[str]:
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         (ws / "real").mkdir()
-        (ws / "real" / "BOUNDARY.md").write_text("x")
+        (ws / "real" / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (ws / "real" / ".git").mkdir()
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if derive_repos(ws) != ["real"]:
             fails.append(f"population derivation wrong: {derive_repos(ws)}")
 

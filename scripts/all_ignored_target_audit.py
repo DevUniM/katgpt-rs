@@ -455,12 +455,12 @@ def selftest() -> None:
         root = Path(td)
         (root / "tests").mkdir()
         (root / "tests" / "armed_goat.rs").write_text(
-            '#![cfg(feature = "opt")]\n#[test]\n#[ignore]\nfn a() {}\n'
+            '#![cfg(feature = "opt")]\n#[test]\n#[ignore]\nfn a() {}\n', encoding="utf-8"
         )
         (root / "Cargo.toml").write_text(
             '[package]\nname = "p"\nversion = "0.0.0"\n\n'
             "[features]\nopt = []\n\n"
-            '[[test]]\nname = "armed_goat"\nrequired-features = ["opt"]\n'
+            '[[test]]\nname = "armed_goat"\nrequired-features = ["opt"]\n', encoding="utf-8"
         )
         r = RepoReport(repo="p")
         scan_manifest(root, root / "Cargo.toml", r)
@@ -480,10 +480,10 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "tests").mkdir()
-        (root / "tests" / "driver.rs").write_text("fn main() {}\n")
+        (root / "tests" / "driver.rs").write_text("fn main() {}\n", encoding="utf-8")
         (root / "Cargo.toml").write_text(
             '[package]\nname = "p"\nversion = "0.0.0"\n\n'
-            '[[test]]\nname = "driver"\nharness = false\n'
+            '[[test]]\nname = "driver"\nharness = false\n', encoding="utf-8"
         )
         r = RepoReport(repo="p")
         scan_manifest(root, root / "Cargo.toml", r)

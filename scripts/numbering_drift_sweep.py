@@ -423,10 +423,10 @@ def selftest() -> list[str]:
         (repo / ".plans").mkdir(parents=True)
         (repo / ".benchmarks").mkdir()
         for nm in ("001_a.md", "001_b.md"):
-            (repo / ".plans" / nm).write_text("x")
-            (repo / ".benchmarks" / nm).write_text("x")
-        (repo / ".benchmarks" / ng.HIGHWATER).write_text("-n 7\n")
-        (repo / "BOUNDARY.md").write_text("x")
+            (repo / ".plans" / nm).write_text("x", encoding="utf-8")
+            (repo / ".benchmarks" / nm).write_text("x", encoding="utf-8")
+        (repo / ".benchmarks" / ng.HIGHWATER).write_text("-n 7\n", encoding="utf-8")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
 
         # tracked_paths() shells out to git; an untracked file is not a defect,
         # so a non-repo would report ZERO duplicates and pass vacuously. Pin
@@ -467,7 +467,7 @@ def selftest() -> list[str]:
         # non-git tempdir and asserted nothing (mutation-proof: inverting the
         # guard passed clean).
         (repo / ".issues").mkdir(exist_ok=True)
-        (repo / ".issues" / ng.HIGHWATER).write_text("3\n")
+        (repo / ".issues" / ng.HIGHWATER).write_text("3\n", encoding="utf-8")
         real_hist = hca.counter_history
         real_cls = hca.classify_history
         hca.counter_history = (
@@ -479,7 +479,7 @@ def selftest() -> list[str]:
              "resets": [(4, 3, "h2")]})
         try:
             got3 = audit(repo)
-            (repo / ".issues" / ng.HIGHWATER).write_text("5\n")
+            (repo / ".issues" / ng.HIGHWATER).write_text("5\n", encoding="utf-8")
             got4 = audit(repo)
         finally:
             hca.counter_history = real_hist
@@ -496,8 +496,8 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if [p.name for p in contract_repos(ws)] != []:
             fails.append("population: admitted a repo with no .git dir")
         (repo / ".git").mkdir()
@@ -537,7 +537,7 @@ def selftest() -> list[str]:
 
         # row parser: 8 fields, comments stripped, arity enforced
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a\t10\t0\t0\t0\t0\t7\t2  # trailing\n\n")
+        pins.write_text("# c\nrepo-a\t10\t0\t0\t0\t0\t7\t2  # trailing\n\n", encoding="utf-8")
         if parse_rows(pins) != {"repo-a": {"min_files": 10, "max_dup": 0,
                                            "max_above": 0, "max_malformed": 0,
                                            "max_resets": 0, "min_numbers": 7,
@@ -548,7 +548,7 @@ def selftest() -> list[str]:
         # floor that cannot fail, and `max_hist = 0` would red every repo.
         # Both directions of arity, so the parser cannot only ever loosen.
         for bad_row in ("repo-a 1 2 3 4 5\n", "repo-a 1 2 3 4 5 6 7 8\n"):
-            pins.write_text(bad_row)
+            pins.write_text(bad_row, encoding="utf-8")
             try:
                 parse_rows(pins)
                 fails.append(f"row parse: wrong-arity row accepted: {bad_row!r}")

@@ -390,19 +390,19 @@ def selftest() -> list[str]:
         ws = Path(td)
         repo = ws / "fake-repo"
         (repo / "tests").mkdir(parents=True)
-        (repo / "BOUNDARY.md").write_text("x")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (repo / ".git").mkdir()
         (repo / "Cargo.toml").write_text(
-            "[package]\nname = 'fake'\nversion = '0.1.0'\n[features]\noff = []\n"
+            "[package]\nname = 'fake'\nversion = '0.1.0'\n[features]\noff = []\n", encoding="utf-8"
         )
         # Auto-discovered, gated on a DEFAULT-OFF feature, load-bearing name.
         (repo / "tests" / "thing_spec_match.rs").write_text(
-            '#![cfg(feature = "off")]\n#[test]\nfn t() { assert!(true); }\n'
+            '#![cfg(feature = "off")]\n#[test]\nfn t() { assert!(true); }\n', encoding="utf-8"
         )
         # Same shape, NOT load-bearing by name — must count as silent_now but
         # not as load_bearing, or the severity split has collapsed.
         (repo / "tests" / "scratch_probe.rs").write_text(
-            '#![cfg(feature = "off")]\n#[test]\nfn t() { assert!(true); }\n'
+            '#![cfg(feature = "off")]\n#[test]\nfn t() { assert!(true); }\n', encoding="utf-8"
         )
         got = audit(repo)
         if len(got["silent_now"]) != 2:
@@ -416,18 +416,18 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if [p.name for p in cga.derive_repos(ws)] != ["fake-repo"]:
             fails.append("population derivation is not BOUNDARY.md + .git dir")
 
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a 10 5 3 0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a 10 5 3 0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {"repo-a": {"min_targets": 10, "min_gated": 5,
                                            "max_silent_now": 3,
                                            "max_load_bearing": 0}}:
             fails.append("pin parse: 5-field row not read correctly")
-        pins.write_text("repo-a 1 2\n")
+        pins.write_text("repo-a 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")

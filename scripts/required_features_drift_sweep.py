@@ -339,14 +339,14 @@ def selftest() -> list[str]:
         ws = Path(td)
         repo = ws / "fake-repo"
         (repo / "tests").mkdir(parents=True)
-        (repo / "BOUNDARY.md").write_text("x")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (repo / "Cargo.toml").write_text(
             "[package]\nname = 'fake'\nversion = '0.1.0'\n"
             "[features]\nreal = []\n"
             "[dependencies]\nserde = '1'\n"
             "[[test]]\nname = 'ok_row'\nrequired-features = ['real']\n"
             "[[test]]\nname = 'dep_row'\nrequired-features = ['serde/derive']\n"
-            "[[test]]\nname = 'bad_row'\nrequired-features = ['nope']\n"
+            "[[test]]\nname = 'bad_row'\nrequired-features = ['nope']\n", encoding="utf-8"
         )
         got = audit(repo)
         # 1. the verdict FIRES on a planted invalid row
@@ -366,7 +366,7 @@ def selftest() -> list[str]:
         # 3. an unparseable manifest must be COUNTED, not silently dropped —
         #    it is what makes a blind walk look like a repo with no rows.
         (repo / "sub").mkdir()
-        (repo / "sub" / "Cargo.toml").write_text("[package\nname = broken")
+        (repo / "sub" / "Cargo.toml").write_text("[package\nname = broken", encoding="utf-8")
         got2 = audit(repo)
         if got2["n_unparseable"] != 1:
             fails.append(f"unparseable manifest not counted: {got2}")
@@ -376,8 +376,8 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if [p.name for p in derive_repos(ws)] != []:
             fails.append("population: admitted a repo with no .git dir")
         (repo / ".git").mkdir()
@@ -386,12 +386,12 @@ def selftest() -> list[str]:
 
         # 5. pin parser: 4 fields, comments stripped, arity ENFORCED
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a\t3\t10\t0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a\t3\t10\t0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {
             "repo-a": {"min_manifests": 3, "min_rows": 10, "max_invalid": 0}
         }:
             fails.append("pin parse: 4-field row not read correctly")
-        pins.write_text("repo-a 1 2\n")
+        pins.write_text("repo-a 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: 3-field row accepted")

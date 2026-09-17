@@ -255,7 +255,7 @@ def selftest() -> None:
     }
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "pos.rs").write_text(positive)
+        (root / "pos.rs").write_text(positive, encoding="utf-8")
         got = scan(root)
         assert len(got.offenders) == 1, f"the real bug's shape was not detected: {got}"
         assert got.offenders[0][0] == "pos.rs"
@@ -274,7 +274,7 @@ def selftest() -> None:
 
         # …and the line must track the attribute's actual position, not be a
         # constant that happens to be 1. Same shape, pushed down the file.
-        (root / "pos.rs").write_text("// a leading comment\n\n" + positive)
+        (root / "pos.rs").write_text("// a leading comment\n\n" + positive, encoding="utf-8")
         got2 = scan(root)
         assert len(got2.offenders) == 1 and got2.offenders[0][1] == 3, (
             f"the reported line does not track the attribute: {got2.offenders}")
@@ -286,7 +286,7 @@ def selftest() -> None:
     for name, src in negatives.items():
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "n.rs").write_text(src)
+            (root / "n.rs").write_text(src, encoding="utf-8")
             got = scan(root)
             assert got.offenders == [], f"false positive on {name}: {got.offenders}"
             # A negative is a real scanned file, not an unread one — otherwise
@@ -297,7 +297,7 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "target").mkdir()
-        (root / "target" / "gen.rs").write_text(positive)
+        (root / "target" / "gen.rs").write_text(positive, encoding="utf-8")
         got = scan(root)
         assert got.offenders == [], "target/ was walked"
         assert got.files == 0, f"target/ was read: {got}"
@@ -306,7 +306,7 @@ def selftest() -> None:
     # is what a floor would otherwise be silently satisfied by (`.md` is plentiful).
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "n.md").write_text(positive)
+        (root / "n.md").write_text(positive, encoding="utf-8")
         assert scan(root) == Scan([], 0, 0), "a non-.rs file entered the population"
 
 

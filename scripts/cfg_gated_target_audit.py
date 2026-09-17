@@ -859,12 +859,12 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "tests").mkdir()
-        (root / "tests" / "a.goat.rs").write_text('#![cfg(feature = "x")]\n')
+        (root / "tests" / "a.goat.rs").write_text('#![cfg(feature = "x")]\n', encoding="utf-8")
         (root / "Cargo.toml").write_text(
             '[package]\nname = "p"\nversion = "0.0.0"\n\n'
             "[features]\nx = []\n\n"
             '[[test]]\nname = "a_goat"\npath = "tests/a.goat.rs"\n'
-            'required-features = ["x"]\n'
+            'required-features = ["x"]\n', encoding="utf-8"
         )
         r = RepoReport(repo="p")
         scan_manifest(root, root / "Cargo.toml", r)
@@ -886,9 +886,9 @@ def selftest() -> None:
         with _tf.TemporaryDirectory() as td:
             root = Path(td)
             (root / "tests").mkdir()
-            (root / "tests" / "t.rs").write_text(src)
+            (root / "tests" / "t.rs").write_text(src, encoding="utf-8")
             (root / "Cargo.toml").write_text(
-                '[package]\nname = "p"\nversion = "0.0.0"\n'
+                '[package]\nname = "p"\nversion = "0.0.0"\n', encoding="utf-8"
             )
             r = RepoReport(repo="p")
             scan_manifest(root, root / "Cargo.toml", r)

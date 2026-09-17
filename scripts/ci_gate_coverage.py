@@ -137,7 +137,7 @@ def _on_block(wf: Path) -> str:
     of keywords. Shared by both trigger readers so they cannot disagree about
     where the block ends."""
     try:
-        raw = wf.read_text(errors="replace")
+        raw = wf.read_text(errors="replace", encoding="utf-8")
     except OSError:
         return ""
     body = re.split(r"^jobs:", raw, maxsplit=1, flags=re.M)[0]
@@ -252,7 +252,7 @@ def live_lines(path: Path) -> list[str]:
     not a workflow that runs it; reading comments is how the hand survey called
     two repos gated that are not."""
     try:
-        raw = path.read_text(errors="replace").splitlines()
+        raw = path.read_text(errors="replace", encoding="utf-8").splitlines()
     except OSError:
         return []
     return [l for l in raw if not l.lstrip().startswith("#")]

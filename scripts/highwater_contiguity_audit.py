@@ -268,16 +268,16 @@ def selftest() -> list[str]:
         git(repo, "init", "-q", "-b", "main")
         (repo / ".issues").mkdir()
         hw = repo / ".issues" / ".highwater"
-        hw.write_text("10\n")
+        hw.write_text("10\n", encoding="utf-8")
         git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "base 10")
         git(repo, "checkout", "-q", "-b", "side")
-        hw.write_text("20\n")
+        hw.write_text("20\n", encoding="utf-8")
         git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "branch a bumps to 20")
         git(repo, "checkout", "-q", "main")
-        hw.write_text("11\n")
+        hw.write_text("11\n", encoding="utf-8")
         git(repo, "add", "-A"); git(repo, "commit", "-q", "-m", "main bumps to 11")
         git_may_conflict(repo, "merge", "--no-commit", "side")
-        hw.write_text("11\n")  # the conflict resolution that RESETS 20→11
+        hw.write_text("11\n", encoding="utf-8")  # the conflict resolution that RESETS 20→11
         git(repo, "add", "-A")
         subprocess.run(["git", "-C", str(repo), "commit", "-q",
                         "-m", "MERGE: resolve conflict by RESETTING 20 to 11"],
@@ -304,18 +304,18 @@ def selftest() -> list[str]:
         git(repo2, "init", "-q", "-b", "main")
         (repo2 / ".benchmarks").mkdir()
         hw2 = repo2 / ".benchmarks" / ".highwater"
-        hw2.write_text("204\n")
+        hw2.write_text("204\n", encoding="utf-8")
         git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "base 204")
         git(repo2, "checkout", "-q", "-b", "old-lane")
-        hw2.write_text("205\n")
+        hw2.write_text("205\n", encoding="utf-8")
         git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "side lane allocates 205")
         git(repo2, "checkout", "-q", "main")
-        hw2.write_text("205\n")
+        hw2.write_text("205\n", encoding="utf-8")
         git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "main allocates 205 too")
-        hw2.write_text("564\n")
+        hw2.write_text("564\n", encoding="utf-8")
         git(repo2, "add", "-A"); git(repo2, "commit", "-q", "-m", "main jumps to 564")
         git_may_conflict(repo2, "merge", "--no-commit", "old-lane")
-        hw2.write_text("564\n")  # the merge keeps main's higher value
+        hw2.write_text("564\n", encoding="utf-8")  # the merge keeps main's higher value
         git(repo2, "add", "-A")
         subprocess.run(["git", "-C", str(repo2), "commit", "-q",
                         "-m", "MERGE: keep 564"],
@@ -335,18 +335,18 @@ def selftest() -> list[str]:
         git(repo3, "init", "-q", "-b", "main")
         (repo3 / ".issues").mkdir()
         hw3 = repo3 / ".issues" / ".highwater"
-        hw3.write_text("765\n")
+        hw3.write_text("765\n", encoding="utf-8")
         git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "765")
-        hw3.write_text("768\n")
+        hw3.write_text("768\n", encoding="utf-8")
         git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "jump to 768")
-        hw3.write_text("769\n")
+        hw3.write_text("769\n", encoding="utf-8")
         git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "769")
         w3 = classify_history(counter_history(repo3, ".issues"), repo=repo3)
         if w3["gaps"] != [(0, 765), (765, 768)] or w3["resets"] or w3["final"] != 769:
             fails.append(f"line: creation (0,765) + jump (765,768) gaps only — "
                          f"got gaps={w3['gaps']} resets={w3['resets']} "
                          f"final={w3['final']}")
-        hw3.write_text("4\n")
+        hw3.write_text("4\n", encoding="utf-8")
         git(repo3, "add", "-A"); git(repo3, "commit", "-q", "-m", "back to 4")
         w3b = classify_history(counter_history(repo3, ".issues"), repo=repo3)
         if len(w3b["resets"]) != 1 or w3b["resets"][0][:2] != (769, 4):

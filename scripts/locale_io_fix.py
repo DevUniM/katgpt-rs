@@ -23,6 +23,12 @@ import ast
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 PATH_METHODS = {"write_text", "read_text"}
 
 
@@ -66,7 +72,7 @@ def _line_starts(raw: bytes) -> list[int]:
 
     BYTES, not characters, and that is not a detail: CPython reports
     `col_offset` as a **UTF-8 byte** offset. Computing it in characters
-    desyncs by one per em dash earlier on the line, and this repo's sources
+    desyncs by two per em dash earlier on the line, and this repo's sources
     are full of them - the first run asserted on `' '` 59664 chars in.
     A plain byte split on LF is used rather than `splitlines`, which also
     breaks on U+2028, U+0085 and form feed - separators `col_offset` does
@@ -91,12 +97,24 @@ def repair(src: str) -> tuple[str, int]:
     out = raw
     for at in reversed(points):
         assert out[at:at + 1] == b")", (
+            # EQUIVALENT under mutation: the arithmetic in this MESSAGE is
+            # evaluated only when the assert already failed, so no input
+            # distinguishes it. Adjudicated, not unarmed.
             f"expected ')' at byte {at}, got {out[at:at + 1]!r}")
         j = at - 1
+        # EQUIVALENT: `>= 0` vs `> 0` differ only if the scan walks back to
+        # byte 0, which needs every byte before the `)` to be whitespace -
+        # impossible, since `open(` or `.write_text(` always precedes it.
         while j >= 0 and out[j:j + 1].isspace():
             j -= 1
-        lead = b"" if out[j:j + 1] in (b",", b"(") else b", "
-        out = out[:at] + lead + b'encoding="utf-8"' + out[at:]
+        # Insert after the last ARGUMENT character, not before the paren: a
+        # call whose `)` sits on its own line would otherwise grow a
+        # leading-comma continuation line (`        , encoding="utf-8")`),
+        # which is valid Python and unreviewable. `j + 1 == at` whenever
+        # there is no whitespace, so the common case is unchanged.
+        prev = out[j:j + 1]
+        lead = b"" if prev == b"(" else (b" " if prev == b"," else b", ")
+        out = out[:j + 1] + lead + b'encoding="utf-8"' + out[j + 1:]
     return out.decode("utf-8"), len(points)
 
 
@@ -127,11 +145,24 @@ def selftest() -> list[str]:
     # binary mode has no encoding to give — positional AND keyword
     one('open(p, "rb")\n', 0)
     one('open(p, mode="wb")\n', 0)
+    # ⚑ The `mode=` keyword's TWO conjuncts, which nothing above reaches: with
+    # `or`, any constant keyword value containing a `b` reads as binary mode —
+    # and `errors="backslashreplace"` is the exact form this repo's own
+    # console defence uses, so the mutant would skip real sites in real code.
+    one('open(p, errors="backslashreplace")\n', 1)
+    one('open(p, mode=m)\n', 1)   # a non-constant mode is UNKNOWN, not binary
     # already explicit
     one('p.write_text(x, encoding="utf-8")\n', 0)
     one('open(p, encoding="latin-1")\n', 0)
     # a trailing comma must not become a double comma
     one('p.write_text(\n    x,\n)\n', 1, None, ',,')
+    # a `)` on its own line: the kwarg joins the last ARGUMENT, never the
+    # closing paren — a leading-comma continuation line is valid and
+    # unreviewable, and 128 sites went in before anyone read one
+    one('f.read_text(errors="replace"\n    )\n', 1,
+        'f.read_text(errors="replace", encoding="utf-8"\n    )')
+    one('p.write_text(\n    x,\n)\n', 1, 'x, encoding="utf-8"')
+    one('p.read_text( )\n', 1, 'p.read_text(encoding="utf-8" )')
     # a `write_text(` inside a STRING is not a call — the false positive an
     # AST pass exists to avoid, measured three times in this repo
     one('s = "p.write_text(x)"\n', 0)
@@ -158,13 +189,21 @@ def main(argv: list[str]) -> int:
     total = 0
     for a in args:
         p = Path(a)
-        src = p.read_text(encoding="utf-8")
+        # ⛔ The NEWLINE STYLE is part of the file and this tool must not have
+        # an opinion about it. Read with universal newlines (so `ast` sees the
+        # LF text its offsets are computed against), then write the original
+        # style back: the first run flipped `suite_membership_audit.py` from
+        # CRLF to LF and turned an 11-site repair into a 515-line diff, which
+        # is a repair nobody can review.
+        raw = p.read_bytes()
+        eol = "\r\n" if b"\r\n" in raw else "\n"
+        src = raw.decode("utf-8").replace("\r\n", "\n")
         out, n = repair(src)
         total += n
         if n:
             print(f"{'would repair' if listing else 'repaired'} {n:4d}  {a}")
             if not listing:
-                p.write_text(out, encoding="utf-8", newline="")
+                p.write_bytes(out.replace("\n", eol).encode("utf-8"))
     print(f"{total} site(s) over {len(args)} file(s)")
     return 0
 

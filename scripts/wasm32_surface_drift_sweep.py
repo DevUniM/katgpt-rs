@@ -234,30 +234,30 @@ def selftest() -> list[str]:
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
         (ws / "real").mkdir()
-        (ws / "real" / "BOUNDARY.md").write_text("x")
+        (ws / "real" / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (ws / "real" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if derive_repos(ws) != ["real"]:
             fails.append(f"population derivation wrong: {derive_repos(ws)}")
 
         # 5. both parsers: arity ENFORCED, comments stripped.
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a 8 2 0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a 8 2 0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {"repo-a": dict(zip(FIELDS, (8, 2, 0)))}:
             fails.append("pin parse: 4-field row not read correctly")
-        pins.write_text("repo-a 1 2\n")
+        pins.write_text("repo-a 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
         exp = ws / "exp.txt"
-        exp.write_text("# c\nrepo-a pkg-b  # trailing\n\n")
+        exp.write_text("# c\nrepo-a pkg-b  # trailing\n\n", encoding="utf-8")
         if parse_expected(exp) != {("repo-a", "pkg-b")}:
             fails.append("expected parse: 2-field row not read correctly")
-        exp.write_text("repo-a\n")
+        exp.write_text("repo-a\n", encoding="utf-8")
         try:
             parse_expected(exp)
             fails.append("expected parse: short row accepted")

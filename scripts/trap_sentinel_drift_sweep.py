@@ -240,7 +240,7 @@ def selftest() -> list[str]:
         ws = Path(td)
         repo = ws / "fake-repo"
         (repo / "scripts").mkdir(parents=True)
-        (repo / "BOUNDARY.md").write_text("x")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (repo / ".git").mkdir()
 
         exposed = (
@@ -249,7 +249,7 @@ def selftest() -> list[str]:
             "trap 'rm -f \"$A\"' EXIT\n"
             'echo "$SOMETHING"\necho ALL GREEN\n'
         )
-        (repo / "scripts" / "g.sh").write_text(exposed)
+        (repo / "scripts" / "g.sh").write_text(exposed, encoding="utf-8")
         # `walk_sh` asks git; a temp dir has no index, and its documented
         # fallback is an on-disk walk. Assert we actually got the file, or the
         # whole selftest silently measures an empty population.
@@ -267,7 +267,7 @@ def selftest() -> list[str]:
         # nounset-only: PRECAUTIONARY, never EXPOSED (the T10 severity split —
         # measured, errexit is the precondition).
         (repo / "scripts" / "g.sh").write_text(
-            exposed.replace("set -euo pipefail", "set -uo pipefail"))
+            exposed.replace("set -euo pipefail", "set -uo pipefail"), encoding="utf-8")
         got = audit(repo)
         if len(got["precautionary"]) != 1 or got["exposed"]:
             fails.append(f"nounset-only must be PRECAUTIONARY, got "
@@ -281,7 +281,7 @@ def selftest() -> list[str]:
             "cleanup() {\n    st=$?\n    rm -f \"$A\"\n"
             '    if [ "$DONE_FLAG" != "1" ] && [ "$st" = "0" ]; then\n'
             "        exit 1\n    fi\n    exit \"$st\"\n}\n"
-            "trap cleanup EXIT\necho layer\nDONE_FLAG=1\n")
+            "trap cleanup EXIT\necho layer\nDONE_FLAG=1\n", encoding="utf-8")
         got = audit(repo)
         if any(got[name] for name, _ in CLASSES):
             fails.append("control: a sentinelled script produced a finding "
@@ -293,18 +293,18 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if tela.repos(str(ws)) != ["fake-repo"]:
             fails.append(f"population derivation wrong: {tela.repos(str(ws))}")
 
         # pin parser: arity ENFORCED, comments stripped
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a 10 5 0 0 0 0 0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a 10 5 0 0 0 0 0  # trailing\n\n", encoding="utf-8")
         want = {"repo-a": dict(zip(FIELDS, (10, 5, 0, 0, 0, 0, 0)))}
         if parse_pins(pins) != want:
             fails.append("pin parse: 8-field row not read correctly")
-        pins.write_text("repo-a 1 2 3\n")
+        pins.write_text("repo-a 1 2 3\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")

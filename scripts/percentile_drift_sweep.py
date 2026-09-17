@@ -396,7 +396,7 @@ def selftest() -> list[str]:
         ws = Path(td)
         repo = ws / "fake-repo"
         (repo / "benches").mkdir(parents=True)
-        (repo / "BOUNDARY.md").write_text("x")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (repo / ".git").mkdir()
 
         # A planted DEGENERATE site: n=100 at p99 indexes 99 == n-1, the MAX.
@@ -407,7 +407,7 @@ def selftest() -> list[str]:
             "    sorted.sort();\n"
             "    let p99 = sorted[(n as f64 * 0.99) as usize];\n"
             "    assert!(p99 < 5_000);\n"
-            "}\n"
+            "}\n", encoding="utf-8"
         )
         got = audit(repo)
         if len(got["degenerate"]) != 1:
@@ -427,7 +427,7 @@ def selftest() -> list[str]:
             "    sorted.sort();\n"
             "    let p99 = sorted[((n as f64 * 0.99).ceil() as usize) - 1];\n"
             "    assert!(p99 < 5_000);\n"
-            "}\n"
+            "}\n", encoding="utf-8"
         )
         if audit(repo)["degenerate"]:
             fails.append("control: correct ceil()-1 nearest rank reported as DEGENERATE")
@@ -451,21 +451,21 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if pia.repos(str(ws)) != ["fake-repo"]:
             fails.append(f"population derivation wrong: {pia.repos(str(ws))}")
 
         # pin parser: arity ENFORCED, comments stripped
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a 10 5 0 0 0 0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a 10 5 0 0 0 0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {"repo-a": {"min_rs_files": 10, "min_sites": 5,
                                            "max_degenerate": 0,
                                            "max_degenerate_asserted": 0,
                                            "max_weak_asserted": 0,
                                            "max_trunc_var": 0}}:
             fails.append("pin parse: 7-field row not read correctly")
-        pins.write_text("repo-a 1 2 3\n")
+        pins.write_text("repo-a 1 2 3\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")
