@@ -268,18 +268,55 @@ _SELF_HEADING = re.compile(
 # parenthetical, which is strictly more likely to reject — the safe direction
 # for the only path that can SUPPRESS a finding.
 _SELF_HEADING_DATED = re.compile(
-    r"^#{2,}\s+\d{4}-\d{2}-\d{2}\s*[—–-]+\s*(?:\*\*)?(%s)\s+0*(\d{2,4})\s*[:,](.*)$"
+    r"^#{2,}\s+\d{4}-\d{2}-\d{2}\s*[—–-]+\s*(?:\*\*)?(%s)\s+0*(\d{2,4})\s*[:,(](.*)$"
     % "|".join(KINDS))
+
+
+# Issue 828. The SAME discriminator, at the DELIMITER it was never spelled.
+#
+# Issue 823 moved the rule one POSITION over and left it anchored a second
+# time — to the delimiter SET: `(` for the leading form, `[:,]` for the dated
+# one. The workspace's most common title delimiter is the EM DASH, and it was
+# in neither. Measured over the 213 records the oracle declined to read:
+# **56** are `## Issue 788 — <title>: CLOSED (date)` — katgpt-rs's own house
+# style, its own newest closes, in the repo that owns this instrument. Nothing
+# sits between the number and its delimiter in any of them.
+#
+# ⛔ Not the widening AGENTS.md calls unsound, for Issue 823's own reason: the
+# unsound widening is DROPPING the discriminator (accepting `resolved` /
+# `follow-up` between the number and the delimiter). This ADDS a delimiter and
+# keeps the rule — `## Issue 043 follow-up — title` is rejected here exactly as
+# `## Issue 043 follow-up (…)` is rejected by `_SELF_HEADING`, and
+# `citation_drift_sweep.selftest()` arm 2 pins the negative in BOTH delimiters.
+#
+# ⛔ The ASCII hyphen is accepted ONLY space-separated. `## Issue 366-class
+# (pos-uniform chunk forward) FIXED in riir-gpu` is a live riir-ai heading
+# where the hyphen is part of a WORD, not a delimiter; `-(?=\s)` after `\s+`
+# rejects it and an arm pins the case.
+#
+# group(3) is the WHOLE remainder — `_SELF_HEADING_DATED`'s precedent, not
+# `_SELF_HEADING`'s parenthetical. The foreign filter then reads more text,
+# which is strictly more likely to REJECT: the safe direction for the only
+# path here that can SUPPRESS a finding. `_SELF_HEADING`'s own scope is
+# deliberately left alone — widening THAT to the remainder would reject
+# `## Issue 059 (date) — <sibling> did X`, which is the suppression Issue 754
+# landed, so the safe direction for a new pattern is a regression for an
+# existing one.
+_SELF_HEADING_DASH = re.compile(
+    r"^#{2,}\s+(?:\d{4}-\d{2}-\d{2}\s*[—–-]+\s*)?(?:\*\*)?(%s)"
+    r"\s+0*(\d{2,4})\s+(?:[—–]+|-(?=\s))\s*(.*)$" % "|".join(KINDS))
 
 
 def _self_heading(line: str):
     """(kind, number, scope-text-to-filter-for-foreign-names) or None.
 
-    One matcher, both house styles. Callers must not re-implement the choice:
-    the two patterns disagree about which group carries the text the foreign
-    filter reads, and that filter is the suppression path's only guard.
+    One matcher, three house styles (Issue 828 added the dash-delimited one).
+    Callers must not re-implement the choice: the patterns disagree about which
+    group carries the text the foreign filter reads, and that filter is the
+    suppression path's only guard.
     """
-    m = _SELF_HEADING.match(line) or _SELF_HEADING_DATED.match(line)
+    m = (_SELF_HEADING.match(line) or _SELF_HEADING_DATED.match(line)
+         or _SELF_HEADING_DASH.match(line))
     return (m.group(1), int(m.group(2)), m.group(3)) if m else None
 
 

@@ -737,11 +737,11 @@ def selftest() -> list[str]:
         me, sib = ws / "fake-repo", ws / "riir-fakesib"
         (me / ".issues").mkdir(parents=True)
         (sib / ".issues").mkdir(parents=True)
-        (me / ".issues" / "010_local.md").write_text("x")
+        (me / ".issues" / "010_local.md").write_text("x", encoding="utf-8")
         for n in ("010", "500", "600"):
-            (sib / ".issues" / f"{n}_sib.md").write_text("x")
+            (sib / ".issues" / f"{n}_sib.md").write_text("x", encoding="utf-8")
         (me / "crates" / "thing").mkdir(parents=True)
-        (me / "crates" / "thing" / "Cargo.toml").write_text('[package]\nname = "sibcrate-x"\n')
+        (me / "crates" / "thing" / "Cargo.toml").write_text('[package]\nname = "sibcrate-x"\n', encoding="utf-8")
         crates = {"sibcrate-x": "riir-fakesib"}
         pats = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                 for c in crates}
@@ -755,7 +755,7 @@ def selftest() -> list[str]:
             "Issue 900 belongs to nobody at all.\n"            # ORPHAN
             "Issue 010 is local and the sibling has one.\n"    # AMBIGUOUS
             "riir-fakesib Issue 600 names its repo.\n"         # QUALIFIED (window)
-            "`sibcrate-x` ships it; Issue 600 rides the crate.\n")  # crate-hint
+            "`sibcrate-x` ships it; Issue 600 rides the crate.\n", encoding="utf-8")  # crate-hint
         got = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
 
         if got["n_cites"] != 6:
@@ -771,7 +771,7 @@ def selftest() -> list[str]:
 
         # CONTROL: a qualified citation must produce NO finding, or the sweep
         # reds on every correct repair and gets switched off.
-        (me / "AGENTS.md").write_text("riir-fakesib Issue 500 is qualified.\n")
+        (me / "AGENTS.md").write_text("riir-fakesib Issue 500 is qualified.\n", encoding="utf-8")
         ctl = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if ctl[CROSS] or ctl[IN_RANGE] or ctl[ORPHAN]:
             fails.append(f"control: a QUALIFIED citation produced a finding: {ctl}")
@@ -788,14 +788,14 @@ def selftest() -> list[str]:
         crates2 = dict(crates, **{"othercrate-y": "riir-otherlib"})
         pats2 = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                  for c in crates2}
-        (me / "AGENTS.md").write_text("`sibcrate-x` ships it; Issue 500 rides the crate.\n")
+        (me / "AGENTS.md").write_text("`sibcrate-x` ships it; Issue 500 rides the crate.\n", encoding="utf-8")
         hint = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2)
         if len(hint[CROSS]) != 1 or "crate-hint" not in hint[CROSS][0]:
             fails.append(f"crate-hint sub-class did not fire: {hint[CROSS]}")
         if hint["misleading"]:
             fails.append("crate naming the OWNER was counted as misleading")
 
-        (me / "AGENTS.md").write_text("`othercrate-y` moved it; Issue 500 is elsewhere.\n")
+        (me / "AGENTS.md").write_text("`othercrate-y` moved it; Issue 500 is elsewhere.\n", encoding="utf-8")
         mis = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2)
         if mis["misleading"] != 1 or len(mis[CROSS]) != 1:
             fails.append(f"MISLEADING sub-class did not fire: {mis['misleading']} "
@@ -812,7 +812,7 @@ def selftest() -> list[str]:
         # `unreliable` is INJECTED rather than derived, so the arm tests the
         # RULE and not this box's fetch schedule — the whole defect was a
         # verdict that moved with a checkout's age.
-        (me / "AGENTS.md").write_text("riir-otherlib Issue 500 moved there.\n")
+        (me / "AGENTS.md").write_text("riir-otherlib Issue 500 moved there.\n", encoding="utf-8")
 
         # (a) oracle believed current -> the ordinary accusation. Without this
         #     side the rule could suppress everything and still pass.
@@ -862,37 +862,37 @@ def selftest() -> list[str]:
         # the shape a probe wired to nothing also reports.
         (me / "AGENTS.md").write_text(
             "## Bench 1: a section heading, not a citation\n"
-            "Issue 500 is the real one.\n")
+            "Issue 500 is the real one.\n", encoding="utf-8")
         w = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if w["unseen_width"] != 1:
             fails.append(f"width complement did not fire: {w['unseen_width']} != 1")
         if w["n_cites"] != 1:
             fails.append(f"width: `Bench 1` must NOT enter the walk, got "
                          f"{w['n_cites']} citations")
-        (me / "AGENTS.md").write_text("Issue 500 alone.\n")
+        (me / "AGENTS.md").write_text("Issue 500 alone.\n", encoding="utf-8")
         if audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)["unseen_width"]:
             fails.append("width complement counted a 3-digit citation")
 
         # an alias AFTER the citation: still CROSS (the rule is lead-only), and
         # counted as the cost of that decision.
-        (me / "AGENTS.md").write_text("Issue 500, over in fakesib somewhere.\n")
+        (me / "AGENTS.md").write_text("Issue 500, over in fakesib somewhere.\n", encoding="utf-8")
         tr = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if len(tr[CROSS]) != 1:
             fails.append(f"a TRAILING alias must not qualify: {tr[CROSS]}")
         if tr["alias_trailing"] != 1:
             fails.append(f"alias-trailing cost did not fire: {tr['alias_trailing']}")
         # CONTROL A: the same alias in the LEAD qualifies, so no row and no cost.
-        (me / "AGENTS.md").write_text("fakesib Issue 500 is addressed.\n")
+        (me / "AGENTS.md").write_text("fakesib Issue 500 is addressed.\n", encoding="utf-8")
         lead = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if lead[CROSS] or lead["alias_trailing"]:
             fails.append(f"lead alias must qualify: {lead[CROSS]} {lead['alias_trailing']}")
         # CONTROL B: a trailing alias of a NON-owner is not a suppression cost.
-        (me / "AGENTS.md").write_text("Issue 500, over in otherlib somewhere.\n")
+        (me / "AGENTS.md").write_text("Issue 500, over in otherlib somewhere.\n", encoding="utf-8")
         if audit(me, [sib, other], alloc, ["AGENTS.md"], crates, pats)["alias_trailing"]:
             fails.append("alias-trailing counted a NON-owner alias")
 
         # padding is the SAME number (Issue 751 T2b) — `006` must read as 6
-        (me / "AGENTS.md").write_text("Issue 0500 no; Issue 500 yes.\n")
+        (me / "AGENTS.md").write_text("Issue 0500 no; Issue 500 yes.\n", encoding="utf-8")
         pad = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if len(pad[CROSS]) != 2:
             fails.append(f"zero-padding: `Issue 0500` and `Issue 500` must be "
@@ -907,11 +907,11 @@ def selftest() -> list[str]:
         # number, which is the ORPHAN rule, not this one).
         third = ws / "riir-thirdlib"
         (third / ".issues").mkdir(parents=True)
-        (third / ".issues" / "006_theirs.md").write_text("x")
+        (third / ".issues" / "006_theirs.md").write_text("x", encoding="utf-8")
         alloc["riir-thirdlib"] = {k: (set() if k != "Issue" else {6})
                                   for k in icg.KINDS}
         s3 = [sib, third]
-        (me / "AGENTS.md").write_text("riir-fakesib Issue 006 is the wrong address.\n")
+        (me / "AGENTS.md").write_text("riir-fakesib Issue 006 is the wrong address.\n", encoding="utf-8")
         wa = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
         if len(wa[MISATTR_IN_RANGE]) != 1:
             fails.append(f"MISATTRIBUTED-IN-RANGE did not fire: "
@@ -924,14 +924,14 @@ def selftest() -> list[str]:
                          f"{wa[CROSS]} — the two repairs read differently")
 
         # CONTROL A: the named repo OWNS it -> not a finding at all.
-        (me / "AGENTS.md").write_text("riir-thirdlib Issue 006 is addressed.\n")
+        (me / "AGENTS.md").write_text("riir-thirdlib Issue 006 is addressed.\n", encoding="utf-8")
         ca = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
         if ca[MISATTR_IN_RANGE] or ca[IN_RANGE] or ca[CROSS] or ca[ORPHAN]:
             fails.append(f"control A: a correctly-addressed in-range citation "
                          f"produced a finding: {ca}")
 
         # CONTROL B: bare, no attribution -> still UNDECIDED, never promoted.
-        (me / "AGENTS.md").write_text("Issue 006 is bare.\n")
+        (me / "AGENTS.md").write_text("Issue 006 is bare.\n", encoding="utf-8")
         cb = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
         if cb[MISATTR_IN_RANGE] or len(cb[IN_RANGE]) != 1:
             fails.append(f"control B: a bare in-range citation must stay "
@@ -942,7 +942,7 @@ def selftest() -> list[str]:
         # inherits that — a name that was never an attribution must not become
         # a wrong address.
         (me / "AGENTS.md").write_text("riir-fakesib ships other things.\n"
-                                      "Issue 006 is bare here.\n")
+                                      "Issue 006 is bare here.\n", encoding="utf-8")
         cc = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
         if cc[MISATTR_IN_RANGE]:
             fails.append(f"control C: a WINDOW-only repo name must not promote "
@@ -952,7 +952,7 @@ def selftest() -> list[str]:
         # repo DID allocate, with a non-owner sibling named right on it — the
         # prose contrasting a local number with a remote one. Must stay
         # AMBIGUOUS, promoted by nothing.
-        (me / "AGENTS.md").write_text("riir-thirdlib Issue 010 is this repo's own.\n")
+        (me / "AGENTS.md").write_text("riir-thirdlib Issue 010 is this repo's own.\n", encoding="utf-8")
         cd = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
         if cd[MISATTR_IN_RANGE] or cd[IN_RANGE] or cd[CROSS]:
             fails.append(f"control D: a LOCALLY-ALLOCATED number must not be "
@@ -963,11 +963,11 @@ def selftest() -> list[str]:
 
         # pin parser: globals + 5-field rows, comments stripped, arity enforced
         pins = ws / "pins.txt"
-        pins.write_text("# c\nmin_repos = 15\nrepo-a 10 0 0 0  # trailing\n\n")
+        pins.write_text("# c\nmin_repos = 15\nrepo-a 10 0 0 0  # trailing\n\n", encoding="utf-8")
         g, rows = parse_pins(pins)
         if g != {"min_repos": 15} or rows != {"repo-a": dict(zip(FIELDS, (10, 0, 0, 0)))}:
             fails.append(f"pin parse: got {g} {rows}")
-        pins.write_text("repo-a 1 2\n")
+        pins.write_text("repo-a 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")
@@ -999,7 +999,20 @@ def selftest() -> list[str]:
             "## Issue 043 follow-up (2026-01-01) — about a FOREIGN number\n"
             "## Issue 044 (riir-fakesib) — an explicit foreign owner\n"
             "# Issue 045 (2026-01-01) — H1, a document title\n"
-            "## Plan 046 (2026-01-01) — a different KIND\n")
+            "## Plan 046 (2026-01-01) — a different KIND\n"
+            # Issue 828: the delimiter axis, on the SAME fixture rather
+            # than a second one. 047 is the 56-record house style the
+            # oracle could not spell; 048 is this issue's load-bearing
+            # negative (the discriminator must survive the NEW delimiter,
+            # or this IS the widening AGENTS.md calls unsound); 049 is a
+            # live riir-ai shape where the ASCII hyphen is inside a WORD;
+            # 050 is the dated form's `(`, which the leading form always
+            # accepted -- an asymmetry between two patterns documented as
+            # the same rule at two positions.
+            "## Issue 047 — the dash delimiter, nothing interstitial\n"
+            "## Issue 048 follow-up — commentary, NOT an allocation\n"
+            "## Issue 049-class — the hyphen is inside a word\n"
+            "## 2026-01-01 — Issue 050 (a parenthetical): the dated form\n", encoding="utf-8")
         names = ["riir-headrepo", "riir-fakesib"]
         # Issue 781 T2: the style blind spot is a PROBE, and a probe wired to
         # nothing reports 0 exactly like a clean tree (Issue 753). Both
@@ -1008,18 +1021,20 @@ def selftest() -> list[str]:
         # sibling — which must NOT be counted as a style loss, or the quantity
         # stops meaning what its label says.
         acc, shp = icg.heading_style_blind(hd, ".issues", names)
-        if (acc, shp) != (1, 2):
+        if (acc, shp) != (3, 6):
             fails.append(f"heading style blind spot: got {(acc, shp)}, expected "
-                         f"(1, 2) — 042 reads, 043 is the style loss, 044 is a "
-                         f"FOREIGN-name rejection and is excluded from both")
+                         f"(3, 6) — 042/047/050 read, 043/048/049 are the "
+                         f"style loss, 044 is a FOREIGN-name rejection and is "
+                         f"excluded from both")
 
         got_h = icg.heading_allocated(hd, ".issues", names)
-        if got_h != {42}:
-            fails.append(f"heading allocation: got {sorted(got_h)}, expected [42] "
-                         f"— 43/44/45 are the measured negatives, 46 is a Plan")
+        if got_h != {42, 47, 50}:
+            fails.append(f"heading allocation: got {sorted(got_h)}, expected "
+                         f"[42, 47, 50] — 43/44/45/48/49 are the measured "
+                         f"negatives, 46 is a Plan")
         if icg.heading_allocated(hd, ".plans", names) != {46}:
             fails.append("heading allocation: the KIND is not read from the subdir")
-        if icg.allocated(hd, ".issues", names) != {42}:
+        if icg.allocated(hd, ".issues", names) != {42, 47, 50}:
             fails.append("allocated() does not union the heading path")
 
         # ── fenced headings are QUOTED, not allocated. Same standing as the
@@ -1047,7 +1062,7 @@ def selftest() -> list[str]:
             "```\n"
             "## Issue 048 (2026-01-01) — a SHORTER run cannot close it\n"
             "````\n"
-            "## Issue 049 (2026-01-01) — closed at equal width, a REAL allocation\n")
+            "## Issue 049 (2026-01-01) — closed at equal width, a REAL allocation\n", encoding="utf-8")
         got_f = icg.heading_allocated(fz, ".issues", ["riir-fencerepo"])
         if got_f != {42, 45, 49}:
             fails.append(f"fenced headings: got {sorted(got_f)}, expected [42, 45, 49] "
@@ -1072,10 +1087,10 @@ def selftest() -> list[str]:
             fails.append("unterminated_fences() does not report the hazard it creates")
 
         # population derivation: BOUNDARY.md + a .git DIRECTORY, both required
-        (me / "BOUNDARY.md").write_text("x")
+        (me / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (me / ".git").mkdir()
-        (sib / "BOUNDARY.md").write_text("x")
-        (sib / ".git").write_text("gitdir: elsewhere")   # worktree-shaped
+        (sib / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (sib / ".git").write_text("gitdir: elsewhere", encoding="utf-8")   # worktree-shaped
         if [p.name for p in icg.contract_repos(ws)] != ["fake-repo"]:
             fails.append(f"population derivation wrong: "
                          f"{[p.name for p in icg.contract_repos(ws)]}")
@@ -1396,8 +1411,9 @@ def main() -> int:
           f"records read, {b_shp - b_acc} UNREAD **on style alone** — a "
           f"triage quantity, never a verdict. `heading_allocated()` requires "
           f"the number to be followed IMMEDIATELY by its delimiter, so "
-          f"`## Issue 042 (date) — title` and (Issue 823) the date-led "
-          f"`## <date> — Issue 113: title` both read, while `## Issue 097 "
+          f"`## Issue 042 (date) — title`, (Issue 823) the date-led "
+          f"`## <date> — Issue 113: title` and (Issue 828) the "
+          f"dash-delimited `## Issue 788 — title` all read, while `## Issue 097 "
           f"resolved — title (date)` does not: the split is by HOUSE STYLE "
           f"rather than correctness. Dropping that DISCRIMINATOR is still "
           f"UNSOUND and selftest arm 2 proves it — `## Issue 043 follow-up "

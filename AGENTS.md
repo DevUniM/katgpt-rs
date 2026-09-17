@@ -833,6 +833,33 @@ repair — reached, again, by a paragraph documenting the class.)
   states one level up for `heading_unread=a/b`, reached a second time by a
   paragraph *about* that rule carrying a stale constant of its own.
 
+⛔ **And the rule was anchored a THIRD time — to the DELIMITER SET — where the
+biggest unread family is this repo's own house style** (Issue 828). Issue 823
+moved the discriminator one POSITION over and left the delimiter alternation
+where it was: `(` for the leading form, `[:,]` for the dated one. The
+workspace's most common title delimiter is the **em dash**, in neither set.
+Measured by reading the residual instead of arguing about it: of the records
+the oracle declined, **56 are `## Issue 788 — <title>: CLOSED (date)`** —
+katgpt-rs's own newest closes, in the repo that owns the instrument — and **4
+are `## <date> — Plan 062 (…): title`**, rejected only because the leading form
+accepted `(` and the dated one did not. Neither family violates the rule; the
+pattern could not spell their delimiter. Both read now, the discriminator
+untouched: arm 2 pins `## Issue 048 follow-up — …` as a negative in the NEW
+delimiter, and `## Issue 049-class — …` (a live riir-ai shape) pins that the
+ASCII hyphen is a delimiter only when space-separated on both sides.
+- This is **not** the widening the paragraph above calls unsound, by that
+  paragraph's own test: adding a delimiter keeps the rule, dropping the
+  discriminator abandons it.
+- ⚠ It does **not** narrow Issue 823 T5's open question — it corrects its
+  DENOMINATOR. The `resolved` / `closed` / `T3` / `Arm C` family is untouched
+  and still has no punctuation rule separating it from `follow-up`; ~60 rows
+  that were being counted against that question were never part of it.
+- ⛔ The arms could not have been written before the fixture's `write_text`
+  gained an `encoding=`: on this cp874 box the em dashes in the FIXTURE were
+  silently written as byte `0x97` and read back as U+FFFD, so a delimiter arm
+  passed for the wrong reason. That is the whole of Issue 829, found by an arm
+  failing in a way that made no sense.
+
 ⚠ **A document that discusses a misattribution has to reproduce it**, and the
 instrument cannot tell a quoted specimen from a live one: the Issue-780
 write-up above introduced **4 rows of the very class it documents**. The repair
