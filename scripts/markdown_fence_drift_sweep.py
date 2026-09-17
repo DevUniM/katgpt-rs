@@ -101,13 +101,69 @@ sys.path.insert(0, str(HERE))
 import markdown_fence_gate as mfg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, head_delta,  # noqa: E402
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
 PINS = HERE / "markdown_fence_drift_floors.txt"
 
 FIELDS = ("min_md_files", "max_unterminated")
+
+
+
+def md_population(repo: Path) -> tuple[set[str], set[str]]:
+    """`(walk, untracked)` — this sweep's own population, split by trackedness.
+
+    The same two `git ls-files` invocations `mfg.unterminated` walks with, so
+    the split cannot disagree with the thing it is splitting. `--exclude-standard`
+    keeps gitignored vendored drops out of both halves.
+    """
+    def listing(*args) -> set[str]:
+        out = subprocess.run(["git", "-C", str(repo), "ls-files", *args],
+                             capture_output=True, encoding="utf-8",
+                             errors="replace")
+        if out.returncode != 0:
+            return set()
+        return {ln.strip().replace(chr(92), "/")
+                for ln in out.stdout.splitlines() if ln.strip()}
+
+    tracked = listing("*.md")
+    untracked = listing("--others", "--exclude-standard", "*.md")
+    return tracked | untracked, untracked
+
+
+def head_fences(walk: set):
+    """`head_delta`'s per-file reclassifier."""
+
+    def rescan(rel: str, src: str | None) -> list:
+        # None = absent from HEAD. Unreachable for this sweep's tracked half
+        # unless a file is staged-and-never-committed, which is exactly the
+        # case it must not invent a row for.
+        if src is None or rel not in walk:
+            return []
+        return mfg.scan_text(rel, src)
+
+    return rescan
+
+
+def adjudicate(repo: Path, found: list) -> HeadDelta:
+    """The rows, split COMMITTED / UNCOMMITTED / MASKED (Issue 822).
+
+    ⛔ The UNTRACKED split happens FIRST and outside `head_delta`. An untracked
+    document is in no commit, so its row can never be what HEAD carries — but
+    `dirty_files` excludes untracked paths by design, so `head_delta` is blind
+    to them and would file every one as COMMITTED. A finding on a file
+    `git log` cannot see, counted into a ceiling, is this issue's whole subject.
+    """
+    walk, loose = md_population(repo)
+    rows = [r for r in found if r[0].replace(chr(92), "/") not in loose]
+    held = [r for r in found if r[0].replace(chr(92), "/") in loose]
+    d = head_delta(
+        repo, ("*.md",), rows,
+        lambda r: r[0], lambda r: r[0].replace(chr(92), "/"),
+        head_fences(walk))
+    return HeadDelta(d.committed, list(d.uncommitted) + held, d.masked)
 
 
 def parse_pins(path: Path) -> dict[str, dict[str, int]]:
@@ -122,6 +178,113 @@ def parse_pins(path: Path) -> dict[str, dict[str, int]]:
                 f"malformed pin row (want {1 + len(FIELDS)} fields): {raw!r}")
         rows[parts[0]] = dict(zip(FIELDS, (int(v) for v in parts[1:])))
     return rows
+
+
+def adjudicate_arms() -> list[str]:
+    """`adjudicate`, two-sided, against a real git tree.
+
+    The UNTRACKED arm is the sharpest specimen of Issue 822 in the family: a
+    finding on a file `git log` cannot see, which every other sweep's
+    population makes impossible and this one's makes routine.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    NL = chr(10)
+    TICK = chr(96) * 3
+    OPEN = TICK + "rust" + NL + "let x = 1;" + NL          # never closed
+    CLOSED = TICK + "rust" + NL + "let x = 1;" + NL + TICK + NL
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "r"
+        repo.mkdir(parents=True)
+        git(repo.parent, "init", "-q", "-b", "main", "r")
+        git(repo, "config", "user.email", "t@t")
+        git(repo, "config", "user.name", "t")
+        (repo / "a.md").write_text(OPEN, encoding="utf-8")
+        (repo / "b.md").write_text(CLOSED, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "base")
+
+        def now():
+            found, _walked = mfg.unterminated(repo)
+            return found, adjudicate(repo, found)
+
+        found, d = now()
+        check(len(found) == 1, f"fixture: found={found}, want 1")
+        check(len(d.committed) == 1 and not d.uncommitted and not d.masked,
+              f"a clean tree produced a split: {d}")
+
+        # ── the key is `rel` ALONE, and that is a MEASUREMENT ────────────────
+        # At most ONE unterminated fence exists per document: everything after
+        # an unterminated open is inside it. Asserted here so the key's premise
+        # is checked rather than remembered.
+        two_opens = OPEN + TICK + "rust" + NL + "let y = 2;" + NL
+        check(len(mfg.scan_text("x.md", two_opens)) == 1,
+              f"two opens reported more than one row — the key needs an "
+              f"ordinal after all: {mfg.scan_text('x.md', two_opens)}")
+
+        # ── UNCOMMITTED: the worktree INVENTS an unterminated fence ──────────
+        (repo / "b.md").write_text(OPEN, encoding="utf-8")
+        found, d = now()
+        check([r[0] for r in d.uncommitted] == ["b.md"],
+              f"UNCOMMITTED direction: {d.uncommitted}")
+        check(not d.masked, f"an invented row was also MASKED: {d.masked}")
+        check([r[0] for r in d.head] == ["a.md"],
+              f"the pins' view lost the committed row: {d.head}")
+
+        # ── MASKED: the worktree CLOSES a committed fence ────────────────────
+        git(repo, "checkout", "--", "b.md")
+        (repo / "a.md").write_text(CLOSED, encoding="utf-8")
+        found, d = now()
+        check(not found, f"the fixture did not close the fence: {found}")
+        check([r[0] for r in d.masked] == ["a.md"], f"MASKED direction: {d.masked}")
+        check(len(d.head) == 1,
+              f"a MASKED row is missing from the pins' view: {d.head}")
+
+        # ── ⛔ UNTRACKED: in NO commit, so never adjudicated ─────────────────
+        # This sweep walks tracked PLUS untracked-not-ignored (its own landing
+        # miss: `.issues/756` carried a live fence while untracked). An
+        # untracked file cannot be in HEAD, and `dirty_files` excludes it by
+        # design — so without the explicit split it lands in `committed` and is
+        # counted against the ceiling. That is Issue 822's defect exactly.
+        git(repo, "checkout", "--", "a.md")
+        (repo / "loose.md").write_text(OPEN, encoding="utf-8")
+        found, d = now()
+        check(any(r[0] == "loose.md" for r in found),
+              f"the walk did not see the untracked file: {found}")
+        check(any(r[0] == "loose.md" for r in d.uncommitted),
+              f"an UNTRACKED file's row was adjudicated — it is in no commit: "
+              f"{d.uncommitted}")
+        check(all(r[0] != "loose.md" for r in d.head),
+              f"a file in no commit entered the pins' view: {d.head}")
+        # ...and it does NOT become MASKED either, which would be a red nobody
+        # can repair.
+        check(all(r[0] != "loose.md" for r in d.masked),
+              f"an untracked file was reported MASKED: {d.masked}")
+        (repo / "loose.md").unlink()
+
+        # ── a STAGED-only file has no HEAD blob ─────────────────────────────
+        (repo / "new.md").write_text(OPEN, encoding="utf-8")
+        git(repo, "add", "new.md")
+        found, d = now()
+        check(any(r[0] == "new.md" for r in d.uncommitted),
+              f"a staged-only file's row was not UNCOMMITTED: {d.uncommitted}")
+        check(all(r[0] != "new.md" for r in d.head),
+              f"a file in no commit entered the pins' view: {d.head}")
+
+        # ── the WALK guard ──────────────────────────────────────────────────
+        check(head_fences(set())("a.md", OPEN) == [],
+              "a path outside the sweep's own walk produced a row")
+
+    return fails
 
 
 def selftest() -> list[str]:
@@ -219,7 +382,10 @@ def selftest() -> list[str]:
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
-    return fails
+    # ⛔ Issue 822: `adjudicate`'s body is reached by nothing else, and
+    # arm_reach_gate walls the docs_gate CHECKS set (25 modules, 0 drift
+    # sweeps) rather than this.
+    return fails + adjudicate_arms()
 
 
 def main() -> int:
@@ -266,8 +432,17 @@ def main() -> int:
     bad = False
     tot_files = tot_found = tot_swallowed = 0
 
+    n_uncommitted = n_masked = 0
+
     for name in names:
-        found, walked = mfg.unterminated(WORKSPACE / name)
+        repo = WORKSPACE / name
+        found, walked = mfg.unterminated(repo)
+
+        # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───
+        delta = adjudicate(repo, found)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
+
         row = pins.get(name)
         swallowed = sum(r[2] for r in found)
         tot_files += walked
@@ -288,15 +463,34 @@ def main() -> int:
                              f"{row['min_md_files']} — documents were removed, "
                              f"or `git ls-files` went blind and the 0 below "
                              f"means nothing")
-            if len(found) > row["max_unterminated"]:
-                flags.append(f"unterminated {len(found)} > pinned "
-                             f"{row['max_unterminated']}")
+            if len(delta.head) > row["max_unterminated"]:
+                flags.append(f"unterminated {len(delta.head)} committed > "
+                             f"pinned {row['max_unterminated']}")
 
         status = "✗" if flags else ("·" if found else "✓")
+        # T3: the count stays honest in BOTH directions. A bare total invites
+        # the one action Issue 822 exists to prevent — typing it into the pin.
+        split = ""
+        if delta.uncommitted or delta.masked:
+            split = (f" ({len(delta.head)} committed"
+                     + (f" + {len(delta.uncommitted)} uncommitted"
+                        if delta.uncommitted else "")
+                     + (f", {len(delta.masked)} MASKED" if delta.masked else "")
+                     + ")")
         print(f"{status} {name:22s} md={walked:<5d} unterminated={len(found)} "
-              f"swallowed={swallowed}")
+              f"swallowed={swallowed}{split}")
+        held = {r[0] for r in delta.uncommitted}
         for rel, line, swal in sorted(found, key=lambda r: -r[2]):
-            print(f"      {rel}:{line}  {swal} line(s) render as code to EOF")
+            # Never hidden — hiding them is the lie Issue 797 refuses — but
+            # labelled. An UNTRACKED document lands here too and is the case a
+            # reader most needs told apart: it is in no commit AT ALL, so the
+            # fence is real and live but the ceiling cannot be about it.
+            tag = "  [UNCOMMITTED — not adjudicated]" if rel in held else ""
+            print(f"      {rel}:{line}  {swal} line(s) render as code to EOF"
+                  f"{tag}")
+        for rel, line, swal in delta.masked:
+            print(f"      {rel}:{line}  {swal} line(s) render as code to EOF"
+                  f"  [MASKED — committed, and this worktree hides it]")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
