@@ -94,7 +94,7 @@ katgpt-web                  3      0               0       0
 riir-ai                   305      0               6       0
 riir-auth                   8      0               0       0
 riir-chain                 65      0               2       0
-riir-clippy               513      0              12       0  # 2026-09-16: 10 -> 12. Both new rows are riir-clippy's OWN Issue 113 (AGENTS.md:192 + HISTORY.md:3), self-allocated the same day, local top 113. They read UNDECIDED because heading_allocated() cannot parse that repo's `## <date> — Issue NNN:` heading form — its heading_unread is 30/30, one of the three repos Issue 781 measured at zero. An INSTRUMENT blindness read row by row, not an unread backlog absorbed; the repair is that repo's heading convention, which is its owner's call.
+riir-clippy               513      0              11       0  # 2026-09-17: 12 -> 11 (Issue 823). The 2026-09-16 bump 10 -> 12 diagnosed the mechanism correctly and repaired the PIN, so the bucket was 13 within a day — a ratchet re-typed every run is a diary. Repaired at the instrument: heading_allocated() now reads the date-led `## <date> - Issue NNN:` house style (6 repos, 74 records), so this repo's own Issue 113 is in `mine` and its citations short-circuit. NOT the widening AGENTS.md calls unsound - the discriminator is unchanged, only its position.
 riir-dao                   25      0               0       0
 riir-dapps                104      0               0       0
 riir-deployer              21      0               0       0
@@ -102,7 +102,7 @@ riir-esp32                  2      0               0       0
 riir-game-sdk             172      0               4       0
 riir-kat                    1      0               0       0
 riir-mmorpg-examples      321      0               0       0
-riir-neuron-db             27      0               3       0
+riir-neuron-db             27      0               2       0  # tightened 2026-09-17 from 3 (Issue 823): the date-led heading for its own Issue 619 is readable now, so that row short-circuits as local.
 riir-shader                 0      0               0       0
 riir-train                 43      0               0       0  # tightened 2026-09-16 from 1: all four IN-LOCAL-RANGE rows were qualified at riir-train 90c88820 (riir-ai Issue 366 x3, riir-clippy Plan 127), so the bucket is genuinely empty and the next unqualified citation should red on arrival
 riir-viewbridge            24     0               2       0

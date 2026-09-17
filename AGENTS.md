@@ -779,6 +779,40 @@ and on the owners side as a **false** `⛔MISATTRIBUTED` — Issue 754's exact
 failure, inherited by Issue 794's in-range class. 0 live instances today, which
 is the reason to print it rather than remember it.
 
+⛔ **"Widening is unsound" was true and stated too broadly, and a POSITION
+blind spot was hiding underneath it for as long as the sentence stood**
+(Issue 823). The unsound widening is *dropping the DISCRIMINATOR* — the rule
+that nothing may sit between the number and its delimiter, which is what
+rejects `follow-up` and `resolved`. That rule says nothing about WHERE in the
+heading the number sits, and both patterns had been anchored, incidentally, to
+the kind LEADING the line. Six repos write the date first — `## 2026-09-16 —
+Issue 113: the auto-oracle` — and the whole family was unreadable, 74 records
+deep. The repair keeps the discriminator exactly and moves it one position
+over; arm 2's negative is now pinned in BOTH positions and still rejects.
+- ⛔ **The meter was anchored to the same position, so the blindness detector
+  was blind to the same thing — in the direction that reads as clean.**
+  `heading_style_blind` is the width bound whose entire job is printing the
+  cost of this class. Measured before the repair: **riir-chain printed
+  `heading_unread=0/1`, a PERFECT score, over 21 records of which 20 were
+  unread; riir-dapps printed `0/0` — nothing to measure — over 23.** The
+  paragraph above says the meter measures "exactly the style gap"; it
+  understated it by **96 records, 39%**, and the sentence you are reading is
+  why a width bound gets its own floor.
+- The symptom was a RATCHET, not noise: riir-clippy's own Issue 113 is
+  recorded by nothing but a date-led heading (no file, no `git log` deletion —
+  the Issue-754 shape), so its citations fell to IN-LOCAL-RANGE and breached
+  `max_in_local_range`. ⛔ **That pin had been re-typed the previous day for
+  this exact cause, with the mechanism correctly diagnosed in the pin comment,
+  and was 13 within 24 hours** — this file's own "a pin file re-typed after
+  every run is a diary" reached by two sessions in a row. **Read
+  `heading_unread=a/b` on the sweep's per-repo line before adjudicating an
+  IN-LOCAL-RANGE count**: a repo at or near `b/b` cannot have that count
+  trusted as an editorial quantity at all.
+- Effect: workspace IN-LOCAL-RANGE **54 → 27**, two ratchets **tightened** in
+  the landing commit. The residual 209 unread are 781's original `resolved —`
+  family, **untouched** — 823 did not close 781's class, it made 781's own
+  figure honest.
+
 ⚠ **A document that discusses a misattribution has to reproduce it**, and the
 instrument cannot tell a quoted specimen from a live one: the Issue-780
 write-up above introduced **4 rows of the very class it documents**. The repair

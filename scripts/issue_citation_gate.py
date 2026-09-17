@@ -244,6 +244,45 @@ def unterminated_fences(repo: Path) -> list[tuple[str, int]]:
 _SELF_HEADING = re.compile(
     r"^#{2,}\s+(?:\*\*)?(%s)\s+0*(\d{2,4})\s*\(([^)\n]*)\)" % "|".join(KINDS))
 
+# Issue 823. The SAME discriminator, at the position it was never applied.
+#
+# `_SELF_HEADING` is sound because of ONE rule: nothing may sit between the
+# number and its delimiter, so `## Issue 043 follow-up (…)` is rejected while
+# `## Issue 043 (…)` is read. That rule is about the text AFTER the number.
+# It was anchored, silently, to the kind LEADING the heading — and six repos
+# write the date first (`## 2026-09-16 — Issue 113: the auto-oracle`), a form
+# neither this pattern NOR `_HEADING_SHAPED` could see. Measured: 74 such
+# records workspace-wide, 18 of them allocation-shaped under the strict rule.
+#
+# ⛔ This is NOT the widening AGENTS.md calls unsound, and the distinction is
+# the whole justification. That argument is against LOOSENING the
+# discriminator — accepting `resolved` / `follow-up`, which no punctuation rule
+# separates from an allocation. The discriminator here is IDENTICAL: the number
+# must be followed immediately by its title delimiter (`:` or `,`, the
+# date-led form's `(`). Measured on the live corpus, it rejects
+# `## 2026-09-16 — Issue 152 resolved: …` and `## 2026-09-16 — Plan 064 T3
+# landed (…)` exactly as the leading form rejects their siblings. Same
+# strictness, one position over.
+#
+# The foreign-repo filter runs over the WHOLE remainder rather than a
+# parenthetical, which is strictly more likely to reject — the safe direction
+# for the only path that can SUPPRESS a finding.
+_SELF_HEADING_DATED = re.compile(
+    r"^#{2,}\s+\d{4}-\d{2}-\d{2}\s*[—–-]+\s*(?:\*\*)?(%s)\s+0*(\d{2,4})\s*[:,](.*)$"
+    % "|".join(KINDS))
+
+
+def _self_heading(line: str):
+    """(kind, number, scope-text-to-filter-for-foreign-names) or None.
+
+    One matcher, both house styles. Callers must not re-implement the choice:
+    the two patterns disagree about which group carries the text the foreign
+    filter reads, and that filter is the suppression path's only guard.
+    """
+    m = _SELF_HEADING.match(line) or _SELF_HEADING_DATED.match(line)
+    return (m.group(1), int(m.group(2)), m.group(3)) if m else None
+
+
 _DOCS_CACHE: list[str] | None = None
 _NAMES_CACHE: list[str] | None = None
 
@@ -295,24 +334,40 @@ def heading_allocated(repo: Path, subdir: str,
         for i, line in enumerate(text.splitlines()):
             if i in fenced:
                 continue
-            m = _SELF_HEADING.match(line)
-            if not m or m.group(1) != kind:
+            hit = _self_heading(line)
+            if hit is None or hit[0] != kind:
                 continue
-            if any(_NAME[n].search(m.group(3)) for n in foreign):
+            if any(_NAME[n].search(hit[2]) for n in foreign):
                 continue
-            out.add(int(m.group(2)))
+            out.add(hit[1])
     return out
 
 
 # Issue 781: the SAME shape, without the style anchor. Used only to MEASURE
-# what `_SELF_HEADING` rejects — never to allocate. Widening the oracle to this
-# is unsound and `citation_drift_sweep.selftest()` arm 2 proves it: it pins
-# `## Issue 043 follow-up (2026-01-01)` as a measured negative, and
+# what the oracle rejects — never to allocate. Widening the oracle to THIS
+# remains unsound and `citation_drift_sweep.selftest()` arm 2 proves it: it
+# pins `## Issue 043 follow-up (2026-01-01)` as a measured negative, and
 # `043 follow-up (…)` and `097 resolved — … (…)` are the same shape. No
 # punctuation rule separates commentary from allocation; the distinction is
 # semantic. So the cost is printed instead of guessed at.
+#
+# ⚠ Issue 823 sharpened what "this" means, and the distinction is load-bearing:
+# the unsound widening is DROPPING THE DISCRIMINATOR (accepting any text
+# between the number and its delimiter). It is NOT reading a second POSITION.
+# `_SELF_HEADING_DATED` keeps the discriminator exactly and moves it to the
+# date-led heading, so the negative above is still rejected — by both patterns.
 _HEADING_SHAPED = re.compile(
     r"^#{2,}\s+(?:\*\*)?(%s)\s+0*(\d{2,4})\b(.*)$" % "|".join(KINDS))
+
+# Issue 823. The meter was anchored to the same leading position as the oracle,
+# so a date-led house style was invisible to the BLINDNESS DETECTOR ITSELF —
+# and it failed in the direction that reads as clean. Measured before the fix:
+# riir-chain printed `heading_unread=0/1`, a PERFECT score, over 21 records of
+# which 20 were unread; riir-dapps printed `0/0` — nothing to measure — over
+# 23. A width bound that cannot see a whole house style is not a width bound.
+_HEADING_SHAPED_DATED = re.compile(
+    r"^#{2,}\s+\d{4}-\d{2}-\d{2}\s*[—–-]+\s*(?:\*\*)?(%s)\s+0*(\d{2,4})\b(.*)$"
+    % "|".join(KINDS))
 
 
 def heading_style_blind(repo: Path, subdir: str,
@@ -362,13 +417,13 @@ def heading_style_blind(repo: Path, subdir: str,
         for i, line in enumerate(text.splitlines()):
             if i in fenced:
                 continue
-            m = _HEADING_SHAPED.match(line)
+            m = _HEADING_SHAPED.match(line) or _HEADING_SHAPED_DATED.match(line)
             if not m or m.group(1) != kind:
                 continue
             if any(_NAME[n].search(m.group(3)) for n in foreign):
                 continue          # rejected for NAMING a sibling, not on style
             shaped += 1
-            if _SELF_HEADING.match(line):
+            if _self_heading(line) is not None:
                 accepted += 1
     return (accepted, shaped)
 
@@ -788,6 +843,21 @@ def selftest() -> list[str]:
             "```",
             "## Issue 888 (2026-01-01) — inside a fenced block",
             "```",
+            # ── Issue 823: the DATE-LED house style, six repos wide ─────────
+            # accepted: same discriminator, one position over — the number is
+            # IMMEDIATELY followed by its title delimiter.
+            "## 2026-09-16 — Issue 113: the auto-oracle",
+            "## 2026-09-16 — Issue 120, the parallel session's side",
+            # ⛔ the discriminator is UNCHANGED, so the date-led form rejects
+            #    exactly what the leading form rejects. These two are the whole
+            #    soundness argument: if either were read, Issue 823 WOULD be
+            #    the widening AGENTS.md calls unsound.
+            "## 2026-09-16 — Issue 152 resolved: a title",
+            "## 2026-09-16 — Issue 044 follow-up: commentary on a number",
+            # the foreign filter still applies, over the WHOLE remainder
+            "## 2026-09-16 — Issue 512: a riir-train thing, not ours",
+            # a date-led heading of another kind
+            "## 2026-09-16 — Plan 223: a plan, not an issue",
         ])
         # ONE pinned document, not all of them: `heading_allocated` unions a
         # SET (so duplicates are invisible) but `heading_style_blind` COUNTS,
@@ -807,13 +877,26 @@ def selftest() -> list[str]:
            511 in got, False)
         eq("a heading of another kind does not allocate", 222 in got, False)
         eq("a heading inside a fence does not allocate", 888 in got, False)
-        eq("nothing else was read", sorted(got), [59])
-        # The style-blind triage quantity: 1 accepted of 3 heading-shaped rows
-        # that survive the foreign filter (059, 097, 043 — 511 is foreign, 222
-        # is another kind, 888 is fenced).
+        eq("⚑ Issue 823: a DATE-LED allocation heading is read", 113 in got, True)
+        eq("⚑ Issue 823: the date-led comma form is read", 120 in got, True)
+        eq("⛔ Issue 823: date-led `NNN resolved:` is NOT read — the "
+           "discriminator is unchanged, not dropped", 152 in got, False)
+        eq("⛔ Issue 823: date-led `NNN follow-up:` is NOT read — arm 2's "
+           "negative survives the new position", 44 in got, False)
+        eq("⚑ Issue 823: the foreign filter reads the WHOLE date-led remainder",
+           512 in got, False)
+        eq("⚑ Issue 823: the kind filter applies to the date-led form",
+           223 in got, False)
+        eq("nothing else was read", sorted(got), [59, 113, 120])
+        # The style-blind triage quantity. Issue 823: the meter counts the
+        # date-led family too, or it reports a PERFECT score over a house style
+        # it cannot see (measured: riir-chain 0/1 over 21 records). Shaped rows
+        # surviving the foreign filter are 059, 097, 043 + the four date-led
+        # Issue rows (113, 120, 152, 044); 511/512 are foreign, 222/223 another
+        # kind, 888 fenced. Accepted: 059, 113, 120.
         eq("heading_style_blind measures the gap, both sides filtered",
            heading_style_blind(repo, ".issues", ["katgpt-rs", "riir-train"]),
-           (1, 3))
+           (3, 7))
 
     # ── ci_deferred(): the DEFERRAL, which is this gate's loudest output ──
     # ⚑ Issue 790 T3. Eight of this module's survivors were in here, and it is
