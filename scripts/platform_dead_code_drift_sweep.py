@@ -54,7 +54,9 @@ same `audit_repo` this sweep reads. `--no-prove-fires` skips it, loudly.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -67,7 +69,8 @@ import platform_dead_code_floor_gate as gate      # noqa: E402
 # (Issue 765). A second copy would be a second thing to get wrong, and this one
 # decides whether a short population is a partial clone or a stale file.
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (HeadDelta, delta_of, head_overlay,  # noqa: E402
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 # Overridable for testing — the skill_repo_set_gate precedent (Issue 765's
@@ -76,6 +79,12 @@ WORKSPACE = Path(os.environ.get("WORKSPACE_ROOT", str(REPO_ROOT.parent)))
 FLOORS = HERE / "platform_dead_code_drift_floors.txt"
 
 FIELDS = ("min_rs_files", "min_candidate_decls", "max_findings", "max_modref")
+
+# ONE list, read by the worktree advisory AND by the HEAD re-classification.
+# Issue 822 T5a measured the cost of the second copy: `instrument_reachability`
+# carried a hand-typed glob list beside its advisory that named `.yml` and not
+# `.yaml`, so a dirty root was silently outside its own declared population.
+SCOPE = ("*.rs",)
 
 
 def read_floors() -> dict:
@@ -130,6 +139,181 @@ def measure(path: Path) -> dict:
             "findings": r.findings, "modref": r.mod_rows}
 
 
+def row_key(f) -> tuple:
+    """A finding's identity, LINE-FREE.
+
+    Any edit above a declaration shifts its line, so a line-bearing key reports
+    every row in an edited file as UNCOMMITTED *and* MASKED at once — the
+    `citation_drift_sweep` rule, restated because this is the second axis where
+    it bites. The identity of the row is the DECLARATION; `uses` and `atoms`
+    are what the classifier concluded about it and may legitimately move
+    without the row becoming a different row.
+    """
+    return (f.rel, f.kind, f.name)
+
+
+def adjudicate(repo: Path, m: dict) -> tuple[HeadDelta, HeadDelta]:
+    """Findings and MOD-REF rows split COMMITTED / UNCOMMITTED / MASKED.
+
+    ⛔ **CROSS-FILE, deliberately — and Issue 822's own task table put this
+    sweep in the other bucket.** `head_delta`'s shortcut is sound only where a
+    row's existence depends on its OWN file's bytes; here it does not. A
+    candidate is UNIT-scoped: `audit_repo` resolves a module chain into one
+    unit and counts a declaration's uses across every member file, so editing
+    one file moves its SIBLINGS' verdicts and the per-file re-read would invent
+    rows. Measured by reading `audit_repo`, not assumed from the table.
+
+    So this is `head_overlay` + `delta_of` — the whole classifier re-run with
+    HEAD's bytes substituted at the one seam that turns a path into text. The
+    cost is a second `audit_repo` for the repos that HAVE dirty `.rs`, and
+    **zero** on a clean tree: an empty overlay means skip the second
+    classification entirely, never "overlay nothing".
+    """
+    overlay = head_overlay(repo, SCOPE)
+    if not overlay:
+        return (HeadDelta(list(m["findings"]), [], []),
+                HeadDelta(list(m["modref"]), [], []))
+    head = audit.audit_repo(repo, overlay=overlay)
+    return (delta_of(m["findings"], head.findings, row_key),
+            delta_of(m["modref"], head.mod_rows, row_key))
+
+
+def selftest() -> list[str]:
+    """This file's own Issue 822 arithmetic — the classifier's arms cannot
+    reach it (Issue 775's sentence, at the only place it applies here)."""
+    fails: list[str] = []
+
+    class R:
+        def __init__(self, rel, name, kind="const"):
+            self.rel, self.name, self.kind = rel, name, kind
+            self.line = 1
+
+    a, b = R("src/lib.rs", "A"), R("src/lib.rs", "B")
+    d = delta_of([a], [b], row_key)
+    if [r.name for r in d.uncommitted] != ["A"]:
+        fails.append("delta_of: a worktree-only row is not UNCOMMITTED")
+    if [r.name for r in d.masked] != ["B"]:
+        fails.append("delta_of: a HEAD-only row is not MASKED")
+    # ⛔ The pin reads `.head` — `committed + masked`, never `committed`. A
+    # ceiling that read `committed` alone would pass a repo whose worktree
+    # hides a committed finding, which is the silent direction this whole
+    # issue is about.
+    if {r.name for r in d.head} != {"B"}:
+        fails.append("HeadDelta.head: a MASKED row is not in the pins' "
+                     "population")
+    # LINE-FREE: the same declaration, moved down the file, is ONE row.
+    moved = R("src/lib.rs", "A")
+    moved.line = 900
+    if delta_of([moved], [a], row_key) != HeadDelta([moved], [], []):
+        fails.append("row_key: a line shift reported one declaration as both "
+                     "UNCOMMITTED and MASKED")
+    # ...and the kind is part of the identity, so a `mod` row and an item row
+    # of the same name never cancel each other out.
+    if not delta_of([R("src/lib.rs", "A", "mod")], [a], row_key).uncommitted:
+        fails.append("row_key: `kind` is not in the identity, so a MOD-REF row "
+                     "and an item row of one name collapse")
+    if SCOPE != ("*.rs",):
+        fails.append(f"SCOPE is {SCOPE} — the advisory and the HEAD "
+                     f"re-classification read this one list; widening it "
+                     f"changes both, which is the point")
+    fails += _git_arms()
+    return fails
+
+
+def _git_arms() -> list[str]:
+    """`adjudicate` end to end, against REAL git.
+
+    The arms above pin the arithmetic over synthetic rows; this one pins the
+    join — `head_overlay` finding the dirty file, `audit_repo(overlay=)`
+    re-classifying it, `delta_of` bucketing the answer — because every one of
+    those three has a different way of being silently inert, and a mock of git
+    would assert the mock. ~0.4s, and it is the only thing in this sweep that
+    proves the ratchet stopped reading the working tree.
+    """
+    fails: list[str] = []
+    fires = audit._case_tree("neon shape fires")["src/lib.rs"]
+    clean = audit._case_tree("decl gated the same way is clean")["src/lib.rs"]
+
+    def git(root, *args):
+        return subprocess.run(("git", "-C", str(root)) + args,
+                              capture_output=True, encoding="utf-8",
+                              errors="replace", check=True)
+
+    def fixture(td, committed: str, worktree: str) -> Path:
+        root = Path(td)
+        (root / "src").mkdir(parents=True)
+        (root / "Cargo.toml").write_text(
+            '[package]\nname = "t"\nversion = "0.0.0"\n', encoding="utf-8")
+        (root / "src" / "lib.rs").write_text(committed, encoding="utf-8")
+        git(root, "init", "-q")
+        git(root, "config", "user.email", "arm@example.invalid")
+        git(root, "config", "user.name", "arm")
+        git(root, "add", "-A")
+        git(root, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        (root / "src" / "lib.rs").write_text(worktree, encoding="utf-8")
+        return root
+
+    def names(delta) -> set:
+        return {r.name for r in delta}
+
+    # 1. UNCOMMITTED — the worktree fires, HEAD does not. The row is SHOWN and
+    #    must not reach the ceiling. This is Issue 822's measured shape.
+    with tempfile.TemporaryDirectory() as td:
+        root = fixture(td, clean, fires)
+        m = measure(root)
+        if names(m["findings"]) != {"NEON_U8"}:
+            fails.append("git arm: the worktree pass found no row — every "
+                         "comparison in this arm is vacuous")
+        d, _mod = adjudicate(root, m)
+        if names(d.uncommitted) != {"NEON_U8"}:
+            fails.append("adjudicate: a worktree-only finding is not "
+                         "UNCOMMITTED — the ratchet is reading the tree")
+        if d.head:
+            fails.append("adjudicate: an UNCOMMITTED row reached `.head`, "
+                         "which is the quantity the pin adjudicates")
+
+    # 2. MASKED — the silent direction. HEAD carries the row, the worktree
+    #    hides it, and a sweep that adjudicated the tree reports this clean.
+    with tempfile.TemporaryDirectory() as td:
+        root = fixture(td, fires, clean)
+        m = measure(root)
+        if m["findings"]:
+            fails.append("git arm: the worktree pass found a row where the "
+                         "MASKED direction needs none")
+        d, _mod = adjudicate(root, m)
+        if names(d.masked) != {"NEON_U8"}:
+            fails.append("adjudicate: a committed finding the worktree hides "
+                         "was not recovered as MASKED")
+        if names(d.head) != {"NEON_U8"}:
+            fails.append("adjudicate: a MASKED row is missing from `.head`, "
+                         "so the ceiling passes over a committed finding")
+
+    # 3. A CLEAN tree costs nothing — no overlay, no second classification.
+    #    A helper that walks anyway on every run is one sweeps stop calling.
+    with tempfile.TemporaryDirectory() as td:
+        root = fixture(td, fires, fires)
+        m = measure(root)
+        real = audit.audit_repo
+        calls = []
+
+        def counted(repo, overlay=None):
+            calls.append(overlay)
+            return real(repo, overlay=overlay)
+
+        audit.audit_repo = counted
+        try:
+            d, _mod = adjudicate(root, m)
+        finally:
+            audit.audit_repo = real
+        if calls:
+            fails.append(f"adjudicate: re-classified a CLEAN repo "
+                         f"({len(calls)} extra audit_repo call(s)) — the empty "
+                         f"overlay must mean SKIP, not 'overlay nothing'")
+        if names(d.committed) != {"NEON_U8"} or d.uncommitted or d.masked:
+            fails.append("adjudicate: a clean tree's rows are not all COMMITTED")
+    return fails
+
+
 def main() -> int:
     for _stream in (sys.stdout, sys.stderr):
         try:
@@ -147,6 +331,9 @@ def main() -> int:
         return 2
     for f in gate.gate_selftest():
         print(f"✗ INSTRUMENT: the shared pin comparison is broken: {f}")
+        return 2
+    for f in selftest():
+        print(f"✗ INSTRUMENT: this sweep's own HEAD arithmetic is broken: {f}")
         return 2
     print()
 
@@ -174,8 +361,10 @@ def main() -> int:
     # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
     # line in BOTH directions (the `deferred` precedent) and is SILENT
     # unless the dirty set meets this sweep's own population — the declaration sites.
-    deferred.extend(sweep_advisory(
-        present, ("*.rs",), root=WORKSPACE))
+    #
+    # ⚠ Issue 822 — the row counts are filled in by the per-repo loop BELOW,
+    # so this call is made after it. The advisory is a repo-level banner and
+    # cannot say WHICH rows; that is the gap this issue exists for.
     for _line in pop_lines:
         print(_line)
     deferred += pop_deferred
@@ -199,32 +388,75 @@ def main() -> int:
               f"with the numbers printed below: {', '.join(unpinned)}")
         fail += len(unpinned)
 
+    n_uncommitted = n_masked = 0
     for repo in sorted(present):
         m = measure(present[repo])
+        # Issue 822 — the ratchet is a claim about the REPO, and a repo's
+        # state is its commits. The DISPLAY reads the worktree (it is what the
+        # files say today, and hiding that would be its own lie); the PINS read
+        # `.head`, which is the only quantity a commit of this checkout would
+        # reproduce. One ghost row, two provenances, opposite verdicts.
+        f_delta, mod_delta = adjudicate(present[repo], m)
+        n_uncommitted += len(f_delta.uncommitted) + len(mod_delta.uncommitted)
+        n_masked += len(f_delta.masked) + len(mod_delta.masked)
+        held = {row_key(r) for r in f_delta.uncommitted} | {
+            row_key(r) for r in mod_delta.uncommitted}
+        hidden = len(f_delta.masked) + len(mod_delta.masked)
+
         f = floors.get(repo)
         bad: list[str] = []
         if f is not None:
+            # The FLOORS stay on the worktree deliberately: they detect the
+            # instrument going blind on THIS box's checkout, which is the
+            # thing that was read, and a HEAD walk cannot answer that.
             if m["files"] < f["min_rs_files"]:
                 bad.append(f"WALK {m['files']} .rs < floor {f['min_rs_files']}")
             if m["candidates"] < f["min_candidate_decls"]:
                 bad.append(f"PARSE {m['candidates']} candidate(s) < floor "
                            f"{f['min_candidate_decls']}")
-            if len(m["findings"]) > f["max_findings"]:
-                bad.append(f"findings {len(m['findings'])} > ceiling "
+            if len(f_delta.head) > f["max_findings"]:
+                bad.append(f"findings {len(f_delta.head)} committed > ceiling "
                            f"{f['max_findings']}")
-            if len(m["modref"]) > f["max_modref"]:
-                bad.append(f"MOD-REF {len(m['modref'])} > ceiling {f['max_modref']}")
+            if len(mod_delta.head) > f["max_modref"]:
+                bad.append(f"MOD-REF {len(mod_delta.head)} committed > ceiling "
+                           f"{f['max_modref']}")
         mark = "⛔" if f is None else ("✗" if bad else "✓")
+        split = ""
+        if held or hidden:
+            split = (f" [{len(f_delta.committed) + len(mod_delta.committed)}"
+                     f" committed"
+                     + (f", {len(held)} uncommitted" if held else "")
+                     + (f", {hidden} MASKED" if hidden else "") + "]")
         print(f"{mark} {repo:<22} {m['files']:>5} .rs · {m['candidates']:>6} cand · "
               f"{m['units']:>4} unit(s) · {len(m['findings'])} finding(s) · "
-              f"{len(m['modref'])} MOD-REF")
+              f"{len(m['modref'])} MOD-REF{split}")
         for b in bad:
             print(f"     ⛔ {b}")
         for row in m["findings"]:
-            print(audit.row_line(row, "⛔"))
+            print(audit.row_line(row, "⛔")
+                  + (" [UNCOMMITTED — not adjudicated]"
+                     if row_key(row) in held else ""))
         for row in m["modref"]:
-            print(audit.row_line(row, "·"))
+            print(audit.row_line(row, "·")
+                  + (" [UNCOMMITTED — not adjudicated]"
+                     if row_key(row) in held else ""))
+        # MASKED rows are NOT in the worktree lists — that is what MASKED
+        # means — so they are printed from the HEAD side or they are printed
+        # nowhere, and the ceiling reds over a row nobody can see.
+        for row in list(f_delta.masked) + list(mod_delta.masked):
+            print(audit.row_line(row, "⛔")
+                  + " [MASKED — committed, hidden by this worktree]")
         fail += len(bad)
+
+    # Issue 797/798 — the worktree is not the repo, and this checkout is not
+    # origin. ADVISORY, never a failure: a sweep that hard-reds on an ordinary
+    # dirty tree is a sweep nobody runs. It rides the FINAL line in BOTH
+    # directions, and Issue 822's row counts ride with it — the per-row labels
+    # above say WHICH, this says the class exists at all, and a notice printed
+    # in only one of those places is one nobody reads on the run that needs it.
+    deferred.extend(sweep_advisory(
+        present, SCOPE, root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
 
     print()
     if "--no-prove-fires" in sys.argv:

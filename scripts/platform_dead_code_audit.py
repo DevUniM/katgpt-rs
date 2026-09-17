@@ -930,7 +930,41 @@ def list_rs_files(root: Path) -> tuple:
     return tracked_files(root, "*.rs", vendored_p)
 
 
-def audit_repo(repo: Path) -> RepoResult:
+def source_of(p: Path, repo: Path, overlay: dict | None) -> str | None:
+    """One file's bytes, taken from the OVERLAY when it names this path.
+
+    Issue 822 T5b. A pin is a claim about the repo, and a repo's state is its
+    COMMITS — but this walk reads a working tree that several concurrent
+    sessions write into, so a finding may sit on a line no commit contains.
+    `worktree_state.head_overlay()` answers `{repo-relative path: HEAD bytes}`
+    for the dirty files, and this function is the ONE place a path becomes
+    text, which is why the substitution belongs here and not at 1042 call
+    sites inside the classifier.
+
+    ⚠ `None` in the overlay is a VALUE, not an absence: it means "tracked but
+    absent from HEAD" — a staged-but-never-committed file, Issue 822's
+    measured case — and it must SKIP the file rather than fall through to the
+    worktree copy, or another session's in-flight source is classified as
+    committed. `in` and `.get()` say different things here; the test is `in`.
+    An unreadable file gets the same answer for the same reason: there is
+    nothing committed here to classify.
+    """
+    if overlay is not None:
+        rel = str(p.relative_to(repo)).replace("\\", "/")
+        if rel in overlay:
+            return overlay[rel]
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def audit_repo(repo: Path, overlay: dict | None = None) -> RepoResult:
+    """Classify one repo. With `overlay`, classify what HEAD would produce.
+
+    The default is `None` — every existing caller is byte-identical, the
+    `instrument_reachability_gate.reachable(read=)` precedent (Issue 822 T5a).
+    """
     res = RepoResult(repo=repo)
     files, res.vendored = list_rs_files(repo)
     res.files = len(files)
@@ -940,9 +974,8 @@ def audit_repo(repo: Path) -> RepoResult:
     scans: dict = {}
     masks: dict = {}
     for p in files:
-        try:
-            text = p.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        text = source_of(p, repo, overlay)
+        if text is None:
             continue
         masked, attrs = mask_file(text)
         sc = scan_file(p, masked, attrs, bin_file_p(p, repo))
@@ -1310,6 +1343,83 @@ def _write_tree(root: Path, tree: dict) -> None:
         '[package]\nname = "t"\nversion = "0.0.0"\n', encoding="utf-8")
 
 
+def _case_tree(label: str) -> dict:
+    """One `SELFTEST_CASES` tree, BY LABEL.
+
+    The overlay arms below need a source that fires and one that does not, and
+    copying them would be a second transcription of the classifier's own
+    fixtures. A label that is gone RAISES rather than returning nothing, so the
+    arm cannot quietly stop asserting when the table is edited.
+    """
+    for lab, tree, _expect in SELFTEST_CASES:
+        if lab == label:
+            return tree
+    raise AssertionError(f"selftest case {label!r} is gone — the Issue 822 "
+                         f"overlay arms anchor on it by name")
+
+
+def overlay_arms() -> list[str]:
+    """`source_of` / `audit_repo(overlay=)` — Issue 822 T5b's substitution.
+
+    Every other arm in this file pins the CLASSIFIER. These pin the seam the
+    drift sweep's ratchet reads through, which no classifier arm can reach:
+    what a COMMIT of this repo would have produced, as opposed to what a
+    working tree several sessions are editing says today.
+    """
+    fails: list[str] = []
+    fires = _case_tree("neon shape fires")
+    clean = _case_tree("decl gated the same way is clean")
+    rel = "src/lib.rs"
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "ov"
+        _write_tree(root, fires)
+        p = root / rel
+
+        # ── `source_of`, one answer at a time ─────────────────────────────
+        if source_of(p, root, None) != fires[rel]:
+            fails.append("source_of: no overlay must read the WORKTREE — the "
+                         "default has to leave every existing caller alone")
+        if source_of(p, root, {rel: clean[rel]}) != clean[rel]:
+            fails.append("source_of: an overlay naming this path was ignored")
+        # ⛔ `None` is a VALUE — tracked, absent from HEAD. Falling through to
+        # the worktree copy here is exactly how another session's staged file
+        # gets classified as a committed finding (Issue 822's measured case).
+        if source_of(p, root, {rel: None}) is not None:
+            fails.append("source_of: an overlay value of None fell through to "
+                         "the worktree — `in` and `.get()` say different "
+                         "things and this is the one that matters")
+        if source_of(p, root, {"src/other.rs": clean[rel]}) != fires[rel]:
+            fails.append("source_of: an overlay naming a DIFFERENT path "
+                         "displaced this one")
+
+        # ── and the verdict it inverts ────────────────────────────────────
+        if not audit_repo(root).findings:
+            fails.append("overlay arms: the firing fixture stopped firing — "
+                         "every comparison below is vacuous")
+        if audit_repo(root, overlay={rel: clean[rel]}).findings:
+            fails.append("audit_repo(overlay=): HEAD's clean source still "
+                         "produced a finding — an UNCOMMITTED row would be "
+                         "adjudicated against the pin")
+        # A staged-but-never-committed file contributes NOTHING to HEAD.
+        if audit_repo(root, overlay={rel: None}).findings:
+            fails.append("audit_repo(overlay=): a file absent from HEAD "
+                         "produced a committed finding")
+
+    with tempfile.TemporaryDirectory() as td:
+        # ⛔ The SILENT direction, and it needs its own tree: HEAD carries a
+        # row this worktree does not. Nothing in the worktree pass can see it,
+        # so a sweep that adjudicated the worktree reports the repo clean.
+        root = Path(td) / "masked"
+        _write_tree(root, clean)
+        if audit_repo(root).findings:
+            fails.append("overlay arms: the clean fixture started firing")
+        if not audit_repo(root, overlay={rel: fires[rel]}).findings:
+            fails.append("audit_repo(overlay=): a MASKED row — committed, "
+                         "hidden by the worktree — was not recovered")
+    return fails
+
+
 def selftest() -> int:
     """Pin the classifier in BOTH directions.
 
@@ -1334,8 +1444,19 @@ def selftest() -> int:
             if got != expect:
                 print(f"      expected {sorted(expect) or '[]'}, "
                       f"got {sorted(got) or '[]'}")
+    # Issue 822 T5b — the HEAD-overlay seam. Reported in the same block and
+    # counted into the same total, so a sweep that already refuses on
+    # `audit.selftest()` picks these up with no change of its own.
+    ov = overlay_arms()
+    for f in ov:
+        print(f"  ✗ {f}")
+    bad += len(ov)
+    if not ov:
+        print("  ✓ the HEAD overlay substitutes, skips an absent file, and "
+              "inverts a verdict in both directions")
+    n_arms = len(SELFTEST_CASES) + 1
     print()
-    print(f"  {len(SELFTEST_CASES) - bad}/{len(SELFTEST_CASES)} arm(s) pinned")
+    print(f"  {n_arms - bad}/{n_arms} arm(s) pinned")
     if bad:
         print("  ⛔ classifier MISS — the report is not trustworthy")
         return 2
