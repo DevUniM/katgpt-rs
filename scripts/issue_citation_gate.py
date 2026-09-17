@@ -954,6 +954,18 @@ def selftest() -> list[str]:
             "## 2026-09-16 — Issue 512: a riir-train thing, not ours",
             # a date-led heading of another kind
             "## 2026-09-16 — Plan 223: a plan, not an issue",
+            # ── Issue 828: the DELIMITER, the third position the rule was
+            #    silently anchored to. 56 records workspace-wide, this repo's
+            #    own house style, its own newest closes.
+            "## Issue 788 — a dash-delimited title, nothing interstitial",
+            # ⛔ the discriminator is UNCHANGED again: `follow-up` is still
+            #    rejected, now in the NEW delimiter. If this were read, Issue
+            #    828 WOULD be the widening AGENTS.md calls unsound.
+            "## Issue 789 follow-up — commentary, not an allocation",
+            # ⛔ the ASCII hyphen is a delimiter only when space-separated on
+            #    both sides. This is a live riir-ai heading shape where the
+            #    hyphen is part of a WORD.
+            "## Issue 366-class — the hyphen is inside a word",
         ])
         # ONE pinned document, not all of them: `heading_allocated` unions a
         # SET (so duplicates are invisible) but `heading_style_blind` COUNTS,
@@ -983,7 +995,13 @@ def selftest() -> list[str]:
            512 in got, False)
         eq("⚑ Issue 823: the kind filter applies to the date-led form",
            223 in got, False)
-        eq("nothing else was read", sorted(got), [59, 113, 120])
+        eq("⛑ Issue 828: a DASH-delimited allocation heading is read",
+           788 in got, True)
+        eq("⛔ Issue 828: `NNN follow-up — …` is NOT read — arm 2's negative "
+           "survives the new DELIMITER", 789 in got, False)
+        eq("⛔ Issue 828: a bare ASCII hyphen inside a word is not a delimiter",
+           366 in got, False)
+        eq("nothing else was read", sorted(got), [59, 113, 120, 788])
         # The style-blind triage quantity. Issue 823: the meter counts the
         # date-led family too, or it reports a PERFECT score over a house style
         # it cannot see (measured: riir-chain 0/1 over 21 records). Shaped rows
@@ -992,7 +1010,27 @@ def selftest() -> list[str]:
         # kind, 888 fenced. Accepted: 059, 113, 120.
         eq("heading_style_blind measures the gap, both sides filtered",
            heading_style_blind(repo, ".issues", ["katgpt-rs", "riir-train"]),
-           (3, 7))
+           (4, 10))
+
+        # ── Issue 828 T4: the COST meter, which is what ANSWERED Issue 823
+        # T5. Armed HERE and not only in the sweep: reach is measured per
+        # module, and the predicate that decides it lives in this one.
+        # Unread and unknown here: 097, 043, 152, 044, 789, 366 — the accepted
+        # rows (059, 113, 120, 788) must never be priced, because the rule
+        # change does not touch them.
+        names2 = ["katgpt-rs", "riir-train"]
+        eq("⛑ every unread record prices when no other oracle knows it",
+           heading_unread_novel(repo, ".issues", names2, known=set()), 6)
+        eq("⛑ a record another oracle covers cannot change a verdict and is "
+           "not priced",
+           heading_unread_novel(repo, ".issues", names2, known={97}), 5)
+        eq("⛔ every unread number known ⇒ the widening buys NOTHING",
+           heading_unread_novel(repo, ".issues", names2,
+                                known={97, 43, 152, 44, 789, 366}), 0)
+        eq("⛔ knowing an ACCEPTED number changes nothing — it was never in "
+           "the residue",
+           heading_unread_novel(repo, ".issues", names2,
+                                known={59, 113, 120, 788}), 6)
 
     # ── ci_deferred(): the DEFERRAL, which is this gate's loudest output ──
     # ⚑ Issue 790 T3. Eight of this module's survivors were in here, and it is
