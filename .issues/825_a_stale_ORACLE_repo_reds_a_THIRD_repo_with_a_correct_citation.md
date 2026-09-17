@@ -104,6 +104,47 @@ inherited. It is also the same asymmetry Issue 815 already names — the marker
 takes NAMES rather than `=1` precisely so it stays loud for the unexamined
 case — and "consulted as an oracle" is an unexamined case it does not cover.
 
+## ⛔ Addendum, same session — the red is GONE, and not because anything was fixed
+
+After the diagnostic `git fetch origin` above, `citation_drift_sweep.py` exits
+**0** and riir-shader's row is clean. **The seal-game-editor WORKTREE never
+moved** — still `bfa20ad3`, still 260 behind:
+
+```
+$ git -C ../seal-game-editor rev-list --left-right --count HEAD...origin/develop
+0	260
+```
+
+So `allocated()` resolves through **refs**, not the checked-out tree, and a
+fetch in one repo silently changed a verdict in a **third**. Two consequences,
+and both make the tasks below sharper rather than optional:
+
+- **The cure is the thing T2 forbids.** The only action taken was a fetch, and
+  the wall went green. Anyone hitting this red and running `git fetch` in the
+  named repo will see it clear and reasonably conclude the sweep was noise.
+  The gap is untouched: the next oracle repo that ages past a citation
+  reproduces it exactly, and the greenness here is an artifact of my having
+  gone looking.
+- ⛔ **The staleness detector's own input is stale by the same mechanism.**
+  `behind_origin()` compares HEAD to a **local remote-tracking ref**, which is
+  only as fresh as the last fetch. Before the fetch, seal-game-editor reported
+  **0 behind / 0 ahead** — the advisory was silent *and wrong* — with its last
+  fetch dated Sep 16 12:42. After, the numbering sweep prints
+  `⚠ STALE: … seal-game-editor (260 behind, 53 in scope)`.
+
+  A staleness detector that never fetches does not measure staleness; it
+  measures *staleness known as of the last fetch*, and it reports the
+  reassuring answer when it knows least. That is the same shape as this repo's
+  blindness floors — an instrument whose failure mode is a confident zero —
+  and it has no floor. The honest verdict for "no fetch within N" is
+  **UNKNOWN**, never `(0, 0)`, which the helper already has a slot for: it
+  returns `None` rather than guessing when there is no upstream.
+
+⚠ This does NOT argue for auto-fetching (T2's ⛔ stands, for its own reason).
+It argues that `(0, 0)` and "last fetch was two days ago" must not print the
+same thing. The fetch TIME is available locally — `.git/FETCH_HEAD` mtime —
+with no network call at all.
+
 ## Tasks
 
 - [ ] **T1 — the oracle repos are part of the claim.** When a CROSS row's
@@ -131,6 +172,15 @@ case — and "consulted as an oracle" is an unexamined case it does not cover.
       with the same number present in the worktree it must be clean; absent
       from both, it must still red. The middle arm is the one this issue
       exists for and the one a naive fix will skip.
+- [ ] **T5 — `(0, 0)` must not mean "not measured".** `behind_origin()` reads a
+      remote-tracking ref whose own freshness it never reports, so a repo last
+      fetched days ago reads *up to date*. Stat `.git/FETCH_HEAD` (no network)
+      and return a distinct UNKNOWN-ish answer beyond some age, printed the way
+      `None` already is. The arm is a fixture repo with a backdated
+      `FETCH_HEAD` and an upstream ref that has moved: today it prints silence,
+      and it must not.
+      ⚠ Also the reason this issue's own red "fixed itself" — see the addendum.
+
 - [ ] **T4 — decide the known-extra oracle question** (the second axis). Owner
       call: either known-extra repos are legitimate oracles (status quo, now
       documented) or a citation naming one is UNDECIDED by construction.
