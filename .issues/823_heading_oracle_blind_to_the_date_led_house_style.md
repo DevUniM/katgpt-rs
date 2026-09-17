@@ -1,6 +1,6 @@
 # Issue 823 (2026-09-17) — the heading oracle was anchored to a POSITION, and its own blindness meter was anchored to the same one
 
-**Status: RESOLVED same day (T1–T4). T5 open.**
+**Status: RESOLVED same day (T1–T4, T6). T5 open.**
 
 ## The symptom
 
@@ -106,6 +106,48 @@ sessions have now done it. The row is not a backlog entry; it is the instrument
 reporting that it cannot read a record the repo owns. Read
 `heading_unread=a/b` on the sweep's own per-repo line first — a repo at or near
 `b/b` cannot have its IN-LOCAL-RANGE count trusted as an editorial quantity.
+
+## T6 — the width bound had no floor, and its blind output is a PERFECT score
+
+Found by writing (b) up: the paragraph claimed "a width bound gets its own
+floor" and this one did not have one. `heading_style_blind` was printed every
+run and asserted by nothing, so a regressed shaped pattern takes `shaped` to 0
+and the summary line reads `0/0 records read, 0 UNREAD`. The instrument whose
+whole job is reporting blindness reports **perfect coverage** when it goes
+blind — which is (b) again, one level up, and it is the reason this issue
+exists rather than a tidy symmetry.
+
+`min_heading_shaped = 260` in `citation_drift_floors.txt`:
+
+- **GLOBAL, not per-repo.** Per-repo is legitimately 0 in every repo with no
+  self-allocation headings — the vacuous-floor shape, solved the same way the
+  wasm32 sweep solves it (a reserved `TOTALS` row floors the population
+  globally).
+- **Pinned under a PARTIAL-clone measurement** (319 over 16 of 20), so a full
+  checkout clears it by construction. The floor asserts the PARSER; it must
+  never move because a repo was absent.
+- ⚑ **Canaried, and it turned out to be two independent detectors.** An
+  impossible pin (99999) fires the floor through its own comparison path,
+  exit 1. A deliberately broken shaped regex is caught EARLIER, by the
+  existing `heading_style_blind` arm, exit 2. Different failure modes, both
+  covered — the arm sees a pattern that stopped matching, the floor sees a
+  population that collapsed for any reason at all.
+- An arm asserts the pin is present and > 0: a floor that is silently absent
+  is the same as no floor, and `parse_pins` would have defaulted quietly.
+
+## Postscript — the write-up reproduced the class, again
+
+The T1–T3 AGENTS.md paragraph quotes riir-clippy's heading as a SPECIMEN, and
+the instrument cannot tell a quoted citation from a live one: it landed a new
+`IN-LOCAL-RANGE` row against katgpt-rs's own `max_in_local_range 0`. AGENTS.md
+already records this trap for the Issue-780 write-up and already prescribes
+the repair — name the true owner inside the citation's own 3-line window, not
+a pin. Applied.
+
+⚑ It also demonstrated Issue 797's split working as designed: the sweep's
+per-repo DISPLAY read the fixed worktree (`0`) while the PIN adjudicated HEAD
+(`1`), so the red persisted until the fix was committed. Exactly the intended
+behaviour, and worth knowing before chasing it as a bug.
 
 ## Cross-repo
 
