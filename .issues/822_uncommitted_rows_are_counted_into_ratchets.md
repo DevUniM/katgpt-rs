@@ -301,7 +301,9 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       | `cfg_gated`, `required_features` | manifest+source joins — read each before choosing |
       | ~~`wasm32_surface`~~ | **done (T5g)** — `head_tree`, the THIRD instrument |
       | `restatement`, `trap_sentinel`, `cfg_row_implication` | ⚠ carry count ceilings and were NOT in T1's table at all — see T5j |
-      | `docs`, `citation` | `docs` has no count ceiling (nothing to overstate); `citation` carries the INLINE original — T5j |
+      | ~~`docs`~~ | **done (T5j)** — `head_tree`; its ceiling is `if b_mis:`, which the census could not see |
+      | `citation` | carries the INLINE original; katgpt-rs-54 is actively in that file for Issue 827 |
+      | `cfg_gated`, `required_features` | the last two — manifest+source joins |
 
       ⛔ **T5g — `wasm32_surface` needed a THIRD instrument, and the reason
       generalises to every remaining row.** `head_delta` and `head_overlay`
@@ -387,15 +389,26 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       — `max_exposed`, `max_precautionary`, `max_live_forward`, `max_unparsed`,
       `max_replaced`, plus two floors) and `cfg_row_implication` (`max_empty`,
       `max_unresolved`) all carry ceilings and appear in T1's table NOWHERE.
-      `docs` is the one sweep with no count ceiling at all — an exemption
-      candidate, not a task — and `citation` carries the INLINE original the
-      helpers were lifted out of, which owes a migration to them so one rule
-      has one copy (AGENTS.md already describes the helpers as exactly that).
+      ⛔ **And that re-derivation was ITSELF a census over one representation,
+      which is the same defect one level up.** It concluded "`docs` is the one
+      sweep with no count ceiling at all — an exemption candidate, not a task",
+      and `docs_drift_sweep` has a WALL at 0: `if b_mis: failures.append(...)`,
+      spelled as a truth test rather than as a pin comparison, plus two floors
+      in the same shape. A grep for `max_*` cannot see a ceiling nobody wrote
+      as `max_*`. Wired in the same task once found (2026-09-18); Issue 787's
+      finding and Issue 789's, reproduced by the census that was looking for
+      instances of the class.
 
-      The lesson is the issue's own: **do not carry a table forward as a
-      population.** T1's table was right about what it looked at and is not a
-      derived set, which is why the closing step of this issue is a REGISTRY
-      row rather than a tick — see T6.
+      `citation` carries the INLINE original the helpers were lifted out of,
+      which owes a migration to them so one rule has one copy — **not started,
+      and katgpt-rs-54 is actively in that file** for Issue 827's oracle
+      freshness; coordinate before touching it.
+
+      The lesson is the issue's own, now earned twice: **do not carry a table
+      forward as a population**, and do not trust a census over one
+      representation to produce one either. T1's table was right about what it
+      looked at and is not a derived set, which is why the closing step of this
+      issue is a REGISTRY row rather than a tick — see T6.
 
 - [ ] **T6 — make the fan-out impossible to forget, the way Issue 824 did for
       its two mechanisms.** `scripts/sweep_advisory_membership_gate.py` is
