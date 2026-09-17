@@ -433,6 +433,53 @@ def head_arms() -> list[str]:
         if d.uncommitted or d.masked or len(d.committed) != 1:
             fails.append(f"row key: a line shift reported one kill as both "
                          f"UNCOMMITTED and MASKED ({d})")
+
+    # f. ⛔ The ORDINAL, and it needs BOTH fixtures — neither alone arms the
+    #    join. The worktree pass assigns ordinals over the WHOLE repo and
+    #    `head_delta`'s rescan assigns them PER FILE; they agree only because
+    #    `rel` is in the address, and nothing else here asserts that.
+    #
+    #    (i) the same kill TWICE in one file: the ordinals must DIFFER, or the
+    #        keys collide, HEAD dedupes to one row, and the ceiling silently
+    #        tolerates the second copy of a defect.
+    twice = kill + kill
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, twice, "# padding\n" + twice)
+        res = pda.audit_repo(repo)
+        if len(res.findings) != 2:
+            fails.append(f"ordinal arm: the repeat fixture yielded "
+                         f"{len(res.findings)} finding(s), not 2 — the "
+                         f"ordinal is not being exercised at all")
+        keys = [k for k, _f in keyed_rows(res.name, res.findings)]
+        if len(set(keys)) != len(keys):
+            fails.append(f"ordinal: two identical kills in one file collapsed "
+                         f"to one key ({keys})")
+        d = adjudicate(repo, res)
+        if d.uncommitted or d.masked or len(d.committed) != 2:
+            fails.append(f"ordinal: two identical kills did not survive a "
+                         f"line shift as two COMMITTED rows ({d})")
+
+    #    (ii) the same kill in TWO files: BOTH ordinals must be 0. This is the
+    #         fixture that catches `rel` leaving the address — without it the
+    #         second file's row is ordinal 1 in the whole-repo pass and 0 in
+    #         the per-file rescan, so every row in that file reads as
+    #         UNCOMMITTED *and* MASKED at once: a red nobody can repair.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, kill, "# padding\n" + kill)
+        (repo / "scripts" / "b.sh").write_text(kill, encoding="utf-8")
+        git(repo, "add", "scripts/b.sh")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "second")
+        res = pda.audit_repo(repo)
+        ords = sorted(int(k.rsplit("#", 1)[1])
+                      for k, _f in keyed_rows(res.name, res.findings))
+        if ords != [1, 1]:
+            fails.append(f"ordinal: the same kill in two files did not get "
+                         f"ordinal 1 in each — `rel` has left the address "
+                         f"({ords})")
+        d = adjudicate(repo, res)
+        if d.uncommitted or d.masked or len(d.committed) != 2:
+            fails.append(f"ordinal: the same kill in two files was split "
+                         f"across provenances ({d})")
     return fails
 
 
