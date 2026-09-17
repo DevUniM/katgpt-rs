@@ -1996,7 +1996,11 @@ subject is records drifting away from what they describe.
   was measured breaching a live ratchet** (Issue 822, 2026-09-17). Its first
   clause had stopped being true — six sweeps carry file-addressed rows — and
   **14 of 19 sweeps carry at least one COUNT ceiling**, membership-pinned ones
-  included where they pin some buckets and ratchet others. Measured:
+  included where they pin some buckets and ratchet others. ⚠ Read that 14 as
+  what ONE representation could see: it was derived by grepping
+  `> row["max_*"]`, and `docs_drift`'s ceiling is a wall at 0 written
+  `if b_mis:`, so the exposed set was larger than the census that found it.
+  Measured:
   `console_encoding` reported `undefended 56 > pinned 53` where one of the
   three new rows sat on a file `git log` could not see at all, staged by
   another session mid-commit. The pressure to type 56 into the pin is the
@@ -2034,17 +2038,41 @@ subject is records drifting away from what they describe.
   labelled, because hiding the three is the lie Issue 797 refuses. **MASKED
   needs no separate teeth** (T4) — the pins read `.head`, so a committed row
   the worktree hides breaches the ceiling on its own.
-- ⚠ **Wired into TWO sweeps so far — the two where the class was MEASURED**,
-  one per instrument: `console_encoding_drift_sweep.py` (per-file,
-  `head_delta`) and `instrument_reachability_drift_sweep.py` (cross-file,
-  `head_overlay` + `delta_of`). The other twelve are owed, tabulated in Issue
-  822 T5. Do not read the helper's existence as the fan-out having happened —
-  that substitution is this document's own most-repeated error.
+- ✅ **The fan-out is COMPLETE and GATED (2026-09-18)** — every tracked
+  `*_drift_sweep.py` adjudicates its findings against HEAD, and
+  `head-provenance` is a MECHANISMS row in
+  `sweep_advisory_membership_gate.py`, so the next one cannot land unwired.
+  **Take the family size and the wiring verdict from that gate's PASS line,
+  never from a count here**: this paragraph said "wired into TWO sweeps so
+  far" and stayed that way through fourteen more, which is the substitution
+  this document names as its own most-repeated error. Full record and the
+  rules each instrument earned: HISTORY.md § Issue 822.
+- ⛔ **Pick the instrument from the CLASSIFIER's shape, never by preference.**
+  `head_delta` needs per-file row independence; `head_overlay` + `delta_of`
+  needs ONE interceptable reader; `head_tree` materialises HEAD for a
+  classifier with several seams (`git grep` + `git ls-files` + direct reads)
+  and runs it UNMODIFIED — measured **22-32s per dirty repo** against
+  0.04-0.26s clean, so it yields `None` on a clean run and the caller MUST
+  skip. Its `paths=` narrows the archive (riir-train 604 MB → 30.6 MB, worth
+  2.2x end to end, and a file the pathspec drops is silently ABSENT — the
+  caller's risk); its `extra_dirty=` widens the TRIGGER for a sweep whose walk
+  is `os.walk` rather than `git ls-files`, where an untracked file is in the
+  population and produces zero `git status` dirt.
+- ⛔ **The VERDICT belongs in the row KEY, and a FLOOR is a pin too.** A
+  key-matched row is filed COMMITTED carrying the WORKTREE's object, so any
+  field the key omits is one where the worktree silently overrides HEAD — and
+  every ceiling in the family partitions by verdict. Floors read HEAD for the
+  same reason: Issue 797 measured that class on a POPULATION (607 → 601
+  citations), not on a finding.
 - ⚠ **Budget the canary cost before wiring one.** Each sweep's `--canary` runs
   `main()` once per arm over every contract repo, so four new arms is roughly
   a 45% increase: `console_encoding` went 9 arms/~15s to 14 arms/**~42s**.
   Workstation-only — none of these runs per push — but it is why the arms are
-  four and not fourteen.
+  four and not fourteen. ⛔ With `head_tree` the same shape is an order of
+  magnitude worse: `len_derived`'s canary ran past **120s and was killed**,
+  because each arm re-entered `main()` and materialised a tree per dirty repo.
+  Stub the provenance seam inside a canary whose arms are about PIN
+  ARITHMETIC; the seam has its own arms in `selftest`.
 - ⛔ **The row key is deliberately LINE-FREE** — `(document, kind, number)`.
   Any edit above a citation shifts its line, so a line-bearing key reports
   every row in an edited document as UNCOMMITTED *and* MASKED at once. The arm
