@@ -53,8 +53,10 @@ certifies nothing (`platform_dead_code_audit.py`'s first `vendor/` arm).
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 from typing import NamedTuple
@@ -344,6 +346,67 @@ def head_overlay(root, patterns) -> dict[str, str | None]:
     """
     return {rel: head_text(root, rel)
             for rel in sorted(dirty_in_population(root, patterns))}
+
+
+@contextlib.contextmanager
+def head_tree(root, patterns):
+    """A throwaway CHECKOUT of HEAD, or `None` when nothing in scope is dirty.
+
+    Issue 822 T5g — the third instrument, for classifiers the other two cannot
+    reach. `head_delta` substitutes one file's bytes; `head_overlay` hands a
+    whole-run re-classification `{rel: bytes}`. Both assume the classifier
+    takes its text from ONE place a caller can intercept. Measured on
+    `wasm32_surface_audit`, that assumption fails: it shells out to `git grep`
+    for the walk, `git ls-files` twice for the manifests and the lane rows, and
+    reads files directly besides — four seams, and an overlay that misses any
+    one of them produces a verdict built half from HEAD and half from the
+    worktree, which is worse than either.
+
+    So this materialises HEAD instead and lets the classifier run unmodified:
+    `git archive HEAD`, extracted, then `git init` + `git add -A -f` so the
+    tree answers `git grep` and `git ls-files` exactly as a real checkout does.
+    `-f` is load-bearing — an extracted `.gitignore` would otherwise exclude
+    content HEAD tracks, and `git archive` emits tracked content only, so
+    everything in it belongs in the index by construction. No commit is made
+    (`pipefail_discard_drift_sweep._temp_repo`'s precedent: `git grep` reads
+    the index, and a commit buys nothing).
+
+    ⚠ It is the EXPENSIVE one — a tree copy rather than a handful of `git
+    show` calls — so it yields `None` on a clean run and the caller must skip
+    its second classification entirely, exactly as an empty overlay means
+    SKIP. `None` also covers "not a git repository" and an archive that
+    failed: in both the honest answer is that this run has nothing committed
+    to compare against, never a fabricated empty tree, which would report
+    every finding as UNCOMMITTED.
+    """
+    root = Path(root)
+    if not dirty_in_population(root, patterns) or not (root / ".git").is_dir():
+        yield None
+        return
+    with tempfile.TemporaryDirectory() as td:
+        arc = Path(td) / "head.tar"
+        if _git(root, "archive", "-o", str(arc), "HEAD").returncode != 0:
+            yield None
+            return
+        dest = Path(td) / "head"
+        dest.mkdir()
+        try:
+            with tarfile.open(arc) as tf:
+                try:
+                    tf.extractall(dest, filter="data")
+                except TypeError:        # filter= predates 3.12
+                    tf.extractall(dest)
+        except (tarfile.TarError, OSError):
+            yield None
+            return
+        _run_quiet(dest, "init", "-q")
+        _run_quiet(dest, "add", "-A", "-f")
+        yield dest
+
+
+def _run_quiet(cwd, *args) -> None:
+    subprocess.run(["git", "-C", str(cwd), *args],
+                   capture_output=True, encoding="utf-8", errors="replace")
 
 
 def line_free(text: str) -> str:
@@ -948,6 +1011,86 @@ def overlay_arms() -> list[str]:
     return fails
 
 
+def tree_arms() -> list[str]:
+    """`head_tree` — Issue 822 T5g's materialised HEAD.
+
+    Every assertion here is about the thing the two cheaper instruments
+    cannot give a classifier: a tree that answers `git grep` and `git
+    ls-files`. Testing it any other way would test a temp directory.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        me = _repo(tmp, "t")
+        (me / "keep.rs").write_text("committed\n", encoding="utf-8")
+        (me / "sub").mkdir()
+        (me / "sub" / "deep.rs").write_text("deep committed\n",
+                                            encoding="utf-8")
+        # ⛔ A .gitignore that HEAD tracks would exclude tracked content from
+        # the rebuilt index unless `git add` is forced. The arm plants the
+        # exact shape rather than trusting the flag.
+        (me / ".gitignore").write_text("sub/\n", encoding="utf-8")
+        _run(me, "add", "-A", "-f")
+        _run(me, "commit", "-qm", "base")
+
+        # A clean tree yields None — the caller must SKIP, because this
+        # instrument copies a tree and cannot be paid for on every run.
+        with head_tree(me, ("*.rs",)) as t:
+            check(t is None, f"a clean tree materialised HEAD anyway: {t}")
+
+        # Dirt OUTSIDE the population is also None: the population is the
+        # caller's declared scope, not "anything changed".
+        (me / "notes.md").write_text("edited\n", encoding="utf-8")
+        with head_tree(me, ("*.rs",)) as t:
+            check(t is None, "dirt outside the population materialised HEAD")
+
+        (me / "keep.rs").write_text("EDITED\n", encoding="utf-8")
+        (me / "untracked.rs").write_text("never added\n", encoding="utf-8")
+        with head_tree(me, ("*.rs",)) as t:
+            check(t is not None, "a dirty population did not materialise HEAD")
+            if t is not None:
+                check((t / "keep.rs").read_text(encoding="utf-8")
+                      == "committed\n",
+                      "head_tree carried the WORKTREE bytes, not HEAD's")
+                # The whole point: it answers git, or the classifiers this
+                # exists for (`git grep`, `git ls-files`) see an empty repo
+                # and report a confident zero.
+                ls = subprocess.run(
+                    ["git", "-C", str(t), "ls-files"], capture_output=True,
+                    encoding="utf-8", errors="replace").stdout.split()
+                check("keep.rs" in ls,
+                      f"head_tree does not answer `git ls-files`: {ls}")
+                check("sub/deep.rs" in ls,
+                      f"a gitignored-but-TRACKED path is missing from the "
+                      f"rebuilt index — `git add` was not forced: {ls}")
+                grep = subprocess.run(
+                    ["git", "-C", str(t), "grep", "-l", "committed"],
+                    capture_output=True, encoding="utf-8",
+                    errors="replace").stdout.split()
+                check("keep.rs" in grep,
+                      f"head_tree does not answer `git grep`: {grep}")
+                check(not (t / "untracked.rs").exists(),
+                      "an UNTRACKED file reached the HEAD tree, so it would "
+                      "be classified as committed")
+        # The temp tree is cleaned up on exit — a sweep runs this per repo.
+        check(t is not None and not t.exists(),
+              "head_tree leaked its temporary tree")
+
+        # Not a repository: None, never a fabricated empty tree. An empty one
+        # would report every finding in the repo as UNCOMMITTED.
+        plain = tmp / "plain"
+        plain.mkdir()
+        (plain / "a.rs").write_text("x\n", encoding="utf-8")
+        with head_tree(plain, ("*.rs",)) as t:
+            check(t is None, "a non-repository produced a HEAD tree")
+    return fails
+
+
 def key_arms() -> list[str]:
     """`line_free` / `ordinal_keys` — Issue 822 T5d's shared row identity."""
     fails: list[str] = []
@@ -1343,7 +1486,7 @@ def premise_arms() -> list[str]:
 
 def selftest() -> list[str]:
     return (dirty_arms() + split_arms() + delta_arms() + overlay_arms()
-            + key_arms() + scope_arms()
+            + key_arms() + tree_arms() + scope_arms()
             + advisory_arms() + stale_arms() + counter_arms()
             + premise_arms())
 
@@ -1380,7 +1523,11 @@ def main() -> int:
           "from an absent one while delta_of compares two COMPLETE sets, "
           "line_free is line-INVARIANT and strips only a bare integer while "
           "ordinal_keys disambiguates a repeated address and carries NO state "
-          "between the worktree and HEAD passes, "
+          "between the worktree and HEAD passes, head_tree materialises a "
+          "HEAD checkout that answers git ls-files AND git grep (forced "
+          "add, so a tracked-but-gitignored path survives), excludes "
+          "untracked files, yields None on a clean tree / out-of-scope dirt "
+          "/ a non-repository and leaks nothing, "
           "a bare "
           "NAME + root resolves as a path does while an unresolvable one "
           "is SKIPPED, behind_origin separates None (no upstream, never "
