@@ -346,6 +346,50 @@ def head_overlay(root, patterns) -> dict[str, str | None]:
             for rel in sorted(dirty_in_population(root, patterns))}
 
 
+def line_free(text: str) -> str:
+    """One finding row's text with a leading `"<lineno>: "` removed.
+
+    Issue 822 T5d. The family's rows are overwhelmingly `f"{node.lineno}: {…}"`
+    or `f"{lineno}: {…}"`, and a key built from that reports EVERY row in an
+    edited file as UNCOMMITTED *and* MASKED at once, because any insertion
+    above a finding shifts it. Written once here rather than in nine sweeps:
+    the split is by the FIRST `": "` and only when what precedes it is a bare
+    integer, so a row whose text legitimately begins `"note: …"` is returned
+    unchanged rather than silently beheaded.
+    """
+    head, sep, rest = text.partition(": ")
+    if sep and head.strip().isdigit():
+        return rest
+    return text
+
+
+def ordinal_keys(rows, addr_of):
+    """`[(key, row)]` — each row's ADDRESS plus an ordinal within it.
+
+    Issue 822 T5d, lifted out of `subprocess_encoding_drift_sweep` (T5c) the
+    first time a second sweep needed it, per this repo's own most-repeated
+    rule: a rule landed in one instrument and never generalised is the failure
+    mode recorded nine times in AGENTS.md.
+
+    A line-free address is not unique in general — two identical calls in one
+    file share one — so an ORDINAL disambiguates, the
+    `len_derived_eyes_expected.txt` precedent, scoped to the WHOLE address so
+    a new site elsewhere renumbers nothing.
+
+    ⛔ The counter is LOCAL to this call, and that is the load-bearing part.
+    Sharing one counter between the worktree pass and the HEAD pass makes the
+    two sides count from different bases, and then every row looks moved.
+    """
+    seen: dict = {}
+    out = []
+    for row in rows:
+        addr = tuple(addr_of(row))
+        n = seen.get(addr, 0)
+        seen[addr] = n + 1
+        out.append(((*addr, n), row))
+    return out
+
+
 def delta_of(worktree_rows, head_rows, key_of) -> HeadDelta:
     """The three buckets from two ROW SETS, for a classifier re-run WHOLE.
 
@@ -904,6 +948,55 @@ def overlay_arms() -> list[str]:
     return fails
 
 
+def key_arms() -> list[str]:
+    """`line_free` / `ordinal_keys` — Issue 822 T5d's shared row identity."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    # The family's row shape, and the reason the key drops the number: an edit
+    # ABOVE a finding moves it, and the finding is the same finding.
+    check(line_free("12: subprocess.run(cmd, text=True)")
+          == "subprocess.run(cmd, text=True)",
+          "line_free did not strip the `<lineno>: ` prefix")
+    check(line_free("900: subprocess.run(cmd, text=True)")
+          == line_free("12: subprocess.run(cmd, text=True)"),
+          "line_free is not line-INVARIANT, which is its only job")
+    # ⛔ Only a BARE INTEGER is a line number. A row whose own text begins
+    # `note: …` or `E501: …` must come back whole — silently beheading it
+    # would merge two distinct findings into one identity.
+    check(line_free("note: something happened") == "note: something happened",
+          "line_free beheaded a row whose prefix is not a line number")
+    check(line_free("no separator here") == "no separator here",
+          "line_free mangled a row with no `: ` at all")
+    # The FIRST separator only: a call text containing `": "` keeps it.
+    check(line_free('7: run(x, env={"A": "b"})') == 'run(x, env={"A": "b"})',
+          "line_free split on the wrong separator")
+
+    rows = ["a", "a", "b"]
+    keys = [k for k, _ in ordinal_keys(rows, lambda r: (r,))]
+    check(keys == [("a", 0), ("a", 1), ("b", 0)],
+          f"ordinal_keys did not disambiguate a repeated address: {keys}")
+    check(len(set(keys)) == len(keys),
+          "ordinal_keys produced a colliding key set")
+    # ⛔ The counter is LOCAL. Two independent calls — the worktree pass and
+    # the HEAD pass — must start from the same base, or every row looks moved
+    # and a clean repo reports its whole finding set twice over.
+    check([k for k, _ in ordinal_keys(rows, lambda r: (r,))] == keys,
+          "ordinal_keys carried state between calls, so the worktree and HEAD "
+          "passes count from different bases")
+    # A new site at a DIFFERENT address renumbers nothing at the old one.
+    keys2 = [k for k, _ in ordinal_keys(["a", "c", "a", "b"],
+                                        lambda r: (r,))]
+    check(("a", 0) in keys2 and ("a", 1) in keys2 and ("b", 0) in keys2,
+          f"an unrelated new row renumbered its neighbours: {keys2}")
+    check([r for _, r in ordinal_keys(rows, lambda r: (r,))] == rows,
+          "ordinal_keys did not return its rows unchanged alongside the keys")
+    return fails
+
+
 def scope_arms() -> list[str]:
     """`dirty_in_scope` matches a NESTED path against a bare-suffix pattern.
 
@@ -1250,7 +1343,7 @@ def premise_arms() -> list[str]:
 
 def selftest() -> list[str]:
     return (dirty_arms() + split_arms() + delta_arms() + overlay_arms()
-            + scope_arms()
+            + key_arms() + scope_arms()
             + advisory_arms() + stale_arms() + counter_arms()
             + premise_arms())
 
@@ -1285,6 +1378,9 @@ def main() -> int:
           "by a clean file, head_overlay carries HEAD's bytes for "
           "|dirty n population| and distinguishes a STAGED-only file (None) "
           "from an absent one while delta_of compares two COMPLETE sets, "
+          "line_free is line-INVARIANT and strips only a bare integer while "
+          "ordinal_keys disambiguates a repeated address and carries NO state "
+          "between the worktree and HEAD passes, "
           "a bare "
           "NAME + root resolves as a path does while an unresolvable one "
           "is SKIPPED, behind_origin separates None (no upstream, never "

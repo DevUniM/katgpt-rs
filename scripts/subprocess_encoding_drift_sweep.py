@@ -90,7 +90,8 @@ import subprocess_encoding_gate as seg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
-from worktree_state import head_delta, sweep_advisory  # noqa: E402
+from worktree_state import (head_delta, line_free,  # noqa: E402
+                            ordinal_keys, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -99,34 +100,25 @@ PINS = HERE / "subprocess_encoding_drift_floors.txt"
 FIELDS = ("min_py_files", "min_calls", "max_decode", "max_child")
 
 
-
-def row_key(rel: str, kind: str, row: str, seen: dict) -> tuple:
-    """A LINE-FREE key for one offender row, Issue 822.
-
-    ⛔ The rows this sweep prints are `"{lineno}: {call text}"`, and a
-    line-bearing key reports EVERY row in an edited file as UNCOMMITTED *and*
-    MASKED at once — any insertion above a call shifts it. So the line is
-    dropped and the call's own unparsed text carries the identity.
-
-    Two identical calls in one file would then collide, so an ORDINAL within
-    `(rel, kind, text)` disambiguates — the `len_derived_eyes_expected.txt`
-    precedent, scoped to the whole address so a new call site renumbers
-    nothing. `seen` is the caller's counter and must be per row-set, never
-    shared between the worktree and HEAD passes, or the two sides count from
-    different bases and every row looks moved.
-    """
-    text = row.split(": ", 1)[1] if ": " in row else row
-    addr = (rel, kind, text)
-    n = seen.get(addr, 0)
-    seen[addr] = n + 1
-    return (*addr, n)
-
-
 def keyed(rows) -> list:
-    """`[(key, rel, kind, row)]` for a row set, ordinals assigned in order."""
-    seen: dict = {}
-    return [(row_key(rel, kind, row, seen), rel, kind, row)
-            for rel, kind, row in rows]
+    """`[(key, rel, kind, row)]` for a row set, ordinals assigned in order.
+
+    A LINE-FREE key, Issue 822. ⛔ The rows this sweep prints are
+    `"{lineno}: {call text}"`, and a line-bearing key reports EVERY row in an
+    edited file as UNCOMMITTED *and* MASKED at once — any insertion above a
+    call shifts it. So the line is dropped and the call's own unparsed text
+    carries the identity, with an ORDINAL for the two-identical-calls case.
+
+    ⛔ **Both rules are `worktree_state`'s now (T5d), not this file's.** T5c
+    solved them here, inline, and the next sweep that needed them would have
+    copied them — the never-generalised shape AGENTS.md records nine times.
+    `line_free` is the stricter half of what this file had: it strips a prefix
+    only when it is a bare integer, so a row whose own text begins `note: …`
+    comes back whole instead of being silently beheaded.
+    """
+    return [(k, rel, kind, row)
+            for k, (rel, kind, row) in
+            ordinal_keys(rows, lambda t: (t[0], t[1], line_free(t[2])))]
 
 
 def flatten(decode: dict, child: dict) -> list:
