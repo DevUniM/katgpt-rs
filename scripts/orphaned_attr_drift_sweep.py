@@ -88,13 +88,67 @@ import orphaned_attr_gate as oag  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
-from worktree_state import sweep_advisory  # noqa: E402
+from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
+                            sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
 PINS = HERE / "orphaned_attr_drift_floors.txt"
 
 FIELDS = ("min_rs_files", "min_cfg_sites", "max_offenders")
+
+
+
+def keyed(offenders) -> list:
+    """`[(key, row)]` for `Scan.offenders`, keys LINE-FREE.
+
+    A row is `(rel, line, attr text, item text)`. ⛔ The LINE is dropped: any
+    edit above an orphaned attribute shifts it, and a line-bearing key reports
+    every row in an edited file as UNCOMMITTED *and* MASKED at once. The
+    address is `(rel, attr, item)` and the ordinal handles the case that
+    survives it — the same dangling attribute above the same item twice in one
+    file, which is exactly what a copy-pasted block produces.
+
+    `line_free` is NOT called: these fields are already bare, with the line in
+    its own tuple slot rather than prefixed onto the text.
+    """
+    return ordinal_keys(
+        offenders,
+        lambda r: (str(r[0]).replace(chr(92), "/"), r[2], r[3]))
+
+
+def head_offenders(walk: set):
+    """`head_delta`'s per-file reclassifier.
+
+    Per-file row independence VERIFIED, not assumed: `oag.scan_text` reads
+    nothing but its own arguments and two module-level regexes. `walk` is the
+    sweep's own tracked population — `fnmatch`'s `*` crosses `/`, so the scope
+    glob admits paths the walk excludes, and a row invented there reads as
+    MASKED, a hard red nobody can repair.
+    """
+
+    def rescan(rel: str, src: str | None) -> list:
+        # None = absent from HEAD (staged but never committed): nothing
+        # committed to classify, so the worktree's row is UNCOMMITTED.
+        if src is None or rel not in walk:
+            return []
+        rows, _cfg = oag.scan_text(rel, src)
+        return keyed(rows)
+
+    return rescan
+
+
+def adjudicate(repo: Path, offenders, walk: set):
+    """The offender rows, split COMMITTED / UNCOMMITTED / MASKED (Issue 822).
+
+    A named seam, so the verdict arithmetic is reachable by an arm — nothing
+    automatic walls it (`arm_reach_gate`'s population is the docs_gate CHECKS
+    set plus itself: 25 modules, 0 drift sweeps).
+    """
+    return head_delta(
+        repo, ("*.rs",), keyed(offenders),
+        lambda kr: kr[1][0], lambda kr: kr[0],
+        head_offenders(walk))
 
 
 def parse_pins(path: Path) -> dict[str, dict[str, int]]:
@@ -109,6 +163,132 @@ def parse_pins(path: Path) -> dict[str, dict[str, int]]:
                 f"malformed pin row (want {1 + len(FIELDS)} fields): {raw!r}")
         rows[parts[0]] = dict(zip(FIELDS, (int(v) for v in parts[1:])))
     return rows
+
+
+def adjudicate_arms() -> list[str]:
+    """`adjudicate`, two-sided, against a real git tree."""
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    NL = chr(10)
+    # An ORPHAN: outer #[cfg], a blank line, then a real item.
+    ORPHAN = ('#[cfg(feature = "x")]' + NL + NL + "pub fn a() {}" + NL)
+    OK = ('#[cfg(feature = "x")]' + NL + "pub fn a() {}" + NL)
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "r"
+        (repo / "src").mkdir(parents=True)
+        git(repo.parent, "init", "-q", "-b", "main", "r")
+        git(repo, "config", "user.email", "t@t")
+        git(repo, "config", "user.name", "t")
+        (repo / "src/a.rs").write_text(ORPHAN, encoding="utf-8")
+        (repo / "src/b.rs").write_text(OK, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "base")
+
+        def now():
+            sc = oag.scan(repo)
+            walk = {str(f.relative_to(repo)).replace(chr(92), "/")
+                    for f in tracked_files(repo, "*.rs")[0]}
+            return sc, adjudicate(repo, sc.offenders, walk)
+
+        sc, d = now()
+        check(len(sc.offenders) == 1,
+              f"fixture: offenders={len(sc.offenders)}, want 1")
+        check(not d.uncommitted and not d.masked,
+              f"a clean tree produced a split: {d}")
+
+        # ── UNCOMMITTED: the worktree INVENTS an orphan ─────────────────────
+        (repo / "src/b.rs").write_text(ORPHAN, encoding="utf-8")
+        sc, d = now()
+        check(len(d.uncommitted) == 1
+              and d.uncommitted[0][1][0].endswith("b.rs"),
+              f"UNCOMMITTED direction: {[r[1][0] for r in d.uncommitted]}")
+        check(not d.masked, f"an invented row was also MASKED: {d.masked}")
+        # ⛔ The row HEAD carries TOO stays in the pins' view — the bucket
+        # `split_rows` gets wrong, and the reason `head_delta` exists.
+        check(len(d.head) == 1 and d.head[0][1][0].endswith("a.rs"),
+              f"the pins' view lost the committed row: "
+              f"{[r[1][0] for r in d.head]}")
+
+        # ── MASKED: the worktree HIDES a committed orphan ───────────────────
+        git(repo, "checkout", "--", "src/b.rs")
+        (repo / "src/a.rs").write_text(OK, encoding="utf-8")
+        sc, d = now()
+        check(not sc.offenders,
+              f"the fixture did not close the orphan: {sc.offenders}")
+        check(len(d.masked) == 1 and d.masked[0][1][0].endswith("a.rs"),
+              f"MASKED direction: {[r[1][0] for r in d.masked]}")
+        check(len(d.head) == 1,
+              f"a MASKED row is missing from the pins' view: {d.head}")
+
+        # ── the key is LINE-FREE ────────────────────────────────────────────
+        git(repo, "checkout", "--", "src/a.rs")
+        (repo / "src/a.rs").write_text("// pad" + NL + "// pad" + NL + ORPHAN,
+                                       encoding="utf-8")
+        sc, d = now()
+        check(not d.uncommitted and not d.masked,
+              f"padding above an orphan reclassified it: "
+              f"uncommitted={len(d.uncommitted)} masked={len(d.masked)}")
+
+        # ── the ORDINAL, and the SCOPE it is assigned over ──────────────────
+        # ⛔ The worktree pass keys over the WHOLE repo and the rescan keys PER
+        # FILE. They agree only because `rel` is in the address — asserted
+        # here, because a shared-counter bug is invisible until two files carry
+        # the same row. Fixture (a): the same orphan TWICE in one file.
+        git(repo, "checkout", "--", ".")
+        (repo / "src/a.rs").write_text(ORPHAN + NL + ORPHAN, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "twice")
+        sc, d = now()
+        check(len(sc.offenders) == 2,
+              f"fixture: want 2 identical orphans, got {len(sc.offenders)}")
+        check(len({k for k, _ in d.committed}) == len(d.committed),
+              f"two identical orphans collapsed to one key: "
+              f"{[k for k, _ in d.committed]}")
+        check(len(d.head) == 2,
+              f"the ceiling undercounts a repeated orphan: {len(d.head)}")
+
+        # Fixture (b): the SAME orphan text in TWO files. Their ordinals must
+        # both be 0 — if `rel` left the address, the second would become 1 in
+        # the whole-repo pass and stay 0 in the per-file rescan, and every row
+        # in the second file would read as both UNCOMMITTED and MASKED.
+        (repo / "src/a.rs").write_text(ORPHAN, encoding="utf-8")
+        (repo / "src/b.rs").write_text(ORPHAN, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "two files")
+        sc, d = now()
+        check(len(sc.offenders) == 2,
+              f"fixture: want 1 orphan in each of 2 files, got "
+              f"{len(sc.offenders)}")
+        check(not d.uncommitted and not d.masked,
+              f"the same row in two files was reported as moved: "
+              f"uncommitted={len(d.uncommitted)} masked={len(d.masked)}")
+        check(all(k[-1] == 0 for k, _ in d.committed),
+              f"the ordinal counted ACROSS files: {[k for k, _ in d.committed]}")
+
+        # ── a STAGED-only file has no HEAD blob ─────────────────────────────
+        (repo / "src/new.rs").write_text(ORPHAN, encoding="utf-8")
+        git(repo, "add", "src/new.rs")
+        sc, d = now()
+        check(any(r[1][0].endswith("new.rs") for r in d.uncommitted),
+              f"a staged-only file's row was not UNCOMMITTED: "
+              f"{[r[1][0] for r in d.uncommitted]}")
+        check(all(not r[1][0].endswith("new.rs") for r in d.head),
+              f"a file in no commit entered the pins' view: {d.head}")
+
+        # ── the WALK guard ──────────────────────────────────────────────────
+        check(head_offenders(set())("src/a.rs", ORPHAN) == [],
+              "a path outside the sweep's own walk produced a row")
+
+    return fails
 
 
 def selftest() -> list[str]:
@@ -246,7 +426,10 @@ def selftest() -> list[str]:
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
-    return fails
+    # ⛔ Issue 822: `adjudicate`'s body is reached by nothing else — this
+    # sweep reports 0 offenders workspace-wide, and arm_reach_gate walls
+    # the docs_gate CHECKS set (25 modules, 0 drift sweeps), not this.
+    return fails + adjudicate_arms()
 
 
 def main() -> int:
@@ -296,9 +479,22 @@ def main() -> int:
     bad = False
     tot_files = tot_sites = tot_off = tot_vend = 0
 
+    n_uncommitted = n_masked = 0
+
     for name in names:
         repo = WORKSPACE / name
         s = oag.scan(repo)
+
+        # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───
+        # A ceiling is a claim about the repo, and a repo's state is its
+        # commits. Concurrent sessions share these worktrees, so a row here may
+        # sit on a line no commit contains — and re-pinning from such a run
+        # bakes another session's in-flight edit into a tracked file.
+        walk = {str(f.relative_to(repo)).replace(chr(92), "/")
+                for f in tracked_files(repo, "*.rs")[0]}
+        delta = adjudicate(repo, s.offenders, walk)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
         # The vendored count rides the per-repo line rather than vanishing
         # (Issue 738 T3) — riir-ai's wgpu-hal fork is a third of this
         # workspace's excluded `.rs`, and a reader comparing two runs needs to
@@ -328,16 +524,34 @@ def main() -> int:
                 flags.append(f"parse FLOOR breached: {s.cfg_sites} outer-#[cfg] "
                              f"site(s) < {row['min_cfg_sites']} — the walk is "
                              f"intact but the regex matched nothing")
-            if len(s.offenders) > row["max_offenders"]:
-                flags.append(f"orphaned {len(s.offenders)} > pinned "
+            if len(delta.head) > row["max_offenders"]:
+                flags.append(f"orphaned {len(delta.head)} committed > pinned "
                              f"{row['max_offenders']}")
 
         status = "✗" if flags else ("·" if s.offenders else "✓")
         vend = f" vendored={vendored}" if vendored else ""
+        # T3: the count stays honest in BOTH directions. A bare total invites
+        # the one action Issue 822 exists to prevent — typing it into the pin.
+        split = ""
+        if delta.uncommitted or delta.masked:
+            split = (f" ({len(delta.head)} committed"
+                     + (f" + {len(delta.uncommitted)} uncommitted"
+                        if delta.uncommitted else "")
+                     + (f", {len(delta.masked)} MASKED" if delta.masked else "")
+                     + ")")
         print(f"{status} {name:22s} rs={s.files:<5d} cfg_sites={s.cfg_sites:<6d} "
-              f"orphaned={len(s.offenders)}{vend}")
-        for rel, line, attr, nxt in s.offenders:
-            print(f"      ⛔ {rel}:{line}  {attr}  ->  binds to: {nxt}")
+              f"orphaned={len(s.offenders)}{vend}{split}")
+        held = {k for k, _ in delta.uncommitted}
+        for key, (rel, line, attr, nxt) in keyed(s.offenders):
+            # Never hidden — hiding them is the lie Issue 797 refuses — but
+            # labelled, so the reader sees which rows the pin did not read.
+            tag = "  [UNCOMMITTED — not adjudicated]" if key in held else ""
+            print(f"      ⛔ {rel}:{line}  {attr}  ->  binds to: {nxt}{tag}")
+        # A MASKED row is in HEAD and NOT in the worktree, so the loop above
+        # cannot reach it — it has no line here to hang a label on.
+        for _key, (rel, line, attr, nxt) in delta.masked:
+            print(f"      ⛔ {rel}:{line}  {attr}  ->  binds to: {nxt}"
+                  f"  [MASKED — committed, and this worktree hides it]")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
