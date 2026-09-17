@@ -68,6 +68,17 @@ on the directory name and two repos materialised at once would both be `head`.
   between two findings because the finding IS "no `required-features` row";
   `required-features = []` is not in `cfg_row_implication`'s population at all.
   Three fixtures had to be rewritten before their arms asserted anything.
+  katgpt-rs-54 hit the same class independently the same night: an 827 fixture
+  used a number NOBODY owned, where `is_qualified` returns True by construction
+  ("nothing to be consistent with"), so the arm asserted the suppression of a
+  finding that never existed.
+
+⛔ **The generalisation those two findings share, which is the one to carry:
+reasoning from ONE VIEW of a CONTENDED thing returns the reassuring answer.**
+A census over one representation cannot see what that representation omits; a
+verification over a snapshot cannot see what the snapshot omits; a fixture that
+cannot express its rule cannot fail. All three were live in this workspace on
+2026-09-18, in two sessions, and every one of them read as clean.
 
 **A diagnostic rule, bought by a peer session's hour** (katgpt-rs-54): it ran
 the numbering sweep during ~90 seconds of another session's `git rebase` and
