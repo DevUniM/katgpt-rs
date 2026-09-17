@@ -56,6 +56,328 @@ a zone resolution where the ≤ 0.01 gate passes, naive baseline re-measured
 beside it; (c) a consumer contract that survives (a) — the redistribution
 director wants arrival proportions, and a trajectory-integrating readout
 changes what the NPC-side consumer can be.
+## Issue 828 — CLOSED: Issue 823's anchor class, third position — the heading oracle was anchored to a DELIMITER SET, and the biggest unread family is this repo's own house style (2026-09-18)
+
+**Status: RESOLVED same day (T1–T4). T4 answers Issue 823 T5 by PRICING it —
+the blast radius of the widening is 2 rows workspace-wide, so the rule that is
+unsound to widen is also not worth widening.**
+
+### The symptom
+
+Issue 823 T5 left one open question and one number:
+
+> Open question, deliberately not answered here: whether the `resolved —`
+> family admits a sound discriminator at all. AGENTS.md's answer is no, and
+> nothing measured here contradicts it.
+
+The number — read off the sweep, never typed — was ~213 unread heading
+records. **T5 was answered by measuring the residual instead of arguing about
+it, and 60 of the 213 are not the `resolved` family at all.**
+
+### The finding
+
+`_SELF_HEADING` is sound because of ONE rule, written in its own comment:
+
+> nothing may sit between the number and its delimiter
+
+Issue 823 found that rule anchored, silently, to the **kind LEADING the
+line**, and moved it one POSITION over. It was anchored a second time, to the
+**delimiter SET** — `(` for the leading form, `[:,]` for the dated one. The
+workspace's most common title delimiter is the **em dash**, and it was in
+neither set.
+
+Measured (16 repos × the pinned documents, foreign-filtered, unread only):
+
+| first char after the number | n | verdict |
+|---|---|---|
+| `—` (leading form) | **56** | delimiter, nothing interstitial — **sound to read** |
+| `(` (dated form) | **4** | the leading form accepts it; the dated one did not — **sound to read** |
+| `resolved` / `RESOLVED` | 64 | genuinely interstitial — Issue 781's family, untouched |
+| `closed` / `close-out` / `CLOSED` | 28 | interstitial |
+| `T1` … `T8`, `Arm`, `wave`, `phase`, `complete` | ~45 | interstitial |
+| `follow-up`, `filed` | 3 | interstitial — the **pinned negative** |
+| other | ~13 | interstitial |
+
+The 56 are `## Issue 788 — the population-predicate registry …: CLOSED
+(2026-09-14)`. That is **katgpt-rs's own house style, its own newest closes**,
+in the repo that owns the instrument. The discriminator was never violated by
+them; the pattern simply could not spell their delimiter.
+
+⛔ **This is NOT the widening AGENTS.md calls unsound**, and the distinction is
+Issue 823's, restated at a third position: the unsound widening is *dropping
+the discriminator* (accepting text between the number and its delimiter). This
+adds a delimiter and keeps the rule. `## Issue 043 follow-up — title` is
+rejected by the new pattern exactly as `## Issue 043 follow-up (…)` is rejected
+by the old one, and T2 pins that in both delimiters.
+
+### T1 — the delimiter set
+
+- `_SELF_HEADING_DASH`: the same discriminator, either position (the date
+  prefix is optional), delimiter = `—`/`–`, or an ASCII `-` **that is
+  space-separated on both sides**.
+  - ⛔ The ASCII hyphen must NOT be accepted bare: `## Issue 366-class
+    (pos-uniform chunk forward) FIXED in riir-gpu` is a live riir-ai heading
+    where the hyphen is part of a WORD. The `\s+…-(?=\s)` shape rejects it and
+    an arm pins the case.
+- `_SELF_HEADING_DATED` gains `(` — the leading form always accepted it, and
+  four riir-chain records (`## 2026-09-16 — Plan 062 (Proposal 010 D6/T1.2):`)
+  were rejected by an asymmetry between two patterns documented as the same
+  rule at two positions.
+- The new pattern's group(3) is the **whole remainder**, the dated form's
+  precedent, not the leading form's parenthetical: the foreign filter then runs
+  over more text, which is strictly more likely to REJECT — the safe direction
+  for the only path here that can SUPPRESS a finding.
+  - ⛔ `_SELF_HEADING`'s own scope is deliberately **left alone**. Widening it
+    to the whole remainder would reject `## Issue 059 (2026-01-01) — <sibling>
+    did X`, which is the suppression Issue 754 landed; the "safe direction" for
+    a NEW pattern is a regression for an existing one.
+
+### T2 — the arms
+
+`citation_drift_sweep.selftest()` arm 2, the four-negative fixture, gains the
+delimiter axis on the SAME fixture rather than a second one:
+
+- `## Issue 047 — title` reads (the new positive).
+- `## Issue 048 follow-up — title` does **not** (the discriminator survives the
+  new delimiter — the arm the whole issue rests on).
+- `## Issue 049-class — title` does **not** (the bare ASCII hyphen).
+- `## 2026-01-01 — Issue 050 (parenthetical): title` reads (the dated `(`).
+
+The style-blind meter's expected pair moves with the fixture, so the width
+bound still measures exactly the style gap.
+
+### T3 — the numbers move in the SUPPRESSING direction only
+
+`heading_allocated()` can only ever suppress. More numbers read ⇒ fewer
+IN-LOCAL-RANGE rows and fewer false `⛔MISATTRIBUTED` — every ratchet in
+`citation_drift_floors.txt` goes green-er or holds. Re-pinning a ratchet
+DOWNWARD is deliberately **not** done here: they are ceilings, and tightening
+them on one box's run is the diary AGENTS.md refuses.
+
+### T4 — ANSWERED by pricing it: the blast radius is TWO rows
+
+Issue 823 T5's open question — *"whether the `resolved —` family admits a
+sound discriminator at all"* — was argued twice, semantically, by two
+sessions, and never priced. The semantic answer is NO and stands: `resolved`,
+`closed`, `T3`, `Arm C` and `follow-up` are the same SHAPE, no punctuation
+rule separates commentary from allocation, and
+`citation_drift_sweep.selftest()` arm 2 pins `follow-up` as a negative in
+every position and delimiter.
+
+**The question nobody asked is what the rule would BUY.** `heading_allocated`
+is one member of a union; every other member answers from a FILE — in the
+worktree, or recovered from `git log`. A record whose number is already known
+that way contributes nothing whichever way the rule goes. Only the residue can
+change a verdict, so **the residue is the blast radius**.
+
+Measured over 16 repos: of **153 unread records, 2** contribute a number no
+other oracle knows — riir-ai's `## Issue 969 resolved — …` and riir-clippy's
+`## Issue 097 resolved — …`, both exactly the Issue-754 never-committed shape
+the heading path exists for. Everything else is redundant.
+
+So the 153 was never a backlog. It is a cost figure that is **98.7%
+redundant**, and the case for adopting a rule this document calls unsound in
+order to recover it does not survive its own arithmetic. ⛔ **Not "the class
+is closed"** — the two rows are real and land as IN-LOCAL-RANGE, which is
+UNDECIDED and never a pass. What is closed is the question of whether the
+*count* justifies the *rule*.
+
+⚠ Both figures are DERIVED per run and printed on
+`citation_drift_sweep.py`'s own `heading oracle COST` line, per repo as
+`novel=` beside `heading_unread=a/b`. They move whenever a sibling edits a
+heading; two sessions already quoted the unread count at each other hours
+apart as 209 and 213, each correct for its own run. **Take both from the
+line, never from this paragraph.**
+
+`issue_citation_gate.file_and_history_allocated()` is `allocated()` with the
+heading path removed, split out so the heading oracle's own CONTRIBUTION is
+measurable rather than argued about; `_heading_records()` is ONE walker under
+both meters, because the width bound and the cost bound disagreeing about
+what a record IS would make the pair useless. Armed both directions on arm
+2's own fixture — a meter that always says 0 retires the question by looking
+like an answer.
+
+### ⛔ The arm that could not pass, and why it is a separate issue
+
+T2's first run reported `(1, 5)` where `(3, 6)` was expected — 047 unread, 050
+not even *shaped* — while the same fixture, written by hand in a scratch
+script, returned `(3, 6)` and `{42, 47, 50}`. The fixture in
+`citation_drift_sweep.selftest()` is written with a bare `Path.write_text(...)`,
+which encodes with the **system locale**. This workstation is **cp874**, where
+U+2014 encodes to the single byte `0x97`; the oracle then reads the file back
+with `encoding="utf-8", errors="replace"` and sees U+FFFD. Every em dash in
+every selftest fixture in that file was mangled.
+
+The existing arms passed anyway — none of them depended on the dash — so the
+corruption was invisible until an arm was written that did. **27 sites in that
+one file; 155 in this repo; 273 across 8 repos**, measured. That is **Issue
+829**, filed with its own gate; the 27 sites in `citation_drift_sweep.py` land
+here because T2's arms are not real without them.
+
+## Issue 823 — CLOSED: the heading oracle was anchored to a POSITION, and its own blindness meter was anchored to the same one; T5 ANSWERED by Issue 828 T4 (2026-09-18)
+
+**Status: RESOLVED (T1–T4, T6 same day). T5 ANSWERED 2026-09-18 by Issue 828 T4 — not by settling the semantics, which stand, but by PRICING them: of the 153 unread records only 2 contribute a number no other oracle knows, so the widening this issue declined is also not worth doing. Read `heading oracle COST` on the sweep's own summary line.**
+
+### The symptom
+
+`citation_drift_sweep.py` red: `riir-clippy IN-LOCAL-RANGE 13 > pinned 12`.
+
+The pin had been bumped `10 -> 12` the **previous day** (2026-09-16), with the
+mechanism diagnosed correctly in the pin comment:
+
+> Both new rows are riir-clippy's OWN Issue 113 … They read UNDECIDED because
+> `heading_allocated()` cannot parse that repo's `## <date> — Issue NNN:`
+> heading form … the repair is that repo's heading convention, which is its
+> owner's call.
+
+Twenty-four hours later the bucket was 13. That is AGENTS.md's own warning
+made literal — *a pin file re-typed after every run is a diary, not a wall,
+and re-typing it is how a real regression gets absorbed as "probably the box
+again"*. The second bump was refused and the instrument was read instead.
+
+The last clause of that diagnosis is also the part that was wrong: it is not
+that repo's convention. Six repos write it, 74 records deep.
+
+### The defect, and it is TWO defects stacked
+
+**(a) The oracle.** `_SELF_HEADING` is sound because of exactly one rule:
+nothing may sit between the number and its delimiter, so `## Issue 043
+follow-up (…)` is rejected while `## Issue 043 (…)` is read. That rule is
+about the text **after** the number. It had been anchored, silently and
+incidentally, to the kind **leading the heading**. Six repos write the date
+first (`## 2026-09-16 — Issue 113: the auto-oracle`), and the whole family was
+unreadable.
+
+Consequence chain, measured end to end on a live specimen: riir-clippy's
+Issue 113 exists in **no** `.issues/` file and **no** `git log` deletion — the
+Issue-754 shape, where the HISTORY.md heading is the *whole* allocation record.
+The oracle could not read it, so `113 not in mine`, so both citations of it
+fell to IN-LOCAL-RANGE, so a per-repo **ratchet breached** and the sweep went
+red. `.highwater` says 121: the repo provably owns the number.
+
+**(b) The meter, which is the worse half.** `_HEADING_SHAPED` exists *only* to
+measure what the oracle rejects — the width bound whose whole job is printing
+the cost of (a). It was anchored to the **same leading position**, so it could
+not see the family either, and it failed in the direction that reads as clean:
+
+| repo | meter printed | actually unread |
+|---|---|---|
+| riir-chain | `heading_unread=0/1` — a **perfect** score | **20 of 21** |
+| riir-dapps | `0/0` — nothing to measure | **22 of 23** |
+| riir-clippy | 30 unread | 54 |
+
+A blindness detector that cannot see a whole house style is not a width bound.
+Workspace-wide it admitted **245** records where **341** exist.
+
+### The repair (T1–T3)
+
+`_SELF_HEADING_DATED` / `_HEADING_SHAPED_DATED` — the **same discriminator**,
+at the position it was never applied. The number must be followed immediately
+by its title delimiter (`:` or `,`, the date-led form's `(`).
+
+⛔ **This is NOT the widening AGENTS.md calls unsound, and the distinction is
+the entire justification.** That argument is against *dropping the
+discriminator* — accepting `resolved` / `follow-up`, which no punctuation rule
+separates from an allocation. Measured on the live corpus, the new pattern
+rejects `## 2026-09-16 — Issue 152 resolved: …` and `## 2026-09-16 — Plan 064
+T3 landed (…)` exactly as the leading form rejects their siblings. Arm 2's
+pinned negative survives — **in both positions**, asserted by two new arms.
+
+The foreign-repo filter runs over the whole date-led remainder rather than a
+parenthetical: strictly more likely to reject, the safe direction for the only
+path in this gate that can SUPPRESS a finding.
+
+18 records became readable. Every one was read by hand at landing; all 18 are
+genuine self-allocation records. Measured effect:
+
+- workspace IN-LOCAL-RANGE **54 -> 27**
+- oracle **110/319** read (was 92 read of a 245 the meter believed was the
+  whole population)
+- `riir-clippy` 13 -> **11**, `riir-neuron-db` 3 -> **2** — both ratchets
+  **tightened** in the landing commit, never loosened
+- `citation_drift_sweep.py` **PASSES**
+
+### T4 — the stale prose
+
+The sweep's own summary line asserted "Widening is UNSOUND" without the
+qualifier that makes it true, and so did the comment on `_HEADING_SHAPED`.
+Both now say which widening: dropping the discriminator, not adding a
+position. A correct claim stated too broadly is how the next session concludes
+the class is closed.
+
+### T5 — OPEN: the residual, and the number this issue should NOT be read as
+
+⚠ **The count is DERIVED per run — read it off the sweep's `heading oracle`
+summary line, not from this section.** It was **209** at landing and **213**
+hours later, both correct for the run that produced them; it moves whenever a
+sibling repo edits a HISTORY heading. Two sessions quoted the two figures at
+each other before noticing they were the same measurement at different times.
+
+Those records remain unread, and they are the `## Issue NNN resolved — title
+(date)` family the original Issue 781 measured. **This issue does not touch
+them and must not be read as having closed Issue 781's class** — it removed a
+*position* blind spot that was hiding underneath it, and in doing so made 781's
+own figure honest for the first time (the denominator was understated by 96).
+
+Open question, deliberately not answered here: whether the `resolved —` family
+admits a sound discriminator at all. AGENTS.md's answer is no, and nothing
+measured here contradicts it.
+
+⚠ **Do not re-pin `max_in_local_range` for a heading-blind row again.** Two
+sessions have now done it. The row is not a backlog entry; it is the instrument
+reporting that it cannot read a record the repo owns. Read
+`heading_unread=a/b` on the sweep's own per-repo line first — a repo at or near
+`b/b` cannot have its IN-LOCAL-RANGE count trusted as an editorial quantity.
+
+### T6 — the width bound had no floor, and its blind output is a PERFECT score
+
+Found by writing (b) up: the paragraph claimed "a width bound gets its own
+floor" and this one did not have one. `heading_style_blind` was printed every
+run and asserted by nothing, so a regressed shaped pattern takes `shaped` to 0
+and the summary line reads `0/0 records read, 0 UNREAD`. The instrument whose
+whole job is reporting blindness reports **perfect coverage** when it goes
+blind — which is (b) again, one level up, and it is the reason this issue
+exists rather than a tidy symmetry.
+
+`min_heading_shaped = 260` in `citation_drift_floors.txt`:
+
+- **GLOBAL, not per-repo.** Per-repo is legitimately 0 in every repo with no
+  self-allocation headings — the vacuous-floor shape, solved the same way the
+  wasm32 sweep solves it (a reserved `TOTALS` row floors the population
+  globally).
+- **Pinned under a PARTIAL-clone measurement** (319 over 16 of 20), so a full
+  checkout clears it by construction. The floor asserts the PARSER; it must
+  never move because a repo was absent.
+- ⚑ **Canaried, and it turned out to be two independent detectors.** An
+  impossible pin (99999) fires the floor through its own comparison path,
+  exit 1. A deliberately broken shaped regex is caught EARLIER, by the
+  existing `heading_style_blind` arm, exit 2. Different failure modes, both
+  covered — the arm sees a pattern that stopped matching, the floor sees a
+  population that collapsed for any reason at all.
+- An arm asserts the pin is present and > 0: a floor that is silently absent
+  is the same as no floor, and `parse_pins` would have defaulted quietly.
+
+### Postscript — the write-up reproduced the class, again
+
+The T1–T3 AGENTS.md paragraph quotes riir-clippy's heading as a SPECIMEN, and
+the instrument cannot tell a quoted citation from a live one: it landed a new
+`IN-LOCAL-RANGE` row against katgpt-rs's own `max_in_local_range 0`. AGENTS.md
+already records this trap for the Issue-780 write-up and already prescribes
+the repair — name the true owner inside the citation's own 3-line window, not
+a pin. Applied.
+
+⚑ It also demonstrated Issue 797's split working as designed: the sweep's
+per-repo DISPLAY read the fixed worktree (`0`) while the PIN adjudicated HEAD
+(`1`), so the red persisted until the fix was committed. Exactly the intended
+behaviour, and worth knowing before chasing it as a bug.
+
+### Cross-repo
+
+Nothing to file elsewhere. The defect and its repair are both in this repo's
+`scripts/`; the six affected repos need no prose change, which is the point —
+the previous diagnosis would have asked all six to rewrite their HISTORY.md
+heading convention.
+
 ## Issue 829 — CLOSED: the FILE seam under Issue 778's PIPE seam: 273 text-I/O sites decode with the system locale, and the first one found was making a whole file of arms pass for the wrong reason (2026-09-18)
 
 **Status: RESOLVED same day (T1-T6). 273 sites -> 2, and the 2 are outside the contract.**
