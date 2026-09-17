@@ -102,6 +102,40 @@ wearing a pin (Issue 785). **Take the family size and the wiring verdict from
 that gate's PASS line, never from a count in prose** — this issue is the class
 where that goes wrong, and its own tables went stale twice while being written.
 
+⚑ **The first live MASKED row, four hours after the fan-out landed
+(2026-09-18).** AGENTS.md records MASKED as "**0 today, which is a measurement
+and not an absence of the class** — nothing had ever looked". It is 1:
+
+    ⛔ riir-ai/scripts/repair_t1_outcomes_json.py  [MASKED — committed, and this worktree hides it]
+    ✗ riir-ai   scripts=9  roots=4  unreachable=7 (8 committed, 1 MASKED)
+        ✗ unreachable 8 committed > pinned 7
+
+The script is committed (riir-ai `7e8a6b35a`, its Issue 976 repair); the
+AGENTS.md line that makes it REACHABLE is uncommitted on this box. So at HEAD
+it is an instrument no root names, and **without this adjudication the sweep
+would have read the worktree, counted 7, and PASSED** — a committed defect
+reported clean, invisible until somebody ran the sweep on a box without that
+edit. The repair is Issue 798's class from the other side and needs no pin
+change: the fix was already written, and what was missing was the COMMIT. The
+documentation is the artifact here, which is why "a repair is not landed until
+it is committed" has to cover docs and not only code. Cleared at riir-ai
+`f9f183a0f` by committing the doc, not by raising the ceiling.
+
+⚠ **Read the specimen correctly, because MASKED's definition invites reading
+every instance as concealment.** This row was concealed by its own UNCOMMITTED
+REPAIR, not by an unrelated edit: script lands undocumented → sweep reds →
+author writes the doc → the doc masks the finding → commit clears it, a window
+of minutes. The mildest possible version of the class, and the label is what
+sent its author to commit rather than stop at a green worktree run.
+
+⛔ **And the counterfactual is the part that generalises, stated hard:** the
+worktree run passes **because the fix was on that one box**. Every other
+checkout would have red. That is the same "reds on every box but the one and
+the hour that produced it" shape this document already names for floors
+measured against unowned content — which makes the first live MASKED specimen
+an argument that the class is not RARE, only previously INVISIBLE. It needed a
+sweep that reads HEAD to be seen at all.
+
 ⛔ **The workspace hazard it kept tripping over, worth more than the issue.**
 Every session commits as `katopz <katopz@gmail.com>`, so a SHA's author line
 identifies NOBODY, and "Nth of mine" in a commit body identifies somebody you
