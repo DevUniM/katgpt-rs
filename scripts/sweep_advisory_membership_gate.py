@@ -8,12 +8,26 @@ session landed `pipefail_discard_drift_sweep.py` and
 `toolchain_override_drift_sweep.py`, neither wired, and nothing noticed. The
 prose was stale before the commit that wrote it had finished being pushed.
 
-That is the standing failure mode of this repo, recorded seven times now
+That is the standing failure mode of this repo, recorded seven times then
 (Issues 777, 778, 793, 782, 783, 789, 797): **a rule landed in one instrument
 and never generalised.** Every previous instance was repaired by grepping the
 family by hand and fixing the copies. This one is repaired by making the family
-gate itself: a new `*_drift_sweep.py` that does not call `sweep_advisory()`
-REDS, so the next one cannot land unwired.
+gate itself: a `*_drift_sweep.py` that does not call the mechanism REDS, so the
+next one cannot land unwired.
+
+⛔ **And then it happened again, to a DIFFERENT mechanism, while this gate was
+already standing (Issue 824).** Issue 821 landed `pin_row_exempt()` — the
+Issue-815 known-extra acknowledgement — in **16 of the 19** sweeps and wrote
+"16" in its own close-out. The three it missed were exactly the three Issue 782
+had already named as the quiet ones; `cfg_row_implication` was HARD RED on
+three acknowledged repos with zero content findings, and the other two were
+latent only because of properties of today's corpus.
+
+The lesson is not "wire the three". It is that this gate governed ONE mechanism
+by name when the class is *any* family-wide mechanism, so it could watch the
+exact failure it was built for happen beside it. `MECHANISMS` is a registry
+now: adding the next one is a row there, the arms walk it rather than hard-code
+it, and it then cannot land in a subset.
 
 The quantity to gate is NOT the count — this repo already has the rule written
 for `cfg_gated_floor_gate`: *a set is gateable where its cardinality is not.* A
@@ -27,9 +41,12 @@ and is not statically decidable — the same limit `check_validation_gate`
 records about arm QUALITY. Read the verdict as the weaker thing it is.
 
 Exemptions are pinned by MEMBERSHIP with a REASON per row
-(`scripts/sweep_advisory_expected.txt`); a reasonless row is refused, and a row
-whose sweep has since been wired REDS — a pin file that only ever loosens is a
-backlog wearing a pin (Issue 785's rule).
+(`scripts/sweep_advisory_expected.txt`), keyed by `(mechanism, sweep)`; a
+reasonless row is refused, an unknown mechanism slug is refused, and a row whose
+sweep has since been wired REDS — a pin file that only ever loosens is a backlog
+wearing a pin (Issue 785's rule). The key is qualified for the same reason
+`DOCS_GATE_KNOWN_EXTRA` takes names rather than `=1`: an unqualified row would
+excuse the sweep from the mechanism nobody has looked at yet.
 
     scripts/sweep_advisory_membership_gate.py    # the verdict AND the arms
 
@@ -69,6 +86,31 @@ GLOB = "*_drift_sweep.py"
 # careful caller as the defect — so the criterion is the MECHANISM, by set.
 WANTED = ("sweep_advisory", "worktree_advisory")
 
+# ⛔ Issue 824. This gate was built for ONE mechanism, and the very failure its
+# docstring describes then happened AGAIN to a different one: Issue 821 landed
+# `pin_row_exempt()` — the Issue-815 known-extra acknowledgement — in **16 of
+# the 19** sweeps, wrote "16" in its own close-out, and the three it missed were
+# exactly the three Issue 782 had already named as the quiet ones. One of them
+# (`cfg_row_implication`) was HARD RED on three acknowledged repos with zero
+# content findings; the other two were latent for reasons that are properties
+# of today's corpus rather than of the checks.
+#
+# So the unit this gate governs is a FAMILY-WIDE MECHANISM, plural — not the
+# advisory specifically. Adding the next one is a row here, and it then cannot
+# land in a subset, which is the whole point of the instrument.
+#
+# slug -> (what it is, the call names that COUNT as wired). A SET of names per
+# mechanism, not one name, for the reason WANTED is already a pair: naming one
+# of two entry points reports the most careful caller as the defect.
+MECHANISMS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "worktree-advisory": (
+        "Issue 797 — otherwise a sweep's findings and floors describe "
+        "whatever the working tree happened to say", WANTED),
+    "known-extra-exemption": (
+        "Issue 815/821 — otherwise a sweep hard-reds on a repo the contract "
+        "does not claim, with zero content findings", ("pin_row_exempt",)),
+}
+
 # Two floors, failing differently.
 #   MIN_SWEEPS  the WALK — a glob that matches nothing reports every sweep
 #               wired and prints a confident green over zero of them.
@@ -92,8 +134,8 @@ def tracked_sweeps(root: Path) -> list[str]:
     return sorted(Path(p).name for p in out.stdout.split() if p.strip())
 
 
-def calls_advisory(src: str) -> bool:
-    """Does this module CALL `sweep_advisory`, not merely mention it?
+def calls_any(src: str, names: tuple[str, ...]) -> bool:
+    """Does this module CALL one of `names`, not merely mention it?
 
     AST, not text, for the reason `subprocess_encoding_gate` moved to one: a
     text scanner reports the fixture strings inside this file's own arms, and
@@ -114,14 +156,21 @@ def calls_advisory(src: str) -> bool:
         fn = node.func
         name = (fn.id if isinstance(fn, ast.Name)
                 else fn.attr if isinstance(fn, ast.Attribute) else "")
-        if name in WANTED:
+        if name in names:
             return True
     return False
 
 
-def parse_pins(path: Path) -> tuple[dict[str, str], list[str]]:
-    """({sweep: reason}, errors). A reasonless row is an ERROR, not a pin."""
-    pins: dict[str, str] = {}
+def parse_pins(path: Path) -> tuple[dict[tuple[str, str], str], list[str]]:
+    """({(mechanism, sweep): reason}, errors). Reasonless row = ERROR, not pin.
+
+    Issue 824 keyed this by MECHANISM as well as sweep. A blanket per-sweep
+    exemption would excuse a sweep from the NEXT mechanism too — the one
+    nobody has looked at — which is the `DOCS_GATE_KNOWN_EXTRA` asymmetry
+    (names, never `=1`) applied to this file. The format change was free: the
+    file is, and should stay, empty.
+    """
+    pins: dict[tuple[str, str], str] = {}
     errs: list[str] = []
     if not path.is_file():
         return pins, errs
@@ -129,30 +178,52 @@ def parse_pins(path: Path) -> tuple[dict[str, str], list[str]]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        name, _, reason = line.partition("#")
-        name, reason = name.strip(), reason.strip()
-        if not reason:
-            errs.append(f"{path.name}:{n}: `{name}` has NO reason — a row "
-                        f"nobody had to justify is a backlog wearing a pin")
+        body, _, reason = line.partition("#")
+        parts, reason = body.split(), reason.strip()
+        if len(parts) != 2:
+            errs.append(f"{path.name}:{n}: want `<mechanism> <sweep>  # reason`, "
+                        f"got {body.strip()!r} — an unqualified row would "
+                        f"excuse the next mechanism too")
             continue
-        pins[name] = reason
+        slug, name = parts
+        if slug not in MECHANISMS:
+            errs.append(f"{path.name}:{n}: unknown mechanism {slug!r} — "
+                        f"known: {', '.join(sorted(MECHANISMS))}")
+            continue
+        if not reason:
+            errs.append(f"{path.name}:{n}: `{slug} {name}` has NO reason — a "
+                        f"row nobody had to justify is a backlog wearing a pin")
+            continue
+        pins[(slug, name)] = reason
     return pins, errs
 
 
-def verdict(root: Path, pins: dict[str, str]) -> tuple[list[str], list[str],
-                                                       list[str], int]:
-    """(wired, unwired, stale_pins, n_sweeps) for one repo."""
+def verdict(root: Path, pins: dict[tuple[str, str], str]) -> tuple[
+        dict[str, list[str]], dict[str, list[str]],
+        list[tuple[str, str]], int]:
+    """({slug: wired}, {slug: unwired}, stale_pins, n_sweeps) for one repo.
+
+    Per MECHANISM (Issue 824). Pooling the mechanisms would reproduce the very
+    defect this gate exists to stop — a sweep wired for one and not the other
+    reads as wired, which is exactly how `pin_row_exempt` reached 16 of 19
+    while the advisory reached all of them.
+    """
     sweeps = tracked_sweeps(root)
-    wired, unwired = [], []
+    srcs: dict[str, str] = {}
     for name in sweeps:
-        p = root / "scripts" / name
-        if not p.is_file():
-            continue
-        (wired if calls_advisory(p.read_text(encoding="utf-8", errors="replace"))
-         else unwired).append(name)
-    # A pin whose sweep is wired, or gone, no longer describes anything. Both
-    # directions red: the file must not be allowed to only ever loosen.
-    stale = [n for n in pins if n in wired or n not in sweeps]
+        f = root / "scripts" / name
+        if f.is_file():
+            srcs[name] = f.read_text(encoding="utf-8", errors="replace")
+    wired: dict[str, list[str]] = {}
+    unwired: dict[str, list[str]] = {}
+    for slug, (_why, names) in MECHANISMS.items():
+        wired[slug] = [n for n, s in srcs.items() if calls_any(s, names)]
+        unwired[slug] = [n for n in srcs if n not in wired[slug]]
+    # A pin whose sweep is wired for THAT mechanism, or gone, no longer
+    # describes anything. Both directions red: the file must not be allowed to
+    # only ever loosen.
+    stale = [(slug, n) for (slug, n) in pins
+             if slug in MECHANISMS and (n in wired[slug] or n not in sweeps)]
     return wired, unwired, stale, len(sweeps)
 
 
@@ -175,6 +246,18 @@ IMPORT_ONLY_SRC = ("from worktree_state import sweep_advisory\n"
 MENTION_ONLY_SRC = ('S = "call sweep_advisory here one day"\n'
                     "def main():\n"
                     "    pass\n")
+# Issue 824. A sweep wired for ONE mechanism and not the other is the exact
+# state 16 of 19 were in, and a pooled predicate reports it as wired.
+EXEMPT_ONLY_SRC = ("from sweep_population import pin_row_exempt\n"
+                   "def main():\n"
+                   "    if not pin_row_exempt(name):\n"
+                   "        fails.append('unpinned')\n")
+BOTH_SRC = ("from worktree_state import sweep_advisory\n"
+            "from sweep_population import pin_row_exempt\n"
+            "def main():\n"
+            "    deferred.extend(sweep_advisory(names, ('*.rs',), root=W))\n"
+            "    if not pin_row_exempt(name):\n"
+            "        fails.append('unpinned')\n")
 
 
 def classifier_arms() -> list[str]:
@@ -184,23 +267,43 @@ def classifier_arms() -> list[str]:
         if not cond:
             fails.append(msg)
 
-    check(calls_advisory(WIRED_SRC), "a real call was not credited")
-    check(not calls_advisory(IMPORT_ONLY_SRC),
+    check(calls_any(WIRED_SRC, WANTED), "a real call was not credited")
+    check(not calls_any(IMPORT_ONLY_SRC, WANTED),
           "an IMPORT with no call was credited — that is exactly what a "
           "half-finished wiring looks like")
-    check(not calls_advisory(MENTION_ONLY_SRC),
+    check(not calls_any(MENTION_ONLY_SRC, WANTED),
           "a STRING mentioning the name was credited — this gate's own arms "
           "carry such strings, and a text scanner reports them as wiring")
-    check(calls_advisory("import m\ndef f():\n    m.sweep_advisory(a, b)\n"),
+    check(calls_any("import m\ndef f():\n    m.sweep_advisory(a, b)\n", WANTED),
           "a qualified `module.sweep_advisory(...)` call was not credited")
     # The row-level entry point counts too, and this arm exists because the
     # gate's first run reported `citation_drift_sweep` — the most thoroughly
     # wired member in the family — as UNWIRED.
-    check(calls_advisory("def f():\n    worktree_advisory(s, u, m)\n"),
+    check(calls_any("def f():\n    worktree_advisory(s, u, m)\n", WANTED),
           "the ROW-LEVEL entry point was not credited: a sweep that wires the "
           "richer split reads as the defect")
-    check(not calls_advisory("def f(:\n"),
+    check(not calls_any("def f(:\n", WANTED),
           "an UNPARSED module was credited — silence is not evidence")
+    # ── Issue 824: the mechanisms must be INDEPENDENT ─────────────────────
+    # Walked from the registry rather than hard-coded, so a mechanism added
+    # later is armed by EXISTING — which is the whole reason this gate was
+    # generalised instead of copied.
+    for slug, (_why, names) in MECHANISMS.items():
+        others = [n for s, (_w, ns) in MECHANISMS.items() if s != slug
+                  for n in ns]
+        src = f"def f():\n    {names[0]}(a)\n"
+        check(calls_any(src, names), f"[{slug}] its own call was not credited")
+        check(not calls_any(src, tuple(others)),
+              f"[{slug}] calling it credited a DIFFERENT mechanism — pooling "
+              f"is exactly how `pin_row_exempt` sat in 16 of 19 sweeps while "
+              f"every one of them read as wired")
+    check(calls_any(EXEMPT_ONLY_SRC, MECHANISMS["known-extra-exemption"][1]),
+          "a real pin_row_exempt() call was not credited")
+    check(not calls_any(EXEMPT_ONLY_SRC, WANTED),
+          "a sweep wired ONLY for the exemption was credited with the "
+          "advisory — the precise shape Issue 824 found in 3 of 19")
+    check(all(calls_any(BOTH_SRC, ns) for _w, ns in MECHANISMS.values()),
+          "a fully-wired sweep was not credited for every mechanism")
     return fails
 
 
@@ -216,46 +319,81 @@ def pin_arms() -> list[str]:
         tmp = Path(td)
         f = tmp / "pins.txt"
 
-        f.write_text("# comment\n\na_drift_sweep.py  # deliberate: reason here\n",
-                     encoding="utf-8")
+        f.write_text("# comment\n\nworktree-advisory a_drift_sweep.py  "
+                     "# deliberate: reason here\n", encoding="utf-8")
         pins, errs = parse_pins(f)
-        check(pins == {"a_drift_sweep.py": "deliberate: reason here"} and not errs,
+        check(pins == {("worktree-advisory", "a_drift_sweep.py"):
+                       "deliberate: reason here"} and not errs,
               f"a well-formed pin did not parse: {pins} {errs}")
 
-        f.write_text("b_drift_sweep.py\n", encoding="utf-8")
+        f.write_text("worktree-advisory b_drift_sweep.py\n", encoding="utf-8")
         pins, errs = parse_pins(f)
         check(pins == {} and len(errs) == 1,
               f"a REASONLESS row was accepted as a pin: {pins} {errs}")
+
+        # Issue 824: an UNQUALIFIED row is refused. It would excuse the sweep
+        # from the NEXT mechanism too — the one nobody has looked at — which is
+        # the DOCS_GATE_KNOWN_EXTRA asymmetry (names, never `=1`) one file over.
+        f.write_text("c_drift_sweep.py  # no mechanism named\n", encoding="utf-8")
+        pins, errs = parse_pins(f)
+        check(pins == {} and len(errs) == 1,
+              f"an UNQUALIFIED pin row was accepted: {pins} {errs}")
+
+        # …and a row naming a mechanism that does not exist is an error, not a
+        # silently-ignored line: a typo'd slug would otherwise pin nothing while
+        # reading as a deliberate exemption.
+        f.write_text("no-such-mechanism d_drift_sweep.py  # typo\n",
+                     encoding="utf-8")
+        pins, errs = parse_pins(f)
+        check(pins == {} and len(errs) == 1,
+              f"an UNKNOWN mechanism slug was accepted: {pins} {errs}")
 
         pins, errs = parse_pins(tmp / "absent.txt")
         check((pins, errs) == ({}, []),
               "an absent pin file was an error rather than an empty set")
 
         # ── the verdict, over a synthetic family ──────────────────────────
+        ADV, EXE = "worktree-advisory", "known-extra-exemption"
         root = _fixture(tmp, {
-            "x_drift_sweep.py": WIRED_SRC,
+            "x_drift_sweep.py": BOTH_SRC,
             "y_drift_sweep.py": MENTION_ONLY_SRC,
             "not_a_sweep.py": MENTION_ONLY_SRC,
         })
         wired, unwired, stale, n = verdict(root, {})
-        check((wired, unwired, n) == (["x_drift_sweep.py"],
-                                      ["y_drift_sweep.py"], 2),
+        check(n == 2 and all(wired[s] == ["x_drift_sweep.py"] for s in wired)
+              and all(unwired[s] == ["y_drift_sweep.py"] for s in unwired),
               f"the verdict mis-partitioned: {wired} {unwired} {n}")
-        check("not_a_sweep.py" not in wired + unwired,
+        check(all("not_a_sweep.py" not in wired[s] + unwired[s] for s in wired),
               "a non-sweep entered the population")
 
+        # ⛔ Issue 824's own defect, as an arm: a sweep wired for the advisory
+        # and NOT the exemption must read UNWIRED for the exemption alone. A
+        # pooled verdict calls it wired, which is how 3 of 19 went unnoticed
+        # through a close-out that said "16".
+        half = _fixture(tmp / "half", {"h_drift_sweep.py": WIRED_SRC})
+        wired, unwired, _, _ = verdict(half, {})
+        check(wired[ADV] == ["h_drift_sweep.py"] and unwired[ADV] == [],
+              f"the advisory half was not credited: {wired[ADV]}")
+        check(unwired[EXE] == ["h_drift_sweep.py"] and wired[EXE] == [],
+              f"a sweep missing the EXEMPTION read as wired — the pooled "
+              f"verdict Issue 824 exists to prevent: {wired[EXE]}")
+
         # A pin removes the unwired row from the finding set …
-        _, unwired, stale, _ = verdict(root, {"y_drift_sweep.py": "r"})
-        check(unwired == ["y_drift_sweep.py"] and stale == [],
-              f"a pinned row was not still reported as unwired: {unwired}")
+        _, unwired, stale, _ = verdict(root, {(ADV, "y_drift_sweep.py"): "r"})
+        check(unwired[ADV] == ["y_drift_sweep.py"] and stale == [],
+              f"a pinned row was not still reported as unwired: {unwired[ADV]}")
+        # … and it does so for THAT mechanism only: the same sweep is still an
+        # unpinned finding under the other one.
+        check(unwired[EXE] == ["y_drift_sweep.py"],
+              "a pin excused a mechanism it did not name")
         # … and a pin on a WIRED sweep is STALE, which reds. This is the
         # direction a pin file left to loosen would never catch.
-        _, _, stale, _ = verdict(root, {"x_drift_sweep.py": "r"})
-        check(stale == ["x_drift_sweep.py"],
+        _, _, stale, _ = verdict(root, {(ADV, "x_drift_sweep.py"): "r"})
+        check(stale == [(ADV, "x_drift_sweep.py")],
               f"a pin on an already-wired sweep did not read STALE: {stale}")
         # A pin naming a sweep that no longer exists is stale too.
-        _, _, stale, _ = verdict(root, {"gone_drift_sweep.py": "r"})
-        check(stale == ["gone_drift_sweep.py"],
+        _, _, stale, _ = verdict(root, {(ADV, "gone_drift_sweep.py"): "r"})
+        check(stale == [(ADV, "gone_drift_sweep.py")],
               f"a pin for a DELETED sweep did not read STALE: {stale}")
 
         # The walk floor's premise: an empty family must not read as perfect.
@@ -323,7 +461,7 @@ def walk_arms() -> list[str]:
         # The verdict end-to-end over the real tree, so the git branch is
         # reached by the PRODUCTION path and not only by the helper.
         wired, unwired, stale, n = verdict(root, {})
-        check((wired, unwired, n) == (["a_drift_sweep.py"], [], 1),
+        check(n == 1 and wired["worktree-advisory"] == ["a_drift_sweep.py"],
               f"the verdict over a real git tree disagreed with the walk: "
               f"{wired} {unwired} {n}")
     return fails
@@ -351,34 +489,38 @@ def main() -> int:
         print(f"✗ INSTRUMENT: the walk found {n} sweep(s) < floor {MIN_SWEEPS} "
               f"— the family went blind and every row below passes vacuously")
         return 2
-    if len(wired) < MIN_WIRED:
-        print(f"✗ INSTRUMENT: {len(wired)} wired < floor {MIN_WIRED} — a walk "
+    if min(len(v) for v in wired.values()) < MIN_WIRED:
+        thin = min(wired, key=lambda s: len(wired[s]))
+        print(f"✗ INSTRUMENT: {thin} has {len(wired[thin])} wired < floor "
+              f"{MIN_WIRED} — a walk "
               f"that finds every sweep and credits none looks exactly like "
               f"nobody having wired any, and the obvious remedy is to pin "
               f"them all")
         return 2
 
     bad = bool(errs)
-    for name in stale:
+    for slug, name in stale:
         bad = True
-        print(f"✗ STALE pin `{name}` — it is wired now, or gone. Remove the "
-              f"row; a pin file that only ever loosens is a backlog")
-    for name in unwired:
-        if name in pins:
-            print(f"  · pinned unwired: {name} — {pins[name]}")
-            continue
-        bad = True
-        print(f"✗ UNWIRED {name} — it calls neither of "
-              f"{'/'.join(w + '()' for w in WANTED)}, so its findings "
-              f"and floors describe whatever the working tree happened to say "
-              f"(Issue 797). Wire it at the population_verdict() call site, or "
-              f"pin it in {PINS.name} with a reason")
+        print(f"✗ STALE pin `{slug} {name}` — it is wired now, or gone. Remove "
+              f"the row; a pin file that only ever loosens is a backlog")
+    for slug, (why, names) in MECHANISMS.items():
+        for name in sorted(unwired[slug]):
+            if (slug, name) in pins:
+                print(f"  · pinned unwired [{slug}]: {name} — "
+                      f"{pins[(slug, name)]}")
+                continue
+            bad = True
+            print(f"✗ UNWIRED [{slug}] {name} — it calls none of "
+                  f"{'/'.join(w + '()' for w in names)}. {why}. Wire it at the "
+                  f"population_verdict() call site, or pin it in "
+                  f"{PINS.name} with a reason")
 
     if bad:
         return 1
-    print(f"✓ sweep-advisory membership gate PASSED — all {len(wired)} tracked "
-          f"{GLOB} call {' or '.join(w + '()' for w in WANTED)} "
-          f"(floors {MIN_SWEEPS}/{MIN_WIRED}), "
+    parts = ", ".join(f"{slug} {len(wired[slug])}" for slug in MECHANISMS)
+    print(f"✓ sweep-advisory membership gate PASSED — every one of {n} tracked "
+          f"{GLOB} calls each of the {len(MECHANISMS)} family-wide mechanisms "
+          f"({parts}; floors {MIN_SWEEPS}/{MIN_WIRED}), "
           f"{len(pins)} pinned exemption(s), 0 stale. ⚠ It does NOT assert the "
           f"patterns name each sweep's own population — that is a per-sweep "
           f"read, not statically decidable")

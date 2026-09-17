@@ -49,7 +49,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
@@ -186,7 +186,12 @@ def main() -> int:
         floor = floors.get(n)
         if floor is None:
             mark = "" if (b_lab or c_lab) else "-"
-            if b_lab or c_lab:
+            # Issue 824. The lowest-severity member of the three and the one
+            # most likely to be left: the note is ADVISORY, so the cost is a
+            # suggestion to pin a repo the contract does not claim — an action
+            # the reader cannot correctly take. Exempt rows still PRINT (the
+            # display reads the box, pins read the contract — Issue 797).
+            if (b_lab or c_lab) and not pin_row_exempt(n):
                 # Newly label-bearing: a floor should be recorded so a future
                 # regression back to zero is catchable. Advisory, not fatal.
                 mark = "NEW"

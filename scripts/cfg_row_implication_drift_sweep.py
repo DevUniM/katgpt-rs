@@ -74,7 +74,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # DRY: the classification is the report's, so the sweep, the per-push gate and
 # the report can never disagree about what EMPTY-AT-ROW means.
 import cfg_row_implication_audit as cria  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from cfg_gated_target_audit import derive_repos  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
@@ -167,8 +167,15 @@ def main(argv: list[str]) -> int:
 
         pin = pins.get(repo.name)
         if pin is None:
-            fails.append(f"{repo.name}: no pin row — a new repo must be pinned "
-                         f"deliberately, not defaulted to permissive")
+            # Issue 824. An ACKNOWLEDGED extra owes no pin row. Issue 821
+            # landed this in 16 of the 19 sweeps and this was one of the three
+            # it missed — the three Issue 782 had already named as the quiet
+            # ones. Nested INSIDE `pin is None`, never flattened into the
+            # condition: 821's own process note records the flat form crashing
+            # on `pin["max_empty"]` in the else-branch.
+            if not pin_row_exempt(repo.name):
+                fails.append(f"{repo.name}: no pin row — a new repo must be "
+                             f"pinned deliberately, not defaulted to permissive")
             note = "UNPINNED"
         else:
             note = "ok"

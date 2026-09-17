@@ -61,7 +61,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import restatement_theorem_audit as audit  # noqa: E402
-from sweep_population import population_verdict  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import sweep_advisory  # noqa: E402
 
 FLOORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -208,7 +208,14 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
               f"`.proofs` — its ceiling can no longer fail): "
               f"{', '.join(dropped)}")
         fail += len(dropped)
-    unpinned = sorted(set(present) - set(floors))
+    # Issue 824. LATENT here rather than live: this sweep's population is the
+    # `.proofs` subset and no acknowledged extra carries one today, so the
+    # missing exemption has never fired. That is a property of the corpus, not
+    # of the check — one `.proofs` directory in an extra repo turns it into
+    # cfg_row_implication's live red. Wired for the same reason 782 says the
+    # quiet members were the dangerous ones.
+    unpinned = sorted(r for r in set(present) - set(floors)
+                      if not pin_row_exempt(r))
     if unpinned:
         print(f"⛔ UNPINNED (a repo joined the population): "
               f"{', '.join(unpinned)} — re-pin deliberately")
