@@ -291,14 +291,74 @@ to decide whether to re-pin, and the banner gives them no way to tell.
 
       | sweep | instrument |
       |---|---|
-      | `orphaned_attr`, `markdown_fence`, `toolchain_override`, `pipefail_discard`, `platform_dead_code` | `head_delta` — per-file classifiers |
+      | ~~`orphaned_attr`, `markdown_fence`, `toolchain_override`, `pipefail_discard`, `platform_dead_code`~~ | **done** — `head_delta`, per-file classifiers |
       | ~~`percentile`~~ | **done (T5d)** — `head_delta`, four ceilings, class in the key |
       | ~~`console_encoding`~~ | **done (T3/T4)** — `head_delta`, name-keyed |
       | ~~`subprocess_encoding`~~ | **done (T5c)** — `head_delta`, line-free key + ordinal |
       | ~~`instrument_reachability`~~ | **done (T5a)** — `head_overlay` + `delta_of` |
       | `len_derived` | whole-classifier re-run, and its HALF C reaches other REPOS |
-      | `numbering` | whole-classifier re-run; its rows are numbers, not files |
-      | `cfg_gated`, `required_features`, `wasm32_surface` | manifest+source joins — read each before choosing |
+      | ~~`numbering`~~ | **done (T5h)** — the classes split by ORACLE; see below |
+      | `cfg_gated`, `required_features` | manifest+source joins — read each before choosing |
+      | ~~`wasm32_surface`~~ | **done (T5g)** — `head_tree`, the THIRD instrument |
+      | `restatement`, `trap_sentinel`, `cfg_row_implication` | ⚠ carry count ceilings and were NOT in T1's table at all — see T5j |
+      | `docs`, `citation` | `docs` has no count ceiling (nothing to overstate); `citation` carries the INLINE original — T5j |
+
+      ⛔ **T5g — `wasm32_surface` needed a THIRD instrument, and the reason
+      generalises to every remaining row.** `head_delta` and `head_overlay`
+      both assume the classifier takes its text from ONE interceptable place.
+      `wasm32_surface_audit` has FOUR seams (`git grep` for the walk, `git
+      ls-files` twice, direct reads), and an overlay missing any one builds a
+      verdict half from HEAD and half from the worktree — worse than either
+      half. `worktree_state.head_tree()` materialises HEAD (`git archive` +
+      extract + `git init`/`git add -A -f`) and the classifier runs
+      UNMODIFIED. ⚠ It is the EXPENSIVE one: measured 22.5s (katgpt-rs), 31.6s
+      (riir-ai), 28.0s (riir-train) to materialise, 0.04–0.26s on a clean repo
+      because it yields `None` and the caller SKIPS. Reach for it only when a
+      classifier genuinely cannot be read through one seam.
+
+      ⛔ **T5h — `numbering`, and the class split is by ORACLE, not by
+      instrument.** `dup`/`above`/`malformed`/`n_files` read the worktree (the
+      pins read HEAD); `hist`/`resets`/`n_numbers` read `git log` and a dirty
+      tree cannot move them; `unbumped` is a WORKTREE quantity by construction
+      — Issue 770's checkout-state class — and adjudicating it to HEAD would
+      destroy it. It needed no `head_tree` and no skip branch: HEAD is
+      `ls-tree -r -z` + six `git show` (0.05s over riir-ai's 1601 numbered
+      paths), so running it UNCONDITIONALLY closes the UNTRACKED hole
+      `markdown_fence` had to split by hand — an untracked file is in no `git
+      status` diff and in no HEAD listing, so its row is UNCOMMITTED by
+      construction. ⚠ `above` counts untracked numbered files and `dup` does
+      not; the two classes disagree about the population and each owes its own
+      arm.
+
+      ⛔ **A DIAGNOSTIC rule, and it cost a peer session an hour to find
+      (2026-09-18).** `katgpt-rs-54` ran the numbering sweep during ~90
+      seconds of another session's `git rebase` and got `malformed 1 > pinned
+      0` + `duplicates 1 > pinned 0`: `.issues/.highwater` held conflict
+      markers ON DISK and `.issues/` carried two 825 files, one staged-as-added
+      by the commit being replayed. Both rows were TRUE of that instant and
+      false of every commit. The peer then verified the worktree, HEAD's blob,
+      the last 30 commits and `.git/rebase-merge`, found nothing, and concluded
+      the instrument was reading a rerere preimage.
+
+      **Every one of those checks inspects STATE, and state had moved.** A
+      transient-worktree finding is in no commit *by definition*, so scanning
+      commits is structurally incapable of separating "phantom" from "true but
+      gone" — it can only ever return the reassuring answer. The one cheap
+      decisive test is to **RE-RUN THE INSTRUMENT**; the peer's re-run after
+      the rebase settled returned `dup=0 malformed=0`, which transient-worktree
+      predicts and "the reader is broken" does not. A second clue was present
+      and misread: the dirty-file SET changed under them (one session's files
+      vanished, another's appeared), which reads as "they are editing the
+      instrument" and was "they are rebasing the data" — concurrent git
+      activity, not just concurrent editing.
+
+      The misdiagnosis is the more valuable half, and it is why this is
+      recorded as a rule rather than an anecdote: *"I cannot reproduce it, so
+      the instrument is broken"* is available to anybody who verifies state
+      instead of re-running, and it is wrong in the direction that deletes a
+      real finding. Nothing wrong reached a tracked file — the peer corrected
+      both its message and its user report — which is exactly why the protocol,
+      not the incident, is what belongs here.
 
       ⛔ **Every one of these owes, as STEPS and not as tips:**
 
@@ -319,6 +379,37 @@ to decide whether to re-pin, and the banner gives them no way to tell.
       fourteen. A sweep with no canary (like `subprocess_encoding`) pays
       nothing here and needs `selftest` arms instead, which are cheaper and
       run on every invocation.
+
+- [ ] **T5j — ⛔ T1's "14 sweeps with a count ceiling" was a MEASUREMENT of the
+      set to wire, and it is not the set.** Re-measured 2026-09-18 by grepping
+      every `> row["max_*"]`/`> f["max_*"]` comparison in the family:
+      `restatement` (`max_restatement`, `max_identity`), `trap_sentinel` (SIX
+      — `max_exposed`, `max_precautionary`, `max_live_forward`, `max_unparsed`,
+      `max_replaced`, plus two floors) and `cfg_row_implication` (`max_empty`,
+      `max_unresolved`) all carry ceilings and appear in T1's table NOWHERE.
+      `docs` is the one sweep with no count ceiling at all — an exemption
+      candidate, not a task — and `citation` carries the INLINE original the
+      helpers were lifted out of, which owes a migration to them so one rule
+      has one copy (AGENTS.md already describes the helpers as exactly that).
+
+      The lesson is the issue's own: **do not carry a table forward as a
+      population.** T1's table was right about what it looked at and is not a
+      derived set, which is why the closing step of this issue is a REGISTRY
+      row rather than a tick — see T6.
+
+- [ ] **T6 — make the fan-out impossible to forget, the way Issue 824 did for
+      its two mechanisms.** `scripts/sweep_advisory_membership_gate.py` is
+      already a per-mechanism REGISTRY gated by MEMBERSHIP, and its whole
+      warrant is that Issue 821 "landed a mechanism in 16 of 19 sweeps and
+      wrote 16 in its own close-out". This issue is that shape again: a table
+      in a file, ticked by hand, in a family that grows. Add
+      `head-provenance` (`head_delta` / `head_overlay` / `head_tree`, plus
+      whatever entry point `citation` ends up calling) as a third MECHANISM
+      once the fan-out is complete — and **not before**, because a registry
+      row added over unwired sweeps reds the docs gate on `develop`, and
+      pinning them as exemptions in the meantime is a backlog wearing a pin
+      (Issue 785's rule). `docs` is the only legitimate exemption row: no
+      count ceiling, so nothing to overstate.
 
 ## ⚠ Workspace hazard this issue kept tripping over
 
