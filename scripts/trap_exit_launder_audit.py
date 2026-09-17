@@ -515,7 +515,7 @@ def _run(body, with_trap, opts):
     script = f"#!/usr/bin/env bash\n{opts}\n{trap}{body}\n"
     fd, path = tempfile.mkstemp(suffix=".sh", prefix="premise_arm_")
     try:
-        with os.fdopen(fd, "w") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(script)
         p = subprocess.run(["bash", path], capture_output=True, timeout=20)
         return p.returncode
@@ -554,7 +554,7 @@ def selftest():
 
     def plant(body):
         fd, p = tempfile.mkstemp(suffix=".sh")
-        with os.fdopen(fd, "w") as fh:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(body)
         return p
 

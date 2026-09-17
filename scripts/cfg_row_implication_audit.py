@@ -404,7 +404,7 @@ def selftest() -> None:
     import tempfile
 
     def scan(body: str) -> list[str] | None:
-        with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False) as fh:
+        with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False, encoding="utf-8") as fh:
             fh.write(body)
             name = fh.name
         try:

@@ -243,7 +243,7 @@ def selftest() -> None:
     # function and this selftest failed on its first run, which is the point.
     # Pin the COMPOSITION, since that is what the report is downstream of.
     import tempfile
-    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8") as fh:
         fh.write("# run cargo test --workspace here\n"
                  "  # cargo nextest run --workspace\n"
                  "        run: cargo clippy --workspace\n")

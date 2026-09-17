@@ -360,10 +360,13 @@ def main() -> int:
     print(f"\n{len(names)} contract repo(s) · {tot_files} tracked .py "
           f"({tot_vend} vendored, excluded) · {tot_calls} text-I/O call site(s) "
           f"· {tot_hits} LOCALE-IO · {tot_unp} UNPARSED")
-    print("  scope: `Path.read_text` / `Path.write_text` / builtin `open()` in "
-          "TEXT mode with no `encoding=`. Binary mode is skipped and a "
-          "`**kwargs` splat is UNKNOWN, never counted — this repair may only "
-          "ever be conservative.")
+    print("  scope: every TEXT-MODE FILE OBJECT built with no `encoding=` — "
+          "`Path.read_text` / `Path.write_text`, builtin `open()`, "
+          "`.open(<text mode>)`, the `tempfile` factories at a text mode, "
+          "`os.fdopen`, `io.TextIOWrapper`. Binary mode is skipped, a "
+          "`**kwargs` splat is UNKNOWN, and a `.open` with NO mode literal is "
+          "the STATED blind spot (Issue 830 T2, measured cost 0) — this repair "
+          "may only ever be conservative.")
     print("  ⚠ the ceiling is a RATCHET on the DERIVATIVE, not a wall: the "
           "standing rows are their own repos' to adjudicate, and ratcheting a "
           "bucket nobody has read is a backlog wearing a pin (Issue 785). "

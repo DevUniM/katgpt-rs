@@ -21,18 +21,21 @@
 # from the other.
 #
 # Measured 2026-09-18 on this box (16 of 20 repos present).
+# Issue 830 widened the classifier from three call NAMES to the text-mode
+# file-object class and found 11 more sites; the `repaired` SHAs below carry
+# both passes where a repo needed both.
 katgpt-rs               60    450    0
 riir-ai                  8      0   0    # repaired 4df109c65
 riir-auth                0      0    0
 riir-chain               3      0    0    # repaired bebf78a
-riir-clippy              5      0   0    # repaired 638fa224
+riir-clippy              5      0   0    # repaired 638fa224, 54b999de
 riir-dapps               1      0    0
 riir-game-sdk            0      0    0
 riir-kat                 0      0    0
 riir-mmorpg-examples     2      0    0    # repaired 36005d2
 riir-neuron-db           0      0    0
 riir-shader              2      0    0    # repaired 7a65dd4
-riir-train              60      0   0    # repaired 39d0b8d4
+riir-train              60      0   0    # repaired 39d0b8d4, 15db2c67
 riir-viewbridge          0      0    0
 katgpt-web               0      0    0
 mmorpg-editor            0      0    0

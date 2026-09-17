@@ -31,6 +31,34 @@ console_safe.apply()
 
 PATH_METHODS = {"write_text", "read_text"}
 
+# ── Issue 830: the class is a TEXT-MODE FILE OBJECT, not three call names ──
+#
+# `read_text` can be duck-typed by name because the name is Path-specific.
+# `open` cannot: `os.open`, `tarfile.open` and `Image.open` are all
+# `ast.Attribute` with `attr == "open"` and not one of them is a text file. So
+# these forms need a DISCRIMINATOR, and it is a literal text-mode argument —
+# one rule, no denylist of receiver module names to go stale.
+#
+# ⚠ Its measured cost is the NO-MODE case: `p.open()` defaults to text `"r"`
+# and IS in the class, and this rule cannot see it. Counted rather than
+# estimated (Issue 830 T2): 5 no-mode `.open` sites workspace-wide, and all 5
+# are `os.open` / `tarfile.open` / `Image.open`. The blind spot and the
+# false-positive exclusion are the SAME set, and today that set is 5/5
+# not-in-class. A receiver denylist would catch the no-mode case and fail OPEN
+# on the next library somebody imports — against a gate walled at 0 with a
+# deliberately empty exemptions file, where a false positive is a red build.
+MODE_DISCRIMINATED = {"open", "NamedTemporaryFile", "TemporaryFile",
+                      "SpooledTemporaryFile"}
+# Same signature and same defaults as the builtin `open` — `(target, mode)`,
+# TEXT unless the mode says otherwise — so it reuses `_binary` rather than the
+# discriminator: a missing mode here means text, not "unknown".
+OPEN_LIKE = {"fdopen"}
+# Always text; there is no mode to read.
+ALWAYS_TEXT = {"TextIOWrapper"}
+# The file-mode alphabet. `tarfile.open(path, "r:gz")` is excluded by the `:`,
+# `f.open("rb")` by the `b`, `os.open(p, os.O_WRONLY)` by not being a literal.
+_MODE_CHARS = set("rwxat+U")
+
 
 def _binary(node: ast.Call) -> bool:
     mode = ""
@@ -42,8 +70,39 @@ def _binary(node: ast.Call) -> bool:
     return "b" in mode
 
 
+def _literal_text_mode(node: ast.Call) -> bool:
+    """Does `node` carry an explicit, literal, TEXT file mode?
+
+    Positional argument 0 or the `mode=` keyword — the position every member of
+    `MODE_DISCRIMINATED` puts it in. A non-literal or absent mode is UNKNOWN
+    and answers False: this classifier may only ever be conservative, the same
+    stance `sites()` already takes for a `**kwargs` splat.
+    """
+    mode = None
+    if node.args and isinstance(node.args[0], ast.Constant) \
+            and isinstance(node.args[0].value, str):
+        mode = node.args[0].value
+    for k in node.keywords:
+        if k.arg == "mode" and isinstance(k.value, ast.Constant) \
+                and isinstance(k.value.value, str):
+            mode = k.value.value
+    return bool(mode) and set(mode) <= _MODE_CHARS
+
+
 def sites(src: str) -> list[ast.Call]:
     """Every text-I/O call in `src` with no explicit `encoding=`.
+
+    Four admission rules, because the class is a text-mode FILE OBJECT and the
+    forms that build one do not share a signature (Issue 830):
+
+    * `PATH_METHODS` — duck-typed by NAME, which is sound because the name is
+      Path-specific.
+    * `ALWAYS_TEXT` — `io.TextIOWrapper`, which has no mode to read.
+    * `MODE_DISCRIMINATED` — `.open` and the `tempfile` factories, admitted
+      only on a literal TEXT mode; see `_literal_text_mode` for the measured
+      cost of that rule.
+    * builtin `open` and `OPEN_LIKE` — text by DEFAULT, so admitted unless the
+      mode literally says binary.
 
     A `**kwargs` splat counts as UNKNOWN and is left alone: the caller may be
     supplying the encoding, and this repair may only ever be conservative.
@@ -52,9 +111,16 @@ def sites(src: str) -> list[ast.Call]:
     for node in ast.walk(ast.parse(src)):
         if not isinstance(node, ast.Call):
             continue
-        if isinstance(node.func, ast.Attribute) and node.func.attr in PATH_METHODS:
+        attr = node.func.attr if isinstance(node.func, ast.Attribute) else None
+        if attr in PATH_METHODS:
             pass
-        elif isinstance(node.func, ast.Name) and node.func.id == "open":
+        elif attr in ALWAYS_TEXT:
+            pass
+        elif attr in MODE_DISCRIMINATED:
+            if not _literal_text_mode(node):
+                continue
+        elif attr in OPEN_LIKE or (
+                isinstance(node.func, ast.Name) and node.func.id == "open"):
             if _binary(node):
                 continue
         else:
@@ -174,6 +240,42 @@ def selftest() -> list[str]:
     # other methods named alike are untouched
     one('p.write_bytes(x)\n', 0)
     one('sock.read_text(x)\n', 1)   # duck-typed: the name IS the population
+
+    # ── Issue 830: the forms that are not one of those three names ──
+    # `.open` with a literal TEXT mode is in the class …
+    one('p.open("w")\n', 1, 'p.open("w", encoding="utf-8")')
+    one('args.dst.open("a")\n', 1, 'args.dst.open("a", encoding="utf-8")')
+    one('p.open(mode="w")\n', 1, 'p.open(mode="w", encoding="utf-8")')
+    # … and every measured workspace NEGATIVE stays out, by ONE rule.
+    one('f.open("rb")\n', 0)                       # `b`
+    one('tarfile.open(path, "r:gz")\n', 0)         # `:` is not a mode char
+    one('tarfile.open(arc)\n', 0)                  # no mode -> UNKNOWN
+    one('Image.open(hero_path)\n', 0)              # no mode -> UNKNOWN
+    one('os.open(os.devnull, os.O_WRONLY)\n', 0)   # mode is not a literal
+    one('p.open()\n', 0)                           # the STATED blind spot
+    # The BOUNDARY the subset test sits on: `<=` vs `<` differ only when the
+    # mode uses every character in the alphabet, so without this the operator
+    # is EQUIVALENT-by-default and unarmed. A mode is admitted for what it
+    # does NOT contain, never for being a mode Python would accept.
+    one('p.open("rwxat+U")\n', 1)
+    # the tempfile factories: default `"w+b"` is safe, an explicit text mode
+    # is not — and both of this repo's own sites write a fixture something
+    # else then parses back
+    one('tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False)\n', 1,
+        'tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False, '
+        'encoding="utf-8")')
+    one('tempfile.NamedTemporaryFile(suffix=".rs")\n', 0)   # binary default
+    one('tempfile.TemporaryFile(mode="w+")\n', 1)
+    one('tempfile.SpooledTemporaryFile("w")\n', 1)
+    one('tempfile.NamedTemporaryFile("w+b")\n', 0)
+    # `os.fdopen` has the BUILTIN's signature and defaults, not the
+    # discriminator's: a missing mode there means TEXT, not unknown
+    one('os.fdopen(fd, "w")\n', 1, 'os.fdopen(fd, "w", encoding="utf-8")')
+    one('os.fdopen(fd)\n', 1)
+    one('os.fdopen(fd, "wb")\n', 0)
+    # always text, no mode to read
+    one('io.TextIOWrapper(fh)\n', 1, 'io.TextIOWrapper(fh, encoding="utf-8")')
+    one('io.TextIOWrapper(fh, encoding="utf-8")\n', 0)
     return fails
 
 

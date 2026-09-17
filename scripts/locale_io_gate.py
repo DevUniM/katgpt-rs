@@ -72,7 +72,10 @@ console_safe.apply()
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Measured 2026-09-18 on katgpt-rs: 85 tracked .py, 635 text-I/O call sites.
+# Measured 2026-09-18 on katgpt-rs: 87 tracked .py, 643 text-I/O call sites
+# (Issue 830 widened the classifier from three call NAMES to the text-mode
+# file-object class, so the site count is not comparable to the 635 measured
+# against the three-name predicate hours earlier).
 # Slack against ordinary churn, tight against a walk or parse regression.
 FLOOR_PY_FILES = 60
 FLOOR_IO_CALLS = 450
