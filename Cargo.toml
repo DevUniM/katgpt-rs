@@ -1218,6 +1218,17 @@ path = "benches/bench_023_flashmemory_niah_semantic_needle.rs"
 required-features = ["kimi_k3_loader", "flashmemory_sparse"]
 harness = false
 
+# Issue 826 T1+T2 — FlashMemory FULL-MODEL NIAH QA gate (needle-axis quality
+# measurement for the promotion gate; closes Bench 023's honest negative:
+# single-layer retrieval untestable). Dense (real forward) vs FlashMemory
+# sparse arms at 2048/16384/65536, single+multi-needle, σ e2e arms + T2
+# selection-axis sweep, parity gate at σ=0.0. harness=false.
+[[bench]]
+name = "bench_685_flashmemory_full_model_niah_qa"
+path = "benches/bench_685_flashmemory_full_model_niah_qa.rs"
+required-features = ["kimi_k3_loader", "flashmemory_sparse"]
+harness = false
+
 # Issue 584 Phase 3 G5 — FlashMemory KV-reduction scaling curve on M3.
 # Runs Bench 021's dense-vs-sparse MLA retrieval at multiple context lengths
 # (128/512/1024/2048/4096) to characterize how the reduction ratio + accuracy
