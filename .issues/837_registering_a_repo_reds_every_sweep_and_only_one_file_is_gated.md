@@ -1,6 +1,6 @@
 # Issue 837: registering a contract repo reds the whole sweep family, and the ONE file a gate checks is not the twenty-one that make them red
 
-**Status:** open. **Found by:** a `console_encoding_drift_sweep` run during
+**Status:** T1 + T2 + T3 **DONE 2026-09-18**; the class is closed and gated. **Found by:** a `console_encoding_drift_sweep` run during
 [Issue 836](836_a_git_worktree_makes_the_head_provenance_mechanism_silently_inert.md)
 reporting `✗ riir-llm … UNPINNED — add a row (or it can never red)`, with the
 failure having nothing to do with the change under test. Filed by session
@@ -85,12 +85,12 @@ multi-minute runs.
   and a stale one reds nothing. Both repaired against the sweeps' own `FIELDS`
   tuples, which are the only authority.
 
-### ⛔ What the pins surfaced — three live findings that were sitting behind
+### ⛔ What the pins surfaced — four live findings that were sitting behind
 the reds
 
 This is Issue 793's measured claim reproduced exactly (*"a sweep that always
 reds is a sweep nobody runs"*), and it is the argument for T2 far more than
-the inconvenience is. With riir-llm pinned, three sweeps went from **red for a
+the inconvenience is. With riir-llm pinned, four sweeps went from **red for a
 bookkeeping reason** to **red for a real one**:
 
 | sweep | finding | repaired |
@@ -100,7 +100,7 @@ bookkeeping reason** to **red for a real one**:
 | `instrument_reachability` | riir-clippy: 11 unreachable vs 4 pinned — 7 plan/bench-scoped one-offs landed undocumented | ratcheted at measured (the documented OVER-CAPTURE class; documenting them is riir-clippy's own call) |
 | `numbering` | riir-shader: `.plans/.highwater` left at 004 while `.plans/005` exists — the next allocator reads 004, takes 005 and files a second document at a held number | riir-shader `6f045d4` |
 
-**Final state: 21 of 21 sweeps green** (from 19 red), docs gate 28/28.
+**Final state: 21 of 21 sweeps green** (from 19 red), docs gate 29/29.
 
 ⚠ The riir-shader row is also an Issue-798 near-miss worth recording: that repo
 was **2 commits behind origin** when the finding appeared, so the first
@@ -108,10 +108,37 @@ question was whether it was already fixed upstream. It was not — neither
 commit touches a `.sh` — but *confirm against origin before repairing* is what
 made that a fact rather than an assumption.
 
-- [ ] **T2 — the gate: every per-repo pin file has a row for every ON-DISK
-  canonical repo.** The scope must come from `repo_set.txt` ∩ the derived
-  walk, so an absent repo DEFERS exactly as it does everywhere else in the
-  family.
+- [x] **T2 — `scripts/repo_registration_gate.py`, DONE 2026-09-18 (docs-gate
+  CHECK 29).** Every per-repo pin file must carry a row for every ON-DISK
+  canonical repo. Scope is `repo_set.txt` ∩ the derived walk, so an absent
+  repo is never demanded — that path is disclosed on the PASS line in both
+  directions, since on a full checkout it is UNEXERCISED by live data.
+
+  Verified three ways, not one:
+  - **Arms** over its own verdict arithmetic, unconditional (the Issue-789
+    rule — `docs_gate.sh` passes no arguments, so a flag-gated arm never fires
+    on a push). They cover the row reader, the narrow stray rule, scope
+    parsing in both directions, the complete/incomplete split, the stale-SUBSET
+    direction, and the partial-clone posture.
+  - **A live perturbation:** deleting the `riir-llm` row from
+    `console_encoding_drift_floors.txt` reds it by name, and restoring greens
+    it. An arm whose perturbation reds nothing certifies nothing.
+  - **The real defect it was built for** is exactly what it reported on its
+    first run: `docs_drift_floors.txt` and `required_features_build_floors.txt`
+    incomplete — and both turned out to be the legitimate SUBSET case, which
+    is how the scope file got its two rows rather than by guessing.
+
+  ⚠ The scope declarations quote each file's **own header** rather than this
+  gate's opinion of it: docs_drift records *"only WHICH repos are known to
+  carry drift-auditable labels"*, and required_features_build says *"Only
+  repos measured WHOLE are listed"* — the latter also holding a deliberate
+  absence (riir-game-sdk, mid-refactor) that a completeness demand would have
+  silently overwritten.
+
+  ⛔ Its `riir-llm` row in `required_features_build_floors.txt` was **measured,
+  not assumed** — that file's whole premise is "measured whole", so the
+  compiler-backed audit was run against riir-llm (0 rows over 1 repo) rather
+  than the row being inferred from the neighbouring sweep's count.
   ⛔ **The predicate cannot simply be "every file with ≥5 repo rows"**, and
   the measurement says why: `docs_drift_floors.txt` (8 rows) and
   `required_features_build_floors.txt` (11) are legitimately **SUBSET**-scoped,

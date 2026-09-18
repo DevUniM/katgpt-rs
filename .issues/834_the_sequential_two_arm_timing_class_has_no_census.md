@@ -217,7 +217,19 @@ instead of re-deriving them:
   above forbids**, and it is easier to catch in someone else's reasoning than
   in one's own.
 
-  ⛔ **What WOULD discriminate, and the gap is real:** the matrix records no
+  ⛔ **A discriminator that needs NO box state, and may be worth more than a
+  fourth run** (`katgpt-rs-54`): whether future firings are **NEW** members or
+  **REPEATS**. The two hypotheses that run 3 could not separate predict
+  differently here — if firing probability is **diffuse** across the ~57,
+  removing two members cannot explain a quiet run, and the next firing should
+  be a name nobody has seen; if it is **concentrated** in a handful of fragile
+  members, removing the two that fired could explain it, and we should keep
+  re-hitting a small set. That is readable from the accumulating log of *which*
+  member fired, at no extra cost, and — unlike a rate — **it does not require
+  the runs to be comparable to one another.** Record the NAME every run; the
+  distribution answers the question the counts cannot.
+
+  ⛔ **What WOULD discriminate but needs instrumentation:** the matrix records no
   BOX STATE. AGENTS.md §Feature Flag Discipline G2 already rules that *"a
   latency number without its BOX STATE is not a measurement"* — and every
   PASSED-ALONE row is a latency-bar outcome, recorded with no free RAM, no
