@@ -11,6 +11,52 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 825 (2026-09-18) — CLOSED NEGATIVE. The Coulomb crowd-redistribution PoC (Bench 815): the solve transfers, the first-arrival readout does not
+
+**Filed from** Research 468 §5's unmined row + the paper-v3 Prop-2 delta
+(training-free Coulomb transport `b = ∇φ`, `Δφ = μ₀ − μ₁`, exact first-hitting
+transport μ₀ → μ₁): the ask was a DEC PoC on a toy zone graph — solve the
+Poisson system with the shipped `hodge_laplacian` substrate, route mass by
+first-arrival over the edge flow, and gate the endpoint distribution against
+the target weights (the paper's 20× bias experiment as the GOAT axis).
+
+**Measured ([Bench 815](.benchmarks/815_coulomb_redistribution_poc.md),
+commit `a43d436ca`): T1 endpoint gate FAIL — and the failure is
+localizable.** Conservation PASS to fp noise (`max|δ₁(j)−ρ| = 8.9e-8`; the
+issue's proposed `belief_mass_divergence` reuse was itself a small finding —
+for a SOURCED flow `‖δ₁(j)‖₁ = ‖ρ‖₁ ≠ 0` by design, so the L1-near-zero
+reading of "conservation" is category-error; the correct assert is the
+pointwise identity). Zero-alloc PASS (0 allocations, fixed-size arrays +
+`exterior_derivative_into`; 3.1 µs @ 12 zones → 108 µs @ 108 per event).
+Endpoint MAE **0.1190** vs the ≤ 0.01 gate (targets [0.6, 0.4] landed
+[0.481, 0.519]) — and the refinement axis (12 → 48 → 108 zones) shows the
+miss shrinking monotonically (0.119 → 0.078 → 0.037): **discretization
+error in the absorbing-chain proportional-split readout**, not a broken
+solve. Trapped mass 0 everywhere — mass arrives, in the wrong proportions.
+
+**T2 FAIL, honestly:** the naive distance-field baseline measures 0.48× /
+0.41× / 2.21× relative MAE across the three sizes — the paper's 20× (for
+the CONTINUOUS EqM-style rescaled field) does not transfer to zone graphs,
+where a hand-built distance field is a strong baseline and even WHICH naive
+form wins flips between sizes. No `coulomb_flow` feature was filed; the
+goat gate never passed, so there is nothing to promote and nothing to
+demote.
+
+**En-route substrate gain (kept):** the katgpt-dec crate root now re-exports
+the zero-alloc `_into` operator family (`exterior_derivative_into`,
+`codifferential_into`, `graph_laplacian_into`, `hodge_laplacian_into`) —
+the alloc-free twins were previously unreachable from the root, which is
+the kind of gap that quietly teaches every consumer to use the allocating
+wrapper.
+
+**Re-open conditions** (Bench 815 §The finding): (a) a
+characteristic-preserving per-particle readout (no proportional splitting
+at merge vertices) — the continuum guarantee's actual discrete analog; (b)
+a zone resolution where the ≤ 0.01 gate passes, naive baseline re-measured
+beside it; (c) a consumer contract that survives (a) — the redistribution
+director wants arrival proportions, and a trajectory-integrating readout
+changes what the NPC-side consumer can be.
+
 ## Issue 822 (2026-09-18) — CLOSED. An UNCOMMITTED row was counted into a RATCHET; all 19 sweeps adjudicate against HEAD now, and the mechanism is GATED
 
 **The defect.** Every `*_drift_sweep.py` walks the WORKING TREE, and this
