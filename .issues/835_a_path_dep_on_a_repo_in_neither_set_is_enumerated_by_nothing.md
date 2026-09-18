@@ -84,6 +84,41 @@ unresolvable.
 **Measured on this box:** 0 ORPHAN, 0 BROKEN-SUBPATH over **311 cross-repo
 path deps in 183 tracked `Cargo.toml`**. Take live counts from the PASS line.
 
+### ⛔ The green line proves less than it looks like, and now says so
+
+The bucket distribution is literally `{RESOLVED: 311}`. **Every other verdict
+has ZERO live cases.** Confirmed two ways — by this gate's own classification,
+and independently by `katgpt-rs-54` walking manifests off disk rather than
+through a git pathspec (a different population, and immune to the pathspec bug
+below by construction rather than by care): **none** of the 311 deps targets
+any of the seven absent-but-REGISTERED repos (`katgpt-web`, `mmorpg-editor`,
+`mmorpg-remake`, `mmorpg-remaster`, `riir-dao`, `riir-deployer`,
+`riir-esp32`).
+
+So the **absent-registered vs absent-unregistered split — the load-bearing
+idea in this issue — has never been exercised by a real dependency.**
+
+| verdict | live cases | what actually asserts it |
+|---|---|---|
+| RESOLVED | 311 | the live run |
+| DEFERRED | **0** | its synthetic arm **only** |
+| BROKEN-SUBPATH | **0** | its synthetic arm **only** |
+| ORPHAN | 0 today | its arms **and** `--prove-fires`, against the real riir-llm state |
+
+This is **not** a defect in the gate and the arms must stay. It is a fact the
+gate has to *disclose*, for a reason this repo already writes down for the
+sweep family: *a deferral printed only on failure is one nobody reads on the
+run that passes.* The PASS line now carries the census in **both** directions
+— `⚠ DEFERRED 0 … UNEXERCISED by live data … a green line here is not evidence
+that path works` — because otherwise `0 ORPHAN, 0 BROKEN-SUBPATH` invites
+exactly the inference it cannot support.
+
+⚠ And a bucket with no live cases is the one a later "simplification" deletes.
+The only thing standing between these arms and that is their own perturbation
+— `platform_dead_code_audit`'s lesson precisely: its `vendor/` arm red
+**nothing** under perturbation, because one exclusion had two code paths and
+the arm certified the path it was not aimed at.
+
 ### Three defects found while building it, all by other instruments
 
 ⛔ **1. `population_sync_gate` refused an eleventh independent walk, and it was
@@ -97,6 +132,16 @@ to DELEGATE to `skill_repo_set_gate.derive_repos` (mapped back through
 **323 → 311 deps / 192 → 183 manifests**, the difference being one phantom
 repo. *Two predicates disagreeing about the population is exactly what that
 gate exists to catch.*
+
+⇒ **The general rule, because this one is worth stating as one:** never write
+a fresh contract-repo walk — **delegate to `skill_repo_set_gate.derive_repos`**
+(mapping back through `repo_alias.disk()` if you intend to OPEN the
+directories). `(p / ".git").exists()` is correct on every box that has no
+worktrees, which is most of them, and wrong in a way that attributes one
+repo's manifests to a repo that does not exist. That is the same shape as the
+misattributed-citation class this workspace already gates: **an instrument
+answering a question adjacent to the one asked, and looking clean while doing
+it.**
 
 ⛔ **2. The floor caught the walk being 4x too small.**
 `tracked_files(repo, "Cargo.toml")` looks like it walks manifests; a bare

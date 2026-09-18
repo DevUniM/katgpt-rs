@@ -384,12 +384,26 @@ def main(argv) -> int:
               f"when `optional = true`.")
         return 1
 
-    extra = ""
+    # The bucket census rides the PASS line in BOTH directions. A deferral
+    # printed only when it is non-empty is one nobody reads on the run that
+    # passes — this repo's rule for the sweep family's DEFERRED verdict — and
+    # here the silent direction is worse than usual: with every dep RESOLVED,
+    # `0 ORPHAN, 0 BROKEN-SUBPATH` says nothing whatever about the
+    # absent-but-REGISTERED distinction the whole design rests on, and a reader
+    # will assume otherwise. A bucket with no live cases is also the one a
+    # later "simplification" deletes.
     if deferred:
         names = sorted({n for _, _, _, n in deferred})
         extra = (f"  [{len(deferred)} dep(s) on {len(names)} absent-but-REGISTERED "
                  f"repo(s) ({', '.join(names)}) — DEFERRED by "
                  f"DOCS_GATE_PARTIAL_CLONE=1, NOT measured by this run]")
+    else:
+        absent = sorted(set(r["registered"]) - set(r["on_disk"]))
+        extra = (f"  [⚠ DEFERRED 0 — no dep on this box targets any of the "
+                 f"{len(absent)} absent-but-REGISTERED repo(s), so the "
+                 f"absent-registered vs absent-unregistered split this gate rests "
+                 f"on is UNEXERCISED by live data and is asserted only by its arms. "
+                 f"A green line here is not evidence that path works]")
     print(f"    ✓ cross-repo path-dep gate PASSED — 0 ORPHAN, 0 BROKEN-SUBPATH over "
           f"{r['deps']} cross-repo path dep(s) (floor {MIN_DEPS}) in {r['manifests']} "
           f"tracked Cargo.toml (floor {MIN_MANIFESTS}){extra}. "
