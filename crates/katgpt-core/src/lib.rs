@@ -2300,7 +2300,10 @@ pub use katgpt_types::depth_invariance::{
     // Issue 767: `mb_value`'s G1 floor test consumes `ridge_solve_direct_f64`
     // (the ridge-batch-on-the-same-code baseline) — joined at birth per the
     // same rule (the crate must compile when only this feature is on).
-    feature = "mb_value"
+    feature = "mb_value",
+    // Issue 839: `linalg::kron_tile` IS a linalg submodule, so it gates this
+    // `pub mod` too — joined at birth per the same rule.
+    feature = "kron_tile"
 ))]
 pub mod linalg;
 

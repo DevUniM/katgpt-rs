@@ -32,6 +32,13 @@ pub mod geometric_product;
 #[cfg(feature = "tucker_factorization")]
 pub mod tucker;
 
+// Issue 839 — Kronecker-factored tile apply `(A ⊗ B) · x = A Z Bᵀ` as two small
+// GEMMs, plus the delegating Walsh–Hadamard fast path. The arbitrary-factor
+// generalization of `katgpt-kv::kvarn::hadamard`'s fixed-H tile machinery
+// (Research 569, Cactus Needle 3).
+#[cfg(feature = "kron_tile")]
+pub mod kron_tile;
+
 pub use ridge_solve::{
     chol_solve_f32, chol_solve_f64, cholesky_f32, cholesky_f64, ridge_solve_direct_f32,
     ridge_solve_direct_f64, ridge_solve_woodbury_f32, spd_inverse_f32,
@@ -53,4 +60,12 @@ pub use geometric_product::{
 pub use tucker::{
     MAX_MODES, TuckerConfig, TuckerError, TuckerResult, TuckerResultScratch, TuckerScratch,
     tucker_decompose, tucker_decompose_into, tucker_reconstruct_into,
+};
+
+// Issue 839 — Kronecker-factored tile apply, re-exported alongside the other
+// linear-algebra kernels.
+#[cfg(feature = "kron_tile")]
+pub use kron_tile::{
+    KronScratch, WHT_TILE_WIDTHS, dense_matvec_into, is_permutation, kron_apply,
+    kron_apply_tile_into, kron_dense_into, permute_into, wht_apply_tiles, wht_factor_into,
 };

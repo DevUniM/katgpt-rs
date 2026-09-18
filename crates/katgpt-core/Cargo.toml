@@ -179,6 +179,22 @@ jsd_topk = []
 # GOAT Q3 is quality-contingent).
 meld = []
 
+# kron_tile (Issue 839, 2026-09-18): Kronecker-factored tile apply —
+# `(A ⊗ B) · x = A Z Bᵀ` for arbitrary `n × n` factors, batched over tiles,
+# zero-alloc (caller scratch), as two small GEMMs instead of one `n² × n²`
+# matvec: 2n³ MACs and 2n² params against n⁴ and n⁴. Distilled from
+# Research 569 (Cactus Needle 3), whose FFN replaces each dense 1024×1024
+# stage with `A ⊗ B` at 32×32 — 2,048 params/stage against ~1M. The
+# arbitrary-factor generalization of `katgpt-kv::kvarn::hadamard`'s FIXED-H
+# tile machinery; the `A = B = W₍ₙ₎` case keeps an `O(n² log n)` fast path that
+# DELEGATES to `meld::walsh_hadamard_in_place_normalized` rather than
+# transcribing the butterfly a second time — hence the `meld` dep, which is
+# what makes the fast path exist in every configuration `kron_tile` does
+# (a `cfg(feature = "meld")` fast path would compile to nothing under
+# `--features kron_tile` alone, the Issue 741 shape). OPT-IN pending
+# Bench 839's G2 and a first consumer (no-default-consumer rule).
+kron_tile = ["meld"]
+
 # alloc_tracking (Issue 741, 2026-09-09): compile the `alloc` module (the
 # `TrackingAllocator` + per-thread counters) in a RELEASE build so the G4/G5/G7
 # alloc gates can be run under `--release`, the profile AGENTS.md mandates for
