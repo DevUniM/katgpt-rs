@@ -226,7 +226,10 @@ def provenance_hits(masked: str, already: list) -> list:
     14 contract repos on this box rather than argued: **0 such sites today**, so
     the two filters cannot currently disagree about any real row. Left as-is
     with the reasoning recorded, so whoever meets the first genuine two-rate
-    ratio finds it already written instead of re-deriving it.
+    ratio finds it already written instead of re-deriving it. (Raised by the peer
+    session on pipe `cc-msg-2a4908…`; the commit that landed this note credited a
+    DIFFERENT session, having read the message's signature rather than the pipe it
+    arrived on — AGENTS.md § Before committing in a shared worktree.)
     """
     names = timing_locals(masked)
     if len(names) < 2:

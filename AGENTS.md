@@ -2583,6 +2583,19 @@ sessions' messages were read as two sessions' — after which the elimination ab
 had no chance. **Attribute a message by its `from=` pipe, never by its
 signature**, and treat a signature that disagrees with the pipe as the two-session
 question it is, not as a typo.
+- ⛔ **Quote the `from=` pipe or `msg_id` when you attribute a message**, exactly
+  as you quote a `Session:` line for a commit. Prose attribution between sessions
+  has the property this whole section is about: it reads as authoritative and
+  authenticates nothing. Measured — the rule above was landed and then **broken
+  in the next commit message**, which credited a suggestion to the session whose
+  name the message SIGNED rather than the pipe it ARRIVED on. A rule about
+  attribution written from a conversation you are misattributing encodes the
+  defect instead of the fix.
+- ✅ **The one form that survives a roster you cannot enumerate: say what you
+  CHECKED, not who you concluded.** Four independent failures in one evening —
+  shared authorship, the shared reflog, an incomplete roster, and mis-signed
+  messages — and this is the only discipline that was never wrong, because it
+  makes no claim the evidence cannot carry.
 - **Put `Session: <name>, <epoch>` in the commit body** — a commit's own TEXT is
   the only self-identifying evidence in the repository, and it is what let one
   session rule itself out of Issue 840 in a single `git log --grep`.
