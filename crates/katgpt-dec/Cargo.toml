@@ -189,3 +189,11 @@ required-features = ["pca_global"]
 name = "bench_775_dual_wave_goat"
 harness = false
 required-features = ["dual_wave"]
+
+# Issue 825 — Coulomb crowd-redistribution PoC (BTM Prop 2 discrete analog):
+# T1 conservation + endpoint-MAE + G4 zero-alloc solve path, T2 the 20×-bias
+# analog gate vs the naive rescaled attract field. Always-compiled operators
+# (no feature gate); pure CPU, fixed-size arrays, zero new deps.
+[[bench]]
+name = "bench_815_coulomb_redistribution_poc"
+harness = false

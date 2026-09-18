@@ -1,6 +1,6 @@
 # Issue 825: Training-free Coulomb crowd redistribution via DEC Poisson solve (Research 468 v3 delta, arXiv:2608.01692 Prop 2)
 
-**Status:** Open — fusion idea, novelty TBD (class-level prior art exists; see §Prior art)
+**Status:** T1+T2 MEASURED 2026-09-18 ([Bench 815](../.benchmarks/815_coulomb_redistribution_poc.md)) — endpoint gate **FAIL** at the issue fixture (MAE 0.119 vs ≤ 0.01; targets 0.6/0.4, landed 0.481/0.519), T3's negative-result clause FIRES — the bench + this file are the reproducible artifact, then removal per noise-reduction. The miss is the first-arrival READOUT, not the solve: conservation PASS (8.9e-8), zero trapped mass, zero-alloc PASS, and the miss shrinks monotonically with refinement (0.119 → 0.078 → 0.037 at 12 → 48 → 108 zones = discretization error in the absorbing-chain proportional split). The paper's 20× bias does NOT transfer to graphs — the naive distance-field baseline is 0.48×–2.21× (better or comparable), and which naive form wins flips across sizes. Re-open conditions recorded in Bench 815 §The finding: a characteristic-preserving (no-merge-splitting) readout, a zone resolution where the gate passes, and a consumer story that survives both.
 
 **Source:** [Research 468](../.research/468_Beckmann_Transport_Divergence_Constraint_CCE_MFG_Dynamics.md)
 §5 modelless row "Transport-field `b` construction — solve `δ(j) = μ₀ − ρ` for `j`
@@ -89,36 +89,10 @@ PoC. Not Super-GOAT posture; GOAT-at-best pending PoC.
 
 ## Tasks
 
-- [ ] **T1 — PoC: DEC Coulomb solve on a toy zone graph.** Build `CellComplex`
-  (grid graph, ~6–12 vertices, 2–3 sink vertices with unequal target weights —
-  the unequal-weight choice is deliberate, mirroring the paper's 5-atom bias
-  experiment). Given `μ₀` (uniform over source vertices) and `μ₁` (unequal
-  weights on sinks), solve `hodge_laplacian(φ) = μ₀ − μ₁` (regularized: pin one
-  vertex / pseudo-inverse — the Laplacian is singular on the constant mode),
-  take `j = exterior_derivative(φ)`, integrate per-NPC first-arrival over the
-  edge flow (NPC at vertex follows the outgoing edge proportional to positive
-  flow). Assert: (a) `δ(j) = μ₀ − μ₁` to fp tolerance (conservation by
-  construction — reuse `belief_mass_divergence`), (b) first-arrival endpoint
-  distribution matches `μ₁` within a small MAE, (c) zero allocation on the
-  solve path (G4 class).
-- [ ] **T2 — The 20×-bias analog gate (GOAT axis).** Baseline: naive rescaled
-  attract field — potential `φ_naive = −w_j · dist(v, sink_j)` with hand-set
-  weights, the shipped `DecFlowField` consumption shape. Compare endpoint MAE:
-  Coulomb solve vs naive field on the same graph. Gate: Coulomb MAE ≤ 0.01
-  AND ≥10× better than naive (the paper measured 20×; the discrete analog
-  needs its own measurement — if the naive field is NOT badly biased on the
-  toy graph, say so honestly and re-adjudicate whether the primitive earns a
-  flag).
-- [ ] **T3 — If T1+T2 pass:** plan a `coulomb_flow` feature (opt-in) exposing a
-  `CoulombFlowField` constructor (solve + reuse `DecFlowField`/`to_flow_vectors`
-  bridge) + a consumer-wiring note for riir-ai swarm/zone systems (the
-  redistribution director; riir-ai owns the game wiring per the boundary).
-  If T1 or T2 fails, this issue closes as a negative-result artifact (the
-  Issue 573 precedent — a falsified transfer is a valid outcome; keep the test
-  as the reproducible artifact).
-- [-] **T4 (deferred) — riir-train angle.** None needed: the Coulomb case is
-  the paper's TRAINING-FREE arm (Prop 2 needs no GD; the learned `T_θ`
-  arm is the discrete sibling's Plan 411 territory).
+- [x] **T1 — PoC: DEC Coulomb solve on a toy zone graph.** LANDED 2026-09-18 as `crates/katgpt-dec/benches/bench_815_coulomb_redistribution_poc.rs` + [Bench 815](../.benchmarks/815_coulomb_redistribution_poc.md). Fixture generalized to `run_case(w, h, n_sources)` with (4,3,5) = the issue fixture EXACTLY (sources 0..4 @ 0.2, sinks 11 @ 0.6 / 10 @ 0.4) + a refinement axis (8×6, 12×9). (a) conservation: the issue's `belief_mass_divergence` reuse was the WRONG instrument for a SOURCED flow (‖δ₁(j)‖₁ = ‖ρ‖₁ ≠ 0 by design) — the landed gate asserts the pointwise identity `max|δ₁(j)−ρ| ≤ 1e-3` via `codifferential`: PASS 8.9e-8. (b) endpoint MAE ≤ 0.01: **FAIL** — 0.1190 at the fixture, targets [0.6, 0.4] landed [0.4810, 0.5190]. (c) zero-alloc solve path: **PASS** — 0 allocations (fixed-size arrays + `exterior_derivative_into`, counting allocator, warmup-then-snapshot), 3.1/22.8/108 µs at 12/48/108 zones (per event, cacheable).
+- [x] **T2 — The 20×-bias analog gate (GOAT axis).** MEASURED same bench — **FAIL, honestly**: the naive distance-field baseline (sum + max forms, pit-convention-unified with the solve so one downhill readout serves both) measures 0.48× / 0.41× / 2.21× relative MAE (Coulomb is NOT ≥10× better anywhere; at the fixture the naive-max form is BETTER: 0.057 vs 0.119). The paper's 20× is for the CONTINUOUS EqM-style rescaled field; on zone graphs the hand-built distance field is a strong, if size-unstable, baseline. The refinement axis localizes the Coulomb miss to the readout: MAE 0.119 → 0.078 → 0.037 as the graph refines 12 → 48 → 108 zones (discretization error in the absorbing-chain proportional split; trapped mass 0 everywhere — mass always arrives, just in the wrong proportions).
+- [x] **T3 — Verdict.** NEGATIVE per this task's own clause: T1's endpoint gate failed, so the issue closes as a negative-result artifact (the Issue 573 precedent). The bench is the reproducible artifact. Re-open conditions in Bench 815 §The finding: (a) characteristic-preserving per-particle readout (no proportional splitting at merge vertices) — the continuum guarantee's actual discrete analog; (b) a zone resolution where ≤ 0.01 passes with the naive baseline re-measured; (c) a consumer contract that survives (a) — the director wants arrival proportions, and a trajectory-integrating readout changes what the NPC-side consumer can be. No `coulomb_flow` feature is filed; nothing to promote (no gain — the GOAT gate never passed).
+- [-] **T4 (deferred) — riir-train angle.** None needed: the Coulomb case is the paper's TRAINING-FREE arm (Prop 2 needs no GD; the learned `T_θ` arm is the discrete sibling's Plan 411 territory). Unchanged by the T1/T2 verdict — the learned arm is out of this issue's scope either way.
 
 ## Non-goals
 

@@ -105,7 +105,8 @@ pub use hodge::{
     hodge_energy, hodge_residual, hodge_spectrum,
 };
 pub use operators::{
-    codifferential, exterior_derivative, graph_laplacian, hodge_laplacian, hodge_star,
+    codifferential, codifferential_into, exterior_derivative, exterior_derivative_into,
+    graph_laplacian, graph_laplacian_into, hodge_laplacian, hodge_laplacian_into, hodge_star,
 };
 pub use stokes_calculus::{
     belief_mass_divergence, boundary_flux_mass, boundary_flux_mass_indexed,
