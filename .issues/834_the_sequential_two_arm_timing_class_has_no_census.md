@@ -171,6 +171,59 @@ instead of re-deriving them:
   So a slice taken from this report is a slice taken from a classifier with
   827 unresolved rows. Read it for candidates; never bulk-convert.
 
+  ⛔ **MEASURED 2026-09-18, and it reframes what the count IS.** Two
+  consecutive `x86_64_execution_matrix.sh` runs fired **two DIFFERENT members**
+  of this set, on a commit range that touched neither test's code:
+
+  | run | HEAD | PASSED-ALONE row |
+  |---|---|---|
+  | 1 | `d7a34822` | `goat_2_gdn2_within_10pct_of_ahla_throughput` (`bench_105`) |
+  | 2 | `aba3827f` | `g8_cached_faster_than_uncached` (`belief_drafter_goat.rs`) |
+
+  Both were already in the DECIDED set. Both passed the same three-grep
+  adjudication as load-sensitive BARs. Run 2 also confirmed `bench_105`'s
+  repair **in cell**, which its 8 standalone runs could not — standalone and
+  in-cell are different load regimes, and in-cell is the one that failed.
+
+  ⇒ **The DECIDED count is not a backlog of latent rows awaiting their turn.
+  It is a population every run SAMPLES FROM**, and which member surfaces is
+  decided by what else the box was doing. That is what has been reporting
+  itself as PASSED-ALONE — and, before Issue 832 renamed the bucket, as
+  TRANSIENT — all along. It is the strongest argument for T2, and unlike the
+  count itself it is measured rather than argued. (Credit: `katgpt-rs-54`.)
+
+  ⚠ A corollary worth stating: **a green matrix run is not evidence this set
+  is shrinking.** With sampling, the expected number of runs to observe a given
+  member is a function of the population size, so converting members lowers the
+  per-run hit rate long before it reaches zero.
+
+  ### A worked per-target read — same SHAPE, different RISK
+
+  The repaired `tests/belief_drafter_goat.rs` has a near-twin this repo also
+  ships: `tests/bench_217_belief_drafter_goat.rs:1010` runs the *identical*
+  cached-vs-uncached two-arm comparison (`cached_us / uncached_us`), and my
+  census flags it SEQUENTIAL. A codemod would treat them the same. A read does
+  not:
+
+  | | `belief_drafter_goat.rs` g8 (fired) | `bench_217_…:1010` (not fired) |
+  |---|---|---|
+  | sequential arms | yes | yes |
+  | Class A2 (`let _ = f()`) | **yes, both arms** | **no** — `black_box` on both |
+  | bar | cached must be FASTER, no slack | `ratio < 2.0` on a ratio that runs ~0.4 |
+  | headroom | none | ~5x |
+
+  So the twin is the same shape at materially lower risk, and it is a
+  *candidate*, not a defect. `katgpt-rs-54` read three timing gates in the
+  repaired file and reached three different correct answers — G2 is the same
+  two-arm shape with an explicit 10x slack bar, which will not flake but
+  **tolerates** the defect rather than measuring it (a claim-strength question
+  for Plan 217's owner, not a repair); G3 is an absolute one-arm budget, the
+  `best_of_us` class, where migrating to `ab_median_ratio` would be **wrong**
+  because there is no second arm to ratio against.
+
+  **Three timing gates in one file, three different correct answers.** Whatever
+  T2 becomes, it cannot be a codemod.
+
 - [ ] **T3 — the cross-repo question, MEASURED and left open deliberately.**
   The class is 71 targets outside this repo and the treatment is 0. Do **not**
   conclude "therefore a drift sweep" — `check_validation_gate` declined one on
