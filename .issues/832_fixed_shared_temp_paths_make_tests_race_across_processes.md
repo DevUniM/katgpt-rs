@@ -243,8 +243,11 @@ this repo's own most-repeated shape.
   cite the sibling SHA in whatever record claims one. riir-clippy in
   particular is written by a concurrent session as of this filing.
 
-  **Progress 2026-09-18 — 54 of the 72 live test hazards closed**, each
-  committed in the sibling before its ratchet moved (the Issue 798 rule):
+  **Progress 2026-09-18 — 61 closed**, each committed in the sibling before
+  its ratchet moved (the Issue 798 rule). ⚠ Deliberately not written as
+  "61 of 72": the 72 is a file-level-heuristic count and the paragraph below
+  measures it over-counting by 10 in the one repo re-read line-by-line.
+  Workspace total by the sweep: **45 fixed sites over 16 repos**, from 52.
 
   | repo | SHA | test sites closed | residual | note |
   |---|---|---|---|---|
@@ -253,14 +256,53 @@ this repo's own most-repeated shape.
   | riir-game-sdk | `ef66117` | 1 | 0 | ratchet is now a wall |
   | riir-train | — | — | 12 | dry run: **0 non-demo sites**; all 12 are `examples/`+`src/bin/` |
   | riir-neuron-db | — | — | 3 | all `examples/` |
-  | riir-clippy | — | — | 24 | **the only repo with live test sites left (17)** |
+  | riir-clippy | `f5ada0ec` | 7 | 17 | 9 of the 16 offered are PRODUCTION; +1 CRLF refused |
 
-  So the live-hazard backlog is **riir-clippy's 17**, and it is BLOCKED on
-  contention rather than on work: a concurrent session holds 16 dirty files
-  there, 7 of them in this sweep's own population. Repairing into another
-  session's worktree is the shared-worktree hazard `staged_set_audit.py`
-  exists for. Do it when that repo is clean; `scripts/shared_temp_path_fix.py
-  ../riir-clippy --dry-run` is the whole of the work.
+  **riir-clippy is DONE for the test class (2026-09-18, `f5ada0ec`, pushed and
+  origin-reachable), and it was not "the whole of the work".** The contention
+  cleared — that repo is clean and was 2 behind — and the tool offered 16
+  sites. **7 landed. 9 did not, because they are PRODUCTION**, not tests:
+
+  | site | what it is |
+  |---|---|
+  | `clippy_lints/verify.rs:104,117` | `work_root` |
+  | `rust_perf/bench.rs:276,285` | `PerfBenchValidator::work_root` |
+  | `rust_perf/verify.rs:127,140` | `PerfVerifier::work_root` |
+  | `draft/clippy_oracle.rs:117` | `work_root` |
+  | `pav_data/mod.rs:529`, `score_bench/mod.rs:92` | `.with_work_root(..)` |
+
+  These are cargo scratch roots on live code paths. A pid suffix there stops
+  the directory being stable across runs, so nothing is reused and every
+  invocation rebuilds from scratch — a BEHAVIOUR change with a real cost, not
+  a test fix. Left for that repo's owner, which is what this task's own
+  "98 *reads*, not 98 mechanical edits" rule asks for. **The fix tool does not
+  make this distinction and will offer them again**; its demo skip covers
+  `examples/` and `src/bin/` only.
+
+  ⛔ **The T5 triage table above is WRONG for riir-clippy in the same way it
+  is wrong for riir-train, and this is the second instance of one cause.** It
+  classifies a site as TEST if its FILE carries `#[cfg(test)]` anywhere.
+  Measured against each file's actual `#[cfg(test)]` line, riir-clippy's
+  fixable set splits **7 test / 9 production**, against the **17 test** the
+  table records. A file-level predicate cannot see a `mod tests` at line 311
+  under a `pub fn new()` at line 104. So the "72 live test hazards" headline
+  is an OVER-count of the same shape, in the direction that makes the backlog
+  look more urgent than it is — and the four remaining rows have never been
+  re-read with a line-level predicate.
+
+  ⚠ **VERIFICATION LIMIT, stated because a green claim would be false.** That
+  repo's suite was NOT run and could not be: riir-clippy path-depends on
+  `../riir-llm` (`Cargo.toml:124`, added at `fbf698e6`), cargo resolves path
+  deps even when `optional = true`, and **riir-llm is absent from this box and
+  absent from `scripts/repo_set.txt`**. What was verified instead: every
+  edited file parses, and `rustfmt --edition 2024 --check` has zero objections
+  to any added line. That is weaker than a green suite. Run `cargo test --lib`
+  there on a box that has riir-llm.
+
+  ⛔ **1 site remains untouched in a CRLF file** (`clippy_oracle.rs`) — the
+  tool REFUSES rather than rewriting line endings, which is correct: a scripted
+  edit that flips them turns a 7-site repair into an unreviewable diff. It
+  needs a deliberate normalisation first, and that is its own commit.
 
   ⚠ The riir-train row is the one worth reading twice: this issue's own T5
   triage table says *"riir-train 3 test"*, and the repair tool measures **0**.

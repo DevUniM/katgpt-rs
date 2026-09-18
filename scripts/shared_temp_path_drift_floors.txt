@@ -81,7 +81,18 @@ riir-auth                 0    0
 #   ssh_openssh_str 5 passed. The 1 that remains is an `examples/` site — the
 #   adjudicated demo class, the same read this repo's own two pinned rows get.
 riir-chain               40    1
-riir-clippy              85   24
+# ⬇ 24 → 17, riir-clippy `f5ada0ec` (2026-09-18): 7 TEST sites repaired IN
+#   that repo. The other 9 of the 16 the fix tool offered are PRODUCTION cargo
+#   scratch roots (`work_root` / `.with_work_root`), where a pid suffix stops
+#   the directory being reused across runs and is a BEHAVIOUR change, not a
+#   test fix — left for that repo's owner, per T5's "per-site read" rule.
+#   ⚠ VERIFICATION LIMIT: its suite was NOT run and could not be — riir-clippy
+#   path-depends on ../riir-llm (Cargo.toml:124, added fbf698e6), absent on
+#   this box and absent from repo_set.txt, and cargo resolves path deps even
+#   when optional. Every edited file parses and rustfmt has 0 objections to
+#   any added line; that is weaker than a green suite and is why it says so.
+#   ⛔ 1 more site is in a CRLF file the tool REFUSED rather than reformat.
+riir-clippy              85   17
 riir-dapps               10    0
 # ⬇ 1 → 0, riir-game-sdk `ef66117` (2026-09-18): the single site
 #   (`node_identity_from_ssh_key_roundtrip`) repaired IN that repo; lib 29
