@@ -225,6 +225,29 @@ inverts should be the one the gate measures. A fused second implementation needs
 no reason to agree at the last bit — it happens to, here, and that is a
 measurement rather than a guarantee.
 
+## The independent second implementation — Bench 815
+
+A concurrent session implemented this issue from the same research row and
+landed [Bench 815](815_coulomb_redistribution_poc.md) four hours later with the
+opposite verdict: endpoint MAE 0.1190 against the ≤ 0.01 bar, the
+negative-result clause fired, the issue file removed. It was an instrument
+defect (two of them) and the retraction is written up there and in HISTORY.md;
+what belongs HERE is what the episode buys this bench.
+
+Bench 815 keeps its own **f64 pinned-Gaussian solver** and its own
+**deterministic mass-packet walker**, both independent of this bench's CG solve
+and RNG-sampled walk. After the repair it reports endpoint MAE `0.000000` at
+12, 48 and 108 zones against this bench's `1.242e-9` exact and `8.5e-5`
+sampled-at-1e6. So the G1/G2 claims here are now corroborated through a
+different solver and a different readout on a different fixture family — which
+is a stronger statement than any single instrument's self-consistency, and it
+is why 815 was repaired rather than deleted as a duplicate.
+
+⚠ The one thing the two benches deliberately SHARE is
+`CrowdRouter::consistent_absorption`, imported rather than copied. That is the
+rule they disagreed about, and a second transcription of it is a second chance
+to get it wrong — this repo's own `simd_dot_neon` lesson, one domain over.
+
 ## Promotion
 
 **`coulomb_flow`, OPT-IN, landed 2026-09-18 (T3).** The three preconditions

@@ -11,51 +11,98 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
-## Issue 825 (2026-09-18) — CLOSED NEGATIVE. The Coulomb crowd-redistribution PoC (Bench 815): the solve transfers, the first-arrival readout does not
+## Issue 825 — CLOSED POSITIVE, after a same-day RETRACTION of its own negative close. Coulomb crowd redistribution ships as `coulomb_flow`; the "negative result" was a bench walker with two defects (2026-09-18)
 
-**Filed from** Research 468 §5's unmined row + the paper-v3 Prop-2 delta
-(training-free Coulomb transport `b = ∇φ`, `Δφ = μ₀ − μ₁`, exact first-hitting
-transport μ₀ → μ₁): the ask was a DEC PoC on a toy zone graph — solve the
-Poisson system with the shipped `hodge_laplacian` substrate, route mass by
-first-arrival over the edge flow, and gate the endpoint distribution against
-the target weights (the paper's 20× bias experiment as the GOAT axis).
+**Status: RESOLVED. `coulomb_flow` ships opt-in ([Bench 825](.benchmarks/825_coulomb_crowd_redistribution_goat.md), G1–G4 all PASS). [Bench 815](.benchmarks/815_coulomb_redistribution_poc.md) is the independent second implementation and now agrees.**
 
-**Measured ([Bench 815](.benchmarks/815_coulomb_redistribution_poc.md),
-commit `a43d436ca`): T1 endpoint gate FAIL — and the failure is
-localizable.** Conservation PASS to fp noise (`max|δ₁(j)−ρ| = 8.9e-8`; the
-issue's proposed `belief_mass_divergence` reuse was itself a small finding —
-for a SOURCED flow `‖δ₁(j)‖₁ = ‖ρ‖₁ ≠ 0` by design, so the L1-near-zero
-reading of "conservation" is category-error; the correct assert is the
-pointwise identity). Zero-alloc PASS (0 allocations, fixed-size arrays +
-`exterior_derivative_into`; 3.1 µs @ 12 zones → 108 µs @ 108 per event).
-Endpoint MAE **0.1190** vs the ≤ 0.01 gate (targets [0.6, 0.4] landed
-[0.481, 0.519]) — and the refinement axis (12 → 48 → 108 zones) shows the
-miss shrinking monotonically (0.119 → 0.078 → 0.037): **discretization
-error in the absorbing-chain proportional-split readout**, not a broken
-solve. Trapped mass 0 everywhere — mass arrives, in the wrong proportions.
+⛔ **This record replaces one that read `CLOSED NEGATIVE — the solve transfers,
+the first-arrival readout does not`, and the replacement is the point of
+keeping it.** Two sessions implemented this issue concurrently from the same
+research row and landed opposite verdicts within four hours: one shipped the
+primitive behind `coulomb_flow` with every GOAT gate green, the other measured
+an endpoint MAE of 0.1190 against a ≤ 0.01 bar, filed the negative-result
+clause, removed the issue file and wrote the negative into this document.
 
-**T2 FAIL, honestly:** the naive distance-field baseline measures 0.48× /
-0.41× / 2.21× relative MAE across the three sizes — the paper's 20× (for
-the CONTINUOUS EqM-style rescaled field) does not transfer to zone graphs,
-where a hand-built distance field is a strong baseline and even WHICH naive
-form wins flips between sizes. No `coulomb_flow` feature was filed; the
-goat gate never passed, so there is nothing to promote and nothing to
-demote.
+**What settled it was not re-reading either bench.** It was running the
+LOSING bench's own three fixtures — `grid_2d(4,3)/(8,6)/(12,9)`, sources
+uniform, two sinks at 0.6/0.4 — through the WINNING bench's shipped readout:
+MAE `0.0 / 1.2e-7 / 3.0e-8` where the same fixtures had read `0.119 / 0.078 /
+0.037`. Same graph, same solve convention, same targets. A disagreement
+between two implementations is a cheaper oracle than either one's internal
+consistency, and neither run alone could have produced it — Bench 815's own
+gates were all satisfied at the moment it declared the construction falsified.
 
-**En-route substrate gain (kept):** the katgpt-dec crate root now re-exports
-the zero-alloc `_into` operator family (`exterior_derivative_into`,
-`codifferential_into`, `graph_laplacian_into`, `hodge_laplacian_into`) —
-the alloc-free twins were previously unreachable from the root, which is
-the kind of gap that quietly teaches every consumer to use the allocating
-wrapper.
+### The two defects, both in `bench_815`'s `absorb()`
 
-**Re-open conditions** (Bench 815 §The finding): (a) a
-characteristic-preserving per-particle readout (no proportional splitting
-at merge vertices) — the continuum guarantee's actual discrete analog; (b)
-a zone resolution where the ≤ 0.01 gate passes, naive baseline re-measured
-beside it; (c) a consumer contract that survives (a) — the redistribution
-director wants arrival proportions, and a trajectory-integrating readout
-changes what the NPC-side consumer can be.
+1. **A sink absorbed 100% of what reached it.** The flow decomposition stops a
+   passing particle at `v` with probability `μ₁(v) / (inflow(v) + μ₀(v))`,
+   which is 1 only when `v` has no outflow. Measured through the shipped
+   `CrowdRouter::consistent_absorption` on 815's own fixture: sink `n−2` has
+   `out_flow = 0.209` and a consistent absorption of **0.657**. The two sinks
+   are adjacent on a grid, so mass bound for the heavy one passed through the
+   light one and was stranded — one sink's excess exactly the other's deficit,
+   `[0.4810, 0.5190]` against `[0.6, 0.4]`.
+2. **The proportional split was order-dependent.** `share = packet[v] * (p /
+   total)` was evaluated while that same loop decremented `packet[v]`, so the
+   second out-edge was sized from the reduced remainder. Mass stays conserved
+   (the residue re-forwards and the geometric series sums to 1), so a
+   conservation gate cannot see it; the proportions do not — with two
+   out-edges at `p₁ + p₂ = 1` the first gets `p₁ / (p₁ + p₂²)`. It is also
+   invisible at degree-1 vertices, which is most of a small fixture.
+
+### The lesson is about the INFERENCE, not the arithmetic
+
+The refinement axis read `0.119 → 0.078 → 0.037` and was written up as *"the
+miss shrinks monotonically with refinement ⇒ discretization error in the
+readout, not a broken solve"*. That sentence is a mechanism inferred from a
+monotone sequence of three points, and the mechanism it named —
+proportional splitting failing to carry the continuum hitting measure — is
+precisely the one the corrected readout proves is exact. What the trend
+actually showed was two adjacent sinks becoming a smaller share of a growing
+graph's transport. **A converging error is consistent with many mechanisms;
+naming one and closing an issue on it is the move to distrust.** The correct
+next step from that trend was the one the winning session took independently:
+derive what the absorption probability HAS to be and check the instrument
+against the derivation.
+
+⚠ And the negative was not cheap to place: it removed the issue file, wrote a
+"the paper's 20× does not transfer to zone graphs" paragraph into this
+document, and recorded three re-open conditions — (a) a characteristic-
+preserving per-particle readout, (b) a resolution where the gate passes, (c) a
+consumer contract surviving (a). All three were answers to a defect. The
+substrate-first gate exists to stop exactly this shape one step earlier: the
+second implementation began after `katgpt-dec::coulomb` was already on
+`develop`.
+
+### What shipped
+
+`coulomb_flow` (opt-in, katgpt-core → katgpt-dec): `CoulombFlowField` solves
+`δ(dφ) = μ₁ − μ₀` on a zone graph and hands back `j = dφ` plus the per-vertex
+`CrowdRouter` a crowd consumes. Mass conservation is the equation rather than
+an approximation, and the arrival distribution is `μ₁` exactly as a flow
+decomposition — the only per-NPC error is sampling error, so Bench 825's G2
+gates the `1/√N` DECAY (21.7× over 1e3 → 1e6) rather than one MAE at one N.
+G1 conservation 5.96e-8, G3 naive ratio 1312× against a 10× bar, G4 zero
+allocations over 100 solves. Consumer wiring is riir-ai's per the boundary
+contract, so there is no default-path consumer here and the flag stays opt-in.
+
+Bench 815 was repaired rather than deleted: its f64 pinned-Gaussian solver and
+its deterministic mass-packet walker are independent of Bench 825's CG solve
+and sampled walk, and two independent implementations agreeing is worth more
+than one. The single thing they now SHARE is the absorption rule — imported
+from `CrowdRouter::consistent_absorption`, not copied — because that is the
+one thing they disagreed about.
+
+⚠ Still open and recorded rather than claimed: scale beyond 108 zones, an
+irregular (non-grid) zone graph, and the `to_flow_vectors` bridge.
+
+**En-route substrate gain (kept from the retracted work):** the katgpt-dec
+crate root now re-exports the zero-alloc `_into` operator family
+(`exterior_derivative_into`, `codifferential_into`, `graph_laplacian_into`,
+`hodge_laplacian_into`) — the alloc-free twins were previously unreachable
+from the root, which is the kind of gap that quietly teaches every consumer to
+use the allocating wrapper.
+
 ## Issue 830 — CLOSED: Issue 829's anchor class one seam deeper — the locale-I/O classifier was anchored to a CALL-NAME SET, and it had repaired one side of a round trip in this repo's own instrument (2026-09-18)
 
 **Status: RESOLVED same day (T1–T5).**

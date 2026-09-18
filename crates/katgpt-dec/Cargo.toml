@@ -219,3 +219,4 @@ required-features = ["dual_wave"]
 [[bench]]
 name = "bench_815_coulomb_redistribution_poc"
 harness = false
+required-features = ["coulomb_flow"]

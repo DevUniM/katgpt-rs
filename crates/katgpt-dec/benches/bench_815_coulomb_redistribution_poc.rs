@@ -8,7 +8,19 @@
 //! peaks, so downhill = out of sources, into sinks). Per-NPC first-arrival is
 //! the absorbing Markov chain induced by the positive part of the leaving
 //! flow: `leaving(v, e) = sign(v, e) · j[e]` (positive = leaves v along the
-//! edge's orientation or against it), sinks absorb.
+//! edge's orientation or against it), with the stopping rule taken from the
+//! shipped [`katgpt_dec::CrowdRouter::consistent_absorption`]:
+//! `μ₁(v) / (inflow(v) + μ₀(v))`.
+//!
+//! ⛔ **The first version of this bench hard-coded "sinks absorb" to 1.0 and
+//! reported the whole PoC as a NEGATIVE result on a 0.119 endpoint MAE.** It
+//! was the readout, not the construction: a sink lying on the path to another
+//! sink has a non-zero outflow (measured here: `out_flow = 0.209` at sink
+//! `n−2`, consistent absorption **0.657**), and absorbing all of it strands
+//! the mass the solve routed THROUGH. The refinement trend that was read as
+//! "converging ⇒ discretization error" was that geometry thinning out. With
+//! the shipped rule every fixture in the family reads MAE ≈ 0 — see
+//! `.benchmarks/815_coulomb_redistribution_poc.md` § Retraction.
 //!
 //! - **T1 (construction)** — 4×3 grid (12 zones, 17 edges), 5 uniform source
 //!   zones (0.2 each) and 2 sinks with UNEQUAL target weights (0.6 / 0.4 —
@@ -16,8 +28,10 @@
 //!   experiment). Asserts: (a) `δ₁(j) = μ₀ − μ₁` to fp tolerance
 //!   (`belief_mass_divergence` — conservation by construction, Plan 314's
 //!   steady-state check generalized to `μ₀ ≠ μ₁`); (b) the absorption
-//!   endpoint distribution matches `μ₁` (MAE ≤ 0.01; never-arriving trapped
-//!   mass counts against the MAE honestly); (c) the whole solve path is
+//!   endpoint distribution matches `μ₁` (MAE ≤ 0.01 — measured ≈ 0, the flow
+//!   decomposition is exact and only per-NPC SAMPLING is approximate;
+//!   never-arriving trapped mass counts against the MAE honestly); (c) the
+//!   whole solve path is
 //!   zero-alloc (fixed-size stack arrays + `exterior_derivative_into`,
 //!   counting allocator) — the G4 class, the redistribution solve is
 //!   cacheable per event, not per tick (Issue 825 caveats).
@@ -30,7 +44,20 @@
 //!   honestly and Issue 825 T3 re-adjudicates whether the primitive earns a
 //!   flag (the issue's own honest-outcome clause) — that clause does not
 //!   flip the exit code; a conservation failure or a Coulomb-MAE failure
-//!   does.
+//!   does. ⚠ The printed ratio is a LOWER BOUND wherever the Coulomb MAE
+//!   lands below this instrument's fp resolution: the quotient would
+//!   otherwise report the f32 cochain's noise floor wearing a bias ratio.
+//!
+//! # Relationship to Bench 825
+//!
+//! [Bench 825](../../../.benchmarks/825_coulomb_crowd_redistribution_goat.md)
+//! is the promotion gate for the shipped `coulomb_flow` primitive and runs
+//! the per-NPC SAMPLED walk (G2 gates the 1/√N decay). This bench keeps its
+//! own f64 Gaussian solver and its own deterministic mass-packet walker, so
+//! the two agree through independent solve and readout implementations —
+//! that independence is the reason it was repaired rather than deleted. The
+//! one thing they deliberately SHARE is the absorption rule, which is the
+//! thing they disagreed about.
 //!
 //! Zero dependencies: the Poisson solve is a small pinned Gaussian
 //! elimination in f64 (grounded Laplacians of connected graphs are
@@ -44,11 +71,13 @@
 //!   --bench bench_815_coulomb_redistribution_poc -- --nocapture
 //! ```
 
+#![cfg(feature = "coulomb_flow")]
+
 // Shared CountingAllocator macro (the bench_407 mirror).
 #[path = "../tests/common/counting_allocator.rs"]
 mod counting_allocator;
 
-use katgpt_dec::{CellComplex, CochainField, exterior_derivative_into};
+use katgpt_dec::{CellComplex, CochainField, CrowdRouter, exterior_derivative_into};
 use std::hint::black_box;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
@@ -229,15 +258,28 @@ fn coulomb_solve(
     exterior_derivative_into(cx, phi, j);
 }
 
-/// Absorption readout: walk `n_npc` particles from the source distribution,
-/// following the positive leaving flow. The physical flow is `-j` — the
-/// rank-0 Laplacian makes source zones φ-peaks (`Lφ[v] > 0` = neighbors
-/// lower), so downhill (`-∇φ`) leaves the source and enters the sink pits;
-/// with `leaving(v, e) = sign(v, e) · j[e]` the walk would route mass BACK
-/// to the sources (the first run measured exactly that: endpoints 0/1
-/// instead of 0.6/0.4). Sinks absorb. Returns `(endpoint[sink],
-/// trapped_mass)` — trapped mass is the particles that hit the step cap
-/// without reaching a sink; it counts against the endpoint MAE honestly.
+/// Absorption readout: propagate the source mass along the positive leaving
+/// flow, absorbing a `stop[v]` fraction of whatever passes through `v`.
+///
+/// The physical flow is `-j` — the rank-0 Laplacian makes source zones
+/// φ-peaks (`Lφ[v] > 0` = neighbors lower), so downhill (`-∇φ`) leaves the
+/// source and enters the sink pits; with `leaving(v, e) = sign(v, e) · j[e]`
+/// the walk would route mass BACK to the sources (the first run measured
+/// exactly that: endpoints 0/1 instead of 0.6/0.4).
+///
+/// ⛔ **`stop` is the whole of the endpoint guarantee, and the first version
+/// of this bench hard-coded it to 1.0 at every sink.** That is not the flow
+/// decomposition: a sink that lies ON a path to another sink carries a
+/// non-zero outflow, and absorbing all of it strands mass that the solve had
+/// routed THROUGH. Measured on this file's own `(4,3,5)` fixture — sink
+/// `n-2` has `out_flow = 0.209` and a consistent absorption of **0.657**, not
+/// 1.0 — which is the entire 0.119 endpoint miss the first run read as
+/// "discretization error". The rule comes from
+/// [`CrowdRouter::consistent_absorption`] rather than a local copy, so the
+/// two benches on this primitive cannot disagree about it again.
+///
+/// Returns the trapped mass — whatever reached a vertex with nowhere to go
+/// and no absorption. It counts against the endpoint MAE honestly.
 ///
 /// Deterministic: the particle is a f64 mass packet, not an RNG sample —
 /// no fixture RNG streams (the katgpt-rs global_rng_gate posture).
@@ -245,7 +287,7 @@ fn absorb(
     graph: &Graph,
     j: &CochainField,
     mu0: &[f64; MAX_V],
-    sinks: &[usize],
+    stop: &[f64; MAX_V],
     endpoint: &mut [f64; MAX_V],
 ) -> f64 {
     // Per-vertex leaving-flow totals + per-edge probabilities, f64 from f32.
@@ -274,15 +316,23 @@ fn absorb(
             }
         }
     }
-    let mut is_sink = [false; MAX_V];
-    for &s in sinks {
-        is_sink[s] = true;
-    }
     let mut trapped = 0.0f64;
     for _step in 0..100_000 {
         let mut moved = false;
         for v in 0..n {
-            if packet[v] == 0.0 || is_sink[v] {
+            if packet[v] <= 0.0 {
+                continue;
+            }
+            // Absorb this vertex's share FIRST, then forward the remainder —
+            // a vertex is a partial stop, never an all-or-nothing one.
+            let avail = packet[v];
+            let absorbed = avail * stop[v];
+            if absorbed > 0.0 {
+                endpoint[v] += absorbed;
+                packet[v] -= absorbed;
+            }
+            let forward = packet[v];
+            if forward <= 0.0 {
                 continue;
             }
             let start = graph.adj_start[v];
@@ -294,12 +344,12 @@ fn absorb(
             if total == 0.0 {
                 continue; // plateau/dead-end: trapped, counted at the cap
             }
-            // Send the whole packet proportionally (mass continuous, the
+            // Send the whole remainder proportionally (mass continuous, the
             // deterministic analog of per-NPC proportional routing).
             for (i, &p) in leaving[start..end].iter().enumerate() {
                 if p > 0.0 {
                     let (u, _, _) = graph.adj_flat[start + i];
-                    let share = packet[v] * (p / total);
+                    let share = forward * (p / total);
                     packet[u] += share;
                     packet[v] -= share;
                     moved = true;
@@ -307,21 +357,11 @@ fn absorb(
             }
         }
         if !moved {
-            trapped = 0.0;
-            for v in 0..n {
-                if !is_sink[v] {
-                    trapped += packet[v];
-                }
-            }
             break;
         }
     }
-    for v in 0..n {
-        if is_sink[v] {
-            endpoint[v] += packet[v];
-        } else {
-            trapped += packet[v];
-        }
+    for &residue in &packet[..n] {
+        trapped += residue;
     }
     trapped
 }
@@ -425,11 +465,38 @@ fn run_case(w: usize, h: usize, n_sources: usize) -> CaseResult {
     }
 
     // T1b — endpoint distribution vs μ₁ (absorbing-chain first arrival).
+    //
+    // The stopping rule comes from the shipped `CrowdRouter`, not from a copy
+    // here: `μ₁(v) / (inflow(v) + μ₀(v))`. Its table is built on the router's
+    // sign convention `δ(j') = μ₁ − μ₀`, which is exactly `-j` here (this
+    // file solves `Lφ = ρ = μ₀ − μ₁`) — the negation is asserted by T1a's
+    // residual one block up, not assumed.
+    let mut j_router = CochainField::zeros(1, cx.n_edges(), 1);
+    for (dst, &src) in j_router.data.iter_mut().zip(j.data.iter()) {
+        *dst = -src;
+    }
+    let mu0_f32: Vec<f32> = (0..n).map(|v| mu0[v] as f32).collect();
+    let mu1_f32: Vec<f32> = (0..n).map(|v| mu1[v] as f32).collect();
+    let stop_f32 = CrowdRouter::consistent_absorption(&cx, &j_router, &mu0_f32, &mu1_f32);
+    let mut stop = [0.0f64; MAX_V];
+    for v in 0..n {
+        stop[v] = stop_f32[v] as f64;
+    }
+
     let mut endpoint = [0.0f64; MAX_V];
-    let trapped = absorb(&graph, &j, &mu0, &sinks, &mut endpoint);
+    let trapped = absorb(&graph, &j, &mu0, &stop, &mut endpoint);
     let mae_coulomb = endpoint_mae(&endpoint, &mu1, &sinks);
 
-    // T2 — naive attract fields, same readout.
+    // T2 — naive attract fields, same readout, ONE vector different.
+    //
+    // A hand-built attract field carries no target weights, so the only
+    // stopping rule it can offer is "stop on first arrival" — `stop[sink] = 1`.
+    // That asymmetry IS the finding; giving the naive arm the Coulomb
+    // absorption vector would hand it the answer the solve produced.
+    let mut stop_naive = [0.0f64; MAX_V];
+    for &s in &sinks {
+        stop_naive[s] = 1.0;
+    }
     let mut phi_naive = CochainField::zeros(0, n, 1);
     let mut j_naive = CochainField::zeros(1, cx.n_edges(), 1);
     let mut ep_naive = [0.0f64; MAX_V];
@@ -438,7 +505,7 @@ fn run_case(w: usize, h: usize, n_sources: usize) -> CaseResult {
         naive_potential(&graph, &mu1, &sinks, use_max, &mut phi_naive);
         exterior_derivative_into(&cx, &phi_naive, &mut j_naive);
         ep_naive.fill(0.0);
-        absorb(&graph, &j_naive, &mu0, &sinks, &mut ep_naive);
+        absorb(&graph, &j_naive, &mu0, &stop_naive, &mut ep_naive);
         maes[arm] = endpoint_mae(&ep_naive, &mu1, &sinks);
     }
 
@@ -477,18 +544,30 @@ fn main() {
     println!("   (4,3,5) IS the issue fixture: sources 0..4 @ 0.2, sinks 11/10.");
     println!();
 
-    // The issue gate case + the mesh-refinement axis: if the endpoint miss
-    // is DISCRETIZATION error it shrinks as the zone graph refines; if it is
-    // structural (the absorbing-chain proportional split does not carry the
-    // continuum first-hitting measure), it does not — either answer is the
-    // honest T3 input.
+    // The issue gate case + the mesh-refinement axis. ⚑ The first run of this
+    // bench read 0.119 / 0.078 / 0.037 here and concluded "converging = the
+    // miss is discretization error". It was neither: the walker absorbed 100%
+    // at every sink, so a sink lying ON the path to the other sink stranded
+    // the mass routed THROUGH it, and the trend was that geometry thinning
+    // out as the grid grew. With the flow decomposition's own absorption rule
+    // the readout is EXACT at every refinement — the axis is kept because a
+    // future readout change that reintroduces an O(h) error shows up here
+    // rather than in one number.
     let cases: [(usize, usize, usize); 3] = [(4, 3, 5), (8, 6, 8), (12, 9, 12)];
     let mut primary_ok = true;
     for (i, &(w, h, ns)) in cases.iter().enumerate() {
         let r = run_case(w, h, ns);
         let n = w * h;
         let best_naive = r.mae_naive_sum.min(r.mae_naive_max);
-        let ratio = if r.mae_coulomb > 0.0 { best_naive / r.mae_coulomb } else { f64::INFINITY };
+        // ⚠ The exact readout's residual is fp noise, not method error, so a
+        // raw quotient here reports the f32 cochain's resolution wearing a
+        // bias ratio (the first repaired run printed 1.5e7×). Divide by the
+        // resolution floor instead and print the result as the LOWER BOUND it
+        // is — the conservation residual one line up is ~1.8e-7 at 108 zones,
+        // so nothing below FP_FLOOR is resolvable by this instrument.
+        const FP_FLOOR: f64 = 1e-6;
+        let fp_limited = r.mae_coulomb < FP_FLOOR;
+        let ratio = best_naive / r.mae_coulomb.max(FP_FLOOR);
         println!(
             "── case {i}: grid_2d({w},{h}) = {n} zones, {ns} sources — sinks {} @ 0.6 / {} @ 0.4 ──",
             r.sinks[0], r.sinks[1]
@@ -509,10 +588,12 @@ fn main() {
             verdict(r.mae_coulomb <= 0.01)
         );
         println!(
-            "   T2 naive MAE: sum = {:.6}, max = {:.6}  → ratio naive-best/Coulomb = {:.2}×  → {}",
+            "   T2 naive MAE: sum = {:.6}, max = {:.6}  → ratio naive-best/Coulomb {}{:.0}×{}  → {}",
             r.mae_naive_sum,
             r.mae_naive_max,
+            if fp_limited { "≥ " } else { "= " },
             ratio,
+            if fp_limited { " (Coulomb MAE below fp resolution — a floor, not a measurement)" } else { "" },
             verdict(ratio >= 10.0)
         );
         if i == 0 {
@@ -529,15 +610,18 @@ fn main() {
         println!("══ COULOMB POC GATES PASS — T1 (a/b/c) + T2 bias ratio ══");
     } else {
         println!(
-            "══ COULOMB POC ISSUE-FIXTURE GATE FAILS — read the refinement axis: ══"
+            "══ COULOMB POC ISSUE-FIXTURE GATE FAILS — check the READOUT first: ══"
         );
         println!(
-            "   converging MAE = discretization error (fine zone graphs may pass;"
+            "   this bench read a 0.119 endpoint miss as \"discretization error\" once"
         );
         println!(
-            "   flat MAE = the proportional-split readout does not carry the continuum"
+            "   and it was the absorption rule. Print CrowdRouter::consistent_absorption"
         );
-        println!("   first-hitting measure — Issue 825 T3 closes this as a negative result.");
+        println!(
+            "   at each sink: anything pinned to 1.0 with a non-zero out_flow strands"
+        );
+        println!("   pass-through mass. The solve is gated by T1a independently.");
     }
     std::process::exit(if primary_ok { 0 } else { 1 });
 }
