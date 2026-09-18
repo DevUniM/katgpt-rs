@@ -101,6 +101,31 @@ RATIO = re.compile(rf"\b([A-Za-z_]\w*{_T}\w*|{_T}\w*)\s*/\s*([A-Za-z_]\w*{_T}\w*
 # which every single-arm latency bar computes and which is not this class.
 COUNTY = re.compile(r"\b(iter|iters|iterations|n_\w+|\w+_count|count|steps|len|insert|tokens)\b", re.I)
 
+# ── provenance, because `_T` above is a NAME and the class is a VALUE ───────
+# `RATIO` decides a side is timing-derived from what it is CALLED. A two-arm
+# ratio whose locals are `a`/`b`, `t_3d`/`t_2d` or `overhead_ns`/`baseline`
+# matches neither side's token list and lands in UNRESOLVED. Measured on this
+# repo (Issue 833 T3): **8 such targets, 8 of 8 true positives on a per-site
+# read**, every one feeding a bar or an assert. So provenance is a second
+# resolver, not a replacement — `RATIO` still decides the easy majority.
+LET_BIND = re.compile(r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*(?::[^=;]+)?=\s*([^;]*);")
+ELAPSED = re.compile(r"\.elapsed\s*\(\s*\)")
+IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
+# A bare `A / B` between two identifiers — names deliberately unconstrained,
+# because the whole point is that the names are what `RATIO` could not read.
+ANY_RATIO = re.compile(r"\b([A-Za-z_]\w*)\s*/\s*([A-Za-z_]\w*)\b")
+
+# ── the treatment is a SHAPE, and `ADOPTED_RE` matches a NAME ───────────────
+# `tests/common/ab_timing.rs` is one spelling of interleaved paired arms +
+# a per-pair ratio + a median across pairs. A target that hand-rolls the
+# identical thing matches neither literal and is then reported as needing the
+# migration it already has — the cries-wolf direction, and it is POPULATED:
+# `bench_657_clustered_lm_head_bound.rs` read SEQUENTIAL ("the class") while
+# its own doc block describes alternating A→B / B→A ordering and a median of
+# per-pair ratios, i.e. a STRICTER treatment than the shared harness.
+PUSH_RATIO = re.compile(r"\.push\s*\(\s*[A-Za-z_]\w*\s*/\s*[A-Za-z_]\w*\s*\)")
+REDUCE = re.compile(r"\bmedian\w*\b|\bpercentile\b|\bsort_by\b|\bsort_unstable\b")
+
 
 def is_target(rel: str) -> bool:
     """Is this path a test or bench target — i.e. somewhere a GATE lives?
@@ -130,6 +155,68 @@ def ratio_hits(masked: str) -> list:
     return hits
 
 
+def timing_locals(masked: str) -> set:
+    """Identifiers bound, directly or transitively, from an `.elapsed()` value.
+
+    The transitive hop is what reaches the ordinary shape — `let d = t.elapsed();
+    let a_ns = d.as_nanos() as f64 / ITERS as f64;` — where only the FIRST
+    binding mentions `elapsed` and the one that gets compared is two hops away.
+    Bounded at three rounds: it is a fixpoint over straight-line `let`s, not a
+    dataflow analysis, and an unbounded loop here would be a hang in a report.
+    """
+    names, pending = set(), []
+    for m in LET_BIND.finditer(masked):
+        lhs, rhs = m.group(1), m.group(2)
+        if ELAPSED.search(rhs):
+            names.add(lhs)
+        else:
+            pending.append((lhs, set(IDENT.findall(rhs))))
+    for _ in range(3):
+        grew = False
+        for lhs, rhs_idents in pending:
+            if lhs not in names and rhs_idents & names:
+                names.add(lhs)
+                grew = True
+        if not grew:
+            break
+    return names
+
+
+def provenance_hits(masked: str, already: list) -> list:
+    """Two-arm ratios `ratio_hits` could not see, found by VALUE not by name.
+
+    `already` is the name-matched set, so a site is reported once and the two
+    resolvers stay separable — the counts must not double-count a ratio both
+    can see. `COUNTY` still applies: a timing local divided by a count is a
+    rate whichever resolver found it.
+    """
+    names = timing_locals(masked)
+    if len(names) < 2:
+        return []
+    seen, hits = set(already), []
+    for m in ANY_RATIO.finditer(masked):
+        a, b = m.group(1), m.group(2)
+        if a == b or a not in names or b not in names:
+            continue
+        if COUNTY.search(a) or COUNTY.search(b):
+            continue
+        if m.group(0) in seen:
+            continue
+        hits.append(m.group(0))
+    return hits
+
+
+def hand_rolled(masked: str) -> bool:
+    """Does this target already implement the treatment under another name?
+
+    Interleaved pairs (a per-pair ratio pushed into a sample) plus a reduction
+    across those pairs. Both halves are required: a `.push(a / b)` with no
+    reduction is a log, and a median with no per-pair ratio is the
+    median-of-A-over-median-of-B shape that IS the defect.
+    """
+    return bool(PUSH_RATIO.search(masked)) and bool(REDUCE.search(masked))
+
+
 def classify(text: str) -> tuple:
     """`(verdict, n_instant, hits)` for one target's source.
 
@@ -151,7 +238,16 @@ def classify(text: str) -> tuple:
         # Not proven — see the STATED blind spot about differencing one timer
         # twice — so it is UNRESOLVED, never "clean".
         return ("UNRESOLVED", n, [])
+    # HAND-ROLLED is tested BEFORE the ratio, for arm 2's reason one step over:
+    # a target that already carries the treatment must not be reported as
+    # needing it, or the report reds work somebody already did. It is its own
+    # verdict and is never folded into ADOPTED — that one means "uses the
+    # shared harness", this one means "duplicates it", and the responses
+    # differ (migrate vs leave alone / DRY onto the shared module).
+    if hand_rolled(masked):
+        return ("HAND-ROLLED", n, [])
     hits = ratio_hits(masked)
+    hits = hits + provenance_hits(masked, hits)
     return (("SEQUENTIAL" if hits else "UNRESOLVED"), n, hits)
 
 
@@ -159,7 +255,7 @@ def scan(repo: str) -> dict:
     """Classify every timed target in `repo`. Returns a result dict."""
     files, excluded = tracked_files(repo, "*.rs")
     root = Path(repo).resolve()
-    rows = {"ADOPTED": [], "SEQUENTIAL": [], "UNRESOLVED": []}
+    rows = {"ADOPTED": [], "HAND-ROLLED": [], "SEQUENTIAL": [], "UNRESOLVED": []}
     n_targets = 0
     for f in files:
         rel = str(Path(f).resolve().relative_to(root)).replace("\\", "/")
@@ -280,6 +376,81 @@ def selftest() -> list:
     if v(same) != "UNRESOLVED":
         fails.append(f"x/x normalisation read {v(same)}, not UNRESOLVED")
 
+    # 6b. PROVENANCE (Issue 833 T3). `_T` reads a NAME; these locals are
+    #     timing-derived by VALUE and spell none of its tokens. Without this
+    #     the shape below — the reduced form of 8 measured true positives —
+    #     reads UNRESOLVED.
+    prov = """
+    fn g() {
+        let t0 = Instant::now(); work(); let d0 = t0.elapsed();
+        let a = d0.as_nanos() as f64;
+        let t1 = Instant::now(); other(); let d1 = t1.elapsed();
+        let b = d1.as_nanos() as f64;
+        assert!(a / b <= 1.15);
+    }"""
+    if v(prov) != "SEQUENTIAL":
+        fails.append(f"a provenance-bound two-arm ratio read {v(prov)}, not SEQUENTIAL")
+    #     ...and it must NOT invent one. A count denominator stays a RATE even
+    #     when the numerator's provenance is impeccable — otherwise provenance
+    #     converts every single-arm bar in the repo into the class.
+    prov_rate = """
+    fn g() {
+        let t0 = Instant::now(); work(); let d0 = t0.elapsed();
+        let a = d0.as_nanos() as f64;
+        let t1 = Instant::now(); let _d1 = t1.elapsed();
+        let n_tokens = a;
+        let per = a / n_tokens;
+    }"""
+    if v(prov_rate) != "UNRESOLVED":
+        fails.append(f"a provenance-bound time/COUNT rate read {v(prov_rate)}, not UNRESOLVED")
+    #     The transitive hop is the part that reaches the ordinary shape, so it
+    #     is asserted directly rather than only through a verdict.
+    hop = timing_locals("let d = t.elapsed(); let a_ns = d.as_nanos(); let z = a_ns * 2;")
+    for want in ("d", "a_ns", "z"):
+        if want not in hop:
+            fails.append(f"timing_locals missed the transitive binding {want!r}")
+    if "q" in timing_locals("let d = t.elapsed(); let q = unrelated * 2;"):
+        fails.append("timing_locals bound an identifier with no timing provenance")
+    #     Ratios both resolvers can see must be reported ONCE — two resolvers
+    #     over one site is a double count, and the hits feed the display.
+    dbl = ("fn g() { let t = Instant::now(); let a_ns = t.elapsed().as_nanos();\n"
+           "  let t = Instant::now(); let b_ns = t.elapsed().as_nanos();\n"
+           "  let r = a_ns / b_ns; }")
+    masked_dbl, _ = mask_file(dbl)
+    h = ratio_hits(masked_dbl)
+    if len(h + provenance_hits(masked_dbl, h)) != 1:
+        fails.append("a ratio both resolvers can see must be counted once")
+
+    # 6c. HAND-ROLLED (Issue 833 T3). The treatment is a SHAPE and `ADOPTED_RE`
+    #     matches a NAME, so a target that hand-rolls interleaved pairs reads
+    #     SEQUENTIAL — "needs migrating" — while already carrying it. Measured
+    #     specimen: bench_657_clustered_lm_head_bound.rs.
+    rolled = """
+    fn g() {
+        let mut ratios = vec![];
+        for _ in 0..REPS {
+            let t0 = Instant::now(); a(); let a_us = t0.elapsed().as_micros() as f64;
+            let t1 = Instant::now(); b(); let b_us = t1.elapsed().as_micros() as f64;
+            ratios.push(a_us / b_us);
+        }
+        ratios.sort_by(|x, y| x.total_cmp(y));
+        assert!(median(&mut ratios) <= 1.15);
+    }"""
+    if v(rolled) != "HAND-ROLLED":
+        fails.append(f"hand-rolled interleaved pairs read {v(rolled)}, not HAND-ROLLED")
+    #     BOTH halves are required, and each negative is a real shape: a push
+    #     with no reduction is a log, and a reduction with no per-pair ratio is
+    #     median-of-A-over-median-of-B, which IS the defect this class is about.
+    if v(rolled.replace("ratios.sort_by(|x, y| x.total_cmp(y));", "")
+             .replace("median(&mut ratios)", "ratios[0]")) == "HAND-ROLLED":
+        fails.append("a per-pair ratio with no reduction must not read HAND-ROLLED")
+    if v(seq + "\nfn h() { let m = median(&mut xs); }") == "HAND-ROLLED":
+        fails.append("a reduction with no per-pair ratio must not read HAND-ROLLED")
+    #     ...and ADOPTED must still outrank it, so a migrated target that kept
+    #     its old loop is not demoted to 'duplicates the harness'.
+    if v('#[path = "common/ab_timing.rs"]\nmod ab_timing;\n' + rolled) != "ADOPTED":
+        fails.append("ADOPTED must outrank HAND-ROLLED")
+
     # 7. is_target: src/ is out of scope and the exclusion is deliberate, so
     #    it is asserted rather than left to the caller to rediscover.
     for rel, want in (("tests/a.rs", True), ("benches/b.rs", True),
@@ -325,8 +496,13 @@ def main(argv) -> int:
     args = [a for a in argv[1:] if not a.startswith("-")]
     repos = args or ["."]
 
-    grand = {"ADOPTED": 0, "SEQUENTIAL": 0, "UNRESOLVED": 0}
+    grand = {"ADOPTED": 0, "HAND-ROLLED": 0, "SEQUENTIAL": 0, "UNRESOLVED": 0}
     tot_files = tot_targets = 0
+    # The UNRESOLVED bucket has two sub-populations with opposite priors, and
+    # pooling them is the bucket note's own hazard one level down. A TRIAGE
+    # AID, never a verdict — the percentile audit's `tail support` standing:
+    # it ORDERS the rows so the read starts where it can change an answer.
+    single = multi = 0
     verbose = "-v" in argv or "--verbose" in argv
 
     for repo in repos:
@@ -335,25 +511,34 @@ def main(argv) -> int:
         tot_targets += r["targets"]
         for k in grand:
             grand[k] += len(r["rows"][k])
+        single += sum(1 for _, n, _ in r["rows"]["UNRESOLVED"] if n < 2)
+        multi += sum(1 for _, n, _ in r["rows"]["UNRESOLVED"] if n >= 2)
         print(f"\n── {r['repo']} ── {r['targets']} target file(s) of "
               f"{r['rs_files']} tracked *.rs, {r['timed']} of them TIMED")
         print(f"     ADOPTED {len(r['rows']['ADOPTED']):>4}   "
+              f"HAND-ROLLED {len(r['rows']['HAND-ROLLED']):>4}   "
               f"SEQUENTIAL {len(r['rows']['SEQUENTIAL']):>4}   "
               f"UNRESOLVED {len(r['rows']['UNRESOLVED']):>4}")
         for rel, n, hits in sorted(r["rows"]["SEQUENTIAL"]):
             ex = ", ".join(sorted(set(hits))[:2])
             print(f"       SEQUENTIAL  {rel}  (Instant::now x{n})  {ex}")
+        for rel, n, _ in sorted(r["rows"]["HAND-ROLLED"]):
+            print(f"       HAND-ROLLED {rel}  (Instant::now x{n})")
         if verbose:
             for rel, n, _ in sorted(r["rows"]["UNRESOLVED"]):
-                print(f"       UNRESOLVED  {rel}  (Instant::now x{n})")
+                tag = "1-timer " if n < 2 else "2+-timer"
+                print(f"       UNRESOLVED  [{tag}] {rel}  (Instant::now x{n})")
             for rel, n, _ in sorted(r["rows"]["ADOPTED"]):
                 print(f"       ADOPTED     {rel}  (Instant::now x{n})")
 
     print("\n" + "─" * 72)
-    print(f"  ADOPTED    {grand['ADOPTED']:>5}   uses tests/common/ab_timing.rs")
-    print(f"  SEQUENTIAL {grand['SEQUENTIAL']:>5}   <- the class (Issue 833)")
-    print(f"  UNRESOLVED {grand['UNRESOLVED']:>5}   <- NOT clean; needs a per-target read")
-    print(f"  population {tot_targets:>5} target file(s) / {tot_files} tracked *.rs")
+    print(f"  ADOPTED     {grand['ADOPTED']:>5}   uses tests/common/ab_timing.rs")
+    print(f"  HAND-ROLLED {grand['HAND-ROLLED']:>5}   carries the treatment under another name")
+    print(f"  SEQUENTIAL  {grand['SEQUENTIAL']:>5}   <- the class (Issue 833)")
+    print(f"  UNRESOLVED  {grand['UNRESOLVED']:>5}   <- NOT clean; needs a per-target read")
+    print(f"                    {single:>5} carry ONE timer  — mostly ordinary single-arm bars")
+    print(f"                    {multi:>5} carry TWO+       — where the STATED blind spots live")
+    print(f"  population  {tot_targets:>5} target file(s) / {tot_files} tracked *.rs")
 
     # Floors AFTER the report, so a blind run still prints what it did see.
     code, msg = floor_verdict(tot_files, sum(grand.values()))
@@ -364,10 +549,17 @@ def main(argv) -> int:
     print("\n  ⚠ UNRESOLVED is not 'clean' — a two-arm comparison the regex cannot\n"
           "    see lands there, and so does an ordinary single-arm latency bar\n"
           "    that is not this class at all. Never fold it into either neighbour.\n"
-          "  ⚠ STATED blind spots: a ratio built through a helper; a comparison\n"
-          "    written as a subtraction or a percentage; two arms differenced off\n"
-          "    ONE Instant::now(); and arm ORIENTATION, which is not statically\n"
-          "    decidable and is the part that actually costs time to migrate.\n"
+          "  ⚠ HAND-ROLLED is never folded into ADOPTED: that one means 'uses the\n"
+          "    shared harness', this one means 'duplicates it'. Both are TREATED —\n"
+          "    neither is a migration candidate — but only the second is a DRY\n"
+          "    finding, and pooling them would report the treatment as universal.\n"
+          "  ⚠ STATED blind spots, NARROWED by Issue 833 T3: a ratio built through\n"
+          "    a helper; a comparison written as a subtraction or a percentage and\n"
+          "    never divided; two arms differenced off ONE Instant::now(); and arm\n"
+          "    ORIENTATION, which is not statically decidable and is the part that\n"
+          "    actually costs time to migrate. What T3 CLOSED is the fifth: a ratio\n"
+          "    whose locals are timing-derived by VALUE but not by NAME, which\n"
+          "    `provenance_hits` now resolves (8 found here, 8 of 8 true on a read).\n"
           "  Report only; exit 0. Migration is a per-target read — Issue 833 T4.")
     return 0
 

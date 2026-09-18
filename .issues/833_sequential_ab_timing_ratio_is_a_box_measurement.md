@@ -1,8 +1,11 @@
 # Issue 833: a ratio of two SEQUENTIALLY-timed arms measures the box, not the code — `bench_105` GOAT 2 fired on x86_64, and the class is ~57 targets, not one
 
 **Status:** T1 **DONE 2026-09-18** (`bench_105_gdn2_goat` GOAT 2 migrated + stability
-measured). T2–T4 OPEN — the class is a **magnitude, not a pin**; see §What must not be
-done.
+measured). **T3 PARTIAL 2026-09-18** — two whole resolution classes mechanised and
+measured (`HAND-ROLLED`, `provenance_hits`), T5's cross-repo figure taken; see §T3.
+T2 / T4 / T5 OPEN — the class is a **magnitude, not a pin**; see §What must not be
+done. ⚠ The counts written in §The class is ~57 targets are the 2026-09-18 census and
+are **superseded by the §T3 run**; take every figure from the audit, not from prose.
 **Found by:** `scripts/x86_64_execution_matrix.sh` at `d7a34822`, cell 8
 (`katgpt-rs --tests --release`, `+avx2`), log `/f/matrix_0918_run1.log`. The matrix
 verdict overall was **PASSED — 8 cells, 11176 assertions, 0 CONFIRMED failures, 0 pinned
@@ -152,9 +155,10 @@ that any loaded box can trip. It is repaired, not excused.
   orientation decided (which arm is the baseline the claim is *stated against*), its chunk
   sized off its own printed range, and its arms `black_box`ed at input and output — the
   `let _ = f()` elimination shape is orthogonal to interleaving and survives it.
-- [ ] **T3 — read the 148 UNRESOLVED.** Each resolves to DECIDED, to a legitimate
-  count-denominated rate, or to a timing that feeds no assertion. Until then the 57 is a
-  floor on the class, not its size.
+- [~] **T3 — read the UNRESOLVED. PARTIAL 2026-09-18: two whole resolution classes were
+  mechanised and measured; the residue is genuinely a per-target read.** Each row resolves
+  to DECIDED, to a legitimate count-denominated rate, or to a timing that feeds no
+  assertion. Until then the 57 is a floor on the class, not its size. See §T3 below.
 - [ ] **T4 — re-measure whether a verdict half is warranted** once T3 lands and the
   classifier has a calibrated population. Not before.
 - [ ] **T5 — the cross-repo question is UNMEASURED.** `ab_timing.rs` is a katgpt-rs test
@@ -237,3 +241,106 @@ old form; the median discarded it, which is the mechanism working in public.
 
 Recording both is the point of "per target, not mechanically": three timing gates in one
 file, three different correct answers.
+
+## T3 (PARTIAL, 2026-09-18) — the bucket had two whole classes in it, and one of them read "go migrate this"
+
+T3 was written as *"read the 148 UNRESOLVED"*. The first thing a run says is that **148
+was already stale**: the live figure is **292** in this repo and **807** workspace-wide.
+A hand-typed count in an issue drifting away from its instrument is this file's own
+most-recorded shape, and the fix is the one this repo always reaches for — the audit
+prints every figure, and no number in this section is authoritative against a run.
+
+Reading 292 rows one at a time was not the right first move either, because two
+*classes* were sitting in the bucket, both mechanically resolvable, and one of them was
+being reported in the direction that costs somebody time.
+
+### Finding 1 — `ADOPTED` matched a NAME where the treatment is a SHAPE
+
+`ADOPTED_RE` spells two literals (`common/ab_timing.rs`, `ab_median_ratio`). The
+treatment is interleaved paired arms + a per-pair ratio + a median across pairs, which
+can be written without either. Three targets here hand-roll exactly that, and
+**`tests/bench_657_clustered_lm_head_bound.rs` was filed SEQUENTIAL — "the class
+(Issue 833)", i.e. a migration candidate — while its own doc block describes alternating
+A→B / B→A ordering and a median of per-pair ratios**: a *stricter* treatment than the
+shared harness. The other two (`bench_680_signed_coupling_goat.rs`, `cond_audit_poc.rs`)
+sat in UNRESOLVED; the second's doc comment literally says *"Interleaved
+median-of-ratios"*.
+
+`HAND-ROLLED` is now its own verdict, **never folded into ADOPTED** — that one means
+*uses the shared harness*, this one means *duplicates it*; both are TREATED and neither
+is a migration candidate, but only the second is a DRY finding, and pooling them would
+report the treatment as universal. Both halves of the predicate are required, and each
+negative is a real shape: a per-pair ratio with no reduction is a log, and a reduction
+with no per-pair ratio is median-of-A-over-median-of-B, which **is** the defect this
+issue is about. ADOPTED still outranks it (arm 2's existing rationale, one step over).
+
+### Finding 2 — `_T` reads a NAME and the class is a VALUE
+
+`RATIO` decides a side is timing-derived from what it is *called*. A two-arm ratio whose
+locals are `a`/`b`, `t_3d`/`t_2d`, `opt_tok_s`/`base_tok_s` or `overhead_ns`/`baseline`
+spells none of `_T`'s tokens. `provenance_hits` binds provenance instead: a local
+assigned, transitively, from an `.elapsed()` value is timing-derived whatever it is
+called. The transitive hop is what reaches the ordinary shape — `let d = t.elapsed();
+let a_ns = d.as_nanos() as f64 / ITERS as f64;` — where only the first binding mentions
+`elapsed` and the one that gets compared is two hops away.
+
+**8 targets found, 8 of 8 TRUE on a per-site read** — every one feeds a bar or an assert:
+
+| target | ratio | what it feeds |
+|---|---|---|
+| `bench_454_3d_nca_goat.rs` | `t_3d / t_2d` | `stencil_pass = … <= 2.0` |
+| `bench_160_kog_gemma2_scale.rs` | `opt_tok_s / base_tok_s` | `g2_pass = … >= 0.95` |
+| `bench_231_union_bound_goat.rs` | `large_per_elem / small_per_elem` | `assert!` |
+| `bench_584_hebbian_karc_readout_goat.rs` | `hebbian_per_fact / ridge_per_fact` | reported ratio |
+| `bench_regime_transition.rs` | `overhead_ns / baseline` | `overhead_pct` |
+| `bench_bfcf_tree.rs` | `token_per_iter / region_per_iter` | `speedup` |
+| `bench_680_signed_coupling_goat.rs` | `a / b` | → HAND-ROLLED |
+| `cond_audit_poc.rs` | `audit / forwards` | → HAND-ROLLED |
+
+`bench_regime_transition` is additionally the *"written as a subtraction"* blind spot —
+`overhead_ns` is a difference — so that one is narrowed too: it is now blind only where
+the comparison **is** the subtraction and is never divided.
+
+It is a **second** resolver, not a replacement: `RATIO` still decides the easy majority,
+a site both can see is counted once (armed), and `COUNTY` still applies — a timing local
+over a count is a rate whichever resolver found it (armed, and this is the arm that
+matters, because without it provenance converts every single-arm bar in the repo into
+the class).
+
+### Finding 3 — UNRESOLVED pools two sub-populations with opposite priors
+
+The bucket note promises UNRESOLVED is never folded into a neighbour; the bucket was
+doing the same thing to *itself*. A **1-timer** row is mostly an ordinary single-arm
+bar; a **2+-timer** row is where every STATED blind spot lives. Measured: **132 · 160**
+here, **327 · 480** workspace-wide — more than half the bucket is the half worth reading
+first. Now on the summary line and tagged per row under `-v`. A **triage aid, never a
+verdict** — the percentile audit's `tail support` standing.
+
+### The cross-repo measurement T5 asks for (does NOT answer it)
+
+Run over all 17 contract repos: **8 ADOPTED · 9 HAND-ROLLED · 139 SEQUENTIAL · 807
+UNRESOLVED** over 2515 targets / 9125 tracked `*.rs`.
+
+⛔ **6 of the 9 HAND-ROLLED are outside this repo** — riir-ai 3, riir-neuron-db 2,
+riir-train 1 — so AGENTS.md's *"the class generalised and the harness did not"* is too
+strong in the clause people act on. ADOPTED is still 0 everywhere else, but the
+**treatment** generalised; what did not is the shared MODULE, independently re-written
+six times. That is a DRY finding, not a coverage gap, and whether `ab_timing.rs` should
+become a shared crate stays an owner/boundary call — T5 is measured, not answered.
+
+### Arms
+
+Six new arms, every one perturbation-verified to RED (control GREEN): deleting the
+HAND-ROLLED branch, dropping `provenance_hits` from `classify`, dropping `COUNTY` inside
+it, requiring only one half of `hand_rolled`, zeroing the transitive hop, and letting the
+two resolvers double-count. `bench_657` is the specimen behind the first: with the branch
+removed the arm reports *"hand-rolled interleaved pairs read SEQUENTIAL"*, which is the
+finding stated as a failure.
+
+### What is left of T3
+
+The residue is **292 − 8 = 284** here, and it is genuinely a per-target read: the four
+remaining blind spots are a helper-built ratio, an undivided subtraction, two arms off
+one timer, and orientation — none statically decidable, which is exactly why T4 must not
+be answered from this run. Start with the **160** 2+-timer rows; the 132 1-timer rows are
+the low-prior half.

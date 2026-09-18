@@ -1273,19 +1273,61 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
 - A **report, exit 0** — except a blindness floor or a failing self-test, which
   exit **2**; the self-test runs on every invocation.
 - **ADOPTED** (names `common/ab_timing.rs` or calls `ab_median_ratio`, read off
-  the UNMASKED text because `#[path = "…"]` is a string literal) · **SEQUENTIAL**
+  the UNMASKED text because `#[path = "…"]` is a string literal) ·
+  **HAND-ROLLED** · **SEQUENTIAL**
   (≥2 `Instant::now()` + a ratio whose BOTH sides are timing-derived, minus
   count-like denominators) · **UNRESOLVED**, which is **not clean** and is never
   folded into either neighbour — a two-arm comparison the regex cannot see lands
   there, and so does an ordinary single-arm latency bar that is not the class.
+- ⛔ **`ADOPTED` matched a NAME where the treatment is a SHAPE, and the bucket
+  it leaked into is the one that reads "go migrate this"** (Issue 833 T3).
+  `ADOPTED_RE` spells two literals; interleaved paired arms + a per-pair ratio
+  + a median across pairs is a shape that can be written without either.
+  Measured specimen: `bench_657_clustered_lm_head_bound.rs` read **SEQUENTIAL —
+  "the class"** while its own doc block describes alternating A→B / B→A
+  ordering and a median of per-pair ratios, i.e. a **stricter** treatment than
+  the shared harness. **HAND-ROLLED** is its own verdict and is **never folded
+  into ADOPTED**: that one means *uses the shared harness*, this one means
+  *duplicates it* — both are TREATED and neither is a migration candidate, but
+  only the second is a DRY finding, and pooling them would report the treatment
+  as universal. Both halves of the predicate are required and each negative is
+  a real shape: a per-pair ratio with no reduction is a log, and a reduction
+  with no per-pair ratio is median-of-A-over-median-of-B, which **is** the
+  defect. ADOPTED still outranks it, so a migrated target that kept its old
+  loop is not demoted.
+- ⛔ **A second resolver, because `_T` reads a NAME and the class is a VALUE**
+  (Issue 833 T3). A two-arm ratio whose locals are `a`/`b`, `t_3d`/`t_2d` or
+  `overhead_ns`/`baseline` spells none of `_T`'s tokens and landed in
+  UNRESOLVED. `provenance_hits` binds timing provenance instead — a local
+  assigned, transitively, from an `.elapsed()` value is timing-derived whatever
+  it is called — and the transitive hop is what reaches the ordinary shape,
+  where only the FIRST binding mentions `elapsed` and the one that gets
+  compared is two hops away. Measured here: **8 targets, 8 of 8 TRUE on a
+  per-site read**, every one feeding a bar or an assert. It is a **second**
+  resolver, not a replacement: `RATIO` still decides the easy majority, a site
+  both can see is counted once, and `COUNTY` still applies — a timing local
+  over a count is a rate whichever resolver found it.
 - `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
-- Measured 2026-09-18 over 17 repos: **7 ADOPTED · 130 SEQUENTIAL · 827
-  UNRESOLVED** over 2516 target files / 9125 tracked `*.rs`. ⚠ **ADOPTED is 0 in
-  every repo but katgpt-rs** — the class generalised and the harness did not.
-  Read the SEQUENTIAL figure as a MAGNITUDE: three predicates over overlapping
-  populations returned 55 · 57 · 60 for this repo alone. Take it from a run.
+- Measured 2026-09-18 over 17 repos, after Issue 833 T3: **8 ADOPTED ·
+  9 HAND-ROLLED · 139 SEQUENTIAL · 807 UNRESOLVED** over 2515 target files /
+  9125 tracked `*.rs`. Read the SEQUENTIAL figure as a MAGNITUDE: three
+  predicates over overlapping populations returned 55 · 57 · 60 for this repo
+  alone. Take every figure from a run.
+- ⛔ **"ADOPTED is 0 in every repo but katgpt-rs — the class generalised and
+  the harness did not" was TRUE in its first clause and too strong in its
+  second, and the second is the one anybody acts on.** ADOPTED is still 0
+  everywhere else. But the shape-based verdict measures **9 HAND-ROLLED, and
+  6 of the 9 are OUTSIDE this repo** — riir-ai 3, riir-neuron-db 2,
+  riir-train 1. The **treatment** generalised; what did not is the shared
+  MODULE, independently re-written six times. That is a DRY finding rather
+  than a coverage gap, and it is the measurement Issue 833 T5 / 834 T3 ask for
+  before the cross-repo question is answered — it does not answer it, because
+  whether `ab_timing.rs` should become a shared crate is an owner/boundary
+  call. ⚠ Read the ADOPTED 7 → 8 and 2516 → 2515 deltas as **sibling drift
+  since that measurement**, not as this change: `ADOPTED_RE` and the target
+  predicate were untouched by T3.
 - ⛔ **No verdict half, deliberately** (Issue 833 T4, 834 T4) — do not add one by
   symmetry with the sweep family. Migration is a per-target read on FOUR axes,
   none of them statically decidable: the `a`/`b` ORIENTATION (`AbRatio::median`
@@ -1300,9 +1342,21 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   a PAIRED A/B — where they are not, the fixture needs reworking before the
   timing does. A slice chosen from
   a classifier with hundreds of unresolved rows is a slice chosen from a guess.
-- ⚠ **STATED blind spots:** a ratio built through a helper; a comparison written
-  as a subtraction or a percentage; two arms differenced off ONE
-  `Instant::now()`; and orientation, which is not statically decidable.
+- ⚠ **STATED blind spots, NARROWED by Issue 833 T3:** a ratio built through a
+  helper; a comparison written as a subtraction or a percentage **and never
+  divided**; two arms differenced off ONE `Instant::now()`; and orientation,
+  which is not statically decidable. The fifth — a ratio whose locals are
+  timing-derived by VALUE but not by NAME — is CLOSED by `provenance_hits`.
+- **UNRESOLVED carries two sub-populations with opposite priors, and pooling
+  them is this bucket's own hazard one level down** (Issue 833 T3). A
+  **1-timer** row is mostly an ordinary single-arm bar; a **2+-timer** row is
+  where every STATED blind spot above lives. Measured here: **327 · 480**
+  workspace-wide, **132 · 160** in this repo — so more than half the bucket is
+  the half worth reading first. Printed on the summary line and tagged per row
+  under `-v`. A **triage aid, never a verdict** — the percentile audit's `tail
+  support` standing: it ORDERS the rows so a read starts where it can change
+  an answer, exactly as the `heading oracle COST` line does for the ~99%
+  redundant residue one section up.
 
 ## A gate that ABORTS reports exit 0 — `scripts/trap_exit_launder_audit.py`
 
