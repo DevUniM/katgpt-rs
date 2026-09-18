@@ -318,6 +318,82 @@ def selftest() -> list:
     if repo_set(Path("/definitely/not/here")) != set():
         fails.append("an unreadable registry must read as empty, not raise")
 
+    # 10. ⛔ `scan()` ITSELF, over a real fixture workspace (Issue 837).
+    #     Arms 1-9 assert `classify()`, which is the classifier; `scan()` is
+    #     the VERDICT layer above it and had NO arm at all, so its three
+    #     decisions — the env default, the manifest-name filter and the
+    #     not-a-finding filter — were unreached. That is the split
+    #     `arm_reach_audit` records for every module it measured: the
+    #     classifier well armed and the verdict not.
+    import subprocess
+    with tempfile.TemporaryDirectory() as d:
+        ws = Path(d)
+        for name in ("alpha", "beta"):
+            r = ws / name
+            (r / "crates" / "inner").mkdir(parents=True)
+            for a in (("init", "-q", "-b", "main"),
+                      ("config", "user.email", "t@t"), ("config", "user.name", "t")):
+                subprocess.run(["git", "-C", str(r), *a], check=True,
+                               capture_output=True)
+        a = ws / "alpha"
+        # a cross-repo dep (counts), an intra-repo one (must NOT count), and a
+        # non-manifest .toml carrying a path dep (must not be read at all).
+        (a / "Cargo.toml").write_text(
+            '[dependencies]\nbeta = { path = "../beta" }\n', encoding="utf-8")
+        (a / "crates" / "inner" / "Cargo.toml").write_text(
+            '[dependencies]\nsib = { path = "../../crates/inner" }\n', encoding="utf-8")
+        (a / "crates" / "inner" / "Other.toml").write_text(
+            '[dependencies]\nghost = { path = "../../../beta" }\n', encoding="utf-8")
+        subprocess.run(["git", "-C", str(a), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(a), "commit", "-qm", "b"], check=True,
+                       capture_output=True)
+
+        got = scan(str(a), ws=ws, partial=False,
+                   repos_on_disk={"alpha", "beta"}, registry={"alpha", "beta"})
+        if got["manifests"] != 2:
+            fails.append(f"scan counted {got['manifests']} manifest(s), want 2 "
+                         f"— `Other.toml` is not a manifest and a name filter "
+                         f"that admits it reads dependency tables nobody declared")
+        if got["deps"] != 1:
+            fails.append(f"scan counted {got['deps']} dep(s), want 1 — the "
+                         f"INTRA-REPO row must not enter the population, or "
+                         f"the floor is satisfied by deps that cannot fail")
+        # ⛔ UNCONDITIONAL. The first version of this guarded the check on
+        # `if got["rows"].get("RESOLVED")`, and the mutant that inverts the
+        # not-a-finding filter empties exactly that list — so the assertion
+        # deleted itself on the input it existed to catch, and the mutant
+        # survived with the count unchanged (1 INTRA-REPO instead of 1
+        # RESOLVED). A guarded assertion is no assertion.
+        resolved = got["rows"].get("RESOLVED", [])
+        if len(resolved) != 1 or resolved[0][3] != "beta":
+            fails.append(f"scan did not report exactly one RESOLVED dep on "
+                         f"beta: {got['rows']}")
+        if set(got["rows"]) - {"RESOLVED"}:
+            fails.append(f"INTRA-REPO / OUT-OF-WORKSPACE reached the row set "
+                         f"({sorted(got['rows'])}) — they are not findings, "
+                         f"and counting them inflates every bucket")
+
+        # the env DEFAULT, both arms — `partial=None` is the production path,
+        # and it is read from os.environ, so only an injected environment can
+        # assert it.
+        prev = os.environ.get("DOCS_GATE_PARTIAL_CLONE")
+        try:
+            os.environ["DOCS_GATE_PARTIAL_CLONE"] = "1"
+            if not scan(str(a), ws=ws, repos_on_disk={"alpha", "beta"},
+                        registry={"alpha", "beta"})["partial"]:
+                fails.append("DOCS_GATE_PARTIAL_CLONE=1 did not reach scan()")
+            os.environ["DOCS_GATE_PARTIAL_CLONE"] = "0"
+            if scan(str(a), ws=ws, repos_on_disk={"alpha", "beta"},
+                    registry={"alpha", "beta"})["partial"]:
+                fails.append("DOCS_GATE_PARTIAL_CLONE=0 read as SET — any "
+                             "non-empty value would then excuse an ORPHAN")
+        finally:
+            if prev is None:
+                os.environ.pop("DOCS_GATE_PARTIAL_CLONE", None)
+            else:
+                os.environ["DOCS_GATE_PARTIAL_CLONE"] = prev
+
     return fails
 
 

@@ -1,0 +1,26 @@
+# SUBSET-scoped per-repo pin files — scripts/repo_registration_gate.py.
+#
+# Issue 837 T2. Every file the gate governs must carry a row for every ON-DISK
+# canonical repo, because a sweep reading a file with no row for a repo reds
+# `UNPINNED — add a row (or it can never red)`. A file listed HERE is exempt
+# from that demand, and the exemption costs one sentence.
+#
+# Format:  <file>  # the reason it is legitimately a subset
+#
+# ⛔ The DEFAULT is EVERY, and the asymmetry is deliberate: a file whose
+# declaration somebody forgot reds loudly, where a forgotten EVERY would green
+# silently. A gate whose failure mode is silence is the defect this one exists
+# to close.
+#
+# ⛔ It reds in BOTH directions. A row whose file has since reached full
+# coverage, or whose file is no longer governed at all, is a STALE
+# acknowledgement and fails — a pin file that can only ever loosen is not a
+# wall. The arms assert exactly those two cases.
+#
+# ⚠ A row here is NOT a judgement that the file is right. It says the file's
+# population is narrower than the registry BY DESIGN, and each reason below
+# quotes the file's own header saying so — not this gate's opinion of it.
+
+docs_drift_floors.txt  # its own header: records "only WHICH repos are known to carry drift-auditable labels", so the population is the VOCABULARY half of Issue 702's split, not the repo set. A repo with no bench-doc labels and no Cargo.toml comments has nothing for this sweep to floor, and its sweep is green without a row.
+
+required_features_build_floors.txt  # its own header: "Only repos measured WHOLE are listed", and an unlisted repo REDS its run rather than defaulting permissive — so this file is itself the record of what has been decided. riir-game-sdk is deliberately absent with a stated reason (mid-refactor tree, dirty Cargo.toml). Demanding completeness here would overwrite a decision the file exists to hold.
