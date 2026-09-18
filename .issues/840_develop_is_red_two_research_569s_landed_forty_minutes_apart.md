@@ -248,14 +248,39 @@ interleave in it under no identifying mark. It is therefore **not** a fallback f
 authorship that `katopz@gmail.com` cannot provide — it has the same defect, one layer
 down, and it reads as authoritative because it is mechanical.
 
-Measured, on this issue's own repair. `katgpt-rs-54` read the reflog and reported that a
-`reset: moving to HEAD^` at 23:25:49 was `katgpt-rs-fa`'s, "bracketed unambiguously" by
-two of its commits. The bracketing commit `fd9f5d75` at 23:25:23 is **katgpt-rs-54's
-own** — its body reads *"this session's ten commits"* and refers to katgpt-rs-fa in the
-third person — so the reset was that session's too, exactly as its own earlier message
-had described before the reflog appeared to contradict it. The instrument inverted a
-session's memory of its own action.
+⛔ **A fourth fallback failed here too, and it is the one that actually produced a wrong
+answer — ELIMINATION OVER AN INCOMPLETE ROSTER.** This section first recorded that the
+`reset: moving to HEAD^` at 23:25:49 belonged to `katgpt-rs-54`, reasoning from the
+bracketing commit `fd9f5d75`: *it refers to katgpt-rs-fa in the third person, therefore
+it is not fa's, therefore it is 54's.* **That is valid only in a two-session worktree,
+and at least four sessions were live.** Corrected and verified:
+
+- `fd9f5d75` carries **no `Session:` marker at all** — 0 matches for `^Session:`. It is
+  anonymous, at the centre of a dispute about attribution.
+- Its body claims *"this session's ten commits are 833 T3 / 836 / 837 / 840 work"*.
+  Those are **`katgpt-rs-c5`'s** issues. `katgpt-rs-54`'s own work is 833 T1/T2, the
+  riir-llm registration and the box-state commit — which that sentence explicitly
+  excludes. Of the ten rebased commits, exactly **one** (`d8bfa9b8`) carries a marker,
+  and it reads `Session: katgpt-rs-54`; the other nine carry none.
+- It also says *"HEAD moved `6b911ef3` → `c4bed8f1` without this session running a
+  rebase"* — and `katgpt-rs-54` ran that rebase. The author is disowning the very
+  action that identifies the session it was attributed to.
+
+So the commit is a third session's, and the `reset` was not `katgpt-rs-54`'s.
+
+⚑ **Two findings survive that correction, and they point opposite ways.** The first is
+that the reflog did **not** produce this error — it reported order correctly; an
+eliminator run over an assumed roster of 2 did. The second is an argument FOR the
+marker, visible only because one commit had one: `fd9f5d75` claims **ten** commits over a
+range that contains ten, but one of those is `d8bfa9b8`, marked as another session's. The
+range is 9 + 1 and the claim over-reaches by exactly the marked commit. **An unmarked
+commit is claimable by anyone reading a range**, and a range in a shared worktree is not
+a session's work merely because that session rebased it.
 
 ⚠ So when a shared-worktree question is about **who**, a commit's own TEXT is the only
-self-identifying evidence in the repository. The reflog answers *what happened and in
-what order*, never *whose*.
+self-identifying evidence in the repository — and prose is not a substitute for the
+marker. `fd9f5d75` was resolvable at all only because its body happened to enumerate the
+issues it touched, which could be matched against a marked commit elsewhere. That is
+luck. The reflog answers *what happened and in what order*, never *whose*; elimination
+answers nothing until the roster is counted, and `ListAgents` lists only sessions still
+ALIVE, so it is a floor on that count and never the count itself.

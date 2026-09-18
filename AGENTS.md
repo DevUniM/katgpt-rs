@@ -2511,15 +2511,17 @@ build HEAD's version + your edit, `git hash-object -w`, then `git
 update-index --cacheinfo`. Their hunks stay uncommitted; the worktree stays
 coherent for them.
 
-⛔ **Nothing in git identifies WHICH session did something here, and the two
-obvious fallbacks both fail** (Issue 840). Every commit in this worktree authors
-as one address, so authorship is blank; and a shared worktree has **one `HEAD`
+⛔ **Nothing in git identifies WHICH session did something here, and all THREE
+fallbacks are measured broken** (Issue 840). Every commit in this worktree authors
+as one address, so authorship is blank; a shared worktree has **one `HEAD`
 reflog**, in which every session's checkouts, resets and commits interleave under
-no mark at all. The reflog is the worse trap of the two because it is mechanical
-and therefore reads as authoritative — measured, a session used it to attribute a
-`reset` to a peer and the bracketing commit was **its own**, inverting its own
-memory of an action it had already described correctly. *The reflog answers what
-happened and in what order, never whose.*
+no mark at all — *it answers what happened and in what order, never whose*; and
+**elimination fails on an incomplete roster**, which is the one that actually
+produced a wrong answer. Measured: an unmarked commit was reasoned about as
+*"it refers to session `fa` in the third person, so it is not `fa`'s, so it is
+`54`'s"* — sound only in a **two**-session worktree, and four were live. Count the
+roster before eliminating over it; `ListAgents` shows only sessions still alive,
+so it is a floor on that count, never the count.
 - **Put `Session: <name>, <epoch>` in the commit body** — a commit's own TEXT is
   the only self-identifying evidence in the repository, and it is what let one
   session rule itself out of Issue 840 in a single `git log --grep`.
@@ -2530,6 +2532,16 @@ happened and in what order, never whose.*
   a ~20-hour search window. A bare name disambiguates sessions running
   CONCURRENTLY and silently conflates them ACROSS TIME, which is the axis anyone
   grepping it later is actually on.
+- ⚑ **The marker is what catches an over-claim, including your own.** In the same
+  incident a session wrote *"this session's ten commits"* over a rebased range
+  that did contain ten — but one of them carried another session's marker, so the
+  range was 9 + 1 and the sentence over-claimed by exactly the marked commit. **An
+  unmarked commit is claimable by anyone reading a range**, and a range in a
+  shared worktree is not a session's work simply because one session rebased it.
+- ⚠ Prose is **not** a substitute. The commit at the centre of that dispute was
+  resolvable only because its body happened to enumerate the issues it touched,
+  which let a reader match it against a marked commit elsewhere. That is luck, and
+  it is why the marker is one line and not a paragraph.
 
 ### The same hazard one layer down: a FIXED temp path — `scripts/shared_temp_path_gate.py`
 
