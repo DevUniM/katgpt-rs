@@ -89,6 +89,61 @@ case "$ARCH" in
 esac
 command -v cargo >/dev/null 2>&1 || { echo "✗ cargo not installed"; exit 1; }
 
+# ── BOX STATE — a latency bar without it is not a measurement ──────────────
+# AGENTS.md §Feature Flag Discipline already rules that "a latency gate on a
+# thrashing box measures the pagefile". EVERY PASSED-ALONE row this script
+# prints is a latency-bar outcome, and until 2026-09-18 they were logged with
+# no box state at all — so two runs were not comparable even in principle, and
+# a series of them could not be pooled into a rate no matter how many were run.
+# Measured occasion: runs 1 and 2 (2026-09-18) each fired a DIFFERENT member of
+# the Issue-833 class and run 3 fired none, and nothing in the three logs can
+# separate "quieter box" from "population minus its two most fragile members".
+#
+# DISCLOSURE ONLY — nothing here changes a verdict, a floor or a pin.
+# Never fails the run. Every capture is `|| true`-guarded and emptiness-checked:
+# under `set -euo pipefail` a `var="$(pipeline)"` that dies takes the script with
+# it AFTER the measured work and BEFORE the verdict, which is the exact class
+# AGENTS.md documents at length.
+#
+# ⛔ Selection is on whether a method ANSWERS, never on whether its source
+# exists. MSYS ships a readable `/proc/meminfo` carrying no MemAvailable,
+# CommitLimit or Committed_AS, so `[ -r /proc/meminfo ]` picks a branch that
+# cannot answer on the one box this instrument exists for — and the result
+# degrades to "unavailable", which reads as an honest degradation rather than a
+# bug. Measured here, by the arm below, which previously asserted only the
+# output SHAPE and so passed while the memory half was dead.
+box_state() {
+    state_mem=""
+    state_src=""
+
+    if [ -r /proc/meminfo ]; then
+        state_mem="$(awk '
+            /^MemAvailable:/ { a = $2 }
+            /^CommitLimit:/  { c = $2 }
+            /^Committed_AS:/ { u = $2 }
+            END {
+                if (a != "" && c != "")
+                    printf "avail %.1f GiB · commit %.1f/%.1f GiB", \
+                           a / 1048576, u / 1048576, c / 1048576
+            }' /proc/meminfo 2>/dev/null || true)"
+        [ -n "$state_mem" ] && state_src="/proc/meminfo"
+    fi
+
+    if [ -z "$state_mem" ] && command -v powershell.exe >/dev/null 2>&1; then
+        state_mem="$(powershell.exe -NoProfile -NonInteractive -Command \
+            '$m = Get-CimInstance Win32_PerfRawData_PerfOS_Memory; $o = Get-CimInstance Win32_OperatingSystem; "avail {0:N1} GiB, commit {1:N1}/{2:N1} GiB" -f ($o.FreePhysicalMemory/1MB), ($m.CommittedBytes/1GB), ($m.CommitLimit/1GB)' \
+            2>/dev/null | tr -d '\r' || true)"
+        [ -n "$state_mem" ] && state_src="Win32_PerfRawData"
+    fi
+
+    if [ -z "$state_mem" ]; then
+        state_mem="UNAVAILABLE"
+        state_src="no method answered"
+    fi
+
+    printf '%s [%s]' "$state_mem" "$state_src"
+}
+
 # ── The scratch tree ────────────────────────────────────────────────────────
 # `git archive HEAD`, never the checkout: Issue 797's rule one axis over — an
 # instrument that reads the WORKTREE measures lines no commit contains, and
@@ -100,6 +155,8 @@ if [ -n "$KEEP_SCRATCH" ]; then
 else
     SCRATCH="$(mktemp -d)"
 fi
+
+BOX_START="$(box_state)"
 echo "▸ extracting $SHA → $SCRATCH"
 git -C "$REPO" archive HEAD | tar -x -C "$SCRATCH"
 FLOORS="$SCRATCH/scripts/x86_64_matrix_floors.txt"
@@ -151,6 +208,18 @@ JOBS="${X86_MATRIX_JOBS:-6}"
 #
 # Capped rather than retried: a retry loop would hide a genuine build break.
 # Overridable, because a Linux box has no reason to pay for it.
+#
+# ⚠ Two MORE failures, 2026-09-18, and they do NOT fit the load story above:
+# runs 5 and 6 (`--libs-only`, fresh scratch each) both died in the highs-sys
+# build WITH this cap already at 1 and with no concurrent cargo — after four
+# consecutive passes the same evening. Different symptoms and different cells:
+#   run 5, cell 6: `cl : command line error D8040` (child-process spawn)
+#   run 6, cell 5: `fatal error C1001: Internal compiler error`
+# Cell-instability is what rules out a code cause; what it does NOT do is
+# confirm "concurrent load", because there was none to speak of. So the honest
+# standing is 4 passes / 2 failures on one box in one evening with the cap
+# fixed, mechanism UNKNOWN, and the comment above should be read as one
+# hypothesis rather than the finding. Do not tune this number on that evidence.
 if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then
     case "$(uname -s)" in
         MINGW* | MSYS* | CYGWIN*) export CMAKE_BUILD_PARALLEL_LEVEL=1 ;;
@@ -488,7 +557,20 @@ if [ -n "$STALE" ]; then
     FAILED=$((FAILED + 1))
 fi
 
+BOX_END="$(box_state)"
 echo ""
+echo "▸ box state — every PASSED-ALONE row above is a latency-bar outcome:"
+echo "    at start: $BOX_START"
+echo "    at end:   $BOX_END"
+echo "  ⚠ NOT observed: in-run load. These are ENDPOINT samples, and the"
+echo "     endpoints are the two instants our own cargo is NOT running."
+echo "     Measured 2026-09-18 (run 5): a cell died at \`cl : error D8040\`"
+echo "     — an MSVC child-spawn failure, i.e. a box under enough load to"
+echo "     break a build — while both endpoints read quiet. A per-cell"
+echo "     sampler was tried and could not be armed against a known answer,"
+echo "     so it is NOT shipped rather than shipped unverified."
+echo "  ⚠ Two runs of this matrix are comparable only through these lines. A"
+echo "     quiet run is NOT evidence the Issue-833 population is shrinking."
 if [ "$FAILED" -gt 0 ]; then
     echo "✗ x86_64 execution matrix FAILED — $FAILED red cell(s) over $CELL cell(s)"
     exit 1
