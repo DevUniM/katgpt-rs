@@ -45,7 +45,6 @@ crates/katgpt-pruners/src/fft/sdar_player.rs::new::3 # cfg(test); structural ass
 crates/katgpt-pruners/src/g_zero/template_proposer.rs::new::3 # one doc-comment example (rust,ignore fence — never compiled) + cfg(test) helper and probabilistic-tolerance asserts; the proposer is a stochastic drafter by design
 crates/katgpt-pruners/src/go/sdpg_player.rs::new::2 # cfg(test); legality asserts on an empty board hold for any draw
 crates/katgpt-pruners/src/go/state.rs::new::2 # cfg(test); rng.seed(fixed 0..=50) precedes every draw, so the unseeded constructor state is never consumed
-crates/katgpt-pruners/src/go/tournament.rs::new::1 # cfg(test); structural matches! assert on an empty board
 crates/katgpt-pruners/src/vr_loop.rs::new::3 # cfg(test); the mock generator's generate(.., _rng) ignores the RNG entirely (preloaded candidate queue)
 crates/katgpt-ruliology/src/mutation.rs::new::1 # cfg(test); out-of-bounds OutputFlip no-op assert — the bounds check makes it rng-independent
 crates/katgpt-spectral/src/peira.rs::new::1 # the no_collapse guard: min_norm > 0.0 over continuous-uniform samples — all-zero has measure ~zero; the entropy-driven CONVERGENCE sibling was fixed to with_seed(42) in T3 (Issue 809)
@@ -60,6 +59,24 @@ examples/best_buddies_01_bench.rs::new::4 # example bench harness; demo code, no
 examples/corr_budget_01_bench.rs::bool::4 # example bench input streams (same class as the correlation_budget test); demo code, not a shipped primitive
 examples/go_00_api_bridge.rs::usize::1 # random legal-move demo player; by-design randomness over an externally-validated move set
 examples/go_05_autoresearch.rs::new::1 # example: caller-side construction for run_autoresearch(config, rng); demo
+# ⛔ A REFUTED row, removed 2026-09-18, recorded here because the reason it
+# carried is the reason to distrust the reasons on the rows below.
+#
+#   crates/katgpt-pruners/src/go/tournament.rs::new::1
+#     "cfg(test); structural matches! assert on an empty board"
+#
+# The assertion was matches!(action, GoAction::Place(_, _)) with the message
+# "returned Pass on empty board", and GoRandomPlayer passes DELIBERATELY:
+# PASS_PROBABILITY = 0.02, "2% pass to avoid infinite games". So the unseeded
+# draw could reach the assert — measured over 400 seeds x 6 player types, 9
+# failures (Random 5, which is the 2% constant; MCTS 4). "Structural" was an
+# adjudication made by reading the assert and not the player.
+#
+# It was found by EXECUTION, not by review: the x86_64 matrix hit it, re-ran it
+# alone, saw it pass, and filed it TRANSIENT. That verdict is right for a
+# load-sensitive perf bar and wrong for a coin flip — the third class it has
+# been wrong about (Issues 831, 832). If a row below says a draw cannot reach
+# its assertion, that claim is worth ONE run of the seed sweep.
 examples/go_10_sdpg_tournament.rs::new::1 # example tournament loop; by-design randomness
 examples/self_distilling_demo.rs::usize::1 # random_arm() — the demo's stochastic arm selection is the point being demonstrated
 examples/self_distilling_demo.rs::f32::1 # demo match-quality sampling; same by-design class as random_arm
