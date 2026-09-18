@@ -2435,6 +2435,33 @@ issue in the right repo FIRST. Prevents the drift pattern of a parallel
 system re-implementing shipped substrate under a different name (ThreatField
 Issue 047; orchard/motivation riir-ai Issues 490/493).
 
+⛔ **A concurrent session is the OTHER way this gate gets skipped, and the
+cost is a NEGATIVE RESULT rather than a duplicate** (Issue 825, 2026-09-18).
+Two sessions implemented one issue from one research row four hours apart. The
+second began after the first's primitive was already on `develop`, landed a
+second bench, measured an endpoint MAE of 0.1190 against a ≤ 0.01 bar, fired
+the issue's negative-result clause, **removed the issue file** and wrote *"the
+paper's 20× does not transfer to zone graphs"* into HISTORY.md. It was two
+defects in its own walker. A duplicate is embarrassing and recoverable; a
+falsification written into the archive is what stops anyone looking again.
+- **The disagreement was the oracle, and it is cheaper than either
+  instrument's self-consistency.** What settled it was running the losing
+  bench's OWN fixtures through the winning bench's shipped readout — same
+  graph, same convention, MAE 0.0 vs 0.119. Neither run alone could produce
+  that: every gate in the failing bench was internally satisfied at the moment
+  it declared the construction falsified. **Before recording a negative,
+  re-run `git fetch` and check whether a sibling shipped the same primitive;
+  if one did, cross-run the fixtures before writing the word "does not".**
+- **Distrust a mechanism inferred from a monotone sequence.** The write-up
+  read `0.119 → 0.078 → 0.037` as *"converging ⇒ discretization error in the
+  readout, not a broken solve"*, and the named mechanism is precisely the one
+  the corrected readout proves is exact. A converging error is consistent with
+  many mechanisms.
+- **Repair beats delete when the loser is independent.** Both benches keep
+  their own solver and their own walker and now agree, which is stronger than
+  either alone; the one thing they SHARE is the rule they disagreed about,
+  imported rather than copied.
+
 Research workflow (paper classification, 7-repo routing, fusion-first
 distillation, novelty + GOAT gates, modelless-unblock protocol §3.5):
 `.agents/skills/research/SKILL.md`.
