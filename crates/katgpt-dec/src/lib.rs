@@ -59,6 +59,8 @@ pub mod birth_death;
 #[cfg(feature = "heat_kernel_trajectory")]
 pub mod bom_heat_kernel;
 pub mod cache;
+#[cfg(feature = "coulomb_flow")]
+pub mod coulomb;
 pub mod flow;
 #[cfg(feature = "heat_kernel_trajectory")]
 pub mod heat_kernel;
@@ -101,9 +103,12 @@ pub use backend::{DecBackend, select_backend};
 pub use cache::{DecCache, DirtyRegion, affected_vertices, hodge_decompose_cached};
 pub use flow::{DecFlowField, coexact_flow, exact_flow, harmonic_flow};
 pub use hodge::{
-    HodgeComponents, betti_numbers, dec_relevance_score, harmonic_projector, hodge_decompose,
-    hodge_energy, hodge_residual, hodge_spectrum,
+    HodgeComponents, PoissonScratch, PoissonStats, betti_numbers, dec_relevance_score,
+    harmonic_projector, hodge_decompose, hodge_energy, hodge_residual, hodge_spectrum,
+    poisson_solve, poisson_solve_into,
 };
+#[cfg(feature = "coulomb_flow")]
+pub use coulomb::{CoulombFlowField, CrowdRouter, RouterStep};
 pub use operators::{
     codifferential, codifferential_into, exterior_derivative, exterior_derivative_into,
     graph_laplacian, graph_laplacian_into, hodge_laplacian, hodge_laplacian_into, hodge_star,

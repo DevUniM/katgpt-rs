@@ -123,6 +123,30 @@ struct CgScratch {
     r: Vec<f32>,
     p: Vec<f32>,
     ap: Vec<f32>,
+    // The five cochains the matvec needs. They used to be built per SOLVE,
+    // which is alloc-free across CG iterations but NOT across repeated solves
+    // — and a repeated solve is the whole shape of `poisson_solve_into`'s
+    // refinement loop and of any caller redistributing a crowd every event.
+    // Measured through the Bench 825 G4 harness: 3 allocations per refined
+    // solve before this moved here, 0 after. The PoC that gate was written
+    // against carried its own CG and did not have them, so the gate had been
+    // certifying a transcription rather than the shipped path.
+    v_field: CochainField,
+    ax_field: CochainField,
+    s_upper: CochainField,
+    s_lower: CochainField,
+    s_result: CochainField,
+}
+
+/// Re-shape a scratch cochain in place. `Vec::resize` does not shrink capacity,
+/// so a caller alternating shapes still allocates only on GROWTH.
+#[inline]
+fn fit_cochain(f: &mut CochainField, rank: u8, n_cells: usize) {
+    f.rank = rank;
+    f.dim = 1;
+    if f.data.len() != n_cells {
+        f.data.resize(n_cells, 0.0);
+    }
 }
 
 impl CgScratch {
@@ -133,7 +157,33 @@ impl CgScratch {
             r: vec![0.0; n],
             p: vec![0.0; n],
             ap: vec![0.0; n],
+            v_field: CochainField::zeros(0, n, 1),
+            ax_field: CochainField::zeros(0, n, 1),
+            s_upper: CochainField::zeros(1, 0, 1),
+            s_lower: CochainField::zeros(0, 0, 1),
+            s_result: CochainField::zeros(0, n, 1),
         }
+    }
+
+    /// Re-fit the matvec cochains for `(rank, n)`. A no-op — and so
+    /// allocation-free — whenever the shape is unchanged, which is the
+    /// steady-state repeated-solve path.
+    #[inline]
+    fn fit_fields(&mut self, cx: &CellComplex, rank: u8, n: usize) {
+        // Sized for the intermediate ranks `hodge_laplacian_into` needs;
+        // both are empty for rank 0, where `graph_laplacian_into` needs no
+        // scratch beyond `ax_field`.
+        let n_upper = if rank + 1 < MAX_RANK {
+            cx.n_cells(rank + 1)
+        } else {
+            0
+        };
+        let n_lower = if rank > 0 { cx.n_cells(rank - 1) } else { 0 };
+        fit_cochain(&mut self.v_field, rank, n);
+        fit_cochain(&mut self.ax_field, rank, n);
+        fit_cochain(&mut self.s_upper, rank + 1, n_upper);
+        fit_cochain(&mut self.s_lower, rank.saturating_sub(1), n_lower);
+        fit_cochain(&mut self.s_result, rank, n);
     }
 
     /// Grow each buffer to `n` if needed. No-op on the steady-state path where
@@ -180,7 +230,18 @@ fn cg_solve_scalar(
     // disjoint field slices for the rest of the function; `scratch` itself
     // is not touched again. This avoids the double-`&mut` borrow that would
     // arise if we re-borrowed `scratch` later (e.g. via a helper).
-    let CgScratch { b, r, p, ap } = scratch;
+    scratch.fit_fields(cx, rank, n);
+    let CgScratch {
+        b,
+        r,
+        p,
+        ap,
+        v_field,
+        ax_field,
+        s_upper,
+        s_lower,
+        s_result,
+    } = scratch;
     let b = &mut b[..n];
     let r = &mut r[..n];
     let p = &mut p[..n];
@@ -195,38 +256,15 @@ fn cg_solve_scalar(
         }
     }
 
-    // Pre-allocate reusable cochain fields for matvec — allocated ONCE, reused across
-    // all CG iterations (up to max_iter). Previously, graph_laplacian / hodge_laplacian
-    // allocated a fresh CochainField (and hodge_laplacian allocated 4 intermediates)
-    // per iteration → up to 5*max_iter heap allocs per solve.
-    let mut v_field = CochainField::zeros(rank, n, 1);
-    let mut ax_field = CochainField::zeros(rank, n, 1);
-    // Scratch for hodge_laplacian_into (rank ≥ 1). Sized for the intermediate ranks;
-    // unused for rank 0 (graph_laplacian_into needs no scratch beyond ax_field).
-    let n_upper = if rank + 1 < MAX_RANK {
-        cx.n_cells(rank + 1)
-    } else {
-        0
-    };
-    let n_lower = if rank > 0 { cx.n_cells(rank - 1) } else { 0 };
-    let mut scratch_upper = CochainField::zeros(rank + 1, n_upper, 1);
-    let mut scratch_lower = CochainField::zeros(rank.saturating_sub(1), n_lower, 1);
-    let mut scratch_result = CochainField::zeros(rank, n, 1);
-
-    // Matvec closure: compute A·v for given v, writing directly into `out` (zero alloc per iter).
+    // Matvec closure: compute A·v for given v, writing directly into `out`.
+    // Every cochain it touches comes from the caller-supplied scratch, so the
+    // whole solve — not merely each iteration of it — allocates nothing.
     // Declared `mut` because it captures `&mut` cochain fields.
     let mut matvec = |cx: &CellComplex, v: &[f32], v_field: &mut CochainField, out: &mut [f32]| {
         v_field.data.copy_from_slice(v);
         match rank {
-            0 => graph_laplacian_into(cx, v_field, &mut ax_field),
-            _ => hodge_laplacian_into(
-                cx,
-                v_field,
-                &mut ax_field,
-                &mut scratch_upper,
-                &mut scratch_lower,
-                &mut scratch_result,
-            ),
+            0 => graph_laplacian_into(cx, v_field, ax_field),
+            _ => hodge_laplacian_into(cx, v_field, ax_field, s_upper, s_lower, s_result),
         };
         out.copy_from_slice(&ax_field.data);
     };
@@ -248,7 +286,7 @@ fn cg_solve_scalar(
     }
 
     for _ in 0..max_iter {
-        matvec(cx, p, &mut v_field, ap);
+        matvec(cx, p, v_field, ap);
 
         let p_ap = dot(p, ap);
         if p_ap.abs() < 1e-20 {
@@ -768,6 +806,222 @@ pub(crate) fn deflate(v: &mut [f32], basis: &[Vec<f32>]) {
             *vi -= dot * bi;
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Public Poisson solve (Issue 825 T3)
+// ---------------------------------------------------------------------------
+
+/// Reusable working set for [`poisson_solve_into`] — the whole point of the
+/// `_into` form, so a caller solving once per redistribution event pays zero
+/// heap allocations after construction.
+pub struct PoissonScratch {
+    cg: CgScratch,
+    /// Accumulated solution across refinement rounds.
+    phi: Vec<f32>,
+    /// True residual `rhs - L(phi)`, recomputed each round.
+    resid: Vec<f32>,
+    /// Per-round CG correction.
+    corr: Vec<f32>,
+    /// Cochain views for the `graph_laplacian_into` matvec.
+    phi_ch: CochainField,
+    lx_ch: CochainField,
+}
+
+impl PoissonScratch {
+    /// Allocate for a complex with `n_vertices` rank-0 cells.
+    #[must_use]
+    pub fn new(n_vertices: usize) -> Self {
+        Self {
+            cg: CgScratch::new(n_vertices),
+            phi: vec![0.0; n_vertices],
+            resid: vec![0.0; n_vertices],
+            corr: vec![0.0; n_vertices],
+            phi_ch: CochainField::zeros(0, n_vertices, 1),
+            lx_ch: CochainField::zeros(0, n_vertices, 1),
+        }
+    }
+
+    /// Grow to `n` vertices if needed. No-op on the steady-state path.
+    fn ensure(&mut self, n: usize) {
+        if self.phi.len() != n {
+            self.cg.ensure(n);
+            self.phi.resize(n, 0.0);
+            self.resid.resize(n, 0.0);
+            self.corr.resize(n, 0.0);
+            self.phi_ch = CochainField::zeros(0, n, 1);
+            self.lx_ch = CochainField::zeros(0, n, 1);
+        }
+    }
+}
+
+/// What the solve actually did — returned rather than logged, because a solver
+/// that silently did nothing is indistinguishable from one that converged.
+///
+/// That is not hypothetical: the Issue 825 PoC carried a breakdown guard
+/// (`|pᵀAp| < f32::EPSILON`) that discarded every refinement step, and three
+/// rounds of "refinement" left the residual unchanged to the bit. Read
+/// [`residual_inf`](Self::residual_inf), not the iteration count.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PoissonStats {
+    /// Number of CG solves issued (1 initial + one per refinement round). NOT an
+    /// iteration count: the inner CG does not report one, and inventing a
+    /// number here would be the fabrication this struct exists to prevent.
+    pub cg_solves: usize,
+    /// Refinement rounds actually taken (0 = the first CG solve already met the floor).
+    pub refine_rounds: usize,
+    /// `‖rhs − L(φ)‖_∞` recomputed from the returned `φ` — the TRUE residual,
+    /// never CG's recursive one.
+    pub residual_inf: f32,
+}
+
+/// Refinement rounds attempted by [`poisson_solve_into`].
+const POISSON_REFINE_ROUNDS: usize = 3;
+/// Stop refining once the true residual is at or below this.
+const POISSON_REFINE_FLOOR: f32 = 1e-7;
+
+/// Remove the constant mode.
+///
+/// The rank-0 Laplacian is singular on constants, so both the RHS and the
+/// iterate must stay mean-zero or CG wanders along the null direction and its
+/// residual stops being a convergence signal.
+fn project_mean_zero(v: &mut [f32]) {
+    if v.is_empty() {
+        return;
+    }
+    let mean = v.iter().sum::<f32>() / v.len() as f32;
+    for e in v.iter_mut() {
+        *e -= mean;
+    }
+}
+
+/// Solve the rank-0 Poisson equation `Δφ = rhs` for the mean-zero `φ`
+/// (the pseudo-inverse solution), zero-alloc after `scratch` is built.
+///
+/// `Δ` is the crate's rank-0 Hodge Laplacian `δd` — the SAME operator
+/// [`hodge_decompose`] solves against, reached through
+/// [`graph_laplacian_into`](crate::operators::graph_laplacian_into), so the
+/// residual below is measured against the operator that was actually inverted.
+///
+/// # Why this is not plain CG
+///
+/// CG tracks its residual RECURSIVELY (`r -= α·Ap`), and in f32 that recursion
+/// drifts away from the true `rhs − L(x)`. Measured on the Issue 825 zone
+/// graph: **1.4e-5 true against a 1e-7 recursive residual**, a factor of ~100.
+/// So this does CG, then ITERATIVE REFINEMENT against the recomputed true
+/// residual. A caller that wants the un-refined solve can read
+/// [`PoissonStats::refine_rounds`] to see whether it mattered.
+///
+/// # Solvability
+///
+/// `Δ` has the constants in its kernel, so `rhs` must be mean-zero for the
+/// system to be consistent. A density difference `μ₁ − μ₀` between two
+/// distributions of equal total mass is mean-zero by construction. Any
+/// non-zero mean in `rhs` is projected out (it is unreachable by `Δ` and
+/// carries no information about `φ`).
+///
+/// # Panics
+///
+/// Panics if `rhs.len() != phi_out.len()`.
+pub fn poisson_solve_into(
+    cx: &CellComplex,
+    rhs: &[f32],
+    phi_out: &mut [f32],
+    scratch: &mut PoissonScratch,
+) -> PoissonStats {
+    assert_eq!(
+        rhs.len(),
+        phi_out.len(),
+        "poisson_solve_into: rhs and phi_out must have the same length"
+    );
+    let n = rhs.len();
+    scratch.ensure(n);
+    if n == 0 {
+        return PoissonStats {
+            cg_solves: 0,
+            refine_rounds: 0,
+            residual_inf: 0.0,
+        };
+    }
+
+    let mut cg_solves = 0usize;
+
+    scratch.resid[..n].copy_from_slice(rhs);
+    project_mean_zero(&mut scratch.resid[..n]);
+
+    cg_solve_scalar(
+        cx,
+        &scratch.resid[..n],
+        0,
+        CG_TOL,
+        CG_MAX_ITER,
+        &mut scratch.phi[..n],
+        &mut scratch.cg,
+    );
+    cg_solves += 1;
+
+    let mut refine_rounds = 0usize;
+    let mut residual_inf = f32::INFINITY;
+    for _ in 0..=POISSON_REFINE_ROUNDS {
+        // True residual: rhs - L(phi), against the operator CG inverted.
+        scratch.phi_ch.data[..n].copy_from_slice(&scratch.phi[..n]);
+        graph_laplacian_into(cx, &scratch.phi_ch, &mut scratch.lx_ch);
+        for ((r, &rh), &lx) in scratch.resid[..n]
+            .iter_mut()
+            .zip(rhs.iter())
+            .zip(scratch.lx_ch.data[..n].iter())
+        {
+            *r = rh - lx;
+        }
+        project_mean_zero(&mut scratch.resid[..n]);
+        residual_inf = scratch.resid[..n]
+            .iter()
+            .fold(0.0f32, |m, v| m.max(v.abs()));
+        if residual_inf <= POISSON_REFINE_FLOOR || refine_rounds == POISSON_REFINE_ROUNDS {
+            break;
+        }
+        cg_solve_scalar(
+            cx,
+            &scratch.resid[..n],
+            0,
+            CG_TOL,
+            CG_MAX_ITER,
+            &mut scratch.corr[..n],
+            &mut scratch.cg,
+        );
+        cg_solves += 1;
+        for (p, &c) in scratch.phi[..n].iter_mut().zip(scratch.corr[..n].iter()) {
+            *p += c;
+        }
+        refine_rounds += 1;
+    }
+
+    project_mean_zero(&mut scratch.phi[..n]);
+    phi_out.copy_from_slice(&scratch.phi[..n]);
+
+    PoissonStats {
+        cg_solves,
+        refine_rounds,
+        residual_inf,
+    }
+}
+
+/// Allocating convenience wrapper over [`poisson_solve_into`].
+///
+/// Solves `Δφ = rhs` on the rank-0 cochain and returns `(φ, stats)`.
+///
+/// # Panics
+///
+/// Panics if `rhs` is not a rank-0, single-channel cochain.
+#[must_use]
+pub fn poisson_solve(cx: &CellComplex, rhs: &CochainField) -> (CochainField, PoissonStats) {
+    assert_eq!(rhs.rank, 0, "poisson_solve: rhs must be a rank-0 cochain");
+    assert_eq!(rhs.dim, 1, "poisson_solve: rhs must be single-channel");
+    let n = rhs.n_cells();
+    let mut scratch = PoissonScratch::new(n);
+    let mut phi = CochainField::zeros(0, n, 1);
+    let stats = poisson_solve_into(cx, &rhs.data, &mut phi.data, &mut scratch);
+    (phi, stats)
 }
 
 // ---------------------------------------------------------------------------

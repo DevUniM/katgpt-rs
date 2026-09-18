@@ -1,32 +1,85 @@
-# Issue 825 T1+T2 — Coulomb crowd redistribution via a DEC Poisson solve: GOAT results
+# Issue 825 — Coulomb crowd redistribution via a DEC Poisson solve: GOAT results
 
-**Date:** 2026-09-18
-**Primitive:** PoC only — no crate API added (see §Promotion)
-**Feature:** `dec_operators` (default-on inside `katgpt-core`, reached through
-its default `tropical_algebra`; **opt-in at the root package**, where
-`dec_operators = ["katgpt-core/dec_operators"]` is not in the 135-flag default
-set). The bench consumes the shipped DEC substrate and adds nothing to it, so
-this row describes where the substrate already sits, not a promotion.
-**Bench:** `cargo bench -p katgpt-core --features dec_operators --bench bench_825_coulomb_crowd_redistribution_goat`
+**Date:** 2026-09-18 (T1+T2), re-measured against the shipped crate API 2026-09-18 (T3)
+**Primitive:** `CoulombFlowField` + `CrowdRouter` in `katgpt-dec`
+(`src/coulomb.rs`), over the public `poisson_solve` / `poisson_solve_into` in
+`src/hodge.rs`
+**Feature:** `coulomb_flow` — **OPT-IN** in both `katgpt-dec` (where the
+primitive lives) and `katgpt-core` (`coulomb_flow = ["dec_operators",
+"katgpt-dec/coulomb_flow"]`, the `pca_global` / `se2_equivariant_lift`
+passthrough shape). Not promoted to default-on: all four gates pass, but the
+consumer wiring is riir-ai's per the boundary contract, so there is no
+default-path consumer in this repo.
+**Bench:** `cargo bench -p katgpt-core --features coulomb_flow --bench bench_825_coulomb_crowd_redistribution_goat`
+
+⛔ **T1/T2 measured a PoC that carried its own CG, refinement loop and routing
+tables inside the bench file.** T3 promoted all three into `katgpt-dec` and
+re-pointed the bench, so the numbers below now describe the SHIPPED code. A
+GOAT gate that measures a private transcription of the primitive certifies the
+transcription — the sibling-arm defect AGENTS.md records for
+`dash_attn/channel_aware.rs`, one instrument over.
 **Hardware:** Windows 11 / i7-13700K (x86_64), release profile
-**Box state at measurement:** ~22 GB free physical, commit 30/63 GB, no other
-heavy job resident — recorded per AGENTS.md §Feature Flag Discipline, because a
-latency number without its box state is not a measurement. The only timing here
-is a 5.3 µs solve on a 12-vertex graph, which is not a load-sensitive figure;
-the three gates that matter are correctness, not latency.
+**Box state at measurement:** T1/T2 ~22 GB free physical, commit 30/63 GB, no
+other heavy job. ⚠ The T3 re-measurement was taken with the x86_64 execution
+matrix ALSO running on this box (~22 GB free, `cargo bench -j 6` against the
+matrix's own tree) — recorded per AGENTS.md §Feature Flag Discipline, because a
+latency number without its box state is not a measurement. **That is disclosed
+rather than re-run because no gate here is load-sensitive:** G1 and G4 are exact
+(a residual and an allocation count), and G2/G3 are MAE ratios over fixed seeds.
+The only timing is the 11.1 µs solve on a 12-vertex graph, which is reported and
+gated by nothing — and which is 2× the PoC's 5.3 µs precisely because of the
+concurrent load, so do not read it as a regression.
 
 ## Verdict: **ALL FOUR GATES PASS**
 
-| Gate | Metric | Value | Threshold | Verdict |
-|---|---|---|---|---|
-| G1 conservation | `max\|δ(j) − (μ₁−μ₀)\|` | **5.96e-8** | ≤ 1e-6 | **PASS ✅** |
-| G1 conservation | `\|Σᵥ δ(j)[v]\|` | **0.0** | ≤ 1e-6 | **PASS ✅** |
-| G1 conservation | `belief_mass_divergence(j)` vs mass moved | **2.000000 vs 2.000000** | ≤ 1e-4 | **PASS ✅** |
-| G2 endpoint | MAE vs `μ₁` at N=1e6 | **2.9e-5** | ≤ 0.01 | **PASS ✅** |
-| G2 endpoint | MAE decay 1e3 → 1e6 | **40×** | ≥ 4× | **PASS ✅** |
-| G2 endpoint | walkers hitting the step cap | **0** | = 0 | **PASS ✅** |
-| G3 bias analog | naive MAE / Coulomb MAE | **3809×** | ≥ 10× | **PASS ✅** |
-| G4 alloc | allocations / 100 refined solves | **0** | = 0 | **PASS ✅** |
+Re-measured 2026-09-18 against the shipped `coulomb_flow` API (T3). The T1/T2
+column is kept beside it because two of the four MOVED, and the reasons are the
+finding rather than noise.
+
+| Gate | Metric | T1/T2 (PoC) | T3 (shipped) | Threshold | Verdict |
+|---|---|---|---|---|---|
+| G1 conservation | `max\|δ(j) − (μ₁−μ₀)\|` | 5.96e-8 | **5.96e-8** | ≤ 1e-6 | **PASS ✅** |
+| G1 conservation | `\|Σᵥ δ(j)[v]\|` | 0.0 | **7.45e-8** | ≤ 1e-6 | **PASS ✅** |
+| G1 conservation | `belief_mass_divergence(j)` vs mass moved | 2.000000 | **2.000000 vs 2.000000** | ≤ 1e-4 | **PASS ✅** |
+| G1 diagnostic | `max\|graph_laplacian(φ) − δ(dφ)\|` | 0.0 | **0.0** | report only | — |
+| G2 endpoint | exact `expected_arrivals` MAE (no RNG) | — | **1.24e-9** | ≤ 1e-5 | **PASS ✅** |
+| G2 endpoint | MAE vs `μ₁` at N=1e6 | 2.9e-5 | **8.5e-5** | ≤ 0.01 | **PASS ✅** |
+| G2 endpoint | MAE decay 1e3 → 1e6 | 40× | **21.7×** | ≥ 4× | **PASS ✅** |
+| G2 endpoint | walkers hitting the step cap | 0 | **0** | = 0 | **PASS ✅** |
+| G3 bias analog | naive MAE / Coulomb MAE | 3809× | **1312×** | ≥ 10× | **PASS ✅** |
+| G4 alloc | allocations / 100 refined solves | 0 | **0** | = 0 | **PASS ✅** |
+
+⛔ **G4 was 300 on the first T3 run, and that is the finding that justifies
+re-pointing the bench at all.** The PoC carried its own CG and its own scratch
+struct, and was alloc-free. `katgpt-dec`'s `cg_solve_scalar` built its five
+matvec cochains per SOLVE — alloc-free across CG *iterations*, which is what its
+comment claimed and all it had ever been measured for, and **3 allocations per
+solve** for any caller that solves repeatedly. `poisson_solve_into`'s refinement
+loop is exactly such a caller, and so is a director redistributing a crowd every
+event. The gate had been certifying a transcription. Fixed by hoisting all five
+into `CgScratch` with an in-place `fit_cochain` re-shape (`Vec::resize` does not
+shrink capacity, so an alternating-shape caller allocates only on growth);
+`hodge_decompose` gets the same win for free, and its 265 katgpt-dec lib tests
+are unchanged.
+
+⚠ **G2's two moved numbers are a DELIBERATE design change, not drift.**
+`CrowdRouter::step` spends **one** uniform per NPC per step — the absorb
+decision first, then the unused tail remapped onto the outgoing-flow CDF as
+`(u − p)/(1 − p)`, which is uniform on `[0,1)` exactly when the absorb branch
+was not taken. The PoC drew two. Two draws per NPC per tick is the dominant cost
+at crowd scale, so the shipped path takes one; the stream differs, so the
+sampled MAE at any fixed N differs. The DECAY (21.7× against a 4× bar, ideal
+≈31.6×) and the new no-RNG `expected_arrivals` row at **1.24e-9** are what
+establish the construction is unbiased — a single MAE never could.
+
+⚠ **G3 fell 3809× → 1312× and nothing regressed.** The ratio's denominator is
+the Coulomb MAE, which is sampling noise at a particular seed; the numerator
+(naive MAE **0.111111**) is unchanged to six figures. Read the ratio as a
+magnitude against a 10× bar, never as a measurement with three significant
+figures. Both arms are now walked by the SAME `CrowdRouter::step` and differ in
+exactly one vector — the absorption policy, supplied through
+`from_flow_with_absorption` — so the comparison is single-variable in a way the
+two-walker PoC could not be.
 
 ## The setup
 
@@ -87,15 +140,16 @@ Because the expected endpoint distribution is exactly `μ₁`, the residual is
 Monte-Carlo noise and falls like `1/√N`. **An assert at one N cannot tell
 "exact plus noise" from "biased by less than the tolerance"** — that is this
 repo's own fixture-cannot-express-the-mechanism failure — so the gate asserts
-the decay (measured 40×, bar 4×, the ideal being ≈31.6× for 1000× the
-walkers). Walker start positions are apportioned deterministically by largest
+the decay (measured **21.7×**, bar 4×, the ideal being ≈31.6× for 1000× the
+walkers), and cross-checks it against `expected_arrivals`, which computes the
+expectation with **no RNG at all** and lands at 1.24e-9. Walker start positions are apportioned deterministically by largest
 remainder, so the only sampling noise in the number is the routing itself.
 
 `MAE·√N` wanders between 0.03 and 0.12 rather than sitting flat, which is
 expected at this scale: with 12 vertices and 3 non-zero targets the constant is
 itself an average over very few terms.
 
-## G3 — the 20× bias analog, measured at 3809×, and it is TWO failures
+## G3 — the 20× bias analog, measured at 1312×, and it is TWO failures
 
 Baseline: `φ_naive(v) = −Σⱼ wⱼ · dist(v, sinkⱼ)`, hand-set weights, the shipped
 `DecFlowField` consumption shape (a caller-supplied goal potential, no density
@@ -125,7 +179,7 @@ weight bias. It is two separate failures and the bench prints them apart:
    geometrically shadowed, and a field built from distances answers geometry,
    not authored proportions.
 
-The paper measured 20× in ℝ² with 5 atoms. 3809× here is not a better result
+The paper measured 20× in ℝ² with 5 atoms. 1312× here is not a better result
 than the paper's — it is a different and harsher graph, where the naive field
 strands most of the population. Read the ratio with the split above, never
 alone.
@@ -173,20 +227,31 @@ measurement rather than a guarantee.
 
 ## Promotion
 
-**None requested, and T3's precondition is met but its scope is not this
-bench's to settle.** Issue 825 T3 says that if T1+T2 pass, plan a `coulomb_flow`
-feature exposing a `CoulombFlowField` constructor plus a consumer-wiring note
-for riir-ai swarm/zone systems. They pass. What this record establishes is the
-*mechanism*; what a feature needs in addition:
+**`coulomb_flow`, OPT-IN, landed 2026-09-18 (T3).** The three preconditions
+this section listed are met:
 
-- a **public Poisson solve** in `katgpt-dec` — `cg_solve` is private there, and
-  the PoC carries its own CG for exactly that reason. That is a crate API
-  decision, not a bench outcome.
-- scale: 12 vertices says nothing about a real zone graph. G4 is alloc-free and
-  the solve is 5.3 µs here; neither number transfers.
-- the `DecFlowField` / `to_flow_vectors` bridge, which the PoC does not touch.
+- the **public Poisson solve** is `poisson_solve` / `poisson_solve_into` +
+  `PoissonScratch` / `PoissonStats` in `katgpt-dec::hodge` — a thin, ungated
+  wrapper over the existing private `cg_solve_scalar`, plus the iterative
+  refinement the PoC measured as worth ~100× on the true residual. It is
+  deliberately NOT behind `coulomb_flow`: gating a linear-algebra solve behind
+  a game primitive is the wrong axis, and it changes no default behaviour.
+- the **bridge** is `DecFlowField::from_exact_flow`, which is the honest form of
+  it — a gradient field's Hodge decomposition is `exact = itself` in closed
+  form, so `DecFlowField::compute` would run a full `hodge_decompose` to
+  re-derive a known answer. It returns `Option` and yields `None` off a 2D
+  grid, because `to_flow_vectors` indexes by the `grid_2d` edge layout and
+  `compute`'s count-based dimension inference cannot tell a general zone graph
+  apart from a grid — it would return well-formed WRONG vectors.
+- **not promoted to default-on.** All four gates pass and the gain is modelless,
+  but there is no default-path consumer in this repo, and per the boundary
+  contract the riir-ai swarm/zone wiring is riir-ai's to file.
 
-Per the boundary contract the riir-ai consumer wiring is riir-ai's to file.
+⛔ **Scale is still open and is the one claim this record does NOT make.** 12
+vertices says nothing about a real zone graph. G4 is alloc-free and the solve is
+11.1 µs here; neither number transfers, and CG's iteration count on a large
+sparse zone graph is unmeasured. A consumer at production scale needs its own
+G2/G4 row.
 
 ## References
 
