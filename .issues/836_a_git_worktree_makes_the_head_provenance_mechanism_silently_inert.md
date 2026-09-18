@@ -1,6 +1,6 @@
 # Issue 836: a `git worktree` makes the ENTIRE head-provenance mechanism silently inert — every guard returns the "nothing to report" value
 
-**Status:** T1 (the repair) **DONE 2026-09-18**. T2 open.
+**Status:** **CLOSED 2026-09-18** — T1 (the severe five), T2 (the three private copies, measured then delegated), T3 (the cross-repo axis, counted) and T4 (the silent self-row) are all done.
 **Found by:** generalising [Issue 835](835_a_path_dep_on_a_repo_in_neither_set_is_enumerated_by_nothing.md)'s
 `.git`-is-a-FILE lesson across the instrument family, as that issue's own
 "general rule" paragraph asks. Filed by session `katgpt-rs-c5`.
@@ -87,17 +87,73 @@ back to `.is_dir()`, in both directions.
 
 ## Open tasks
 
-- [ ] **T2 — the MILD half, measured and deliberately not repaired blind.**
-  Three more instruments use `.is_dir()` as a can-I-run-git guard —
-  `console_encoding_gate.py:76`, `sweep_advisory_membership_gate.py:154`,
-  `numbering_drift_sweep.py:262`. These are **not** the severe class: the
-  first two fall back to a `scripts/` filesystem glob, so a worktree run gets
-  a *different population* (untracked scratch copies counted as contract
-  members) rather than a null verdict, and the third returns `None` to a
-  caller that owns the unreadable case. Both are wrong and neither is silent
-  in the same way. Measure the actual per-instrument effect before changing
-  them — the same demand Issue 835 T2 makes of itself, and the
-  `console_encoding_gate` lesson about carrying an answer across populations.
+- [x] **T2 — the MILD half, MEASURED 2026-09-18 and then repaired.** The
+  three were measured one by one before anything was changed, as this task
+  demanded, and the measurement moved one of them out of the MILD class.
+
+  Fixture: `git worktree add --detach F:/scratch/kg836_wt HEAD` off this
+  repo, with one untracked scratch file planted in the worktree's `scripts/`
+  — the ordinary shape of an agent working in a worktree.
+
+  | instrument | worktree, `.is_dir()` | worktree, `.exists()` | ordinary |
+  |---|---|---|---|
+  | `console_encoding_gate` | **✗ UNDEFENDED `zz_scratch_probe.py`** | ✓ 83 in population | ✓ 83 |
+  | `sweep_advisory_membership_gate` | **✗ UNWIRED ×3** on one untracked file | ✓ 21 sweeps | ✓ 21 |
+  | `numbering_drift_sweep.head_listing` | **`None` → head-provenance SKIPPED** | reads HEAD | reads HEAD |
+
+  - The first two are the **cries-wolf** direction, and the second is the
+    sharper one: the glob fallback converts a single untracked file into
+    **three** findings, one per mechanism, each telling the reader to wire a
+    sweep that is not in the family. With the delegation both worktree runs
+    are **byte-identical** to the ordinary run.
+  - ⚠ The **shrink** direction was measured too and is NOT this class: a
+    tracked file deleted in the worktree gives 82 under *both* spellings (the
+    glob never lists it; `ls-files` lists it and the read then skips it). Same
+    answer by two routes — so it discriminates nothing here, and the wrong
+    fixture would have credited a repair with it.
+  - ⛔ `head_listing` is the **severe** shape, not the mild one the task text
+    guessed: its `None` propagates through `head_audit` and the whole
+    head-provenance adjudication is skipped, so every row is judged against
+    the worktree while the pins believe they read HEAD. It is also **measured
+    unreachable by its own caller** — `repos = contract_repos(WORKSPACE)` is
+    Issue 835's `.is_dir()` walk, verified against this box's real
+    `riir-chain.w152` (on disk with a `BOUNDARY.md`, absent from the derived
+    17). Repaired anyway, with an arm pinning that exclusion from both sides:
+    *correct by a caller's property* is precisely what 835 → 836 cost once.
+
+  **DRY.** A fourth private copy of a one-line predicate is a fourth chance to
+  pick the wrong one, so `_is_checkout` is now public `is_checkout` and all
+  three delegate. The arms share `worktree_state.worktree_fixture` — a REAL
+  `git worktree add`, measured **0.167s**, which is what makes it affordable
+  in a per-push canary at all; a hand-written `.git` file would assert the
+  probe and not the behaviour (the `platform_dead_code` vendor-arm failure).
+  Every new arm was perturbation-verified: reverting each delegation to
+  `.is_dir()` reds it by name, rc 2.
+
+- [x] **T4 — a name match that never fires, found by T2's fixture.** The same
+  silence one layer up, and in the block AGENTS.md calls *"the delegation is
+  asserted, never assumed"*: `numbering_drift_sweep`'s gate cross-check was
+  guarded by `if repo.name == REPO_ROOT.name:` with **no else**, so from a
+  checkout directory not named for its repo it simply did not run and the
+  sweep printed a clean summary with 0 of its own rows cross-checked.
+  Reachable three ways, one of them this box's own convention: a worktree at
+  `E:/git/katgpt-rs.w836` (cf. the live `riir-chain.w152`), a fork clone, or
+  an alias row.
+
+  `.name` twice was **also the wrong comparison**: the derived repos carry the
+  CONTRACT spelling (`contract_repos` maps them through `repo_alias`) and
+  `REPO_ROOT` carries the on-disk one, so a box with a `repo_alias.local.txt`
+  row for this repo took the silent branch on *every* run. Now
+  `repo_alias.apply([REPO_ROOT.name])[0]`, with a `✗ SELF-ROW MISSING`
+  failure — loud, and never a deferral: a partial clone can lack any sibling,
+  but it cannot lack the repo the script is running out of. Perturbation-
+  verified against the `.w836` name: rc 1, named.
+
+  ⚠ The family was grepped before fixing (the repeated-shape rule). The
+  ~10 sweeps using `pins.get(REPO_ROOT.name)` all print `✗ … has no row for
+  …` and are loud already; `citation_drift_sweep`'s `repo.resolve() ==
+  REPO_ROOT` crashes on `mine_row[c]` — loud by accident, but loud.
+  `numbering_drift_sweep` was the only silent one.
 
 - [x] **T3 — the cross-repo axis, MEASURED 2026-09-18.** *Counted first*, per
   the `console_encoding_gate` lesson — and it was right to: the population is

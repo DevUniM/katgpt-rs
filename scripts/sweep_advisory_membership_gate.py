@@ -69,6 +69,7 @@ from pathlib import Path
 # all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
 # that go through the wrapper.
 import console_safe  # noqa: E402
+import worktree_state  # noqa: E402
 
 console_safe.apply()
 
@@ -150,8 +151,17 @@ MIN_WIRED = 15
 
 def tracked_sweeps(root: Path) -> list[str]:
     """The family, as git tracks it. A filesystem walk would count a scratch
-    copy somebody left in `scripts/` as a member of the contract."""
-    if not (root / ".git").is_dir():
+    copy somebody left in `scripts/` as a member of the contract.
+
+    ⛔ The guard is `worktree_state.is_checkout`, DELEGATED (Issue 836 T2) —
+    and this gate is the sharpest case for it, because the glob fallback
+    converts an untracked file into THREE findings. Measured, this repo, one
+    untracked `zz_scratch_drift_sweep.py` planted in a worktree's `scripts/`:
+    `✗ UNWIRED [worktree-advisory] · [known-extra-exemption] ·
+    [head-provenance]`, each telling the reader to wire a sweep that is not in
+    the family. With the delegation the worktree run is byte-identical to the
+    ordinary one (21 sweeps, PASSED, both)."""
+    if not worktree_state.is_checkout(root):
         return sorted(p.name for p in (root / "scripts").glob(GLOB))
     out = subprocess.run(
         ["git", "-C", str(root), "ls-files", "scripts/" + GLOB],
@@ -487,6 +497,23 @@ def walk_arms() -> list[str]:
               f"the no-.git FALLBACK did not walk the filesystem \u2014 an extracted "
               f"tree is a legitimate population, not an error: "
               f"{tracked_sweeps(nogit)}")
+
+        # Issue 836 T2 — the THIRD branch: a checkout whose `.git` is a FILE.
+        # Both arms above pass under EITHER spelling, so without this one a
+        # revert to `.is_dir()` is silent — and here the fallback's cost is
+        # three findings per untracked file, one per MECHANISM, each telling
+        # the reader to wire a sweep that is not in the family.
+        _main, wt = worktree_state.worktree_fixture(
+            Path(td) / "wtf", tracked="scripts/a_drift_sweep.py",
+            untracked="scripts/zz_scratch_drift_sweep.py")
+        check((wt / ".git").is_file(),
+              "the fixture's .git is not a FILE — `git worktree add` no longer "
+              "produces the shape this arm is about, so it asserts nothing")
+        check(tracked_sweeps(wt) == ["a_drift_sweep.py"],
+              f"in a WORKTREE the walk fell back to the filesystem and counted "
+              f"an untracked scratch sweep as a family member: "
+              f"{tracked_sweeps(wt)}. The guard is `is_checkout`, not "
+              f"`.git`.is_dir() — Issue 836")
 
         # The verdict end-to-end over the real tree, so the git branch is
         # reached by the PRODUCTION path and not only by the helper.

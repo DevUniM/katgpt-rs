@@ -84,7 +84,7 @@ def _git(root, *args) -> subprocess.CompletedProcess:
         capture_output=True, encoding="utf-8", errors="replace")
 
 
-def _is_checkout(root) -> bool:
+def is_checkout(root) -> bool:
     """Can git be run rooted HERE? — `.exists()`, deliberately (Issue 836).
 
     ⛔ This is NOT the contract-repo predicate and the two must not be
@@ -112,6 +112,15 @@ def _is_checkout(root) -> bool:
     exactly as `.is_dir()` did — as does a `git archive` extraction, which
     stays clean-by-construction rather than an error. The change is strictly
     widening, on the one case that should have answered all along.
+
+    ⛔ **PUBLIC because it has named cross-module consumers** (Issue 836 T2).
+    Three more instruments asked this same question with their own private
+    `.git` test — `console_encoding_gate.tracked_scripts`,
+    `sweep_advisory_membership_gate.tracked_sweeps` and
+    `numbering_drift_sweep.head_listing` — and all three had the `.is_dir()`
+    spelling. A fourth copy of a one-line predicate is a fourth chance to pick
+    the wrong one, which is the whole of 835 → 836; they delegate here now, and
+    each owes only an arm that it DOES (built from `worktree_fixture` below).
     """
     return (Path(root) / ".git").exists()
 
@@ -131,7 +140,7 @@ def dirty_files(root) -> frozenset[str]:
       no finding can carry its address.
     """
     root = Path(root)
-    if not _is_checkout(root):
+    if not is_checkout(root):
         return frozenset()
     out = _git(root, "status", "--porcelain", "--untracked-files=no")
     if out.returncode != 0:
@@ -165,7 +174,7 @@ def head_text(root, rel: str) -> str | None:
     nothing committed to compare against.
     """
     root = Path(root)
-    if not _is_checkout(root):
+    if not is_checkout(root):
         return None
     out = _git(root, "show", f"HEAD:{rel}")
     return out.stdout if out.returncode == 0 else None
@@ -446,7 +455,7 @@ def head_tree(root, patterns, paths=None, extra_dirty=()):
     """
     root = Path(root)
     if not (dirty_in_population(root, patterns) or tuple(extra_dirty)) \
-            or not _is_checkout(root):
+            or not is_checkout(root):
         yield None
         return
     with tempfile.TemporaryDirectory() as td:
@@ -568,7 +577,7 @@ def behind_origin(root, patterns) -> tuple[int, int] | None:
     AHEAD would read as stale.
     """
     root = Path(root)
-    if not _is_checkout(root):
+    if not is_checkout(root):
         return None
     up = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name",
               "@{upstream}")
@@ -630,12 +639,12 @@ def fetch_age_hours(root) -> float | None:
     which on a box running five concurrent sessions is a race; Issue 827 T2
     refuses it for the sweeps on the same grounds.
     """
-    if not _is_checkout(root):
+    if not is_checkout(root):
         return None
     # ⛔ `root / ".git" / "FETCH_HEAD"` is NOT the path in a worktree, where
     # `.git` is a FILE and the real git directory lives under the main
     # checkout's `.git/worktrees/<name>/`. Admitting worktrees via
-    # `_is_checkout` without this would swap one silent None for another —
+    # `is_checkout` without this would swap one silent None for another —
     # `os.stat` on a path under a FILE raises `OSError` and reads as "cannot
     # tell", the same "nothing to report" value Issue 836 is about. Ask git
     # for the path instead of constructing it; `--git-path` resolves the
@@ -797,6 +806,42 @@ def _repo(tmp: Path, name: str) -> Path:
     _run(r, "config", "user.email", "t@t")
     _run(r, "config", "user.name", "t")
     return r
+
+
+def worktree_fixture(tmp: Path, tracked: str = "scripts/a.py",
+                     untracked: str = "scripts/b.py") -> tuple[Path, Path]:
+    """-> `(main_repo, worktree)`, a REAL `git worktree`. Issue 836 T2.
+
+    Public, because the three delegating consumers each owe an arm proving
+    they take the git branch in a worktree, and that arm needs exactly this
+    fixture. The alternative is three hand-written `.git` files, and the
+    fixture's own first assertion is why that is not an option: a
+    worktree-SHAPED `.git` would assert the probe and not the behaviour —
+    the `platform_dead_code` vendor-arm failure, where one exclusion had two
+    code paths and the arm certified the path it was not aimed at.
+
+    `untracked` is what makes a consumer's arm DISCRIMINATING rather than
+    merely green: in the worktree, `git ls-files` yields `tracked` alone while
+    a filesystem glob yields both, so a consumer still on the `.is_dir()`
+    spelling returns a set one member too large and the arm names it.
+    Measured at **0.167s**, which is what makes it affordable in a per-push
+    gate's canary at all (the docs gate's whole budget is ~13s CPU).
+
+    ⚠ The caller owns the `TemporaryDirectory`; this only fills it.
+    """
+    main = _repo(tmp, "main")
+    t = main / tracked
+    t.parent.mkdir(parents=True, exist_ok=True)
+    t.write_text("x = 1\n", encoding="utf-8", newline="")
+    _run(main, "add", "-A")
+    _run(main, "commit", "-qm", "base")
+
+    wt = tmp / "wt"
+    _run(main, "worktree", "add", "--detach", "-q", str(wt), "HEAD")
+    u = wt / untracked
+    u.parent.mkdir(parents=True, exist_ok=True)
+    u.write_text("y = 1\n", encoding="utf-8", newline="")
+    return main, wt
 
 
 def dirty_arms() -> list[str]:
@@ -1855,8 +1900,8 @@ def worktree_arms() -> list[str]:
               "check below is asserting nothing")
 
         # The guard itself, both spellings, so the regression is named.
-        check(_is_checkout(wt),
-              "_is_checkout said NO to a real worktree — back to `.is_dir()`, "
+        check(is_checkout(wt),
+              "is_checkout said NO to a real worktree — back to `.is_dir()`, "
               "and the head-provenance mechanism is inert there again (836)")
 
         (wt / "a.md").write_text("two\n", encoding="utf-8")
@@ -1910,7 +1955,7 @@ def worktree_arms() -> list[str]:
         # for the same reason `.is_dir()` did — there is no `.git` of any kind.
         plain = main / "plain"
         plain.mkdir()
-        check(not _is_checkout(plain) and dirty_files(plain) == frozenset()
+        check(not is_checkout(plain) and dirty_files(plain) == frozenset()
               and head_text(plain, "a.md") is None,
               "the widening to .exists() let a non-repo directory inherit its "
               "PARENT's repository — the one thing the probe is for")

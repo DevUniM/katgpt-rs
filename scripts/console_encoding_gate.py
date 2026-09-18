@@ -48,6 +48,7 @@ import tempfile
 from pathlib import Path
 
 import console_safe  # noqa: E402
+import worktree_state  # noqa: E402
 
 console_safe.apply()
 
@@ -72,8 +73,18 @@ def tracked_scripts(root: Path) -> list[str]:
     """The family, as git tracks it — a scratch copy left in `scripts/` is not
     a member of the contract, and only git can say so. An extracted tree with
     no `.git` is a legitimate population, not an error (`tracked_walk`'s rule),
-    so it falls back to the filesystem."""
-    if not (root / ".git").is_dir():
+    so it falls back to the filesystem.
+
+    ⛔ The guard is `worktree_state.is_checkout`, DELEGATED (Issue 836 T2).
+    It was a private `(root / ".git").is_dir()`, which says NO to a `git
+    worktree` — so a run from inside one fell to the glob and got a different
+    population. Measured, this repo, one untracked scratch script planted in
+    the worktree's `scripts/`: the gate printed `✗ UNDEFENDED
+    zz_scratch_probe.py`, demanding a repair to a file git does not track and
+    no contract claims. With the delegation the worktree run is byte-identical
+    to the ordinary one (83 in population, PASSED, both).
+    """
+    if not worktree_state.is_checkout(root):
         return sorted(p.name for p in (root / "scripts").glob(GLOB))
     out = subprocess.run(
         ["git", "-C", str(root), "ls-files", "scripts/" + GLOB],
@@ -409,6 +420,20 @@ def walk_arms() -> list[str]:
         check(tracked_scripts(nogit) == ["zz_scratch.py"],
               f"the no-.git FALLBACK did not walk the filesystem: "
               f"{tracked_scripts(nogit)}")
+
+        # Issue 836 T2 — the THIRD branch, and the one the two above cannot
+        # reach: a checkout whose `.git` is a FILE. Both arms above pass under
+        # either spelling, so without this one the delegation is unasserted
+        # and a revert to `.is_dir()` is silent.
+        _main, wt = worktree_state.worktree_fixture(Path(td) / "wtf")
+        check((wt / ".git").is_file(),
+              "the fixture's .git is not a FILE — `git worktree add` no longer "
+              "produces the shape this arm is about, so it asserts nothing")
+        check(tracked_scripts(wt) == ["a.py"],
+              f"in a WORKTREE the walk fell back to the filesystem and counted "
+              f"an untracked scratch file as a contract member: "
+              f"{tracked_scripts(wt)}. The guard is `is_checkout`, not "
+              f"`.git`.is_dir() — Issue 836")
 
         d, u, _, _, n = verdict(root, {})
         check((d, u, n) == (["a.py"], [], 1),

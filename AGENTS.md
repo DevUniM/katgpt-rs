@@ -1157,8 +1157,8 @@ Never write a fresh contract-repo walk for the first — **delegate to
 `skill_repo_set_gate.derive_repos`** (through `repo_alias.disk()` if you
 intend to OPEN the directories); `population_sync_gate` exists to catch two
 predicates disagreeing about the population. The second is
-`worktree_state._is_checkout`, and it is the spelling `tracked_walk.py` had
-right all along. ⛔ The second direction is the SILENT one: all five
+`worktree_state.is_checkout` — **delegate to it too**, and it is the spelling
+`tracked_walk.py` had right all along. ⛔ The second direction is the SILENT one: all five
 `worktree_state` guards took `.is_dir()`, and every false branch of theirs
 returns the value meaning *nothing to report* — so in a worktree
 `sweep_advisory` returned `[]` against a modified tracked file, and a sweep run
@@ -1168,6 +1168,36 @@ prevent it, by the repair for the *other* question. ⚠ And the probe is not the
 whole of it: a path CONSTRUCTED under `<root>/.git` (`FETCH_HEAD`) cannot
 exist in a worktree either — ask git (`rev-parse --git-path`), which answers
 ABSOLUTELY there and relatively otherwise.
+- ⛔ **Three more instruments carried a PRIVATE copy of the second question,
+  all on the wrong spelling, and only one of the three was severe — which is
+  why they were measured before being touched** (836 T2, the demand 835 T2
+  makes of itself). `console_encoding_gate.tracked_scripts` and
+  `sweep_advisory_membership_gate.tracked_sweeps` fall back to a `scripts/`
+  GLOB, so a run from inside a worktree gets a bigger POPULATION rather than a
+  null verdict: measured in this repo with one untracked scratch file planted,
+  `✗ UNDEFENDED zz_scratch_probe.py` and **three** `✗ UNWIRED` rows (one per
+  mechanism) — cries-wolf reds demanding repairs to a file no contract claims,
+  and with the delegation both runs are byte-identical to the ordinary one.
+  `numbering_drift_sweep.head_listing` is the severe shape (its `None` skips
+  the entire head-provenance adjudication) and is **measured UNREACHABLE by
+  its own caller** — `contract_repos` excludes worktrees by construction,
+  verified against this box's real `riir-chain.w152`. Repaired anyway, and an
+  arm now pins that exclusion: *correct by a caller's property* is exactly
+  what 835 → 836 cost once, and the next caller inherits a trap rather than a
+  guarantee. All three delegate now; the shared fixture is
+  `worktree_state.worktree_fixture` (0.167s, a REAL `git worktree add`),
+  because a hand-written `.git` file asserts the probe and not the behaviour.
+- ⛔ **A name match that never fires is the same silence one layer up** (836
+  T4). `numbering_drift_sweep`'s gate cross-check — the one AGENTS.md
+  elsewhere calls *"asserted, never assumed"* — was guarded by `repo.name ==
+  REPO_ROOT.name` with no else, so it simply did not run from a checkout
+  directory not named for its repo (a worktree at `E:/git/katgpt-rs.w836`, the
+  convention this box already uses for riir-chain; a fork clone; an alias
+  row). `.name` twice was also the wrong comparison: the derived repos carry
+  the CONTRACT spelling and `REPO_ROOT` carries the on-disk one, so a box with
+  a `repo_alias.local.txt` row for this repo took the silent branch every run.
+  It is a named failure now, never a deferral — a partial clone can lack any
+  sibling, but not the repo the script is running out of.
 
 ## A Lean theorem can RESTATE its own definition — `scripts/restatement_theorem_audit.py`
 

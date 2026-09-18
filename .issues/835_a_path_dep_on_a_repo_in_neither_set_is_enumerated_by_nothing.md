@@ -1,6 +1,6 @@
 # Issue 835: a `path = "../X"` dep on a repo that is NEITHER on disk NOR in `repo_set.txt` breaks a registered repo's build, and no check enumerates it
 
-**Status:** T1 (the gate) **DONE 2026-09-18**. T2 and T3 open.
+**Status:** T1 (the gate), T2 and T3 **DONE 2026-09-18** — both open questions were measured and both DECLINED an instrument on the measurement. **T4 is OWNER-GATED** (a BOUNDARY.md contract call) and stays open.
 **Found by:** trying to run `cargo test --lib` in riir-clippy for
 [Issue 832](832_fixed_shared_temp_paths_make_tests_race_across_processes.md)
 T5 and getting no tests at all. Filed by session `katgpt-rs-c5`.
@@ -176,19 +176,53 @@ probe is injectable now and `--prove-fires` reports the riir-llm ORPHAN.
 
 ## Open tasks
 
-- [ ] **T2 — the gate answers "does something exist there", NOT "is it the
-  right thing".** Version skew, a stale sibling checkout, and a dep pointing
-  at the wrong crate in the right repo all RESOLVE. Whether that second
-  question is worth an instrument is unmeasured — **measure before deciding**,
-  the `console_encoding_gate` lesson (it assumed `check_validation_gate`'s
-  population-of-one answer carried and was wrong by seven repos).
+- [x] **T2 — MEASURED 2026-09-18, and DECLINED on the measurement.** The task
+  named three sub-questions and they turned out to need separate answers, so
+  a single "is it worth an instrument?" verdict would have been the wrong
+  shape.
 
-- [ ] **T3 — the cross-repo axis, deliberately NOT answered by symmetry.**
-  This gate reads every repo on the box from one checkout, so it is already
-  workspace-wide in effect and a `*_drift_sweep.py` sibling would re-walk the
-  same tree to print the same number. What is genuinely unmeasured is the
-  inverse: a sibling repo whose OWN `repo_set.txt` equivalent (if it has one)
-  disagrees with this one. Do not add a sweep before measuring that.
+  | sub-question | measured | silent? |
+  |---|---|---|
+  | dep points at the **wrong crate** in the right repo | **0 of 306** RESOLVED cross-repo path deps disagree: key vs the target's `[package] name`, 306 AGREE, 0 RENAMED, 0 UNREADABLE | yes — but empty |
+  | **version skew** | **1 of 306** carries a `version =` at all (riir-clippy's `katgpt-micro-belief`, `0.2.1` against the target's `0.2.1`) | **no** — cargo itself errors on a mismatch |
+  | **stale sibling checkout** | — | already instrumented: `worktree_state.behind_origin`, Issue 798 |
+
+  So the one class that is genuinely silent measures **zero over the whole
+  workspace**, the one that has any population at all is **loud** (cargo
+  refuses to build), and the third already has an instrument. No gate.
+
+  ⚠ *Zero today is not cannot-happen*, and the right place for that is the
+  DISCLOSURE rather than a gate over 306 rows watching a zero — the gate's
+  PASS line already carries it verbatim: *"⚠ It does NOT claim a resolvable
+  dep is CORRECT — version skew, a stale sibling, and a dep pointing at the
+  wrong crate all resolve."* Re-run the measurement before reopening; the
+  script is a one-off (`F:/scratch/t2_measure_835.py` on the workstation) and
+  deliberately not tracked, because a tracked instrument whose finding set is
+  empty by construction is the cries-wolf shape one step earlier.
+
+- [x] **T3 — MEASURED 2026-09-18: the population is ZERO, so no sweep.**
+  The question was *"does a sibling carry its own registry that could
+  DISAGREE with this one?"*, and the answer is that **no sibling carries a
+  registry at all** — `repo_set.txt` and the two files keyed on it are
+  katgpt-rs's alone across the 17 repos on this box.
+
+  ⛔ The obvious grep (filename patterns) was too narrow and would have given
+  the right answer for the wrong reason: nine repos DO name siblings in their
+  shell gates. The decisive read is
+  `riir-ai/scripts/ci_boundary_contract.sh`, the enforcement AGENTS.md names
+  — and it **DERIVES** (`[ -d "$d/.git" ]` + a root `BOUNDARY.md`) rather
+  than listing. A derived set cannot disagree with a registry; it can only
+  disagree about the *predicate*, which is `population_sync_gate`'s question
+  and not this one.
+
+  ⚠ **One genuinely new observation, stated rather than instrumented:** that
+  shell derive is an **eleventh** contract-repo predicate and
+  `population_sync_gate` reads Python only, so it is outside the agreement
+  check by construction. It carries the correct `.is_dir()` spelling today
+  (verified at the line) — which is the whole reason this is a note and not a
+  finding. Widening the sync gate to shell is not obviously right: CI runs it
+  from a single checkout where a sibling's scripts are absent, which is the
+  same reason the sweeps are kept out of the CHECKS array.
 
 - [ ] **T4 — the boundary question this does not settle, and should not.**
   Whether `riir-llm` *belongs* in the contract set, and whether a leaf crate
