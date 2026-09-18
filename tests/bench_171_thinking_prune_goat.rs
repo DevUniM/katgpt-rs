@@ -55,15 +55,62 @@ impl ScreeningPruner for ExpensiveScreener {
     }
 }
 
-/// A screener that returns different relevance per depth to ensure differentiation.
+/// A screener whose relevance varies per depth AND per token.
+///
+/// ⛔ **The per-token term is Issue 831 T4.** Keyed on `depth` alone this
+/// screener is all-or-nothing WITHIN a depth — with
+/// `relevances = [0.8, 0.4, 0.2, 0.6, 0.9]` against `screening_threshold = 0.3`,
+/// depth 2 rejected EVERY token and the other four accepted EVERY token. A
+/// screener that never says "this token yes, that token no" cannot distinguish
+/// a builder applying it per TOKEN from one applying it per DEPTH, which is
+/// most of what `ScreeningPruner` is for. The jitter makes depth 1 partial
+/// (75% pass) and leaves the rest saturated — see the knob's own note for why
+/// "partial at every depth" is not reachable from this fixture.
+///
+/// The jitter is an integer hash of `token_idx`, not a float expression and not
+/// an RNG draw: it must be bit-identical on aarch64, x86_64 and wasm32 (this
+/// target's whole Issue-831 history is arch-dependent readings) and it must not
+/// touch the global RNG (`global_rng_gate`).
 #[derive(Debug, Clone)]
 struct VaryingScreener {
     relevances: Vec<f32>,
 }
 
+/// Per-token jitter range, `[JITTER_LO, JITTER_LO + JITTER_SPAN)`.
+///
+/// ⚠ **This is a FIXTURE KNOB with a budget coupling, not a free parameter,
+/// and the obvious improvement is measured to be WORSE.** Pass rate at depth d
+/// is the fraction of the range above `threshold / relevances[d]`. Making every
+/// depth partial needs the range to straddle `0.3/0.9 = 0.333` and
+/// `0.3/0.2 = 1.5`, i.e. roughly `[0.25, 1.75)` — measured, that puts every
+/// seed at **12288 = 4096 x 3 hops, 10/10 ties**, because depth 2 stops
+/// truncating the tree and both schedules cap out. `[0, 2)` does the same. The
+/// hard reject at depth 2 is what keeps this fixture small enough for P1 to
+/// mean anything, so the reachable choice is *some* partial depth, not all of
+/// them. `[0.5, 1.5)` buys depth 1 at 75% with both schedules UNCAPPED
+/// (1701 vs 8759). Change it and re-read the per-seed node counts, not just
+/// the verdict.
+const JITTER_LO: f32 = 0.5;
+const JITTER_SPAN: f32 = 1.0;
+
+impl VaryingScreener {
+    /// Deterministic per-token multiplier in `[JITTER_LO, JITTER_LO + JITTER_SPAN)`. Fixed-point throughout:
+    /// one u64 multiply, one shift, one exact-power-of-two divide.
+    fn jitter(token_idx: usize) -> f32 {
+        const BITS: u32 = 24;
+        let h = (token_idx as u64)
+            .wrapping_add(1)
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            >> (64 - BITS);
+        // 2^24 is exactly representable in f32, so the divide is exact.
+        JITTER_LO + JITTER_SPAN * (h as f32) / (1u64 << BITS) as f32
+    }
+}
+
 impl ScreeningPruner for VaryingScreener {
-    fn relevance(&self, depth: usize, _token_idx: usize, _parent_tokens: &[usize]) -> f32 {
-        self.relevances.get(depth).copied().unwrap_or(1.0)
+    fn relevance(&self, depth: usize, token_idx: usize, _parent_tokens: &[usize]) -> f32 {
+        let base = self.relevances.get(depth).copied().unwrap_or(1.0);
+        base * Self::jitter(token_idx)
     }
 }
 
@@ -119,6 +166,9 @@ fn proof_p1_structural_dominance() {
     let mut frozen_wins = 0;
     let mut uniform_wins = 0;
     let mut ties = 0;
+    // Issue 831 T4: every trial's (uniform, frozen) pair, so the seed axis is
+    // ASSERTED rather than assumed to vary. See the assertion after the loop.
+    let mut per_seed: Vec<(usize, usize)> = Vec::with_capacity(n_trials as usize);
 
     // Screener that rejects some tokens (simulates real pruning)
     let screener = VaryingScreener {
@@ -166,6 +216,8 @@ fn proof_p1_structural_dominance() {
             "  Seed {seed}: Uniform={uniform_total_nodes} nodes, FrozenBaseGuard={frozen_total_nodes} nodes",
         );
 
+        per_seed.push((uniform_total_nodes, frozen_total_nodes));
+
         match frozen_total_nodes.cmp(&uniform_total_nodes) {
             std::cmp::Ordering::Greater => frozen_wins += 1,
             std::cmp::Ordering::Less => uniform_wins += 1,
@@ -174,6 +226,36 @@ fn proof_p1_structural_dominance() {
     }
 
     println!("\n  Summary: Frozen wins={frozen_wins}, Uniform wins={uniform_wins}, Ties={ties}");
+
+    // ⛔ Issue 831 T4 — the 10 seeds CANNOT move this metric, and saying so is
+    // the finding. `build_screened` admits every token with `prob > 0` that
+    // clears the screener; it is not a top-k. `random_marginals` produces an
+    // all-positive vector, so the marginals decide each node's SCORE and the
+    // heap ORDER — never membership — and the node COUNT is a function of
+    // (screener, threshold, vocab, depths, budget) alone. A seed loop over a
+    // count is one case run ten times, and no screener change fixes that: the
+    // earlier reading of T4 ("the screener ignores token_idx") was true and was
+    // not the reason.
+    //
+    // So the loop is kept and given the job it can actually do: pin the
+    // marginal-INDEPENDENCE. If a future builder starts top-k-ing candidates,
+    // or `tree_budget` starts binding unevenly, this reds and names the
+    // builder — which the dominance assertions below never would.
+    let spread: Vec<(usize, usize)> = per_seed
+        .iter()
+        .copied()
+        .filter(|&pair| pair != per_seed[0])
+        .collect();
+    assert!(
+        spread.is_empty(),
+        "P1 node counts became SEED-DEPENDENT ({:?} differs from seed 0's {:?}). \
+         That is NOT a P1 failure — it means build_screened's candidate policy \
+         changed (a top-k, an uneven tree_budget bind, or a marginal that can be \
+         non-positive). Re-derive what P1 measures before re-pinning it \
+         (Issue 831 T4).",
+        spread.first(),
+        per_seed[0],
+    );
 
     // Assert: FrozenBaseGuard should NEVER produce fewer total nodes...
     assert_eq!(
