@@ -521,8 +521,26 @@ def main() -> int:
     # The premise is measured, not quoted — and if THIS box launders nothing,
     # every EXPOSED row below is a finding about a premise that does not hold
     # here. Say so rather than printing the rows as though it did.
-    launders = [r for r in tela.measure_premise() if r["launders"]]
-    diverged = [r for r in tela.measure_premise() if not r["as_documented"]]
+    # ⛔ Measured ONCE. The two comprehensions below used to call
+    # `measure_premise()` separately, which runs 32 bash subprocesses twice
+    # over for two views of one measurement — and, worse, lets the two lists
+    # describe two different runs.
+    #
+    # ⛔ And `confirms_fix` is not the same question as `as_documented`: the
+    # documented table is macOS /bin/bash 3.2.57, where five cells LAUNDER, and
+    # every bash >= 4.4 preserves the status there. On such a box those five
+    # SHOULD read differently, and reporting them as a divergence sends the
+    # reader to edit a correct document. The classification lives in
+    # trap_exit_launder_audit, not in a second copy here.
+    premise = tela.measure_premise()
+    dead = tela.premise_harness_alive()
+    launders = [] if dead else [r for r in premise if r["launders"]]
+    diverged = (
+        []
+        if dead
+        else [r for r in premise if not r["as_documented"] and not r["confirms_fix"]]
+    )
+    confirms = [] if dead else [r for r in premise if r.get("confirms_fix")]
 
     if not PINS.is_file():
         print(f"✗ pins file missing: {PINS}")
@@ -674,13 +692,24 @@ def main() -> int:
     print("  scope: PRECAUTIONARY is nounset WITHOUT errexit — measured, those "
           "aborts exit 1, so it is not laundering today and is pinned "
           "separately rather than pooled into exposed.")
-    if not launders:
-        print("  ⛔ this bash LAUNDERS NOTHING in any measured arm — every row "
-              "above is about a premise that does not hold on this box. "
+    if dead:
+        print(f"  ⛔ PREMISE UNSEEN on this box — {dead}. The rows above are "
+              "STATIC and stand on their own; only their SEVERITY is unmeasured "
+              "here. Take the premise from a POSIX workstation.")
+    elif not launders:
+        why = (
+            " — expected: the 3.2 LAUNDER cells are FIXED on this bash "
+            f"({len(confirms)} of them confirmed)"
+            if confirms
+            else ""
+        )
+        print("  ⛔ this bash LAUNDERS NOTHING in any measured arm" + why + ". Every "
+              "row above is about a premise that does not hold on this box. "
               "Re-read before acting.")
     if diverged:
         print(f"  ⛔ {len(diverged)} premise cell(s) DIVERGE from the documented "
-              f"table; run trap_exit_launder_audit.py for the matrix.")
+              f"table, and NOT in the direction the bash-4.4 fix explains; "
+              f"run trap_exit_launder_audit.py for the matrix.")
 
     if bad:
         print("✗ trap sentinel sweep FAILED — see the ✗ rows above")

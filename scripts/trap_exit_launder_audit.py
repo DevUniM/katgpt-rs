@@ -513,11 +513,84 @@ def _run(body, with_trap, opts):
     """
     trap = "trap 'true' EXIT\n" if with_trap else ""
     script = f"#!/usr/bin/env bash\n{opts}\n{trap}{body}\n"
+    return _run_script(script)
+
+
+_BASH_CACHE = []
+
+
+def bash_candidates():
+    """Every `bash` on PATH, in PATH order, plus `$SHELL`.
+
+    Deliberately NOT a hardcoded list of install locations: the rule is
+    "whatever this box calls bash", and the SELECTOR is the liveness canary
+    below, not a guess about which one is right.
+    """
+    names = ("bash.exe", "bash") if os.name == "nt" else ("bash",)
+    seen, out = set(), []
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if not d:
+            continue
+        for n in names:
+            c = os.path.join(d, n)
+            if os.path.isfile(c) and c.lower() not in seen:
+                seen.add(c.lower())
+                out.append(c)
+    sh = os.environ.get("SHELL")
+    if sh and os.path.isfile(sh) and sh.lower() not in seen:
+        out.append(sh)
+    return out or ["bash"]
+
+
+def resolve_bash():
+    """The first bash that can actually RUN a script we wrote. Cached.
+
+    ⛔ **`["bash", path]` was measuring the WRONG INTERPRETER on this
+    workstation, silently.** Python's own PATH search on Windows resolved
+    `bash` to `C:\\Windows\\System32\\bash.exe` — the **WSL** launcher — which
+    cannot open a Windows temp path at all, so every premise cell returned
+    **127** and the report printed a full grid of them as data. Even had the
+    path resolved, WSL's bash 5.1.16 is not the bash that runs this repo's
+    `.sh` gates here (Git bash is), so the premise table would have described
+    a shell no gate uses. The same `bash`-resolves-to-WSL class already cost
+    this workspace a `core.sshCommand` incident.
+
+    Returns `(argv0, reason_or_None)`. A reason means NO candidate worked, and
+    the caller must print UNSEEN rather than a table.
+    """
+    if _BASH_CACHE:
+        return _BASH_CACHE[0]
+    tried = []
+    for cand in bash_candidates():
+        got = _run_script("#!/usr/bin/env bash\nexit 42\n", bash=cand)
+        if got == 42:
+            _BASH_CACHE.append((cand, None))
+            return _BASH_CACHE[0]
+        tried.append(f"{cand} -> {got!r}")
+    _BASH_CACHE.append((
+        "bash",
+        "no bash on PATH could run a planted script: " + "; ".join(tried),
+    ))
+    return _BASH_CACHE[0]
+
+
+def _run_script(script, bash=None):
+    """Write `script` to a temp file and run it under `bash`, or return None.
+
+    ⛔ The path is handed to bash with FORWARD SLASHES, and that is not
+    cosmetic. On Windows `tempfile.mkstemp` returns `C:\\Users\\...`, MSYS bash
+    reads each backslash as an escape, and the run dies with
+    `C:UserskatopAppData...: No such file or directory` — **exit 127, for every
+    arm, silently**. See `premise_harness_alive` for why that mattered.
+    """
     fd, path = tempfile.mkstemp(suffix=".sh", prefix="premise_arm_")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(script)
-        p = subprocess.run(["bash", path], capture_output=True, timeout=20)
+        argv0 = bash if bash is not None else resolve_bash()[0]
+        p = subprocess.run(
+            [argv0, path.replace(os.sep, "/")], capture_output=True, timeout=20
+        )
         return p.returncode
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -526,6 +599,48 @@ def _run(body, with_trap, opts):
             os.unlink(path)
         except OSError:
             pass
+
+
+def premise_harness_alive():
+    """Can this box run a temp bash script at all? Returns None, or a reason.
+
+    ⛔ **This is the arm the premise table was missing, and its absence
+    produced a confident wrong answer for as long as it was absent.** Every
+    cell read `127` on the Windows workstation — a well-formed number, in the
+    right column, that was the shell failing to OPEN the script rather than
+    any measurement of abort laundering. The report then printed *"13 measured
+    cell(s) DIVERGE from what the docs claim … fix the docs, not the
+    measurement"* and *"this bash does NOT launder any measured abort"*: an
+    instrument telling its reader to edit a correct table and retire the class
+    it exists to watch.
+
+    AGENTS.md already states this rule one seam over — the docker arm prints
+    *UNSEEN, never a zero*, because *"a premise instrument that silently skips
+    its arms reports 'nothing launders' and retires the whole class."* The
+    local-box arm had no such guard, because nobody expected it to be the arm
+    that could not run.
+
+    Two probes, because they fail differently: a script that exits 42 catches
+    a harness that cannot execute at all (the 127 class), and a script that
+    exits 0 catches one that reports failure unconditionally — which would
+    make every cell read as a launder.
+    """
+    _, why = resolve_bash()
+    if why:
+        return why
+    got = _run_script("#!/usr/bin/env bash\nexit 42\n")
+    if got != 42:
+        return (
+            f"a planted `exit 42` script returned {got!r}: bash cannot run a temp "
+            "script here, so every cell below would be that failure, not a measurement"
+        )
+    got = _run_script("#!/usr/bin/env bash\nexit 0\n")
+    if got != 0:
+        return (
+            f"a planted `exit 0` script returned {got!r}: this harness reports "
+            "failure unconditionally, so every cell would read as a launder"
+        )
+    return None
 
 
 def measure_premise():
@@ -544,6 +659,21 @@ def measure_premise():
                 # trap turns it into a success.
                 "launders": bare not in (0, None) and trapped == 0,
                 "as_documented": want is None or (bare, trapped) == want,
+                # ⛔ A cell the 3.2 table records as LAUNDERING that this box
+                # measures as PRESERVING is not a documentation error — it is
+                # the upstream fix, confirmed. AGENTS.md already records it
+                # ("bash 4.4.23 / 5.0.18 / 5.2.37 / 5.3.15, dash and busybox ash
+                # all preserve the status; fixed no later than 4.4"), so a
+                # workstation on bash 5 SHOULD read these five cells differently
+                # and the divergence line must not send its reader to edit a
+                # correct table. Every other mismatch stays a real divergence.
+                "confirms_fix": (
+                    want is not None
+                    and want[1] == 0
+                    and want[0] not in (0, None)
+                    and bare == want[0]
+                    and trapped == bare
+                ),
             })
     return rows
 
@@ -759,7 +889,96 @@ probe
     os.unlink(p)
     if got is not None:
         failures.append(f"    no-trap control: expected NOT-IN-POPULATION, got {got['verdict']}")
+
+    failures.extend(premise_arms())
     return failures
+
+
+def premise_arms():
+    """Arms over the PREMISE harness itself, not over the classifier.
+
+    ⛔ These exist because the harness produced a full grid of `127`s on the
+    Windows workstation for as long as nobody armed it — Python resolved
+    `bash` to `C:\\Windows\\System32\\bash.exe` (the WSL launcher), which cannot
+    open a Windows temp path, so every cell was the same failure wearing an
+    exit code. The report then printed *"fix the docs, not the measurement"*
+    over a correct table and *"this bash does NOT launder any measured abort"*,
+    which retires the class this file exists for. A classifier self-test
+    cannot reach any of that: the classifier was fine.
+    """
+    fails = []
+
+    # 1. The harness RUNS. Two exit codes, not one: a harness that cannot
+    #    execute returns a constant, and a constant equal to the expected
+    #    value would pass a single-value arm.
+    for want in (42, 7, 0):
+        got = _run_script(f"#!/usr/bin/env bash\nexit {want}\n")
+        if got != want:
+            fails.append(
+                f"    premise harness: a planted `exit {want}` returned {got!r} — "
+                "every premise cell would be that failure, not a measurement"
+            )
+
+    # 2. The selected bash is DISCLOSED and is one this box actually has.
+    exe, why = resolve_bash()
+    if why:
+        fails.append(f"    premise harness: no runnable bash — {why}")
+    elif not (exe == "bash" or os.path.isfile(exe)):
+        fails.append(f"    premise harness: resolve_bash returned {exe!r}, not a file")
+
+    # 3. The liveness verdict agrees with the harness in BOTH directions.
+    alive = premise_harness_alive()
+    if why and not alive:
+        fails.append("    premise_harness_alive said OK while no bash could run a script")
+    if not why and alive:
+        fails.append(f"    premise_harness_alive said {alive!r} while the harness works")
+
+    # 4. `confirms_fix` separates the bash-4.4 fix from a real divergence, and
+    #    the arm asserts BOTH directions on synthetic rows — a classifier that
+    #    returns True everywhere would silence every genuine mismatch.
+    def cf(want, bare, trapped):
+        return {
+            "confirms_fix": (
+                want is not None
+                and want[1] == 0
+                and want[0] not in (0, None)
+                and bare == want[0]
+                and trapped == bare
+            )
+        }["confirms_fix"]
+
+    checks = [
+        # documented LAUNDER (2 -> 0), measured preserving: the fix.
+        ((2, 0), 2, 2, True),
+        ((1, 0), 1, 1, True),
+        # documented LAUNDER, measured with a DIFFERENT bare: not the fix.
+        ((2, 0), 3, 3, False),
+        # documented LAUNDER, still laundering: not a divergence at all, and
+        # certainly not a fix.
+        ((2, 0), 2, 0, False),
+        # documented preserving, measured laundering: a REAL divergence and the
+        # direction that must never be excused.
+        ((1, 1), 1, 0, False),
+        # no documented cell: nothing to confirm.
+        (None, 1, 1, False),
+    ]
+    for want, bare, trapped, expect in checks:
+        if cf(want, bare, trapped) != expect:
+            fails.append(
+                f"    confirms_fix({want}, bare={bare}, trapped={trapped}) "
+                f"= {not expect}, expected {expect}"
+            )
+
+    # 5. And the arm above is only worth anything if the SHIPPED rows use that
+    #    rule — assert the key exists on a real measured row rather than
+    #    trusting the two to agree (this repo's `gate_says` pattern).
+    if not why:
+        rows = measure_premise()
+        if not rows:
+            fails.append("    measure_premise returned no rows on a live harness")
+        elif any("confirms_fix" not in r for r in rows):
+            fails.append("    measure_premise rows are missing the confirms_fix key")
+    return fails
 
 
 def repos(root):
@@ -810,28 +1029,57 @@ def main():
         targets = [os.path.join(root, d) for d in repos(root)]
 
     print("── premise (re-measured on this box, not quoted from the docstring) ──")
-    bash_v = subprocess.run(["bash", "-c", "echo $BASH_VERSION"],
+    bash_exe, _why = resolve_bash()
+    bash_v = subprocess.run([bash_exe, "-c", "printf %s \"$BASH_VERSION\""],
                             capture_output=True, encoding="utf-8", errors="replace").stdout.strip()
-    print(f"  bash {bash_v}")
+    # ⚠ The PATH is part of the claim: two bashes on one box measure two
+    # different premises, and this line is the only place a reader can see
+    # which one produced the table.
+    print(f"  bash {bash_v or '(version unreadable)'}  [{bash_exe}]")
+    dead = premise_harness_alive()
+    if dead:
+        print(f"  \u26d4 PREMISE UNSEEN on this box — {dead}.")
+        print("     The table is NOT printed: a grid of identical exit codes reads as\n"
+              "     data, and the divergence line below it would tell you to edit a\n"
+              "     correct document. Take the premise from a POSIX workstation or\n"
+              "     from trap_launder_premise_matrix.py; the findings below stand on\n"
+              "     their own (they are static) and only their SEVERITY is unknown.\n")
+        premise_rows = []
+    else:
+        premise_rows = measure_premise()
     launders = 0
     diverged = 0
+    confirmed = 0
     print(f"  {'shell options':<20} {'abort arm':<20} {'bare':<6} {'+EXIT trap':<11} verdict")
-    for row in measure_premise():
+    for row in premise_rows:
         flag = "LAUNDERS -> 0" if row["launders"] else "status preserved"
-        note = "   ⛔ DIVERGES from the documented table" if not row["as_documented"] else ""
+        if row["as_documented"]:
+            note = ""
+        elif row["confirms_fix"]:
+            note = "   ✓ the 3.2 LAUNDER cell, FIXED on this bash"
+            confirmed += 1
+        else:
+            note = "   ⛔ DIVERGES from the documented table"
+            diverged += 1
         launders += bool(row["launders"])
-        diverged += not row["as_documented"]
         print(f"  {row['opts']:<20} {row['name']:<20} {row['bare']!s:<6} "
               f"{row['trapped']!s:<11} {flag}{note}")
     print("\n  errexit is the PRECONDITION, for both triggers: with `set -u` alone an\n"
           "  unbound expansion aborts and exits 1 even with a succeeding EXIT trap,\n"
           "  and an `eval` syntax error does not abort at all. Rows whose script has\n"
           "  nounset WITHOUT errexit are therefore PRECAUTIONARY, not EXPOSED.")
+    if confirmed:
+        print(f"\n  ✓ {confirmed} cell(s) the 3.2 table records as LAUNDERING read as\n"
+              f"  status-preserving on bash {bash_v or '?'} — that is the documented\n"
+              "  upstream fix (no later than 4.4), CONFIRMED here, not a doc error.\n"
+              "  Do NOT edit the table: it is the macOS /bin/bash 3.2.57 premise and\n"
+              "  that platform is the one it exists for.")
     if diverged:
-        print(f"\n  ⛔ {diverged} measured cell(s) DIVERGE from what the docs claim. The\n"
-              "  findings below are about a premise that does not hold on this box —\n"
-              "  re-read before acting, and fix the docs, not the measurement.")
-    if launders == 0:
+        print(f"\n  ⛔ {diverged} measured cell(s) DIVERGE from what the docs claim, and\n"
+              "  NOT in the direction the 4.4 fix explains. The findings below are\n"
+              "  about a premise that does not hold on this box — re-read before\n"
+              "  acting, and reconcile the docs with the measurement.")
+    if launders == 0 and premise_rows:
         print("\n  This bash does NOT launder any measured abort. The findings below are\n"
               "  then about a premise that no longer holds here — re-read before acting.")
     print()
@@ -843,7 +1091,8 @@ def main():
             print(f)
         print()
     else:
-        print("── selftest: 13/13 (9 verdicts + 2 window + 2 population controls) fire as pinned\n")
+        print("── selftest: 13/13 (9 verdicts + 2 window + 2 population controls) "
+              "+ premise-harness arms fire as pinned\n")
 
     grand = {}
     all_rows = []
