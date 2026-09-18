@@ -84,6 +84,38 @@ def _git(root, *args) -> subprocess.CompletedProcess:
         capture_output=True, encoding="utf-8", errors="replace")
 
 
+def _is_checkout(root) -> bool:
+    """Can git be run rooted HERE? — `.exists()`, deliberately (Issue 836).
+
+    ⛔ This is NOT the contract-repo predicate and the two must not be
+    interchanged. `.git` answers two different questions in this workspace and
+    each spelling is wrong for the other one:
+
+    - *Is this a canonical REPO?* → `.is_dir()`. A `git worktree` has a `.git`
+      **FILE**, and counting one as a repo attributes its manifests to a repo
+      that does not exist (Issue 835 defect 1). That predicate is
+      `skill_repo_set_gate.derive_repos`; never re-derive it here.
+    - *Can I run git rooted here?* → `.exists()`, this function. A worktree is
+      a perfectly good checkout, and `.is_dir()` silently says otherwise.
+
+    All five guards below took `.is_dir()`, and every one of their false
+    branches returns the value meaning *nothing to report* — so in a worktree
+    the whole head-provenance mechanism went inert with no signal anywhere,
+    and a sweep re-pinned from another session's in-flight edits believing it
+    had read HEAD. That is Issue 797's founding defect, reintroduced inside
+    the mechanism built to prevent it.
+
+    The requirement this probe actually exists for is unaffected, and it is
+    asserted one arm group down: `git -C` walks UP, so a non-repo directory
+    nested inside a repo must not inherit its PARENT's answers. Such a
+    directory has no `.git` entry of ANY kind, so `.exists()` protects it
+    exactly as `.is_dir()` did — as does a `git archive` extraction, which
+    stays clean-by-construction rather than an error. The change is strictly
+    widening, on the one case that should have answered all along.
+    """
+    return (Path(root) / ".git").exists()
+
+
 def dirty_files(root) -> frozenset[str]:
     """Tracked repo-relative paths that differ from HEAD (staged or not).
 
@@ -99,7 +131,7 @@ def dirty_files(root) -> frozenset[str]:
       no finding can carry its address.
     """
     root = Path(root)
-    if not (root / ".git").is_dir():
+    if not _is_checkout(root):
         return frozenset()
     out = _git(root, "status", "--porcelain", "--untracked-files=no")
     if out.returncode != 0:
@@ -133,7 +165,7 @@ def head_text(root, rel: str) -> str | None:
     nothing committed to compare against.
     """
     root = Path(root)
-    if not (root / ".git").is_dir():
+    if not _is_checkout(root):
         return None
     out = _git(root, "show", f"HEAD:{rel}")
     return out.stdout if out.returncode == 0 else None
@@ -414,7 +446,7 @@ def head_tree(root, patterns, paths=None, extra_dirty=()):
     """
     root = Path(root)
     if not (dirty_in_population(root, patterns) or tuple(extra_dirty)) \
-            or not (root / ".git").is_dir():
+            or not _is_checkout(root):
         yield None
         return
     with tempfile.TemporaryDirectory() as td:
@@ -536,7 +568,7 @@ def behind_origin(root, patterns) -> tuple[int, int] | None:
     AHEAD would read as stale.
     """
     root = Path(root)
-    if not (root / ".git").is_dir():
+    if not _is_checkout(root):
         return None
     up = _git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name",
               "@{upstream}")
@@ -598,11 +630,22 @@ def fetch_age_hours(root) -> float | None:
     which on a box running five concurrent sessions is a race; Issue 827 T2
     refuses it for the sweeps on the same grounds.
     """
-    git_dir = Path(root) / ".git"
-    if not git_dir.is_dir():
+    if not _is_checkout(root):
         return None
+    # ⛔ `root / ".git" / "FETCH_HEAD"` is NOT the path in a worktree, where
+    # `.git` is a FILE and the real git directory lives under the main
+    # checkout's `.git/worktrees/<name>/`. Admitting worktrees via
+    # `_is_checkout` without this would swap one silent None for another —
+    # `os.stat` on a path under a FILE raises `OSError` and reads as "cannot
+    # tell", the same "nothing to report" value Issue 836 is about. Ask git
+    # for the path instead of constructing it; `--git-path` resolves the
+    # per-worktree and shared cases alike, and is a no-op string lookup.
+    loc = _git(root, "rev-parse", "--git-path", "FETCH_HEAD")
+    if loc.returncode != 0:
+        return None
+    fetch_head = Path(root) / loc.stdout.strip()
     try:
-        mtime = os.stat(git_dir / "FETCH_HEAD").st_mtime
+        mtime = os.stat(fetch_head).st_mtime
     except OSError:
         return None
     # Clamp: a clock skew or a future-dated mtime must not read as "fetched
@@ -1778,11 +1821,110 @@ def premise_arms() -> list[str]:
     return fails
 
 
+def worktree_arms() -> list[str]:
+    """A REAL `git worktree`, against all five guards (Issue 836).
+
+    ⛔ The fixture must be a genuine `git worktree add`, never a hand-written
+    `.git` file: the point is that git ANSWERS here, so an arm whose fixture
+    only looks worktree-shaped would assert the probe and not the behaviour —
+    the `platform_dead_code` vendor-arm failure, where one exclusion had two
+    code paths and the arm certified the path it was not aimed at.
+
+    Every guard is asserted against git's own answer rather than against a
+    literal, because the whole defect was five functions returning values that
+    are individually legitimate readings.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        main = _repo(tmp, "main")
+        (main / "a.md").write_text("one\n", encoding="utf-8")
+        _run(main, "add", "-A")
+        _run(main, "commit", "-qm", "base")
+
+        wt = tmp / "wt"
+        _run(main, "worktree", "add", "--detach", str(wt), "HEAD")
+        check((wt / ".git").is_file(),
+              "the fixture's .git is not a FILE — `git worktree add` no longer "
+              "produces the shape this whole arm group is about, so every "
+              "check below is asserting nothing")
+
+        # The guard itself, both spellings, so the regression is named.
+        check(_is_checkout(wt),
+              "_is_checkout said NO to a real worktree — back to `.is_dir()`, "
+              "and the head-provenance mechanism is inert there again (836)")
+
+        (wt / "a.md").write_text("two\n", encoding="utf-8")
+        truth = _git(wt, "status", "--porcelain", "--untracked-files=no")
+        check(truth.stdout.strip() != "",
+              "git itself reported a CLEAN worktree after an edit — the "
+              "fixture is broken, not the code under test")
+
+        check(dirty_files(wt) == frozenset({"a.md"}),
+              f"dirty_files went blind in a worktree ({set(dirty_files(wt))}) "
+              f"while git reported {truth.stdout.strip()!r} — a sweep there "
+              f"files every row COMMITTED and re-pins from an in-flight edit")
+        check(head_text(wt, "a.md") == "one\n",
+              f"head_text did not read HEAD in a worktree "
+              f"({head_text(wt, 'a.md')!r}) — the MASKED direction is dead, "
+              f"which is the SILENT one")
+        with head_tree(wt, ("*.md",)) as t:
+            check(t is not None,
+                  "head_tree yielded None for a DIRTY worktree — the caller "
+                  "skips provenance entirely and reads the worktree as HEAD")
+
+        # `fetch_age_hours` needs more than the probe: `.git` is a FILE here,
+        # so a constructed `<root>/.git/FETCH_HEAD` cannot exist and OSError
+        # would swap one silent None for another.
+        loc = _git(wt, "rev-parse", "--git-path", "FETCH_HEAD")
+        check(loc.returncode == 0 and loc.stdout.strip() not in ("", ".git/FETCH_HEAD"),
+              f"git --git-path did not redirect FETCH_HEAD out of a worktree's "
+              f"`.git` ({loc.stdout.strip()!r}) — the premise fetch_age_hours "
+              f"now rests on")
+        # ⚠ PREMISE: git answers `--git-path` with an ABSOLUTE path inside a
+        # worktree and a RELATIVE one in an ordinary checkout, and `Path.__
+        # truediv__` silently discards the left side when the right is
+        # absolute — which is what makes ONE join correct for both shapes. If
+        # git ever returned a relative path here the join would still "work"
+        # and point at a file that cannot exist, i.e. back to a silent None.
+        check(Path(loc.stdout.strip()).is_absolute(),
+              f"git answered --git-path RELATIVELY inside a worktree "
+              f"({loc.stdout.strip()!r}) — fetch_age_hours' single join now "
+              f"resolves against the worktree and can only miss")
+        real = Path(wt) / loc.stdout.strip()
+        real.parent.mkdir(parents=True, exist_ok=True)
+        real.write_text("", encoding="utf-8")
+        check(fetch_age_hours(wt) is not None,
+              "fetch_age_hours answered None for a worktree with a real "
+              "FETCH_HEAD — it is still constructing the path instead of "
+              "asking git for it")
+
+        # ⛔ The requirement the probe actually exists for, UNCHANGED by the
+        # widening: `git -C` walks UP, so a non-repo directory nested inside a
+        # repo must not inherit its parent's answers. `.exists()` protects it
+        # for the same reason `.is_dir()` did — there is no `.git` of any kind.
+        plain = main / "plain"
+        plain.mkdir()
+        check(not _is_checkout(plain) and dirty_files(plain) == frozenset()
+              and head_text(plain, "a.md") is None,
+              "the widening to .exists() let a non-repo directory inherit its "
+              "PARENT's repository — the one thing the probe is for")
+
+        _run(main, "worktree", "remove", "--force", str(wt))
+
+    return fails
+
+
 def selftest() -> list[str]:
     return (dirty_arms() + split_arms() + delta_arms() + overlay_arms()
             + key_arms() + tree_arms() + scope_arms()
             + advisory_arms() + stale_arms() + fetch_age_arms()
-            + counter_arms() + premise_arms())
+            + counter_arms() + premise_arms() + worktree_arms())
 
 
 def main() -> int:
@@ -1834,7 +1976,11 @@ def main() -> int:
           "a never-fetched clone is loud (None is cannot-tell, never age 0; "
           "a future-dated mtime clamps) and a repo already reported STALE "
           "does not also get that line, and the "
-          "advisory is SILENT on a clean run with the four classes unpooled")
+          "advisory is SILENT on a clean run with the four classes unpooled, "
+          "and a REAL git worktree — where `.git` is a FILE — answers all "
+          "five guards instead of returning the five values that each mean "
+          "'nothing to report', while a non-repo directory nested inside a "
+          "repo still inherits nothing from its parent")
     return 0
 
 
