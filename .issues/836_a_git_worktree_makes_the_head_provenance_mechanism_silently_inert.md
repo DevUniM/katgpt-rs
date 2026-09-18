@@ -99,7 +99,33 @@ back to `.is_dir()`, in both directions.
   them — the same demand Issue 835 T2 makes of itself, and the
   `console_encoding_gate` lesson about carrying an answer across populations.
 
-- [ ] **T3 — the cross-repo axis is UNMEASURED.** Do not assume a population
-  of one: `console_encoding_gate` assumed exactly that and was wrong by seven
-  repos. Sibling repos carry their own copies of `worktree_state`-shaped
-  helpers or none at all; **count first**.
+- [x] **T3 — the cross-repo axis, MEASURED 2026-09-18.** *Counted first*, per
+  the `console_encoding_gate` lesson — and it was right to: the population is
+  **not** one. Across the 13 canonical repos present, `.git` probes in
+  `scripts/*.py`:
+
+  | repo | sites |
+  |---|---|
+  | katgpt-rs | 26 (19 `.is_dir()` + 7 `.exists()`) |
+  | riir-ai | 2 |
+  | riir-clippy | 1 |
+  | the other 10 | 0 |
+
+  So the class is overwhelmingly local but genuinely present in two siblings —
+  a sweep is **not** warranted (3 sites do not need an instrument), and the
+  three were read one by one instead:
+
+  - ⛔ **riir-ai `inert_config_knob_report.py:366` — Issue 835's defect
+    verbatim.** A contract-repo walk on `.exists()`, counting this box's
+    `riir-chain.w152` as a 17th repo (17 vs 16, measured). Its own docstring
+    cited *"the workspace's contract-repo predicate, per derive-the-repo-set
+    rule"* over a hand-rolled copy. **Filed and repaired in that repo as
+    riir-ai Issue 978, committed `9637d09ea`** — a cross-repo repair is not
+    landed until it is committed in the sibling with a cited SHA (Issue 798).
+  - ✓ riir-ai `transport_selection_dry_gate.py:140` — contract-repo walk,
+    `.is_dir()`. **Correct**, and the reason 978 is one site rather than a
+    house style.
+  - ✓ riir-clippy `gen_dashboard.py:565` — the *other* question (it goes on to
+    run `git log` across siblings), `.exists()`. **Correct**, and the standing
+    argument against sweeping one spelling: a blanket `.exists()` → `.is_dir()`
+    pass would have broken it.
