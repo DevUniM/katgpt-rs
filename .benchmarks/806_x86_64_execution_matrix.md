@@ -481,3 +481,80 @@ stale-pin rule); the file's membership set is EMPTY again — every confirmed
 x86_64 failure is unexpected. Verified green on both platforms at the new
 gates (4090: G3b 4.15×/4.45×, t09 81.0/85.5 µs; M3: G3b 5.92×, t09
 5.83/5.79/5.92 µs). T7 ticked; T8 remains (Issue 808, owner's call).
+
+## Addendum III (2026-09-18) — the first run with NOTHING to adjudicate
+
+```
+✓ x86_64 execution matrix PASSED — 8 cell(s), 11175 assertion(s)
+  EXECUTED on x86_64 at 19328b9b with RUSTFLAGS='-C target-feature=+avx2'
+```
+
+**0 failures and 0 rows in the passed-alone bucket.** Every previous green run
+in this document reached its verdict through the confirm-alone step; this one
+had nothing to confirm. Two instrument repairs and one product fix got it
+there, and the interesting one is the bucket.
+
+### The bucket named a cause it cannot observe, and was wrong three times
+
+The confirm step printed `TRANSIENT` for any test that failed in a cell and
+passed when re-run alone. That word asserts *load-sensitive bar*, and three
+distinct classes produce the identical observation:
+
+| class | example | is TRANSIENT right? |
+|---|---|---|
+| load-sensitive perf BAR | `bench_176_router_forward_cpu` (Issue 831) | yes — the only one |
+| shared-fixed-path CONCURRENCY | Issue 832's temp-path races | **no** — passes alone BY CONSTRUCTION, because alone there is no second process. One was filed TRANSIENT and the defect shipped |
+| unseeded-RNG COIN FLIP | `go::tournament::tests::player_type_creates_instances` | **no** — a single clean re-run is what you expect 98% of the time |
+
+⚠ **More re-runs is not the repair, and the arithmetic says so.** Re-running
+narrows the concurrency class not at all, and a 2% flake survives three
+re-runs 94% of the time. `CONFIRM_RUNS` is 3 because the evidence is free
+(everything is built, `--exact` makes every other binary run zero tests), but
+what fixes the reader is that the row no longer names a cause: the bucket is
+`PASSED-ALONE`, and the three classes with their disambiguating greps print
+right after the confirm pass.
+
+### The product defect underneath the third class
+
+`player_type_creates_instances` drew from an **unseeded** `fastrand::Rng::new()`
+and asserted `matches!(action, GoAction::Place(_, _))` on one draw, with the
+message *"returned Pass on empty board"*. `GoRandomPlayer` passes
+**deliberately** — `PASS_PROBABILITY = 0.02`, *"2% pass to avoid infinite
+games"*, twelve lines from the assert. Measured over 400 seeds × 6 player
+types: **9 failures**, Random 5/400 being exactly that constant.
+
+Its `global_rng_expected.txt` row read *"cfg(test); structural `matches!`
+assert on an empty board"* — an adjudication made by reading the assert and
+not the player. The row is removed and the refutation is recorded in the pin
+file, because the neighbouring rows carry reasons of the same kind.
+
+Repaired with **both** halves: seed explicitly (an unseeded draw makes the
+failure unreproducible and the pass meaningless), *and* assert what is
+actually claimed. Seeding alone would have pinned whichever side of the coin
+the chosen range landed on — seeds 0..32 are clean today, so a 32-seed sweep
+would have looked like a fix and been one edit from breaking again. It now
+sweeps 256 fixed seeds and asserts every action is LEGAL and that placements
+clear 90%, which is ~9 sd below the 98% a 2% pass predicts and 0% for a
+degenerate always-pass player.
+
+### Cell 6, and a wrong attribution corrected one commit later
+
+`highs-sys` (cmake + MSVC) twice died with `C1001` in `<vector>` plus `cl
+D8040 error creating or communicating with child process` — cl.exe failing to
+spawn its own child. The matrix called it *"died without a failures block —
+nothing asserted"*, which is the correct refusal and also a red cell over a
+toolchain flake.
+
+The obvious hypothesis was cmake's `--parallel`, and it was written up as
+measured. ⛔ **It was not.** Isolated afterwards, build dir deleted between
+runs: `cmake 6 × cargo 6` → 74 passed 13.8s; `cmake 2 × cargo 2` → 13.9s;
+`cmake 1 × cargo 2` → 15.6s. Every quiet-box run passes at every parallelism;
+both failures happened while another heavy cargo build ran concurrently in a
+different target dir. The trigger is whole-box concurrent compiler load, the
+`CMAKE_BUILD_PARALLEL_LEVEL=1` cap only shrinks this lane's own contribution
+to the peak, and **the remedy is to run the matrix alone**. The cap is kept
+because it costs nothing detectable, not because it fixes anything.
+
+⚠ The surviving causal claim is weaker than it first read: two failures under
+concurrent load, three passes without it, and no experiment isolating load
+itself.
