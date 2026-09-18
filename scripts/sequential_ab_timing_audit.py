@@ -114,6 +114,16 @@ IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
 # A bare `A / B` between two identifiers — names deliberately unconstrained,
 # because the whole point is that the names are what `RATIO` could not read.
 ANY_RATIO = re.compile(r"\b([A-Za-z_]\w*)\s*/\s*([A-Za-z_]\w*)\b")
+# `(A - B) / C` — a RELATIVE DIFFERENCE, which is algebraically `A/C - B/C` and
+# is the same two-arm comparison wearing a percentage. AGENTS.md lists "written
+# as a subtraction or a percentage" as a STATED blind spot; this closes the half
+# that is then divided. Measured (Issue 833 T3): 10 targets in the 2+-timer
+# residue, and two of them are GOAT bars — `pipeline_pruner_goat` asserts
+# `latency_improvement >= 0.20` and `static_cal_goat` `>= 0.05`, the second a
+# bar TIGHTER than the ±21.7% drift Issue 723 T5 measured for this very class.
+REL_DIFF = re.compile(
+    r"\(\s*([A-Za-z_]\w*)\s*-\s*([A-Za-z_]\w*)\s*\)\s*/\s*([A-Za-z_]\w*)"
+)
 
 # ── the treatment is a SHAPE, and `ADOPTED_RE` matches a NAME ───────────────
 # `tests/common/ab_timing.rs` is one spelling of interleaved paired arms +
@@ -183,26 +193,46 @@ def timing_locals(masked: str) -> set:
 
 
 def provenance_hits(masked: str, already: list) -> list:
-    """Two-arm ratios `ratio_hits` could not see, found by VALUE not by name.
+    """Two-arm comparisons `ratio_hits` could not see, found by VALUE not name.
+
+    Two expression shapes, ONE `timing_locals` pass — they are the same
+    resolver, and computing provenance twice is the expensive half:
+
+      * `A / B`        — a ratio whose locals spell none of `_T`'s tokens.
+      * `(A - B) / C`  — a RELATIVE DIFFERENCE, the same comparison wearing a
+        percentage, which `ANY_RATIO` misses only because the numerator is
+        parenthesised rather than an identifier.
 
     `already` is the name-matched set, so a site is reported once and the two
-    resolvers stay separable — the counts must not double-count a ratio both
-    can see. `COUNTY` still applies: a timing local divided by a count is a
-    rate whichever resolver found it.
+    resolvers stay separable — the counts must not double-count a comparison
+    both can see. `COUNTY` still applies to every operand: a timing local over
+    a count is a rate whichever resolver found it and whichever shape it wore.
     """
     names = timing_locals(masked)
     if len(names) < 2:
         return []
     seen, hits = set(already), []
+
+    def admit(text: str, operands: tuple) -> None:
+        if text in seen:
+            return
+        if any(o not in names for o in operands):
+            return
+        if any(COUNTY.search(o) for o in operands):
+            return
+        seen.add(text)
+        hits.append(text)
+
+    for m in REL_DIFF.finditer(masked):
+        a, b, c = m.group(1), m.group(2), m.group(3)
+        if a == b:
+            continue  # (x - x) is zero, not a comparison
+        admit(m.group(0), (a, b, c))
     for m in ANY_RATIO.finditer(masked):
         a, b = m.group(1), m.group(2)
-        if a == b or a not in names or b not in names:
-            continue
-        if COUNTY.search(a) or COUNTY.search(b):
-            continue
-        if m.group(0) in seen:
-            continue
-        hits.append(m.group(0))
+        if a == b:
+            continue  # x/x is a normalisation, not a comparison
+        admit(m.group(0), (a, b))
     return hits
 
 
@@ -432,6 +462,30 @@ def selftest() -> list:
     h = ratio_hits(masked_dbl)
     if len(h + provenance_hits(masked_dbl, h)) != 1:
         fails.append("a ratio both resolvers can see must be counted once")
+
+    # 6b-ii. RELATIVE DIFFERENCE (Issue 833 T3). `(a - b) / b` is `a/b - 1` —
+    #     the same two-arm comparison wearing a percentage, and AGENTS.md lists
+    #     it as a STATED blind spot. Two measured GOAT bars were behind it.
+    reldiff = """
+    fn g() {
+        let t0 = Instant::now(); base(); let d0 = t0.elapsed();
+        let base_total = d0.as_nanos() as f64;
+        let t1 = Instant::now(); feat(); let d1 = t1.elapsed();
+        let feat_total = d1.as_nanos() as f64;
+        let improvement = (base_total - feat_total) / base_total;
+        assert!(improvement >= 0.20);
+    }"""
+    if v(reldiff) != "SEQUENTIAL":
+        fails.append(f"a relative-difference bar read {v(reldiff)}, not SEQUENTIAL")
+    #     `(x - x) / x` is zero, not a comparison — the sibling of the x/x rule,
+    #     and without it any self-difference reads as the class.
+    if v(reldiff.replace("(base_total - feat_total)", "(base_total - base_total)")) != "UNRESOLVED":
+        fails.append("(x - x) / x must not read SEQUENTIAL")
+    #     ...and COUNTY must reach the DENOMINATOR of the difference form too,
+    #     or `(a - b) / n_tokens` — a per-token delta, which is a rate — becomes
+    #     the class. This is the arm that keeps the widening honest.
+    if v(reldiff.replace("/ base_total;", "/ n_tokens;")) != "UNRESOLVED":
+        fails.append("a relative difference over a COUNT must stay UNRESOLVED")
 
     # 6c. HAND-ROLLED (Issue 833 T3). The treatment is a SHAPE and `ADOPTED_RE`
     #     matches a NAME, so a target that hand-rolls interleaved pairs reads

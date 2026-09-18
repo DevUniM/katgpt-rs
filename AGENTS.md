@@ -1307,11 +1307,33 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   resolver, not a replacement: `RATIO` still decides the easy majority, a site
   both can see is counted once, and `COUNTY` still applies — a timing local
   over a count is a rate whichever resolver found it.
+  - **Two expression shapes, ONE provenance pass**, because they are the same
+    resolver and computing provenance twice is the expensive half: `A / B`, and
+    `(A - B) / C` — a **RELATIVE DIFFERENCE**, which is algebraically `A/C -
+    B/C` and is the same two-arm comparison wearing a percentage. That is half
+    of the STATED "subtraction or a percentage" blind spot, and it was the
+    better-hidden half: `ANY_RATIO` misses it only because the numerator is
+    parenthesised. Measured: **14 targets carry it, 7 of them resolved by
+    nothing else**, and two are GOAT bars — `pipeline_pruner_goat` asserts
+    `latency_improvement >= 0.20` and `static_cal_goat` `>= 0.05`. ⛔ Read that
+    second one against this section's own premise: a **5%** bar on a quantity
+    Issue 723 T5 measured drifting **±21.7%** between sequential arms is a bar
+    tighter than the noise floor of the instrument stating it.
+  - `(x - x) / x` is armed alongside `x/x` (a self-difference is zero, not a
+    comparison), and `COUNTY` reaches the difference form's **denominator**
+    too — `(a - b) / n_tokens` is a per-token delta, i.e. a rate. That arm is
+    what keeps the widening honest, and it reds when removed.
+  - ⚠ A subtraction that is **never divided** stays UNRESOLVED and is correct
+    there: `ppot_bench`'s `t_027 - t_greedy` is a printed `Duration` span.
+  - ⚠ SEQUENTIAL has never meant "feeds an assertion" — it means two
+    sequentially-timed arms are compared. Some rows print the comparison and
+    gate nothing; that is Issue 833 T3's third resolution bucket and applies to
+    the whole bucket, not just these. The widening did not change that rule.
 - `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
 - Measured 2026-09-18 over 17 repos, after Issue 833 T3: **1 HARNESS ·
-  7 ADOPTED · 9 HAND-ROLLED · 139 SEQUENTIAL · 807 UNRESOLVED** over 2515
+  7 ADOPTED · 9 HAND-ROLLED · 152 SEQUENTIAL · 794 UNRESOLVED** over 2515
   target files / 9125 tracked `*.rs`. Read the SEQUENTIAL figure as a
   MAGNITUDE: three predicates over overlapping populations returned
   55 · 57 · 60 for this repo alone. Take every figure from a run.
@@ -1359,10 +1381,11 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   timing does. A slice chosen from
   a classifier with hundreds of unresolved rows is a slice chosen from a guess.
 - ⚠ **STATED blind spots, NARROWED by Issue 833 T3:** a ratio built through a
-  helper; a comparison written as a subtraction or a percentage **and never
-  divided**; two arms differenced off ONE `Instant::now()`; and orientation,
-  which is not statically decidable. The fifth — a ratio whose locals are
-  timing-derived by VALUE but not by NAME — is CLOSED by `provenance_hits`.
+  helper; a subtraction or percentage that is **never divided**; two arms
+  differenced off ONE `Instant::now()`; and orientation, which is not
+  statically decidable. Two are CLOSED by `provenance_hits`: a ratio whose
+  locals are timing-derived by VALUE but not by NAME, and the **divided** half
+  of the subtraction/percentage shape.
 - **UNRESOLVED carries two sub-populations with opposite priors, and pooling
   them is this bucket's own hazard one level down** (Issue 833 T3). A
   **1-timer** row is mostly an ordinary single-arm bar; a **2+-timer** row is

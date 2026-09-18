@@ -298,8 +298,43 @@ let a_ns = d.as_nanos() as f64 / ITERS as f64;` — where only the first binding
 | `cond_audit_poc.rs` | `audit / forwards` | → HAND-ROLLED |
 
 `bench_regime_transition` is additionally the *"written as a subtraction"* blind spot —
-`overhead_ns` is a difference — so that one is narrowed too: it is now blind only where
-the comparison **is** the subtraction and is never divided.
+`overhead_ns` is a difference — which pointed straight at the next class.
+
+### Finding 2b — `(A - B) / C` is the same comparison wearing a percentage
+
+Following that thread with the triage aid from Finding 3 (the 2+-timer half), the
+difference-shaped comparisons resolve mechanically: `(A - B) / C` is algebraically
+`A/C - B/C`, and `ANY_RATIO` misses it **only because the numerator is parenthesised**.
+The specimens are unambiguous — `(baseline_total_ns - feature_total_ns) / baseline_total_ns`,
+`(sinkhorn_us - static_us) / sinkhorn_us`, `(us_with - us_no) / us_no`.
+
+**14 targets carry the form, 7 resolved by nothing else**, and two are live GOAT bars:
+
+| target | bar |
+|---|---|
+| `tests/pipeline_pruner_goat.rs` | `assert!(latency_improvement >= 0.20)` |
+| `tests/static_cal_goat.rs` | `assert!(latency_improvement >= 0.05)` |
+
+⛔ **Read the second against this issue's own premise.** Issue 723 T5 measured two
+sequential arms of the *same work* at **+5.2% and +21.7%** thirty seconds apart. A **5%**
+improvement bar on a sequentially-timed pair is a bar *tighter than the noise floor of
+the instrument stating it* — it is not a weak member of the class, it is among the
+strongest.
+
+Same resolver, one `timing_locals` pass, because provenance is the expensive half. Armed
+in both directions: `(x - x) / x` is zero rather than a comparison (the sibling of the
+`x/x` rule), and `COUNTY` reaches the **denominator** — `(a - b) / n_tokens` is a
+per-token delta, i.e. a rate. That last arm is what keeps the widening honest.
+
+⚠ A subtraction that is **never divided** stays UNRESOLVED and belongs there:
+`ppot_bench`'s `t_027 - t_greedy` is a printed `Duration` span. So the blind spot is
+narrowed to the undivided half, not closed.
+
+⚠ SEQUENTIAL has never meant *"feeds an assertion"* — it means two sequentially-timed
+arms are compared. Some of the 7 print the comparison and gate nothing (`test_d2f_decode`'s
+`overhead_pct`, `bench_252`'s percentage). That is T3's third resolution bucket and it
+applies to the **whole** bucket; applying it only to the new rows would have made the
+count incomparable with its own history.
 
 It is a **second** resolver, not a replacement: `RATIO` still decides the easy majority,
 a site both can see is counted once (armed), and `COUNTY` still applies — a timing local
@@ -318,8 +353,8 @@ verdict** — the percentile audit's `tail support` standing.
 
 ### The cross-repo measurement T5 asks for (does NOT answer it)
 
-Run over all 17 contract repos: **1 HARNESS · 7 ADOPTED · 9 HAND-ROLLED · 139
-SEQUENTIAL · 807 UNRESOLVED** over 2515 targets / 9125 tracked `*.rs`.
+Run over all 17 contract repos: **1 HARNESS · 7 ADOPTED · 9 HAND-ROLLED · 152
+SEQUENTIAL · 794 UNRESOLVED** over 2515 targets / 9125 tracked `*.rs`.
 
 ⛔ **6 of the 9 HAND-ROLLED are outside this repo** — riir-ai 3, riir-neuron-db 2,
 riir-train 1 — so AGENTS.md's *"the class generalised and the harness did not"* is too
@@ -358,8 +393,14 @@ finding stated as a failure.
 
 ### What is left of T3
 
-The residue is **292 − 8 = 284** here, and it is genuinely a per-target read: the four
-remaining blind spots are a helper-built ratio, an undivided subtraction, two arms off
-one timer, and orientation — none statically decidable, which is exactly why T4 must not
-be answered from this run. Start with the **160** 2+-timer rows; the 132 1-timer rows are
-the low-prior half.
+The residue is **285** here (from 292: three whole classes resolved — HAND-ROLLED,
+provenance ratios, relative differences), and it is genuinely a per-target read. The
+remaining blind spots are a helper-built ratio, an **undivided** subtraction, two arms
+off one timer, and orientation — none statically decidable, which is exactly why T4 must
+not be answered from this run. Start with the **153** 2+-timer rows; the 132 1-timer rows
+are the low-prior half.
+
+⚠ The SEQUENTIAL figure moved 60 → 65 → 72 here and 130 → 152 workspace-wide across this
+one session's three passes. It is a **magnitude** and every pass widened the classifier
+rather than the code changing — so a bar quoted from an earlier run of this issue is not
+comparable with a later one. Take it from a run.
