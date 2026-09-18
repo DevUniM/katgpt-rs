@@ -1310,18 +1310,34 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
 - `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
-- Measured 2026-09-18 over 17 repos, after Issue 833 T3: **8 ADOPTED ·
-  9 HAND-ROLLED · 139 SEQUENTIAL · 807 UNRESOLVED** over 2515 target files /
-  9125 tracked `*.rs`. Read the SEQUENTIAL figure as a MAGNITUDE: three
-  predicates over overlapping populations returned 55 · 57 · 60 for this repo
-  alone. Take every figure from a run.
+- Measured 2026-09-18 over 17 repos, after Issue 833 T3: **1 HARNESS ·
+  7 ADOPTED · 9 HAND-ROLLED · 139 SEQUENTIAL · 807 UNRESOLVED** over 2515
+  target files / 9125 tracked `*.rs`. Read the SEQUENTIAL figure as a
+  MAGNITUDE: three predicates over overlapping populations returned
+  55 · 57 · 60 for this repo alone. Take every figure from a run.
+- ⛔ **`HARNESS`, because the module certified ITSELF.** `ADOPTED_RE` matches
+  `common/ab_timing.rs` by NAME and the harness's own path contains that name,
+  so `tests/common/ab_timing.rs` was counted as an adopter of itself and
+  inflated the one figure this section is quoted for — the reported 8 was
+  **7 adopters + the harness**. It gets its own verdict rather than an
+  exclusion: dropping `tests/common/` from the walk would make a helper module
+  carrying a real ratio invisible, which is the silent direction, and cargo
+  does not auto-discover `tests/` SUBDIRECTORIES as targets anyway (7 such
+  files here, 736 real targets against the 743 reported). Measured before it
+  was changed: without the short-circuit the harness classifies UNRESOLVED, so
+  **nothing was being masked — the defect was the COUNT.** Checked in the
+  other direction too, which is the one that hides things: of the 8, one more
+  (`bench_270_gauge_invariant_goat.rs`) calls only `best_of_us` — the ABSOLUTE
+  budget, not the A/B treatment — and it carries no two-arm ratio either, so
+  the false-green bucket is measured and EMPTY.
 - ⛔ **"ADOPTED is 0 in every repo but katgpt-rs — the class generalised and
   the harness did not" was TRUE in its first clause and too strong in its
   second, and the second is the one anybody acts on.** ADOPTED is still 0
   everywhere else. But the shape-based verdict measures **9 HAND-ROLLED, and
   6 of the 9 are OUTSIDE this repo** — riir-ai 3, riir-neuron-db 2,
-  riir-train 1. The **treatment** generalised; what did not is the shared
-  MODULE, independently re-written six times. That is a DRY finding rather
+  riir-train 1 — so workspace-wide the **duplicated** treatment (9) now
+  outnumbers the **shared** one (7). The **treatment** generalised; what did
+  not is the shared MODULE, independently re-written six times. That is a DRY finding rather
   than a coverage gap, and it is the measurement Issue 833 T5 / 834 T3 ask for
   before the cross-repo question is answered — it does not answer it, because
   whether `ab_timing.rs` should become a shared crate is an owner/boundary

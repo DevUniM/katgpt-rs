@@ -217,7 +217,10 @@ def hand_rolled(masked: str) -> bool:
     return bool(PUSH_RATIO.search(masked)) and bool(REDUCE.search(masked))
 
 
-def classify(text: str) -> tuple:
+HARNESS = "common/ab_timing.rs"
+
+
+def classify(text: str, rel: str = "") -> tuple:
     """`(verdict, n_instant, hits)` for one target's source.
 
     Masking is not optional and is imported rather than re-written: a text
@@ -229,6 +232,15 @@ def classify(text: str) -> tuple:
     n = len(INSTANT.findall(masked))
     if n == 0:
         return ("UNTIMED", 0, [])
+    # The harness is not an adopter of itself. `ADOPTED_RE` matches the module
+    # by NAME, and the module's own path contains that name, so `ab_timing.rs`
+    # certified itself and inflated the one figure this section is quoted for.
+    # Its own verdict rather than an exclusion: dropping it from the walk would
+    # make a `tests/common/` helper carrying a real ratio invisible, and that
+    # is the silent direction. Measured: without the short-circuit the harness
+    # is UNRESOLVED, so nothing was being masked — the defect is the COUNT.
+    if rel.endswith(HARNESS):
+        return ("HARNESS", n, [])
     # ADOPTED is read off the UNMASKED text on purpose: `#[path = "..."]` puts
     # the module path inside a string literal, which masking blanks.
     if ADOPTED_RE.search(text):
@@ -255,7 +267,7 @@ def scan(repo: str) -> dict:
     """Classify every timed target in `repo`. Returns a result dict."""
     files, excluded = tracked_files(repo, "*.rs")
     root = Path(repo).resolve()
-    rows = {"ADOPTED": [], "HAND-ROLLED": [], "SEQUENTIAL": [], "UNRESOLVED": []}
+    rows = {"HARNESS": [], "ADOPTED": [], "HAND-ROLLED": [], "SEQUENTIAL": [], "UNRESOLVED": []}
     n_targets = 0
     for f in files:
         rel = str(Path(f).resolve().relative_to(root)).replace("\\", "/")
@@ -266,7 +278,7 @@ def scan(repo: str) -> dict:
             text = Path(f).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        verdict, n, hits = classify(text)
+        verdict, n, hits = classify(text, rel)
         if verdict == "UNTIMED":
             continue
         rows[verdict].append((rel, n, hits))
@@ -451,6 +463,24 @@ def selftest() -> list:
     if v('#[path = "common/ab_timing.rs"]\nmod ab_timing;\n' + rolled) != "ADOPTED":
         fails.append("ADOPTED must outrank HAND-ROLLED")
 
+    # 6d. HARNESS. `ADOPTED_RE` matches the module by NAME and the module's own
+    #     path contains that name, so the harness certified itself and inflated
+    #     the one figure this instrument is quoted for. Its own verdict rather
+    #     than an exclusion — dropping `tests/common/` from the walk would make
+    #     a helper module carrying a real ratio invisible, the silent direction.
+    if classify(seq, "tests/common/ab_timing.rs")[0] != "HARNESS":
+        fails.append("the harness module must not be counted as its own adopter")
+    #     ...and it must not swallow the adopters, which live one directory up
+    #     and reference the same string.
+    adopter = '#[path = "common/ab_timing.rs"]\nmod ab_timing;\n' + seq
+    if classify(adopter, "tests/bench_x.rs")[0] != "ADOPTED":
+        fails.append("a target referencing the harness must still read ADOPTED")
+    #     The default argument keeps every other arm honest: with `rel` unset
+    #     nothing may be reclassified, or the arms above would be asserting a
+    #     different function from the one `scan` calls.
+    if classify(seq)[0] != "SEQUENTIAL":
+        fails.append("classify() without a path must be unchanged")
+
     # 7. is_target: src/ is out of scope and the exclusion is deliberate, so
     #    it is asserted rather than left to the caller to rediscover.
     for rel, want in (("tests/a.rs", True), ("benches/b.rs", True),
@@ -496,7 +526,7 @@ def main(argv) -> int:
     args = [a for a in argv[1:] if not a.startswith("-")]
     repos = args or ["."]
 
-    grand = {"ADOPTED": 0, "HAND-ROLLED": 0, "SEQUENTIAL": 0, "UNRESOLVED": 0}
+    grand = {"HARNESS": 0, "ADOPTED": 0, "HAND-ROLLED": 0, "SEQUENTIAL": 0, "UNRESOLVED": 0}
     tot_files = tot_targets = 0
     # The UNRESOLVED bucket has two sub-populations with opposite priors, and
     # pooling them is the bucket note's own hazard one level down. A TRIAGE
@@ -532,6 +562,7 @@ def main(argv) -> int:
                 print(f"       ADOPTED     {rel}  (Instant::now x{n})")
 
     print("\n" + "─" * 72)
+    print(f"  HARNESS     {grand['HARNESS']:>5}   IS tests/common/ab_timing.rs — not an adopter of itself")
     print(f"  ADOPTED     {grand['ADOPTED']:>5}   uses tests/common/ab_timing.rs")
     print(f"  HAND-ROLLED {grand['HAND-ROLLED']:>5}   carries the treatment under another name")
     print(f"  SEQUENTIAL  {grand['SEQUENTIAL']:>5}   <- the class (Issue 833)")

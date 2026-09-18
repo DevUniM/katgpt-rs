@@ -318,14 +318,33 @@ verdict** — the percentile audit's `tail support` standing.
 
 ### The cross-repo measurement T5 asks for (does NOT answer it)
 
-Run over all 17 contract repos: **8 ADOPTED · 9 HAND-ROLLED · 139 SEQUENTIAL · 807
-UNRESOLVED** over 2515 targets / 9125 tracked `*.rs`.
+Run over all 17 contract repos: **1 HARNESS · 7 ADOPTED · 9 HAND-ROLLED · 139
+SEQUENTIAL · 807 UNRESOLVED** over 2515 targets / 9125 tracked `*.rs`.
 
 ⛔ **6 of the 9 HAND-ROLLED are outside this repo** — riir-ai 3, riir-neuron-db 2,
 riir-train 1 — so AGENTS.md's *"the class generalised and the harness did not"* is too
 strong in the clause people act on. ADOPTED is still 0 everywhere else, but the
 **treatment** generalised; what did not is the shared MODULE, independently re-written
-six times. That is a DRY finding, not a coverage gap, and whether `ab_timing.rs` should
+six times — workspace-wide the duplicated treatment (9) now outnumbers the shared one (7).
+
+### Finding 4 — the harness certified ITSELF
+
+Checking the converse of Finding 1 (a name-matched verdict crediting the wrong thing, in
+the direction that hides rather than nags): `ADOPTED_RE` matches `common/ab_timing.rs` by
+NAME, and the harness's own path contains that name. **`tests/common/ab_timing.rs` was
+counted as an adopter of itself** — the reported 8 was 7 adopters + the harness.
+
+Its own `HARNESS` verdict rather than an exclusion: dropping `tests/common/` from the
+walk would make a helper module carrying a real ratio invisible, and cargo does not
+auto-discover `tests/` SUBDIRECTORIES as targets anyway (7 such files here; 736 real
+targets against the 743 reported). **Measured before changing it:** without the
+short-circuit the harness classifies UNRESOLVED, so nothing was being masked — the defect
+was the COUNT, not a hidden row.
+
+The false-green direction was then checked exhaustively over all 8: one more
+(`bench_270_gauge_invariant_goat.rs`) calls only `best_of_us` — the ABSOLUTE budget, not
+the A/B treatment — and carries no two-arm ratio either. So the bucket is measured and
+**EMPTY**. Three further arms, both perturbations RED. That is a DRY finding, not a coverage gap, and whether `ab_timing.rs` should
 become a shared crate stays an owner/boundary call — T5 is measured, not answered.
 
 ### Arms
