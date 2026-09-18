@@ -2636,6 +2636,17 @@ name = "bench_843_ternary_size_sweep"
 path = "tests/bench_843_ternary_size_sweep.rs"
 required-features = ["plasma_path"]
 
+# Bench 844 (Issue 844) — at what dot LENGTH does delegating to the shipped
+# ISA-dispatched `simd_dot_f32` start paying? It has a fixed per-call cost, so
+# below ~24 elements a plain single-accumulator loop is faster and above it the
+# kernel wins by a widening margin. Settles whether this workspace's ~23 private
+# single-accumulator dots are a backlog (they are mostly not). No
+# required-features: `katgpt_core::simd` is an unconditional re-export of
+# katgpt-types' SIMD surface, so this target builds at default features.
+[[test]]
+name = "bench_844_dot_delegation_crossover"
+path = "tests/bench_844_dot_delegation_crossover.rs"
+
 # Plan 284 Phase 4 — CLR clr_vote_minimal performance benchmark (G3).
 # Uses std::time::Instant + harness = false (criterion is not a root-crate
 # dev-dep; see benches/bench_284_clr_perf.rs doc-comment for the deviation note).

@@ -64,6 +64,22 @@
 //! delegate to, and writing one would be the transcription this section
 //! declines.
 //!
+//! ⚠ **The delegation is measured right at the widths this exists for, and
+//! WRONG at two it supports** (Issue 844, Bench 844). `simd_dot_f32` carries a
+//! ~3.3 ns fixed per-call cost, so against a plain single-accumulator loop it
+//! measures **1.54× faster at length 32** and **3.13× at 64** — and **0.51×
+//! at 8**, i.e. 2× slower, and 0.86× at 16. `n = 32` is Research 569's stage
+//! and `n = 64` the other width the recipe names, so step 2 is on the right
+//! side of the crossover where it matters; a caller at `n ∈ {8, 16}` is paying
+//! for the dispatch instead of amortising it.
+//!
+//! Deliberately NOT repaired with a length-conditional branch. That would add a
+//! second summation order and a second code path for widths nothing in
+//! Research 569 uses, against AGENTS.md's own threshold that *"2× is the
+//! threshold below which the fast path would not be worth the second code path
+//! at all"* — which the 8-wide case only just reaches and the 16-wide case
+//! misses. Stated here so a caller choosing a small width chooses it knowing.
+//!
 //! # Determinism, and what is NOT claimed
 //!
 //! Fixed inputs give bit-identical outputs run to run on one box. Across
