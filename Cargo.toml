@@ -2625,6 +2625,17 @@ name = "bench_839_kron_tile_goat"
 path = "tests/bench_839_kron_tile_goat.rs"
 required-features = ["kron_tile", "plasma_path"]
 
+# Bench 843 (Issue 843 T2) — does the plasma_path ternary dense matvec beat the
+# f32 one at ANY size? A size sweep m ∈ {256..4096}, because the 1024-point
+# finding (ternary 1.94× SLOWER than the multiply it removes) sits where the f32
+# operand still fits L3 — the one regime where the ternary footprint advantage
+# cannot pay. REPORT, not a gate: it asserts instrument health only, because the
+# quantity it measures is what T4 has to decide about a default-on flag.
+[[test]]
+name = "bench_843_ternary_size_sweep"
+path = "tests/bench_843_ternary_size_sweep.rs"
+required-features = ["plasma_path"]
+
 # Plan 284 Phase 4 — CLR clr_vote_minimal performance benchmark (G3).
 # Uses std::time::Instant + harness = false (criterion is not a root-crate
 # dev-dep; see benches/bench_284_clr_perf.rs doc-comment for the deviation note).

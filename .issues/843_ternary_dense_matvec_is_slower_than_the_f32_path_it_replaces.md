@@ -1,6 +1,6 @@
-# Issue 843: the `plasma_path` ternary dense matvec is ~1.9× SLOWER than the f32 matvec it replaces (x86_64/AVX2, 1024×1024)
+# Issue 843: the `plasma_path` ternary dense matvec is slower than the f32 matvec it replaces BELOW the L3 boundary — and only wins above it (x86_64/AVX2)
 
-**Status:** OPEN — measured observation, owner-routed. Found incidentally while
+**Status:** OPEN — **T2 DONE** (the size axis is measured: there IS a crossover, and it sits at the L3 boundary — see §T2); T1/T3/T4 open. Measured observation, owner-routed. Found incidentally while
 benchmarking Issue 839 (Bench 839 arm G2c); it is not a `kron_tile` finding and
 is deliberately not folded into that GOAT's verdicts.
 
@@ -14,6 +14,12 @@ is deliberately not folded into that GOAT's verdicts.
 
 The premise of a multiplication-free path is that it is *cheaper* than the
 multiply it removes. At 1024×1024 on this box it is not.
+
+➡ **Read §T2 before acting on this section.** The one-point framing below is
+what the issue was filed on; the size sweep since has found a **crossover at
+the L3 boundary**, which keeps the finding and changes its shape — the kernel
+is not slower everywhere, it is slower everywhere the operand still fits
+cache, which on this box includes every shape this workspace serves.
 
 ## Measured
 
@@ -78,7 +84,7 @@ implementation is not a speedup over the implementation you replaced.
       NEON, and this repo's own record (Issue 819) is that an arm nobody
       compiles is an arm nobody has measured. Do NOT generalise the x86_64
       figure before this.
-- [ ] **T2 — Sweep the size axis before drawing any conclusion.** 1024×1024 is
+- [x] **T2 — DONE, and it found a clean crossover (§T2 below). The original one-point framing was too strong.** Sweep the size axis before drawing any conclusion. 1024×1024 is
       one point and it is the point where f32 still fits L3. The ternary win
       should appear where the f32 operand does not — measure 2K, 4K, 8K square,
       and report the crossover size or its absence. A single-size verdict on a
@@ -99,6 +105,69 @@ implementation is not a speedup over the implementation you replaced.
 
 - Not a `kron_tile` issue. Bench 839's G2c reports the number and bars nothing
   on it, precisely so this question stays separable.
-- No change to `plasma_path`'s default until T1+T2 land. One arch and one size
-  is not enough to move a shipped flag, and this file exists so that decision is
-  taken on a measurement rather than on this paragraph.
+- No change to `plasma_path`'s default until **T1** lands (T2 is done). One
+  ARCH is not enough to move a shipped flag even with the size axis measured,
+  and this file exists so that decision is taken on a measurement rather than
+  on this paragraph. T2 sharpened the question rather than answering it: the
+  flag is defensible for large operands and costs 1.5–1.9× at served ones, so
+  the decision is a threshold, not a yes/no.
+
+## T2 — measured (2026-09-19): there IS a crossover, and it lands on the L3 boundary
+
+`tests/bench_843_ternary_size_sweep.rs`, same interleaved harness, same box,
+`simd_level() = Avx2`, 11 of 11 rounds surviving at every size:
+
+| `m` | f32 ns/call | ternary ns/call | ternary/f32 | f32 operand |
+|---|---|---|---|---|
+| 256 | 3,172 | 8,417 | **2.73** | 0.25 MiB |
+| 512 | 9,810 | 32,785 | **3.59** | 1 MiB |
+| 1024 | 63,249 | 124,493 | **1.94** | 4 MiB |
+| 2048 | 333,488 | 489,008 | **1.55** | 16 MiB |
+| 4096 | 2,633,723 | 1,997,855 | **0.75** | 64 MiB |
+
+**So the kernel is not wrong — it is size-conditional, and the condition is
+cache residency.** The ratio falls monotonically from `m = 512` and crosses 1.0
+between 2048 and 4096. This box (i7-13700K) has **30 MB of L3** (`Win32_CacheMemory`,
+read rather than assumed — L1 0.4+0.2+0.2+0.5 MB, L2 16+8 MB, L3 30 MB ×2
+reported per-socket-view), so:
+
+- `m = 2048` → a 16 MiB f32 operand, which **fits** L3 → ternary loses, 1.55×.
+- `m = 4096` → a 64 MiB f32 operand, which **does not** → ternary wins, 1.33×
+  faster, while its own 4 MiB packed form fits L2 outright.
+
+That is precisely the mechanism the footprint argument predicts, and the
+1024-point this issue was filed on sits **four bisections inside the losing
+regime**. The original title's claim was true and its framing was too strong:
+the defect is not "the multiplication-free path is slower", it is **"the
+multiplication-free path is slower everywhere this workspace actually runs
+it"**.
+
+⛔ **And that is the part T4 has to decide, because it is where the sizes
+are.** The operands in this workspace are `d ≈ 768` with a 4× FFN width
+(Research 569's own reference shape), i.e. `768 × 3072` → a **9 MiB** f32
+operand: comfortably inside L3 on this box and therefore inside the losing
+regime, by a measured factor of roughly 1.5–1.9×. A flag defended as
+*"multiplication-free CPU inference"* and enabled **by default** is, at the
+shapes served here, a latency regression whose compensation is a 16× smaller
+weight footprint. Both halves of that are real; only one of them is in the
+manifest comment.
+
+⚠ **What T2 does NOT settle.** One box, one arch, one thread, square matrices
+only, and a cache hierarchy that is this CPU's rather than a property of the
+kernel — a machine with 8 MB of L3 would cross over far earlier, and a server
+with 256 MB might never. So the finding is *"the crossover is the L3
+boundary"*, which travels, rather than *"the crossover is m = 4096"*, which
+does not. `simd_ternary_matmul_batch` (the batched path, which amortises the
+weight read across a batch) is untouched and is the shape a real decode step
+uses — T3's read should start there.
+
+## Reproduce T2
+
+```text
+cargo test --release --features plasma_path     --test bench_843_ternary_size_sweep -- --nocapture
+```
+
+A **report**: it asserts instrument health only (every round surviving, every
+ratio finite) and prints its own reading, deliberately pinning no bar — a bar
+written before the sweep would have been a bar written from the hypothesis, and
+the hypothesis was wrong in the direction that mattered.
