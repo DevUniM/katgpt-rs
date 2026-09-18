@@ -1225,17 +1225,17 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
 - `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
-- Measured 2026-09-18 over 16 repos: **7 ADOPTED · 131 SEQUENTIAL · 865
-  UNRESOLVED** over 2677 target files / 9621 tracked `*.rs`. ⚠ **ADOPTED is 0 in
+- Measured 2026-09-18 over 17 repos: **7 ADOPTED · 130 SEQUENTIAL · 827
+  UNRESOLVED** over 2516 target files / 9125 tracked `*.rs`. ⚠ **ADOPTED is 0 in
   every repo but katgpt-rs** — the class generalised and the harness did not.
-  Read 131 as a MAGNITUDE: three predicates over overlapping populations
-  returned 55 · 57 · 60 for this repo alone. Take the figure from a run.
+  Read the SEQUENTIAL figure as a MAGNITUDE: three predicates over overlapping
+  populations returned 55 · 57 · 60 for this repo alone. Take it from a run.
 - ⛔ **No verdict half, deliberately** (Issue 833 T4, 834 T4) — do not add one by
   symmetry with the sweep family. Migration is a per-target read: the `a`/`b`
   ORIENTATION (`AbRatio::median` is a TIME ratio and half these gates state a
   THROUGHPUT claim — backwards inverts the bar silently), the chunk size off the
   target's own printed range, and `black_box` at both ends. A slice chosen from
-  a classifier with 865 unresolved rows is a slice chosen from a guess.
+  a classifier with hundreds of unresolved rows is a slice chosen from a guess.
 - ⚠ **STATED blind spots:** a ratio built through a helper; a comparison written
   as a subtraction or a percentage; two arms differenced off ONE
   `Instant::now()`; and orientation, which is not statically decidable.

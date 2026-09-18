@@ -1,4 +1,4 @@
-# Issue 834: the sequential two-arm timing class had no census — three members were found by tripping over them, and the treatment ships in one repo of sixteen
+# Issue 834: the sequential two-arm timing class had no census — three members were found by tripping over them, and the treatment ships in exactly ONE repo of the workspace
 
 **Status:** T1 (the instrument) **DONE 2026-09-18**. T2 (the katgpt-rs
 migration backlog) and T3 (the cross-repo question) are open and are
@@ -64,20 +64,33 @@ Three buckets:
   sites. A two-arm comparison written in a shape the regex cannot see lands
   here, and so does an ordinary single-arm latency bar that is not the class.
 
-### Measurement (2026-09-18, 16 repos on this box)
+### Measurement (2026-09-18, the 17 contract repos on this box)
 
 ```
   ADOPTED        7   uses tests/common/ab_timing.rs
-  SEQUENTIAL   131   the class
-  UNRESOLVED   865   NOT clean; needs a per-target read
-  population  2677 target file(s) / 9621 tracked *.rs
+  SEQUENTIAL   130   the class
+  UNRESOLVED   827   NOT clean; needs a per-target read
+  population  2516 target file(s) / 9125 tracked *.rs
 ```
+
+⛔ **The first figures published here were 131 / 865 / 2677 / 9621 and were
+WRONG, by a defect this issue's own sibling then found.** The repo list was
+built by an ad-hoc `(p / ".git").exists()` walk; the canonical predicate tests
+**`.is_dir()`**, because a `git worktree` has a `.git` **FILE** — so this box's
+`riir-chain.w152` worktree entered the population and riir-chain was counted
+TWICE (+1 SEQUENTIAL, +38 UNRESOLVED). Corrected against
+`skill_repo_set_gate.derive_repos`, 17 repos. See
+[Issue 835](835_a_path_dep_on_a_repo_in_neither_set_is_enumerated_by_nothing.md),
+where `population_sync_gate` refused the same hand-rolled walk in a different
+instrument an hour later. **This is the argument for the section below**: a
+number typed into a document is a claim about one run on one box.
 
 Per repo, the ones that carry any: **katgpt-rs 60 · riir-ai 52 · riir-train
 11 · riir-neuron-db 6 · riir-chain 1**, and **ADOPTED is 0 in every repo but
-katgpt-rs.**
+katgpt-rs.** The class generalised; the harness did not.
 
-⚠ **Read 131 as a magnitude, corroborated by predicates that disagree.**
+⚠ **Read that SEQUENTIAL figure as a magnitude, corroborated by predicates
+that disagree.**
 Three independent passes over overlapping populations returned **55** (833's
 own looser pass over `tests/*.rs` + `crates/*/tests/*.rs`), **57** (this
 instrument's ungated prototype) and **60** for katgpt-rs. That they disagree
@@ -156,7 +169,7 @@ instead of re-deriving them:
     Class A2) is orthogonal to interleaving and survives it.
 
   So a slice taken from this report is a slice taken from a classifier with
-  865 unresolved rows. Read it for candidates; never bulk-convert.
+  827 unresolved rows. Read it for candidates; never bulk-convert.
 
 - [ ] **T3 — the cross-repo question, MEASURED and left open deliberately.**
   The class is 71 targets outside this repo and the treatment is 0. Do **not**
