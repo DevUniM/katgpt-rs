@@ -1,7 +1,7 @@
 # Bench 814 — FlashMemory Full-Model NIAH QA gate (Issue 826 T1+T2)
 
 **Date:** 2026-09-18
-**Issue:** [`.issues/826_flashmemory_needle_quality_gate.md`](../.issues/826_flashmemory_needle_quality_gate.md) (T1 needle axis + T2 budget stress)
+**Issue:** Issue 826 — T1 needle axis + T2 budget stress (file removed per noise-reduction after T3's gate wiring landed; this bench doc + git history are the record. Final disposition: T1+T2 measured here; T3 wired the Issue-584 Phase-3 promotion gate with the relative pin below; the ABSOLUTE SAS-class axis stays open-and-recorded as untestable on the 0.4B testbed — dense oracle never retrieves (pw_rank top-1.3% at every rung 512→17322); needs a model whose dense oracle retrieves (Bonsai-27B 4090 GQA path or any ≥1B with real long-context training); 64K rung priced ~9h/arm in §Cost model; T4 centroid refinement deferred behind an absolute-axis gap, modelless-only.)
 **Instrument:** `benches/bench_685_flashmemory_full_model_niah_qa.rs` (`cargo bench --bench bench_685_flashmemory_full_model_niah_qa --features kimi_k3_loader,flashmemory_sparse`)
 **Box:** M3 Max (16 cores), macOS 26.6.2, release build, single process at ~99% of one core; no GPU (CPU SIMD path), no competing compute consumer.
 **Model:** Kimi-K3-0.40B (`riir-train/data/kimi-k3-0.40b/model.safetensors`, F32, trained context 4096).
