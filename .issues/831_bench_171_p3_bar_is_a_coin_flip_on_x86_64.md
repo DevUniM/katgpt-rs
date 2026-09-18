@@ -140,3 +140,71 @@ its other direction: 832's defect passed ALONE and was filed TRANSIENT, and
 this one passes IN THE CELL and would now be filed FIXED. A single green run
 distinguishes neither. The verdict for a load-sensitive bar needs the
 distribution, which T2 is for.
+
+## 2026-09-18 — T2 + T3 DONE, and the root cause was the FIXTURE, not the bar
+
+⛔ **`ExpensiveScreener::relevance` was not expensive. Its work was deleted.**
+
+```rust
+for i in 0..self.work_per_call { acc += (i as f32).sin() * (i as f32).cos(); }
+// Prevent optimization from removing the work
+let _ = acc;
+```
+
+The comment claims it prevents elimination; `let _ = acc` does no such thing.
+The loop is pure and its result dropped — the exact shape **Issue 723 T5**
+measured being deleted by rustc 1.98.1 + fat LTO ("a direct call with a used
+result measured 16.6 µs; `let _ = f()` over the same fn in the same binary read
+~0"). So P3 compared two arms that both skipped the *same free call*, the true
+difference was ~0, and the SIGN of a zero is noise. That is the whole of the
+coin flip.
+
+The diagnostic that found it: with the harness repaired but the screener still
+dead, scaling `work_per_call` **50x** moved the measured speedup only
+0.4% → 1.5% → 3.1%. Real work does not behave like that. One `black_box(acc)`
+later, at the ORIGINAL `work_per_call: 100`:
+
+| | before | after |
+|---|---|---|
+| release | 0.4%, rounds 0.8847 .. 1.0400 | **64.2%**, rounds 0.3539 .. 0.3631 |
+| debug | — | **63.1%**, rounds 0.3663 .. 0.3707 |
+
+The fixture's own long-standing "~30-60% (2/3 of hops skip the work)" comment
+was **right all along** and had never once been observed. T1's three outcomes
+are resolved on x86_64 without needing the M3: it is not an arch difference and
+the claim is not wrong — the instrument and the fixture were both broken.
+
+- [x] **T2 — harness repaired.** `common/ab_timing.rs::ab_median_ratio`:
+  interleaved `(a,b)` pairs, median of per-round ratios, per-round RANGE
+  printed beside the median. ⚠ `ab_median_ratio`, **not** `best_of_us` as this
+  issue's text said — that module reserves `best_of_us` for an ABSOLUTE budget
+  with no second arm; P3 has two arms and a comparative claim, so taking a
+  minimum per arm independently would compare two different load windows. Both
+  arms are `black_box`ed at input and output (they were `let _ = f(...)`, the
+  same elimination shape as the screener).
+- [x] **T3 — P1 was VACUOUS and is now strict.** At the shared
+  `tree_budget = 512` both schedules hit the cap and reported 1536 nodes on all
+  10 seeds — `Frozen wins=0, Uniform wins=0, Ties=10` — so `>=` passed on exact
+  equality every time. The budget was masking the mechanism: uncapped, the same
+  fixture measures Uniform **2268** vs FrozenBaseGuard **200756**. P1 now uses
+  its own `tree_budget = 4096` (Uniform reaches its natural 2268, Frozen 8948)
+  and asserts `ties == 0` **and** `frozen_wins == n_trials`, with the cap named
+  in the failure message. Canaried: at 512 it fails with that diagnosis.
+- [x] **The bar is now 30%**, half the measured effect (the house slack
+  convention). `ns_frozen < ns_uniform` was the widest bar expressible and
+  still failed 4-in-20; a real 63% effect in a 2.6%-wide band supports a real
+  bar, and a regression that stops skipping intermediate hops goes to ~0.
+
+**Stability, the claim this issue exists to fix** — captured mode, the mode
+that used to fail 4 of 20: **8/8 release, 5/5 debug**, plus 10/10 and 6/6
+during development. 29 consecutive passes against the old harness's 80%.
+
+⚠ **T4 is NARROWED, not closed.** The fixture CAN express the mechanism, so the
+"restate P3 as a call count" option is no longer forced. What remains is that
+`VaryingScreener` keys only on `depth` — it ignores `token_idx` and
+`parent_tokens` — so all 10 P1 seeds produce identical counts and the trials
+are a loop over one case. That is recorded at the assertion rather than fixed.
+
+⚠ **T1 is still owed for aarch64** as a measurement, but its premise has
+changed: any pre-2026-09-18 aarch64 number was taken against a deleted screener
+and means nothing.

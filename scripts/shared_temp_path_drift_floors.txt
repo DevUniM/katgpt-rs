@@ -67,7 +67,13 @@
 # flag UNPINNED the first time they are present, which is the intended signal.
 
 katgpt-rs                20    2
-riir-ai                  70   48
+# ⬇ 48 → 4, riir-ai `7d22f0d8b` (2026-09-18): 44 test sites repaired IN that
+#   repo, `cargo check --tests` + `cargo test --lib` green over all 8 affected
+#   packages. A ratchet that only ever loosens is a backlog wearing a pin, so
+#   the tightening lands with the repair rather than later. The 4 that remain
+#   are `crates/riir-examples/examples/*` — the adjudicated demo class, the
+#   same read this repo's own two pinned rows get.
+riir-ai                  70    4
 riir-auth                 0    0
 riir-chain               40   10
 riir-clippy              85   24

@@ -1,14 +1,17 @@
 //! GOAT Proof: Thinking Prune — FrozenBaseGuard for Token-Level DDTree (Plan 171).
 //!
 //! Validates three properties:
-//! P1: FrozenBaseGuard intermediate hops produce >= Uniform nodes (structural dominance)
+//! P1: FrozenBaseGuard intermediate hops produce STRICTLY MORE Uniform nodes
+//!     (structural dominance — a tie is a failure, see Issue 831 T3)
 //! P2: FrozenBaseGuard produces identical output to Uniform when screening is cheap
 //!     (NoScreeningPruner — confirms correctness of the delegation)
-//! P3: Wall-clock timing — FrozenBaseGuard with expensive screener is faster than
-//!     Uniform at intermediate hops (the actual performance claim)
+//! P3: Wall-clock timing — FrozenBaseGuard with an expensive screener is >= 30%
+//!     faster than Uniform at intermediate hops (the actual performance claim),
+//!     measured as an INTERLEAVED median of ratios (Issue 831 T2)
 //! P4: Single-hop edge case — FrozenBaseGuard applies full screening when hop is final
 
-use std::time::Instant;
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
 
 use katgpt_rs::speculative::{
     build_dd_tree_screened, extract_best_path,
@@ -39,8 +42,15 @@ impl ScreeningPruner for ExpensiveScreener {
         for i in 0..self.work_per_call {
             acc += (i as f32).sin() * (i as f32).cos();
         }
-        // Prevent optimization from removing the work
-        let _ = acc;
+        // ⛔ This MUST be `black_box`, and it used to be `let _ = acc;` under a
+        // comment claiming it prevented the optimiser from removing the work.
+        // It does not: the loop is pure and its result dropped, which is the
+        // exact shape Issue 723 T5 measured being deleted by rustc 1.98.1 +
+        // fat LTO. In release the "expensive" screener cost NOTHING, so P3 was
+        // comparing two arms that both skipped the same free call — which is
+        // why 50x the `work_per_call` moved the measured speedup only from
+        // 0.4% to 3.1% (Issue 831, measured 2026-09-18).
+        std::hint::black_box(acc);
         self.base_relevance
     }
 }
@@ -90,7 +100,18 @@ fn marginals_refs(marginals: &[Vec<f32>]) -> Vec<&[f32]> {
 fn proof_p1_structural_dominance() {
     println!("\n── P1: FrozenBaseGuard intermediate produces >= Uniform nodes ──\n");
 
-    let config = make_config();
+    let mut config = make_config();
+    // ⛔ P1's own budget, and it is the whole of Issue 831 T3. At the shared
+    // `tree_budget = 512` this proof was VACUOUS: both schedules hit the cap
+    // and reported 1536 nodes (512 x 3 hops) on all 10 seeds — `Frozen wins=0,
+    // Uniform wins=0, Ties=10` — so `>=` passed on exact equality every time
+    // and "the two schedules build the same tree" was indistinguishable from
+    // structural dominance. The budget was masking the mechanism, not the
+    // screener: uncapped, the same fixture measures Uniform 2268 against
+    // FrozenBaseGuard 200756. 4096 is large enough for Uniform to reach its
+    // natural 2268 and for the gap to be real (8948), and small enough not to
+    // build a 200k-node tree ten times to say so.
+    config.tree_budget = 4096;
     let depths = 5;
     let vocab = config.vocab_size;
     let n_trials = 10;
@@ -154,12 +175,37 @@ fn proof_p1_structural_dominance() {
 
     println!("\n  Summary: Frozen wins={frozen_wins}, Uniform wins={uniform_wins}, Ties={ties}");
 
-    // Assert: FrozenBaseGuard should NEVER produce fewer total nodes
+    // Assert: FrozenBaseGuard should NEVER produce fewer total nodes...
     assert_eq!(
         uniform_wins, 0,
         "FrozenBaseGuard should produce >= Uniform nodes (Uniform won {uniform_wins} times)",
     );
-    println!("  ✅ P1 PASS: FrozenBaseGuard always produces >= Uniform nodes");
+    // ...and STRICTLY more, which is the claim this proof is named for
+    // (Issue 831 T3). The `>=` above cannot fail on a build where both
+    // schedules produce the identical tree, and for as long as the budget
+    // capped both that is exactly what it was passing on. A TIE is now a
+    // failure, and it fails with the diagnosis attached rather than leaving
+    // the next reader to rediscover the cap.
+    assert_eq!(
+        ties, 0,
+        "P1 is VACUOUS: {ties} of {n_trials} trials produced IDENTICAL node counts for \
+         both schedules, so `>=` is passing on equality and proves nothing about \
+         structural dominance. The usual cause is `tree_budget` capping both \
+         schedules at the same size — raise it until Uniform reaches its natural \
+         size (Issue 831 T3).",
+    );
+    assert_eq!(
+        frozen_wins, n_trials,
+        "FrozenBaseGuard should produce strictly MORE nodes on every trial \
+         (won {frozen_wins} of {n_trials})",
+    );
+    // ⚠ The 10 seeds do NOT diversify this measurement: `VaryingScreener`
+    // keys only on `depth`, ignoring `token_idx` and `parent_tokens`, so
+    // pruning is deterministic per depth and every seed reports the same two
+    // counts. The trials are a loop over one case. Left as-is deliberately —
+    // making them independent is a fixture question (Issue 831 T4), and
+    // recording it beats a reader inferring breadth this proof does not have.
+    println!("  ✅ P1 PASS: FrozenBaseGuard produces strictly more nodes on all {n_trials} trials");
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -244,85 +290,125 @@ fn proof_p3_wall_clock_timing() {
     let marginals = random_marginals(depths, vocab, 12345);
     let refs = marginals_refs(&marginals);
 
-    // Warmup
-    for _ in 0..20 {
-        for hop in 0..total_hops {
-            let _ = build_dd_tree_screened_with_schedule(
-                &refs,
-                &config,
-                &expensive,
-                true,
-                PrunerSchedule::Uniform,
-                hop,
-                total_hops,
-            );
-        }
-    }
+    // ── The instrument (Issue 831 T2) ───────────────────────────────────
+    //
+    // This bar used to time Uniform to completion, then FrozenBaseGuard to
+    // completion, and assert on that single ratio. Measured on an idle box:
+    // **4 of 20 captured-mode runs FAILED** (-1.9% .. -5.0%) while 12 of 12
+    // `--nocapture` runs passed (+0.9% .. +11.7%) — the verdict moved with how
+    // the harness was invoked, which is a measurement of the scheduler and not
+    // of the primitive. That is Issue 723 Class A exactly, and
+    // `common/ab_timing.rs` is the treatment AGENTS.md already prescribes:
+    // interleaved `(a-chunk, b-chunk)` pairs so a drift moves both arms, and
+    // the MEDIAN across pairs so one preemption spike is discarded.
+    //
+    // ⚠ `ab_median_ratio`, not `best_of_us`. Issue 831 T2 names the
+    // `best_of_us` shape, but that module's own docs reserve it for an
+    // ABSOLUTE budget with no second arm to ratio against ("contention can
+    // only ever add time, so the smallest of N samples is the closest
+    // observation"). P3 has two arms and its claim is comparative, so the
+    // median-of-ratios form is the one that cancels load; taking a minimum per
+    // arm independently would compare two different load windows.
+    //
+    // ⛔ And the arms are `black_box`ed now. Both of them were
+    // `let _ = build_dd_tree_screened_with_schedule(...)`, which is the exact
+    // shape Issue 723 T5 measured being deleted by rustc 1.98.1 + fat LTO —
+    // "a direct call with a used result measured 16.6 µs; `let _ = f()` over
+    // the same fn in the same binary read ~0", *even through a `black_box`
+    // inside the callee*. An eliminated arm makes this comparison noise
+    // against noise, which is a second and sufficient explanation for a bar
+    // that flips sign between invocations. The input is `black_box`ed too so
+    // the build cannot be hoisted out of the round.
+    // 7 rounds x 8 iters/arm. Sized on the MEASURED signal rather than
+    // guessed: with the screener's work no longer deleted the effect is ~64%
+    // in a per-round band 2.6% wide, so a median over 7 rounds is decisive and
+    // the old 200-iteration sweep was buying precision the claim does not
+    // need. It matters because the fixture is now genuinely expensive — the
+    // debug-profile run went from ~0.6s of deleted work to 24s of real work at
+    // the previous sampling, and this brings it back under 8s without
+    // weakening the verdict.
+    let rounds = 7;
+    let iters_per_round = iters / 25;
 
-    // Benchmark: Uniform (every hop applies expensive screener)
-    let start_uniform = Instant::now();
-    for _ in 0..iters {
-        for hop in 0..total_hops {
-            let _ = build_dd_tree_screened_with_schedule(
-                &refs,
-                &config,
-                &expensive,
-                true,
-                PrunerSchedule::Uniform,
-                hop,
-                total_hops,
-            );
-        }
-    }
-    let elapsed_uniform = start_uniform.elapsed();
-    let ns_uniform = elapsed_uniform.as_nanos() as f64 / iters as f64;
+    let ab = ab_timing::ab_median_ratio(
+        rounds,
+        iters_per_round,
+        20,
+        // a = BASELINE: Uniform screens every hop.
+        |_i| {
+            for hop in 0..total_hops {
+                let tree = build_dd_tree_screened_with_schedule(
+                    std::hint::black_box(&refs),
+                    &config,
+                    std::hint::black_box(&expensive),
+                    true,
+                    PrunerSchedule::Uniform,
+                    hop,
+                    total_hops,
+                );
+                std::hint::black_box(tree);
+            }
+        },
+        // b = CANDIDATE: FrozenBaseGuard skips the intermediate hops.
+        |_i| {
+            for hop in 0..total_hops {
+                let tree = build_dd_tree_screened_with_schedule(
+                    std::hint::black_box(&refs),
+                    &config,
+                    std::hint::black_box(&expensive),
+                    true,
+                    PrunerSchedule::FrozenBaseGuard,
+                    hop,
+                    total_hops,
+                );
+                std::hint::black_box(tree);
+            }
+        },
+    );
 
-    // Warmup for FrozenBaseGuard
-    for _ in 0..20 {
-        for hop in 0..total_hops {
-            let _ = build_dd_tree_screened_with_schedule(
-                &refs,
-                &config,
-                &expensive,
-                true,
-                PrunerSchedule::FrozenBaseGuard,
-                hop,
-                total_hops,
-            );
-        }
-    }
+    // `ratio = b / a`, so FrozenBaseGuard being faster means a ratio BELOW 1.
+    let speedup_pct = (1.0 - ab.median) * 100.0;
 
-    // Benchmark: FrozenBaseGuard (intermediate hops skip expensive screener)
-    let start_frozen = Instant::now();
-    for _ in 0..iters {
-        for hop in 0..total_hops {
-            let _ = build_dd_tree_screened_with_schedule(
-                &refs,
-                &config,
-                &expensive,
-                true,
-                PrunerSchedule::FrozenBaseGuard,
-                hop,
-                total_hops,
-            );
-        }
-    }
-    let elapsed_frozen = start_frozen.elapsed();
-    let ns_frozen = elapsed_frozen.as_nanos() as f64 / iters as f64;
+    // Printed on the PASS path as well as the FAIL path (Issue 831 T2), and
+    // `report` prints the per-round RANGE beside the median on purpose: a
+    // median inside a 0.9..1.1 band and one inside a 0.3..3.0 band are not the
+    // same claim even when they are the same number. ⚠ `cargo test` still
+    // swallows this without `--nocapture` — that is cargo's capture, not the
+    // test's, which is why the assertion message below carries the numbers too.
+    ab.report("P3 uniform-vs-frozen");
+    println!("  Speedup (median of {rounds} interleaved rounds): {speedup_pct:.1}%");
 
-    let speedup_pct = ((ns_uniform - ns_frozen) / ns_uniform) * 100.0;
-
-    println!("  Uniform (all hops screened):  {ns_uniform:.0} ns/iter ({iters} iterations)");
-    println!("  FrozenBase (skip intermediates): {ns_frozen:.0} ns/iter ({iters} iterations)");
-    println!("  Speedup: {speedup_pct:.1}%");
-
-    // Assert: FrozenBaseGuard should be measurably faster with expensive screener
-    // Intermediate hops (2 of 3) skip the screener entirely.
-    // We expect ~30-60% speedup (2/3 of hops skip the work).
+    // Assert: FrozenBaseGuard skips the expensive screener on the intermediate
+    // hops (2 of 3), so the expected saving is ~2/3.
+    //
+    // ⛔ The bar is 30%, not `faster at all`, and that is a REPAIR rather than
+    // a tightening-for-its-own-sake. `ns_frozen < ns_uniform` was the widest
+    // bar expressible, and it still failed 4 runs in 20 — because with the
+    // screener's work deleted (see `ExpensiveScreener::relevance`) both arms
+    // did the same near-nothing and the sign of the difference was noise. With
+    // the work restored the measurement is 64.2% release / 63.1% debug, in a
+    // per-round band 2.6% wide, which is the 30-60% this fixture's own comment
+    // has predicted since it landed and which no run had ever produced.
+    //
+    // 30% is chosen as HALF the measured effect, the house slack convention
+    // (`x86_64_matrix_floors.txt` uses ~60% of measured for the same reason):
+    // it holds in both profiles with a wide margin, so an unrelated commit on
+    // a loaded box does not red it, while a regression that stops skipping the
+    // intermediate hops takes the speedup to ~0 and cannot pass.
+    let min_speedup_pct = 30.0;
     assert!(
-        ns_frozen < ns_uniform,
-        "FrozenBaseGuard should be faster than Uniform with expensive screener \
-         (got {ns_frozen}ns vs {ns_uniform}ns, {speedup_pct:.1}%)",
+        speedup_pct >= min_speedup_pct,
+        "FrozenBaseGuard should be >= {min_speedup_pct:.0}% faster than Uniform with an \
+         expensive screener, got {speedup_pct:.1}% \
+         (median ratio b/a {:.4} over {rounds} rounds, range {:.4}..{:.4}; \
+          a {:.0} ns/iter, b {:.0} ns/iter). \
+         A result near 0% usually means the screener's work was optimised away \
+         — check that ExpensiveScreener::relevance still black_boxes its accumulator.",
+        ab.median,
+        ab.min(),
+        ab.max(),
+        ab.a_ns_per_iter(),
+        ab.b_ns_per_iter(),
     );
     println!("  ✅ P3 PASS: FrozenBaseGuard is {speedup_pct:.1}% faster with expensive screener");
 }
