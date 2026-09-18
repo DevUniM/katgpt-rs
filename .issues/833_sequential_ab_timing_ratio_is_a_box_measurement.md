@@ -354,7 +354,8 @@ verdict** — the percentile audit's `tail support` standing.
 ### The cross-repo measurement T5 asks for (does NOT answer it)
 
 Run over all 17 contract repos: **1 HARNESS · 7 ADOPTED · 9 HAND-ROLLED · 152
-SEQUENTIAL · 794 UNRESOLVED** over 2515 targets / 9125 tracked `*.rs`.
+SEQUENTIAL (35 of them asserting nothing) · 794 UNRESOLVED** over 2515 targets /
+9125 tracked `*.rs`.
 
 ⛔ **6 of the 9 HAND-ROLLED are outside this repo** — riir-ai 3, riir-neuron-db 2,
 riir-train 1 — so AGENTS.md's *"the class generalised and the harness did not"* is too
@@ -382,9 +383,34 @@ the A/B treatment — and carries no two-arm ratio either. So the bucket is meas
 **EMPTY**. Three further arms, both perturbations RED. That is a DRY finding, not a coverage gap, and whether `ab_timing.rs` should
 become a shared crate stays an owner/boundary call — T5 is measured, not answered.
 
+### Finding 5 — T3's third bucket is real, and it tells T2 where NOT to start
+
+The third resolution T3 names is *"a timing that feeds no assertion"*. It is the cheapest
+of the three and nobody had counted it: a SEQUENTIAL row with no `assert!` / `panic!`
+**cannot have its verdict flipped by the box, because it has no verdict**.
+
+Measured: **20 of the 72 SEQUENTIAL rows here assert nothing** (35 of 152 workspace-wide),
+and **55 of the 153** 2+-timer UNRESOLVED rows (113 of 467). So T2's backlog in this repo
+is ~**52** gating rows rather than 72, and a third of the UNRESOLVED read is answerable
+without opening the file.
+
+- An **ANNOTATION, never a bucket** — armed, because an annotation that reclassifies is a
+  bucket and the counts would stop being comparable with their own history. Orthogonal to
+  every verdict, so it applies to the WHOLE population and not only to rows a new resolver
+  moved.
+- ⚠ A **lower bound**, deliberately: a target can also fail by returning `Err`, by
+  `process::exit`, or through a helper this pass cannot follow. `report` ORDERS a read; it
+  never says a target is safe.
+- Reads the MASKED text — `assert!` in a fixture string is not an assertion.
+- ⛔ Its own fixture caught a defect in itself: the first `quiet` fixture deleted the
+  assertion *and* the ratio with it, so the arm perturbed the ratio rule rather than this
+  one. The **control went red**, which is the only reason it was noticed — an arm whose
+  fixture is wrong in this direction reads as a stricter test, not a broken one.
+
 ### Arms
 
-Six new arms, every one perturbation-verified to RED (control GREEN): deleting the
+Sixteen new arms across the four findings, every one perturbation-verified to RED with
+the control GREEN. For Findings 1-3: deleting the
 HAND-ROLLED branch, dropping `provenance_hits` from `classify`, dropping `COUNTY` inside
 it, requiring only one half of `hand_rolled`, zeroing the transitive hop, and letting the
 two resolvers double-count. `bench_657` is the specimen behind the first: with the branch
@@ -397,8 +423,9 @@ The residue is **285** here (from 292: three whole classes resolved — HAND-ROL
 provenance ratios, relative differences), and it is genuinely a per-target read. The
 remaining blind spots are a helper-built ratio, an **undivided** subtraction, two arms
 off one timer, and orientation — none statically decidable, which is exactly why T4 must
-not be answered from this run. Start with the **153** 2+-timer rows; the 132 1-timer rows
-are the low-prior half.
+not be answered from this run. Start with the **98** rows that are both 2+-timer AND gating
+(153 − 55); the 132 1-timer rows are the low-prior half, and the 55 that assert nothing
+are answerable without opening the file.
 
 ⚠ The SEQUENTIAL figure moved 60 → 65 → 72 here and 130 → 152 workspace-wide across this
 one session's three passes. It is a **magnitude** and every pass widened the classifier

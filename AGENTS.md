@@ -1333,8 +1333,8 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
 - Measured 2026-09-18 over 17 repos, after Issue 833 T3: **1 HARNESS ·
-  7 ADOPTED · 9 HAND-ROLLED · 152 SEQUENTIAL · 794 UNRESOLVED** over 2515
-  target files / 9125 tracked `*.rs`. Read the SEQUENTIAL figure as a
+  7 ADOPTED · 9 HAND-ROLLED · 152 SEQUENTIAL (35 asserting nothing) ·
+  794 UNRESOLVED** over 2515 target files / 9125 tracked `*.rs`. Read the SEQUENTIAL figure as a
   MAGNITUDE: three predicates over overlapping populations returned
   55 · 57 · 60 for this repo alone. Take every figure from a run.
 - ⛔ **`HARNESS`, because the module certified ITSELF.** `ADOPTED_RE` matches
@@ -1389,13 +1389,29 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
 - **UNRESOLVED carries two sub-populations with opposite priors, and pooling
   them is this bucket's own hazard one level down** (Issue 833 T3). A
   **1-timer** row is mostly an ordinary single-arm bar; a **2+-timer** row is
-  where every STATED blind spot above lives. Measured here: **327 · 480**
-  workspace-wide, **132 · 160** in this repo — so more than half the bucket is
+  where every STATED blind spot above lives. Measured: **327 · 467**
+  workspace-wide, **132 · 153** in this repo — so more than half the bucket is
   the half worth reading first. Printed on the summary line and tagged per row
   under `-v`. A **triage aid, never a verdict** — the percentile audit's `tail
   support` standing: it ORDERS the rows so a read starts where it can change
   an answer, exactly as the `heading oracle COST` line does for the ~99%
   redundant residue one section up.
+- **`GATES` vs `report` — T3's third bucket, and it is where T2 must NOT
+  start.** A SEQUENTIAL row that contains no `assert!` / `panic!` cannot have
+  its verdict flipped by the box, **because it has no verdict**. Measured:
+  **35 of 152 SEQUENTIAL assert nothing** workspace-wide (**20 of 72** here),
+  and **113 of the 467** 2+-timer UNRESOLVED rows. So T2's backlog in this repo
+  is ~**52** gating rows, not 72 — which is the whole use of the annotation.
+  - An **ANNOTATION, never a bucket**, and that is armed: it must not change a
+    verdict, or the counts stop being comparable with their own history. It is
+    also orthogonal to every bucket, so it applies to the WHOLE population and
+    not only to rows a new resolver moved.
+  - ⚠ A **lower bound**, deliberately: a target can also fail by returning
+    `Err`, by `process::exit`, or through a helper this pass cannot follow. So
+    `report` ORDERS a read rather than deciding it — it must not be read as
+    "this target is safe".
+  - It reads the MASKED text: `assert!` inside a fixture string is not an
+    assertion, the class three sibling instruments here have each met.
 
 ## A gate that ABORTS reports exit 0 — `scripts/trap_exit_launder_audit.py`
 

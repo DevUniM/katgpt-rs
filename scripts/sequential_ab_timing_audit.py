@@ -136,6 +136,15 @@ REL_DIFF = re.compile(
 PUSH_RATIO = re.compile(r"\.push\s*\(\s*[A-Za-z_]\w*\s*/\s*[A-Za-z_]\w*\s*\)")
 REDUCE = re.compile(r"\bmedian\w*\b|\bpercentile\b|\bsort_by\b|\bsort_unstable\b")
 
+# ── does this target GATE, or only REPORT? ─────────────────────────────────
+# Issue 833 T3's third resolution bucket is "a timing that feeds no assertion",
+# and it is the one that decides whether a row is worth T2's per-target read at
+# all: a SEQUENTIAL row that asserts nothing cannot have its verdict flipped by
+# the box, because it has no verdict. An ANNOTATION, never a reclassification —
+# applying it only to newly-resolved rows would make the counts incomparable
+# with their own history, and it is orthogonal to every bucket above.
+ASSERTING = re.compile(r"\b(?:debug_)?assert(?:_eq|_ne)?\s*!|\bpanic\s*!")
+
 
 def is_target(rel: str) -> bool:
     """Is this path a test or bench target — i.e. somewhere a GATE lives?
@@ -251,7 +260,12 @@ HARNESS = "common/ab_timing.rs"
 
 
 def classify(text: str, rel: str = "") -> tuple:
-    """`(verdict, n_instant, hits)` for one target's source.
+    """`(verdict, n_instant, hits, gates)` for one target's source.
+
+    `gates` is True when the target contains an assertion or a `panic!` — the
+    orthogonal annotation, not a bucket. ⚠ It is a lower bound: a target can
+    also fail by returning `Err`, by `process::exit`, or through a helper this
+    pass cannot follow, so `gates=False` orders a read rather than deciding it.
 
     Masking is not optional and is imported rather than re-written: a text
     scan cannot tell a real `Instant::now()` from one inside a doc-comment or
@@ -261,7 +275,8 @@ def classify(text: str, rel: str = "") -> tuple:
     masked, _attrs = mask_file(text)
     n = len(INSTANT.findall(masked))
     if n == 0:
-        return ("UNTIMED", 0, [])
+        return ("UNTIMED", 0, [], False)
+    gates = bool(ASSERTING.search(masked))
     # The harness is not an adopter of itself. `ADOPTED_RE` matches the module
     # by NAME, and the module's own path contains that name, so `ab_timing.rs`
     # certified itself and inflated the one figure this section is quoted for.
@@ -270,16 +285,16 @@ def classify(text: str, rel: str = "") -> tuple:
     # is the silent direction. Measured: without the short-circuit the harness
     # is UNRESOLVED, so nothing was being masked — the defect is the COUNT.
     if rel.endswith(HARNESS):
-        return ("HARNESS", n, [])
+        return ("HARNESS", n, [], gates)
     # ADOPTED is read off the UNMASKED text on purpose: `#[path = "..."]` puts
     # the module path inside a string literal, which masking blanks.
     if ADOPTED_RE.search(text):
-        return ("ADOPTED", n, [])
+        return ("ADOPTED", n, [], gates)
     if n < 2:
         # One timer cannot bracket two arms separately in the ordinary shape.
         # Not proven — see the STATED blind spot about differencing one timer
         # twice — so it is UNRESOLVED, never "clean".
-        return ("UNRESOLVED", n, [])
+        return ("UNRESOLVED", n, [], gates)
     # HAND-ROLLED is tested BEFORE the ratio, for arm 2's reason one step over:
     # a target that already carries the treatment must not be reported as
     # needing it, or the report reds work somebody already did. It is its own
@@ -287,10 +302,10 @@ def classify(text: str, rel: str = "") -> tuple:
     # shared harness", this one means "duplicates it", and the responses
     # differ (migrate vs leave alone / DRY onto the shared module).
     if hand_rolled(masked):
-        return ("HAND-ROLLED", n, [])
+        return ("HAND-ROLLED", n, [], gates)
     hits = ratio_hits(masked)
     hits = hits + provenance_hits(masked, hits)
-    return (("SEQUENTIAL" if hits else "UNRESOLVED"), n, hits)
+    return (("SEQUENTIAL" if hits else "UNRESOLVED"), n, hits, gates)
 
 
 def scan(repo: str) -> dict:
@@ -308,10 +323,10 @@ def scan(repo: str) -> dict:
             text = Path(f).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        verdict, n, hits = classify(text, rel)
+        verdict, n, hits, gates = classify(text, rel)
         if verdict == "UNTIMED":
             continue
-        rows[verdict].append((rel, n, hits))
+        rows[verdict].append((rel, n, hits, gates))
     return {
         "repo": Path(repo).name,
         "rs_files": len(files),
@@ -535,6 +550,33 @@ def selftest() -> list:
     if classify(seq)[0] != "SEQUENTIAL":
         fails.append("classify() without a path must be unchanged")
 
+    # 6e. GATES — the orthogonal annotation, Issue 833 T3's third bucket. A
+    #     SEQUENTIAL row that asserts nothing cannot have its verdict flipped by
+    #     the box, because it has no verdict; it is where T2's per-target read
+    #     should NOT start. Asserted as a 4th element rather than a bucket, so
+    #     the counts stay comparable with their own history.
+    if classify(seq)[3] is not True:
+        fails.append("a target containing assert! must be flagged as gating")
+    #     The fixture must keep the RATIO and drop only the ASSERTION, or it
+    #     perturbs the ratio rule instead of this one — the third arm below
+    #     caught exactly that, as a red control on the first run.
+    quiet = seq.replace("assert!(a_ns / b_ns >= 1.0);", "let _r = a_ns / b_ns;")
+    if classify(quiet)[3] is not False:
+        fails.append("a target with no assertion must not be flagged as gating")
+    #     ...and it must not change the VERDICT — an annotation that reclassifies
+    #     is a bucket, and the counts would stop being comparable.
+    if classify(quiet)[0] != "SEQUENTIAL":
+        fails.append("the gates annotation must not change the verdict")
+    #     `panic!` is a gate too; a bench that panics on a bar asserts nothing
+    #     by name and fails just as hard.
+    if classify(seq.replace("assert!(a_ns / b_ns >= 1.0);",
+                            "if a_ns > b_ns { panic!(\"too slow\"); }"))[3] is not True:
+        fails.append("panic! must count as gating")
+    #     The masker must reach it: `assert` inside a fixture string is not one.
+    if classify('fn g() { let t = Instant::now(); let u = Instant::now();\n'
+                '  let s = "assert!(x)"; let a_ns = t.elapsed(); }')[3] is not False:
+        fails.append("assert! inside a string literal must not count as gating")
+
     # 7. is_target: src/ is out of scope and the exclusion is deliberate, so
     #    it is asserted rather than left to the caller to rediscover.
     for rel, want in (("tests/a.rs", True), ("benches/b.rs", True),
@@ -586,7 +628,7 @@ def main(argv) -> int:
     # pooling them is the bucket note's own hazard one level down. A TRIAGE
     # AID, never a verdict — the percentile audit's `tail support` standing:
     # it ORDERS the rows so the read starts where it can change an answer.
-    single = multi = 0
+    single = multi = seq_reports = un_reports = 0
     verbose = "-v" in argv or "--verbose" in argv
 
     for repo in repos:
@@ -595,24 +637,28 @@ def main(argv) -> int:
         tot_targets += r["targets"]
         for k in grand:
             grand[k] += len(r["rows"][k])
-        single += sum(1 for _, n, _ in r["rows"]["UNRESOLVED"] if n < 2)
-        multi += sum(1 for _, n, _ in r["rows"]["UNRESOLVED"] if n >= 2)
+        single += sum(1 for _, n, _, _ in r["rows"]["UNRESOLVED"] if n < 2)
+        multi += sum(1 for _, n, _, _ in r["rows"]["UNRESOLVED"] if n >= 2)
+        seq_reports += sum(1 for _, _, _, g in r["rows"]["SEQUENTIAL"] if not g)
+        un_reports += sum(1 for _, n, _, g in r["rows"]["UNRESOLVED"] if n >= 2 and not g)
         print(f"\n── {r['repo']} ── {r['targets']} target file(s) of "
               f"{r['rs_files']} tracked *.rs, {r['timed']} of them TIMED")
         print(f"     ADOPTED {len(r['rows']['ADOPTED']):>4}   "
               f"HAND-ROLLED {len(r['rows']['HAND-ROLLED']):>4}   "
               f"SEQUENTIAL {len(r['rows']['SEQUENTIAL']):>4}   "
               f"UNRESOLVED {len(r['rows']['UNRESOLVED']):>4}")
-        for rel, n, hits in sorted(r["rows"]["SEQUENTIAL"]):
+        for rel, n, hits, g in sorted(r["rows"]["SEQUENTIAL"]):
             ex = ", ".join(sorted(set(hits))[:2])
-            print(f"       SEQUENTIAL  {rel}  (Instant::now x{n})  {ex}")
-        for rel, n, _ in sorted(r["rows"]["HAND-ROLLED"]):
+            tag = "GATES " if g else "report"
+            print(f"       SEQUENTIAL  [{tag}] {rel}  (Instant::now x{n})  {ex}")
+        for rel, n, _, _ in sorted(r["rows"]["HAND-ROLLED"]):
             print(f"       HAND-ROLLED {rel}  (Instant::now x{n})")
         if verbose:
-            for rel, n, _ in sorted(r["rows"]["UNRESOLVED"]):
+            for rel, n, _, g in sorted(r["rows"]["UNRESOLVED"]):
                 tag = "1-timer " if n < 2 else "2+-timer"
+                tag += " GATES " if g else " report"
                 print(f"       UNRESOLVED  [{tag}] {rel}  (Instant::now x{n})")
-            for rel, n, _ in sorted(r["rows"]["ADOPTED"]):
+            for rel, n, _, _ in sorted(r["rows"]["ADOPTED"]):
                 print(f"       ADOPTED     {rel}  (Instant::now x{n})")
 
     print("\n" + "─" * 72)
@@ -620,9 +666,11 @@ def main(argv) -> int:
     print(f"  ADOPTED     {grand['ADOPTED']:>5}   uses tests/common/ab_timing.rs")
     print(f"  HAND-ROLLED {grand['HAND-ROLLED']:>5}   carries the treatment under another name")
     print(f"  SEQUENTIAL  {grand['SEQUENTIAL']:>5}   <- the class (Issue 833)")
+    print(f"                    {seq_reports:>5} of those ASSERT NOTHING — no verdict for a box to flip")
     print(f"  UNRESOLVED  {grand['UNRESOLVED']:>5}   <- NOT clean; needs a per-target read")
     print(f"                    {single:>5} carry ONE timer  — mostly ordinary single-arm bars")
     print(f"                    {multi:>5} carry TWO+       — where the STATED blind spots live")
+    print(f"                    {un_reports:>5} of those TWO+ assert nothing — T3's third bucket")
     print(f"  population  {tot_targets:>5} target file(s) / {tot_files} tracked *.rs")
 
     # Floors AFTER the report, so a blind run still prints what it did see.
