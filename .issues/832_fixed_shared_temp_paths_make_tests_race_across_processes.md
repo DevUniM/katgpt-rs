@@ -1,7 +1,9 @@
 # Issue 832: 25 tests wrote to FIXED `env::temp_dir()` paths, so any two concurrent runs truncate each other — and the matrix's TRANSIENT bucket was where that hid
 
-**Status:** FIXED 2026-09-18 for all 25 tracked test sites (T1). **T2 — the
-gate — is the open task**, and it is what keeps the class from coming back.
+**Status:** T1 (the 25 sites), T2 (the gate), T3 (the cross-repo sweep) and
+T4 (the other spellings) are all **DONE 2026-09-18**. T5 — the 98 sibling
+sites the T3 measurement found — is open and is each repo owner's to
+adjudicate.
 **Found by:** `scripts/x86_64_execution_matrix.sh`, 2026-09-18. Cell 5
 (`katgpt-rs --lib --all-features`) went red and cell 7 (`katgpt-types`) reported
 two failures the confirm step then filed as TRANSIENT.
@@ -103,13 +105,25 @@ instead of re-deriving the question.
 not). The repair formatted the 6 with `rustfmt` per file and hand-wrapped the
 one over-length line in the other two.
 
-## T2 — the gate (OPEN, and it is the point)
+## T2 — the gate (DONE, and it is the point)
 
 A census done by hand is a census that stops being done. 13 sites in this
-workspace already had the unique-path form and 25 did not, which means the rule
-was known and un-enforced — this repo's own most-repeated shape.
+workspace already had the unique-path form and 27 did not — 25 repaired above,
+2 adjudicated as deliberate — which means the rule was known and un-enforced,
+this repo's own most-repeated shape.
 
-- [ ] **T2 — `scripts/shared_temp_path_gate.py`**, a `docs_gate.sh` CHECK:
+- [x] **T2 — `scripts/shared_temp_path_gate.py` — DONE 2026-09-18.** Landed as
+  docs_gate CHECK #27, green over 2 pinned rows / 40 `env::temp_dir()` call
+  sites / 16 tracked files (floors 20 / 8). ⛔ Its first `arm_reach_gate` run
+  produced **23 unpinned survivors, every one in `mask`** — the hand-rolled
+  lexer — because the arms tested `sites()` and never `mask()` itself, so a
+  bound that merely mis-sizes a blank run distinguished nothing. Repaired by
+  arming the masker directly (exact outputs plus a LENGTH-PRESERVATION
+  invariant over a 16-input corpus, which is what kills an off-by-one anywhere
+  in the walk) rather than by pinning 23 rows. ⚑ Two of those arms then failed
+  on first run — my own expected blank runs were each one space too long. The
+  code was right; the arms caught the arithmetic in the assertion, which is the
+  argument for writing them. The original spec was:
   red on a tracked `*.rs` calling `env::temp_dir().join(<string literal>)`
   where the literal carries no per-process discriminator. Needs the usual
   furniture: membership-pinned exemptions with a reason per row (the two
@@ -118,17 +132,92 @@ was known and un-enforced — this repo's own most-repeated shape.
   — Issue 783's lesson, they go blind separately), a `selftest` arm invoked
   unconditionally per `check_validation_gate`, `console_safe` per Issue 804,
   and a row in the AGENTS.md CHECKS table per `docs_gate_checks_sync`.
-- [ ] **T3 — the cross-repo half.** `env::temp_dir()` is not a katgpt-rs idiom;
-  the sibling Rust repos have tests too. Per the family rule, **re-measure the
-  population before deciding** — `check_validation_gate`'s Issue 789 T4
-  measured ONE and correctly declined a sweep, and `console_encoding`'s Issue
-  804 assumed the same answer and was wrong by seven repos. Do not carry either
-  answer across; count first.
-- [ ] **T4 — widen the predicate deliberately.** `env::temp_dir()` is one
-  spelling. `TempDir::new()` from the `tempfile` crate is already unique;
-  a hand-rolled `PathBuf::from("/tmp/...")` or `./target/test_scratch` is not,
-  and neither is visible to a `temp_dir` grep. Measure the other spellings
-  before pinning a floor, or the floor describes one spelling's population.
+- [x] **T3 — the cross-repo half — DONE 2026-09-18.** Counted first, as the
+  task demanded, and the count settles it: `scan()` already took a repo path,
+  so the question was answerable the whole time. Measured over the 13 canonical
+  repos present on this box — **100 fixed-path sites, 98 of them NOT in
+  katgpt-rs**, over 458 `env::temp_dir()` calls in 285 tracked `.rs` files:
+
+  | repo | `env::temp_dir()` | fixed sites |
+  |---|---|---|
+  | riir-ai | 101 | **48** |
+  | riir-clippy | 124 | **24** |
+  | riir-train | 45 | **12** |
+  | riir-chain | 60 | **10** |
+  | riir-neuron-db | 5 | 3 |
+  | katgpt-rs | 40 | 2 (both adjudicated) |
+  | riir-game-sdk | 5 | 1 |
+  | riir-auth · riir-dapps · riir-kat · riir-mmorpg-examples · riir-shader · riir-viewbridge | 54 | 0 |
+
+  So `check_validation_gate`'s Issue 789 T4 answer does **not** carry across —
+  the population is 13, not one — and this is the tenth recorded instance of
+  the never-generalised shape. Sampled for over-capture and it is not:
+  riir-ai's `go_bonsai_cache_test.bin`, `go_gemma_cache_corrupt.bin` and
+  `test_egl_roundtrip.bin` are `#[test]` bodies writing a fixed filename,
+  byte-for-byte the shape that produced this repo's own five-at-once *"File too
+  small for header"* failures.
+
+  Landed as `scripts/shared_temp_path_drift_sweep.py` +
+  `scripts/shared_temp_path_drift_floors.txt`: ceiling a **RATCHET at
+  measured** (see T5), two floors that break differently, all three family-wide
+  mechanisms (worktree advisory, known-extra exemption, head provenance), and
+  12 canary arms over its own pin arithmetic.
+  `sweep_advisory_membership_gate` confirms all three mechanisms on every
+  member — **take the family size from its PASS line, never from a sentence
+  here.** (Written after typing "20 sweeps" into this paragraph and watching
+  the gate print 21 one command later: the new sweep was UNTRACKED, so every
+  `tracked_files` walk in the docs gate had been scoring a population that did
+  not include it. `git add` before believing a gate has checked new work.)
+
+  Two design points worth keeping:
+  - **No `min_rs_files` column.** Three sweeps already floor this identical
+    `tracked_files(repo, "*.rs")` walk over this identical population. The
+    delegation is ASSERTED (`len_derived`'s rule): a pinned repo that loses its
+    non-zero row in `orphaned_attr_drift_floors.txt` reds, and a delegated file
+    the sweep cannot PARSE is refused rather than read as an empty dict — a
+    silent `{}` turns the assertion into the no-op it exists to prevent.
+  - **katgpt-rs's row asserts the GATE'S VERDICT**, not a count. This sweep and
+    the gate call the same `scan()`, so a count comparison is true by
+    construction and *a pin that restates its own input cannot fail*. Asserting
+    the verdict means a stale membership row in
+    `shared_temp_path_expected.txt` reds the sweep too.
+
+- [x] **T4 — the other fixed-scratch spellings — MEASURED 2026-09-18, and the
+  class is EMPTY in this repo.** 10 literal-`/tmp` sites over 8 files, and not
+  one is a live write hazard:
+  - **4 are READ-ONLY** — the `katgpt-moka-wasm/tests/wasmi_*` `WASM_PATH`
+    constants are `fs::read` of a build artifact. A reader cannot truncate, so
+    the hazard this issue is about does not exist there. That distinction is
+    the useful part of T4: the predicate is not `/tmp`, it is *writer
+    semantics on a shared path*.
+  - **3 are doc comments** (`//!` in `katgpt-pruners`) — not code.
+  - **3 are `examples/`** (`hl_01_trial_log.rs`, `hl_02_hotswap.rs`) — the
+    same adjudication as the two pinned `env::temp_dir()` rows: demos a human
+    inspects, and no gate runs two examples concurrently.
+  - The **variable-bound** spelling is 1 site (`katgpt-percepta/src/compile.rs`)
+    and it is already pid-suffixed — its `.join` sits on the next line, which
+    is why a line-scoped grep misses it. That remains a STATED blind spot of
+    the gate rather than a finding.
+
+  So no floor was widened: widening the predicate on a measurement of zero
+  would pin a population that does not exist. The blind spots stay stated, on
+  the gate's own PASS line and in its docstring, where a later census reads
+  them instead of re-deriving them.
+
+- [ ] **T5 — the 98 sibling sites are a real backlog, and they are their
+  owners' to adjudicate.** The T3 ratchet's job is that the commit adding the
+  NEXT one reds; it is deliberately NOT a claim the existing 98 are fine. The
+  repair is the form this workspace already uses —
+  `join(format!("name_{}", std::process::id()))`. Three rules apply and the
+  third is why this is filed rather than done:
+  - Per repo, in that repo, with its own tests run there.
+  - A cross-repo repair is **not landed until it is COMMITTED in the sibling**,
+    and a record here claiming one must CITE THE SIBLING SHA (Issue 798 —
+    measured: two tracked files recorded sibling repairs as landed and green
+    when two of five existed and both sweeps were red for six hours).
+  - Some of the 98 are `examples/` and `src/bin/` (riir-clippy has several),
+    which is the adjudicated-not-repaired class — so this is 98 *reads*, not
+    98 mechanical edits.
 
 ## Standing
 

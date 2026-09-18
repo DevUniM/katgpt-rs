@@ -443,6 +443,7 @@ develop work. One line per check:
 | `locale_io_gate.py` | text I/O that decodes/encodes with the SYSTEM locale — `Path.read_text`/`write_text`/`open()` in text mode with no `encoding=`. The **FILE** seam under `subprocess_encoding_gate`'s PIPE seam, and it hid for the same reason (macOS, `ubuntu-latest` and the M3 all speak UTF, so nothing that could notice ever ran it). Not found by a census: a cp874 box silently round-tripped a selftest FIXTURE's em dashes through a single undefined byte, so a whole file of arms had been passing **for the wrong reason** until Issue 828 wrote an arm whose subject WAS the dash. Repair half: `scripts/locale_io_fix.py` (AST-driven, idempotent, newline-preserving) (Issue 829). ⛔ That name-set predicate was itself an ANCHOR: the class is a text-mode FILE OBJECT, which `p.open("w")`, the `tempfile` factories at a text mode, `os.fdopen` and `io.TextIOWrapper` also construct — and the sites it could not see included a fixture this repo's OWN instrument writes with the locale and reads back with an explicit `encoding=` in the same function, in a file Issue 829 had already half-repaired. `.open` cannot be duck-typed the way `read_text` can (`os.open`, `tarfile.open`, `Image.open`), so it is admitted only on a literal TEXT mode, and the cost of that rule is MEASURED on the sweep's own scope line rather than argued (Issue 830) |
 | `console_encoding_gate.py` | a tracked `scripts/*.py` that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with **no verdict**, so a sweep's findings are not *unknown* but *unlooked at*; `docs_gate.sh`'s `PYTHONIOENCODING` only covers runs that go through the wrapper, and every workstation audit is documented as a DIRECT invocation (Issue 804). The shared defence is `scripts/console_safe.py`: `errors="backslashreplace"`, because the console encoding is not ours to choose, and forcing it gives mojibake instead of an exception |
 | `global_rng_gate.py` | an unseeded-global draw with no pin row — free-function `fastrand::<prim>()` OR the unseeded `Rng::new()`/`Rng::default()` constructor (T3 folded the constructor class in): the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809) |
+| `shared_temp_path_gate.py` | a test writing to a FIXED `env::temp_dir()` path — safe against sibling tests in one binary, and truncated by any concurrent PROCESS running the same test; the x86_64 matrix filed one as TRANSIENT because this class passes alone BY CONSTRUCTION (Issue 832) |
 | `check_validation_gate.py` | a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789) |
 | `docs_gate_checks_sync.py` | this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750) |
 
@@ -591,6 +592,27 @@ ceiling is a **RATCHET on the derivative**, not a demand for 71 repairs in
 seven trees this repo does not own. Three floors, and the WALK and the
 PREDICATE are separate because they break separately: an `ast.parse` regression
 takes the population to 0 over an unchanged walk),
+`shared_temp_path_drift_sweep.py` (every contract repo, on demand — the
+Issue 832 T3 verdict half of `shared_temp_path_gate.py`, landed because its
+gate's own docstring named this axis UNMEASURED and told the next reader to
+**count first** rather than inherit `check_validation_gate`'s population-of-one
+answer. Counted: `scan()` already took a repo path, so the question was
+answerable the whole time, and the answer is **100 fixed-path sites over the 13
+canonical repos present, 98 of them outside this repo** — not a population of
+one, and not over-capture either (riir-ai's `go_bonsai_cache_test.bin` and
+`test_egl_roundtrip.bin` are `#[test]` bodies writing a fixed filename, the
+shape that produced this repo's own five-at-once *"File too small for header"*
+failures). Ceiling a **RATCHET at measured**, `instrument_reachability`'s
+answer for its reason: a wall would demand 98 repairs in ten trees this session
+does not own, and a cross-repo repair is not landed until it is COMMITTED in
+the sibling with a cited SHA (Issue 798). ⛔ It carries **no `min_rs_files`
+column** — the third sweep to delegate that identical `tracked_files(repo,
+"*.rs")` walk — and the delegation is ASSERTED, not assumed: a pinned repo that
+loses its non-zero row in `orphaned_attr_drift_floors.txt` reds, and a
+delegated file it cannot PARSE is refused rather than read as an empty dict,
+which would turn the assertion into the no-op it exists to prevent. katgpt-rs's
+row asserts the GATE'S VERDICT rather than restating a count this sweep derives
+from the same `scan()`, so a stale membership row reds here too),
 `pipefail_discard_audit.py` + `pipefail_discard_drift_sweep.py` (every
 contract repo, on demand — the shell class where a `var="$(pipeline)"`
 assignment under `set -euo pipefail` is killed by a legitimately-empty grep
@@ -2189,6 +2211,67 @@ When you must commit into a file a sibling is editing, commit **your blob**:
 build HEAD's version + your edit, `git hash-object -w`, then `git
 update-index --cacheinfo`. Their hunks stay uncommitted; the worktree stays
 coherent for them.
+
+### The same hazard one layer down: a FIXED temp path — `scripts/shared_temp_path_gate.py`
+
+The rule above is about the WORKTREE. One layer down, concurrent sessions share
+something nothing in git governs: the **system temp directory**. A test writing
+to `std::env::temp_dir().join("fixed_name.bin")` is safe against its sibling
+tests in one binary — each site has its own filename — and **not** safe against
+another PROCESS running the same test. `test_gate`, `full_gate`,
+`x86_64_execution_matrix` and any hand-run `cargo test` each get their own
+target dir and all share one `/tmp`. `create` truncates: A writes, B truncates,
+A reads back zero bytes.
+
+Measured twice (Issue 832, 2026-09-18), because one reproduction is an anecdote:
+
+- `writer_writes_and_counts_samples` run as two concurrent copies of one
+  binary — **1 failure in 24 runs**, byte-identical to the x86_64 matrix's
+  cell-5 red (`left: 0, right: 5`). Alone it passes every time.
+- Five `katgpt-types::tests_types` tests failing **at once** with *"File too
+  small for header"* across five DIFFERENT filenames — another test binary
+  truncating all five.
+
+⛔ **The lesson is about the CONFIRM step, not the tests.** The x86_64 matrix's
+`▸ confirming each failure ALONE` pass filed one of these as **TRANSIENT —
+failed in the cell, PASSED alone**. That is a true statement and the wrong
+conclusion, and it is the one place this document's own instrument reasons
+backwards: *"a load-sensitive bar passes the second time and a real failure does
+not"* is correct for a BAR and empty for a CONCURRENCY defect, which passes
+alone **by construction** because alone there is no second process. Two reds in
+one summary line needed opposite diagnoses — the other was
+`test_bench_171_thinking_prune_goat`, where the TRANSIENT reasoning is exactly
+right (Issue 831).
+
+The repair is the form this repo ALREADY uses in
+`katgpt-transformer/src/contiguous.rs`, `katgpt-core/src/content_store/fetcher.rs`
+and the three `katgpt-pruners` sites:
+
+```rust
+std::env::temp_dir().join(format!("name_{}", std::process::id()))
+```
+
+⛔ **13 sites had it and 27 did not** — 25 repaired, 2 adjudicated as
+deliberate — which is why this is a gate and not a
+sweep-and-done — the rule was known and un-enforced, this file's own
+most-repeated shape. Membership + a reason per row, both directions, floors on
+the walk AND the predicate. The two pinned rows are `examples/`, where a demo's
+temp path is meant to stay findable by a human and no gate runs two examples
+concurrently — an adjudication, not an exclusion rule.
+
+⚠ **Three STATED blind spots**, named in the gate's own docstring and on its
+PASS line so a later census reads them instead of re-deriving them: a
+`temp_dir()` bound to a variable before the `.join`; other fixed-scratch
+spellings (`PathBuf::from("/tmp/…")`, `./target/test_scratch`); and the
+cross-repo axis, which is Issue 832 T3 and is **unmeasured** — do not carry
+`check_validation_gate`'s "population of one, no sweep" answer across, because
+`console_encoding_gate` assumed exactly that and was wrong by seven repos.
+**Count first.**
+
+⚠ **`cargo fmt -p <crate>` is not usable for a repair of this shape.** It
+reformats ~1300 unrelated lines: of the eight files Issue 832 touched, only six
+are rustfmt-clean at HEAD. Format the clean ones per file with `rustfmt` and
+hand-wrap the rest.
 
 ⛔ **A cross-repo repair is not landed until it is COMMITTED in the sibling
 repo, and a record HERE claiming one must CITE THE SIBLING COMMIT** (Issue

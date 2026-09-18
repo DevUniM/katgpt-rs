@@ -121,6 +121,7 @@ CHECKS=(
     "scripts/locale_io_gate.py:text I/O that decodes/encodes with the SYSTEM locale - Path.read_text/write_text/open() in text mode with no encoding=; the FILE seam under subprocess_encoding_gate's PIPE seam, found when a cp874 box silently mangled a selftest FIXTURE and made its arms pass for the wrong reason (Issue 829)"
     "scripts/console_encoding_gate.py:a tracked scripts/*.py that prints a non-ASCII glyph and defends neither stream — on a non-UTF-8 console it dies with NO verdict and its findings go unread; docs_gate.sh's PYTHONIOENCODING only covers runs that go through the wrapper (Issue 804)"
     "scripts/global_rng_gate.py:a free-function global-fastrand draw with no pin row — the unseeded thread-local global made a shipped pruner non-deterministic, found by executing one commit twice; membership + per-row reason, both directions, floors on the walk and the predicate (Issue 809)"
+    "scripts/shared_temp_path_gate.py:a test writing to a FIXED env::temp_dir() path — safe against sibling tests in one binary, and truncated by any concurrent PROCESS running the same test; the x86_64 matrix filed one as TRANSIENT because this class passes alone BY CONSTRUCTION (Issue 832)"
     "scripts/check_validation_gate.py:a CHECK in this array whose own arithmetic no arm asserts — including one whose arm is flag-gated and so never runs (Issue 789)"
     "scripts/docs_gate_checks_sync.py:this CHECKS array vs the AGENTS.md table documenting it — membership both ways + quantity words (Issue 750)"
 )
