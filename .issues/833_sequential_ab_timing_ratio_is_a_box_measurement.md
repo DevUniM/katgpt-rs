@@ -318,11 +318,47 @@ The specimens are unambiguous — `(baseline_total_ns - feature_total_ns) / base
 | `tests/pipeline_pruner_goat.rs` | `assert!(latency_improvement >= 0.20)` |
 | `tests/static_cal_goat.rs` | `assert!(latency_improvement >= 0.05)` |
 
-⛔ **Read the second against this issue's own premise.** Issue 723 T5 measured two
-sequential arms of the *same work* at **+5.2% and +21.7%** thirty seconds apart. A **5%**
-improvement bar on a sequentially-timed pair is a bar *tighter than the noise floor of
-the instrument stating it* — it is not a weak member of the class, it is among the
-strongest.
+⛔ **A bar's exposure is its SLACK, not its size — and the first version of this
+paragraph got that wrong.** It read the `>= 0.05` bar against Issue 723 T5's ±21.7%
+sequential drift and called it "tighter than the noise floor of the instrument stating
+it". That reasons from the bar alone. `static_cal_goat` compares a **Sinkhorn solve**
+against **O(1) table lookups**, so if the measured improvement is ~0.99 the bar has 94
+points of head-room and sequential drift cannot reach it; the same bar against a measured
+0.07 would be one preemption from red.
+
+This is AGENTS.md's own **CLAIM DIRECTION** axis, which it already names as *not
+statically decidable* — so a SEQUENTIAL row is a **candidate for T2's per-target read**,
+never a flaky-gate finding on its own. The correction is recorded rather than quietly
+edited because the overstatement is the exact failure this instrument exists to make
+harder: a classifier output read as a verdict.
+
+⚑ **Then measured, which settled it.** `cargo test -p katgpt-rs --test static_cal_goat
+--features static_cal_tables,kvarn --release`:
+
+```
+G1 SCT: sinkhorn=46772μs static=15μs improvement=100.0% perplexity_delta=0.0000
+```
+
+**100.0% improvement against a 5% bar** — a 3118x gap, 95 points of slack.
+
+And `pipeline_pruner_goat` (`--features modality_pruned_load --release`):
+
+```
+G3 Pipeline: baseline=5000200ns pruned=122300ns improvement=97.6%
+```
+
+**97.6% against a 20% bar** — 77.6 points of slack.
+
+**2 of 2 flagged bars have head-room a loaded box cannot cross.** Both rows are correctly
+IN the class (two sequentially-timed arms, compared) and NEITHER is a migration candidate.
+Two `cargo test` runs settled what a paragraph of reasoning from the bars alone had got
+backwards — which is the argument for T2 being a per-target READ rather than a list: **the
+classifier is right about MEMBERSHIP and says nothing about EXPOSURE**, and the two are
+independent.
+
+⚠ Do not generalise the other way either. n = 2, both drawn from the rel-diff shape, and
+both happen to compare an O(1) lookup against an iterative solve — the shape where a huge
+ratio is expected. It says nothing about the 50 gating rows nobody has run.
 
 Same resolver, one `timing_locals` pass, because provenance is the expensive half. Armed
 in both directions: `(x - x) / x` is zero rather than a comparison (the sibling of the

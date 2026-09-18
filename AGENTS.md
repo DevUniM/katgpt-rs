@@ -1315,10 +1315,26 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
     better-hidden half: `ANY_RATIO` misses it only because the numerator is
     parenthesised. Measured: **14 targets carry it, 7 of them resolved by
     nothing else**, and two are GOAT bars — `pipeline_pruner_goat` asserts
-    `latency_improvement >= 0.20` and `static_cal_goat` `>= 0.05`. ⛔ Read that
-    second one against this section's own premise: a **5%** bar on a quantity
-    Issue 723 T5 measured drifting **±21.7%** between sequential arms is a bar
-    tighter than the noise floor of the instrument stating it.
+    `latency_improvement >= 0.20` and `static_cal_goat` `>= 0.05`.
+  - ⛔ **A bar's exposure is its SLACK, not its size, and reading the bar alone
+    is the mistake this instrument cannot help you avoid.** A `>= 0.05` bar
+    against a *measured* 0.99 has 94 points of head-room and ±21.7% sequential
+    drift cannot reach it; the same bar against a measured 0.07 is one
+    preemption from red. That is AGENTS.md's own CLAIM DIRECTION axis — **not
+    statically decidable**, which is exactly why this stays a report and why a
+    SEQUENTIAL row is a CANDIDATE for T2's per-target read rather than a
+    finding. Do not quote a bar out of this report as a flaky gate without the
+    measured value beside it.
+  - ⚑ **Measured, and it refuted the first version of this bullet.**
+    `static_cal_goat` was RUN (`--features static_cal_tables,kvarn --release`):
+    `sinkhorn=46772µs static=15µs`, **improvement 100.0%** against the `>= 0.05`
+    bar — a 3118x gap and 95 points of slack, which ±21.7% drift cannot reach.
+    `pipeline_pruner_goat` likewise: `baseline=5000200ns pruned=122300ns`,
+    **97.6% against its 20% bar**, 77.6 points of slack. **2 of 2 flagged bars
+    have head-room a loaded box cannot cross.** Both rows are correctly IN the
+    class (two sequentially-timed arms, compared) and NEITHER is a migration
+    candidate — exactly the distinction a count cannot carry. Two `cargo test`
+    runs settled what a paragraph of reasoning from the bars had got backwards.
   - `(x - x) / x` is armed alongside `x/x` (a self-difference is zero, not a
     comparison), and `COUNTY` reaches the difference form's **denominator**
     too — `(a - b) / n_tokens` is a per-token delta, i.e. a rate. That arm is
