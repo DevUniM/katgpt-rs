@@ -2603,6 +2603,15 @@ question it is, not as a typo.
   resolvable only because its body happened to enumerate the issues it touched,
   which let a reader match it against a marked commit elsewhere. That is luck, and
   it is why the marker is one line and not a paragraph.
+- ⛔ **And the marker is EVIDENCE, not proof — by its own rule.** The bullet
+  above says *attribute by the pipe, never by the signature*; a `Session:` line
+  a commit writes about itself **is** a signature. Nothing authenticates it, so
+  it can be wrong, stale or copied exactly as a mis-signed message was. Treat a
+  marker as the best available evidence and a *missing* one as no evidence at
+  all — and when the question is contested, say what you checked rather than
+  who you concluded. (Measured: a session asserted a commit carried no marker
+  while having checked a **different** commit — the claim was cheap to verify
+  and was not verified.)
 
 ### The same hazard one layer down: a FIXED temp path — `scripts/shared_temp_path_gate.py`
 

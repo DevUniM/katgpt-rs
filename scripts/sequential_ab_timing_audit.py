@@ -216,6 +216,17 @@ def provenance_hits(masked: str, already: list) -> list:
     resolvers stay separable — the counts must not double-count a comparison
     both can see. `COUNTY` still applies to every operand: a timing local over
     a count is a rate whichever resolver found it and whichever shape it wore.
+
+    ⚠ **`COUNTY` is NARROWER here than in `comparison_hits`, and the difference
+    is LATENT rather than principled.** That resolver deliberately does not
+    apply COUNTY, because comparing two RATES is still comparing two arms
+    (`region_per_iter < token_per_iter` is a live specimen). The same argument
+    would apply to a RATIO whose two operands are both timing-derived and one
+    of which names a count token — COUNTY would drop it here. Measured over the
+    14 contract repos on this box rather than argued: **0 such sites today**, so
+    the two filters cannot currently disagree about any real row. Left as-is
+    with the reasoning recorded, so whoever meets the first genuine two-rate
+    ratio finds it already written instead of re-deriving it.
     """
     names = timing_locals(masked)
     if len(names) < 2:
