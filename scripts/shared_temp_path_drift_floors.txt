@@ -75,10 +75,18 @@ katgpt-rs                20    2
 #   same read this repo's own two pinned rows get.
 riir-ai                  70    4
 riir-auth                 0    0
-riir-chain               40   10
+# ⬇ 10 → 1, riir-chain `8a3b0f5` (2026-09-18): 9 test sites repaired IN that
+#   repo (src/ssh_key.rs 4, src/asset_lifecycle/delivery.rs 4, riir-wallet
+#   tests/ssh_openssh_str.rs 1); lib 385 passed + riir-wallet --features ssh
+#   ssh_openssh_str 5 passed. The 1 that remains is an `examples/` site — the
+#   adjudicated demo class, the same read this repo's own two pinned rows get.
+riir-chain               40    1
 riir-clippy              85   24
 riir-dapps               10    0
-riir-game-sdk             3    1
+# ⬇ 1 → 0, riir-game-sdk `d2c0bab` (2026-09-18): the single site
+#   (`node_identity_from_ssh_key_roundtrip`) repaired IN that repo; lib 29
+#   passed. A 0 here is a WALL in effect — the next such site reds.
+riir-game-sdk             3    0
 riir-kat                 15    0
 riir-mmorpg-examples      5    0
 riir-neuron-db            3    3
