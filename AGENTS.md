@@ -1437,6 +1437,22 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
     comparison feeding only a `println!` or an `if` is not seen. An ordinary
     `while start.elapsed() < deadline` has two timing-derived operands and is a
     loop bound, not a claim.
+  - ⛔ **It also SPLITS the "subtraction never divided" blind spot**, and the
+    specimen is in a sibling: riir-train's `bench_568_mi_audit_goat` computes
+    `mi_added = with_mi - base` and asserts `mi_added < base` — no `/` anywhere,
+    so `REL_DIFF` and `ANY_RATIO` both miss it, while the difference IS
+    compared and `timing_locals`' transitive hop makes it timing-derived. So:
+    *never divided AND never compared* is still open; *never divided but
+    compared in an assertion* is closed. ⚠ Its exposure is UNMEASURED — the bar
+    reduces to `with_mi < 2 × base` and the target's own comment predicts
+    ~1.05x, which is an argument and not a measurement; running it is that
+    repo's call.
+  - Cross-repo (14 repos on this box), measured as a WITH/WITHOUT delta over
+    ONE walk rather than by differencing two runs' totals: **10 targets carry
+    the shape, 2 were UNRESOLVED without it** (katgpt-rs 1, riir-train 1),
+    **8 of 10 covered by luck**. Differencing the published totals would have
+    said `152 → 154` across a population three repos smaller — confounded, and
+    a floor at best.
 - **UNRESOLVED carries two sub-populations with opposite priors, and pooling
   them is this bucket's own hazard one level down** (Issue 833 T3). A
   **1-timer** row is mostly an ordinary single-arm bar; a **2+-timer** row is

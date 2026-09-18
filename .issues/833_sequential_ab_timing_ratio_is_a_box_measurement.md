@@ -560,3 +560,51 @@ two-arm comparison feeding only a `println!` or an `if` is not seen. An ordinary
 `while start.elapsed() < deadline` has two timing-derived operands and is a loop
 bound, not a claim — scoping to assertions is what keeps that out, and the cost is
 recorded rather than argued away.
+
+### Cross-repo (T5, partial): 10 carry the shape, 8 of 10 covered by LUCK
+
+Measured as a WITH/WITHOUT delta over ONE walk rather than by comparing two runs'
+totals — the workspace figures moved `152 → 154` across a population three repos
+smaller, which is confounded and a floor at best. Re-classifying each target twice
+with the comparison resolver suppressed attributes the difference to the resolver
+and to nothing else. 14 contract repos present on this box:
+
+| repo | carries the shape | UNRESOLVED without the resolver |
+|---|---|---|
+| katgpt-rs | 5 | **1** — `fast_bpe_goat_pretok`, `warm_ns < cold_ns` |
+| riir-train | 3 | **1** — `bench_568_mi_audit_goat`, `mi_added < base` |
+| riir-ai | 2 | 0 |
+| the other 11 | 0 | 0 |
+
+**8 of 10 were already SEQUENTIAL through a different expression in the same
+file.** Read that as the finding rather than the 2: their coverage is an accident
+of file content, so a target carrying *only* this shape is invisible, which is
+precisely the two that were.
+
+⛔ **The riir-train specimen NARROWS a STATED blind spot, and it is a better
+specimen than this repo's own:**
+
+```rust
+let base    = t0.elapsed();          // arm A
+let with_mi = t1.elapsed();          // arm B
+let mi_added = with_mi.as_secs_f64() - base.as_secs_f64();
+assert!(mi_added < base.as_secs_f64(), ...);
+```
+
+That is *"a subtraction or a percentage that is **never divided**"* — listed in
+AGENTS.md as a blind spot both `REL_DIFF` and `ANY_RATIO` miss, because there is
+no `/` anywhere. `comparison_hits` reaches it: the difference is never divided but
+it **is compared**, and `timing_locals`' transitive hop makes `mi_added`
+timing-derived. So the blind spot is now split — *never divided AND never
+compared* remains open; *never divided but compared inside an assertion* is
+closed.
+
+⚠ **Its exposure is NOT measured here and must not be inferred from this row.**
+The bar is `with_mi - base < base`, i.e. `with_mi < 2 × base` — the target's own
+comment says *"the axis must never DOUBLE the audit"* and predicts tens of µs
+against a base in the hundreds, so the design intent is ~1.05x against a 2.0x bar.
+That is an argument, not a measurement, and AGENTS.md's rule is explicit: do not
+quote a bar out of this report as flaky without the measured value beside it. The
+target lives in riir-train and running it is that repo's call; **no repair is
+proposed here and none is owed** — Issue 833 T4 deliberately declines a verdict
+half for exactly this reason.
