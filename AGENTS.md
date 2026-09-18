@@ -1496,6 +1496,26 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
     verdict, or the counts stop being comparable with their own history. It is
     also orthogonal to every bucket, so it applies to the WHOLE population and
     not only to rows a new resolver moved.
+  - ⛔ **And the TRUE direction has a converse that halves T2: `gates=True`
+    does NOT mean a perf BAR exists.** It means an `assert!` is present, and a
+    target can assert **instrument health** — every round survived, the ratio is
+    finite — while *printing* its reading deliberately. `bench_843_ternary_size_sweep`
+    is the named specimen and says so in its module doc: a bar written before its
+    sweep would have been a bar written from a hypothesis that turned out wrong.
+    No box state can flip a verdict a target does not have.
+    - Measured here with a proxy — does ANY `assert!` argument name a
+      timing-derived local? **Of 53 SEQUENTIAL+gating rows, 21 have none**, and
+      two were verified by hand: `bench_simd.rs` computes
+      `speedup = sparse_tps / dense_tps` and only ever `println!`s it (its lone
+      `assert!` is a dispatch check), and `bench_002_density_routing_goat`
+      computes its relative difference and asserts elsewhere. So **T2's backlog
+      is ~27, not ~52** — the annotation was over-stating it by nearly half.
+    - ⚠ A further **5 are UNDECIDED and must not be folded into either side**:
+      the proxy resolves `let` bindings, and `bench_008_gpart_pruning_goat`
+      computes `start.elapsed().as_nanos() / iterations` as a block **tail
+      expression**, so `timing_locals` sees nothing. That is the proxy going
+      blind, not evidence of bar-lessness — this bucket's own rule, applied to
+      the instrument measuring it.
   - ⚠ A **lower bound**, deliberately: a target can also fail by returning
     `Err`, by `process::exit`, or through a helper this pass cannot follow. So
     `report` ORDERS a read rather than deciding it — it must not be read as

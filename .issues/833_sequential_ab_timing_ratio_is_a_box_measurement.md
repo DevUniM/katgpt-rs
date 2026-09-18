@@ -797,3 +797,65 @@ self-certification and ADOPTED matching a NAME where the treatment is a SHAPE).
 All three inflated or deflated the one figure the section is quoted for, and none
 was reachable by reading the code — each needed a case whose answer was known
 independently, which is `wasm32_surface_audit`'s recorded lesson.
+
+## 2026-09-19 — T2's backlog is ~27, not ~52: `gates=True` does not mean a BAR exists
+
+The GATES annotation was landed to tell T2 where **not** to start, and its
+documented limit was only the FALSE direction (a lower bound — a target can fail
+by returning `Err`, by `process::exit`, or through a helper). **The TRUE direction
+has a converse nobody had stated: a target can assert INSTRUMENT HEALTH and still
+pin no bar.**
+
+Surfaced by a disagreement, not by reading the code. `katgpt-rs-9a` (pipe
+`cc-msg-39d46cd5…`) landed `tests/bench_843_ternary_size_sweep.rs` and said it was
+deliberately in the *"asserts nothing"* bucket. It is not — it classifies
+`gates=True`, because it **does** assert: every round survived, every ratio finite.
+Its module doc explains why it pins no performance bar (*"a bar written before the
+sweep would have been a bar written from the hypothesis, and the hypothesis was
+wrong in the direction that mattered"*). Both readings are right about the target
+and the annotation cannot express the difference.
+
+### Measured
+
+Proxy: does **any** `assert!`/`panic!` argument name a timing-derived local?
+
+| | count |
+|---|---|
+| SEQUENTIAL + `gates=True` (this repo) | **53** |
+| ...no assertion names a timing local | **21** |
+| ...`timing_locals` resolved nothing — **UNDECIDED** | **5** |
+| **T2 backlog** | **27 confirmed + 5 undecided** |
+
+**Two verified by hand**, because a ~50% reduction claimed off a proxy is the
+over-claim this issue keeps catching:
+
+- `tests/bench_simd.rs` — computes `speedup = sparse_tps / dense_tps` and only
+  ever `println!`s it. Its single `assert!` is a dispatch-level
+  `assert!(matches!(…))`. AGENTS.md lists this target as a DECIDED two-arm ratio,
+  and it is; the ratio simply gates nothing.
+- `benches/bench_002_density_routing_goat.rs` — computes
+  `(baseline_per_tick - candidate_per_tick) / baseline_per_tick` as `saving`; the
+  only assertions are `assert_eq!`s elsewhere in the file.
+
+⚠ **The 5 UNDECIDED must not be folded into either side.** The proxy resolves
+`let` bindings, and `tests/bench_008_gpart_pruning_goat.rs` computes
+`start.elapsed().as_nanos() as f64 / iterations as f64` as a **block tail
+expression** returned from a helper — so `timing_locals` sees nothing and the
+proxy is blind rather than informative. That is this issue's own
+*UNRESOLVED-is-not-clean* rule applied to the instrument measuring it, and pooling
+them into the 21 would have turned a measurement into a claim.
+
+### Why this matters for T2 and T4
+
+T2's backlog was quoted as *"~52 gating rows, not 72 — which is the whole use of
+the annotation"*. The annotation was over-stating it by **nearly half**: the real
+work is ~27 targets, and a further 21 are targets whose two-arm ratio is a
+**report**, already correctly identified by AGENTS.md's own note that *"some rows
+print the comparison and gate nothing"* — that note existed and had never been
+turned into a number.
+
+It does **not** change T4's answer. Orientation is still not statically decidable,
+and deciding whether an assertion is a *performance bar* rather than an
+instrument-health check is the same judgement one step down — which is precisely
+why this is a proxy with a hand-verified sample and a stated UNDECIDED bucket,
+not a seventh resolver.
