@@ -1,6 +1,6 @@
 # Issue 843: the `plasma_path` ternary dense matvec is slower than the f32 matvec it replaces BELOW the L3 boundary — and only wins above it (x86_64/AVX2)
 
-**Status:** OPEN — **T2 DONE** (the size axis is measured: there IS a crossover, and it sits at the L3 boundary — see §T2); T1/T3/T4 open. Measured observation, owner-routed. Found incidentally while
+**Status:** OPEN — **T1 + T2 DONE** (T2: on x86_64/AVX2 the crossover lands on the L3 boundary — §T2; T1: on aarch64/NEON there is NO crossover anywhere in 32..=16384, and the served shape 768×3072 reads 2.10× — §T1; the two arches AGREE that every shape this workspace serves is in the losing regime). T3/T4 open. Measured observation, owner-routed. Found incidentally while
 benchmarking Issue 839 (Bench 839 arm G2c); it is not a `kron_tile` finding and
 is deliberately not folded into that GOAT's verdicts.
 
@@ -79,7 +79,7 @@ implementation is not a speedup over the implementation you replaced.
 
 ## Tasks
 
-- [ ] **T1 — Confirm or refute on a second arch.** `neon_ternary_matvec` vs
+- [x] **T1 — DONE (2026-09-19, §T1 below): CONFIRMED on NEON, and stronger than the x86_64 finding — no crossover at ANY measured size.** `neon_ternary_matvec` vs
       `simd_dot_f32` on the M3. The SWAR/popcount balance is not the same on
       NEON, and this repo's own record (Issue 819) is that an arm nobody
       compiles is an arm nobody has measured. Do NOT generalise the x86_64
@@ -105,12 +105,13 @@ implementation is not a speedup over the implementation you replaced.
 
 - Not a `kron_tile` issue. Bench 839's G2c reports the number and bars nothing
   on it, precisely so this question stays separable.
-- No change to `plasma_path`'s default until **T1** lands (T2 is done). One
-  ARCH is not enough to move a shipped flag even with the size axis measured,
-  and this file exists so that decision is taken on a measurement rather than
-  on this paragraph. T2 sharpened the question rather than answering it: the
-  flag is defensible for large operands and costs 1.5–1.9× at served ones, so
-  the decision is a threshold, not a yes/no.
+- No change to `plasma_path`'s default until **T4** — which is now measurable
+  from both arches (T1 + T2 landed). The measurement side is complete: two
+  arches, every size from 32 to 16384 square plus the served 768×3072 shape,
+  and **ternary loses everywhere on both**. The x86_64 crossover at 4096 did
+  not generalize (§T1), so the flag is defensible on FOOTPRINT alone at every
+  shape measured; whether that trade is right for the hot tier is T4's owner
+  call, taken on these numbers rather than on this paragraph.
 
 ## T2 — measured (2026-09-19): there IS a crossover, and it lands on the L3 boundary
 
@@ -203,3 +204,80 @@ T7's **footprint** premise is untouched and is written into its own task text
 argument, on the axis this very sweep shows is the one that pays. Recorded in
 Issue 839 §T7 as well, so the deferral carries its reason rather than a
 hypothesis.
+
+## T1 — measured (2026-09-19): CONFIRMED on NEON, and there is NO crossover anywhere
+
+Same committed instrument, second arch: `tests/bench_843_ternary_size_sweep.rs`
+run on the M3 (aarch64, `simd_level() = Neon`), release profile, the same
+`ab_timing.rs` interleaved harness, 11 of 11 rounds surviving at every size.
+Measured from a clean `origin/develop` worktree (`4efd9fa79`) — the shared
+checkout's dirty WIP was deliberately not measured through.
+
+| `m` | f32 ns/call | ternary ns/call | tern/f32 | f32 operand |
+|---|---|---|---|---|
+| 32 | 119 | 347 | **3.04** | 4 KiB |
+| 64 | 278 | 779 | **2.84** | 16 KiB |
+| 128 | 877 | 2337 | **2.68** | 64 KiB |
+| 256 | 3638 | 7983 | **2.20** | 256 KiB |
+| 512 | 13986 | 31020 | **2.22** | 1 MiB |
+| 1024 | 57024 | 123251 | **2.16** | 4 MiB |
+| 2048 | 248054 | 517826 | **2.08** | 16 MiB |
+| 4096 | 1036670 | 1972030 | **1.91** | 64 MiB |
+| 8192 | 4215621 | 7835288 | **1.86** | 256 MiB |
+| 16384 | 17204758 | 31223443 | **1.83** | 1 GiB |
+
+The 8192/16384 rows are a throwaway extension (temp worktree copy, `SWEEP`
++2 rows, run once and not landed — the T2 temp-arm precedent); the first eight
+rows are the committed bench unchanged. `REPRODUCE T2` above gives the first
+eight; the extension is derivable by adding the two rows.
+
+And the shape §T2 names as the one T4 actually decides about, measured directly
+rather than interpolated (same throwaway run):
+
+| shape | f32 ns/call | ternary ns/call | tern/f32 | f32 operand |
+|---|---|---|---|---|
+| 768 × 3072 (d=768, 4× FFN) | 145,458 | 301,919 | **2.10** | 9.0 MiB |
+
+**The verdict, and what it changes about §T2's reading.** On NEON the ratio is
+monotonically DECREASING from 3.04 to 1.83 — narrowing, but never crossing, all
+the way to a **1 GiB f32 operand**, sixteen times beyond the size where AVX2
+crossed. §T2's crossover claim is therefore **box-local, not kernel
+property**: the AVX2 arm's f32 kernel collapsed at 64 MiB (2.77 ms against
+NEON's 1.02 ms on the same shape — the 13700K running out of memory bandwidth
+where the M3 Max's unified memory still feeds it), and that collapse is what
+crossed 1.0. On a box whose f32 arm keeps being fed, the ternary arm never
+catches up even when the footprint advantage is 16×. **Both arches now agree
+on the part that matters: at every shape this workspace serves, `plasma_path`
+is a latency regression of roughly 1.9–3.0×, and the footprint win is the only
+compensation it delivers.** §T2's honest "a machine with more bandwidth might
+never cross" hedge is now measured rather than hedged.
+
+**Box state** (per the AGENTS.md rule, recorded beside the numbers): m3 max,
+macOS 26.6.2, M3 Max 16 cores, 64 GiB RAM 74% free, AC power; load average
+3.7 falling from 9.4 (sibling agent builds had just finished), zero cargo
+processes running during the runs. Stability check that costs nothing and was
+run anyway: an earlier build of the SAME bench from the dirty shared checkout
+— a different binary, ~15 minutes earlier, under heavier load — reproduced
+every shared row to within ~2% (1024: 2.16 both; 2048: 2.10/2.08; 4096:
+1.93/1.91), which bounds the load sensitivity of these medians and also shows
+the shared tree's WIP does not touch this path. Only the clean-worktree
+numbers above are the record.
+
+**For T3, a structural observation from reading the NEON arm** (not a profile,
+and the AVX2 kernel is the task's subject — but the two arms share their
+shape, so a fix in one should be checked against the other):
+`fmla_nibble8` (katgpt-types/src/simd/ternary.rs) spends ~16 vector ops per
+8 elements — 2 scalar byte extracts + 2 splats, 4×`vandq_u32`, 4×`vcgeq_u32`,
+2×`vsubq_s32`, 2×`vcvtq_f32_s32` — to produce **2** useful `vfmaq_f32`. The
+sign EXTRACTION outnumbers the multiply-free arithmetic ~8:1, which is
+exactly the "sign-extraction stall" T3 hypothesizes for AVX2, visible here
+without a profiler. The 8.5 GMAC/s ternary figure reproduces on this box to
+three digits (1024²/123.3 µs ≈ 8.5 GMAC/s), suggesting both arms sit at a
+similar extraction-bound ceiling rather than a memory one at served sizes.
+
+⚠ **What T1 does NOT settle** (inherited from §T2, still open): the batched
+`simd_ternary_matmul_batch` path is untouched by both sweeps, and it amortises
+the weight read across a batch — the shape a real decode step uses. T3's read
+should start there, on BOTH arches now. One thread throughout; the two arms'
+summation orders are not bit-identical, but neither gate here depends on
+bit-equality across arms.
