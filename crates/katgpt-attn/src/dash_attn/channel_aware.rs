@@ -457,194 +457,51 @@ impl VortexFlow for ChannelAwareRouter {
 }
 
 // ---------------------------------------------------------------------------
-// SIMD dot product — T13
+// SIMD dot product — T13, now a DELEGATION (Issue 845)
 // ---------------------------------------------------------------------------
 
-/// SIMD-optimized dot product with NEON/AVX2/scalar fallback.
+/// SIMD dot product over the common prefix of `a` and `b`.
 ///
-/// For routing_dim=32: 4 NEON vectors (8 f32 each) → 4 accumulators.
-/// For routing_dim=64: 8 NEON vectors → 8 accumulators.
-/// Falls back to scalar for non-SIMD architectures.
+/// **Delegates to `katgpt_core::simd::simd_dot_f32`** — the shipped
+/// ISA-dispatched kernel — and carries no kernel of its own. Kept as a
+/// function rather than deleted because it is `pub` and takes a 2-argument
+/// `(a, b)` form (length derived as `min(len)`) that this module's two call
+/// sites and any external caller rely on; the shipped kernel takes an explicit
+/// `len`.
+///
+/// # Why the ~200 lines of hand-written NEON + AVX2 that used to live here are
+/// gone (Issue 845, Bench 845)
+///
+/// They were a same-named duplicate of a kernel already in this crate's
+/// dependency graph — `katgpt-attn` depends on `katgpt-core`, which re-exports
+/// `katgpt_types::simd` wholesale — and **seven other files in this crate,
+/// four of them in this very `dash_attn/` directory, already call the shipped
+/// one**. Two things were measured before the deletion, in both build
+/// configurations, because the local AVX2 arm only existed in one of them:
+///
+/// | dot length | default build | `-C target-feature=+avx2` |
+/// |---|---|---|
+/// | 32 | local 2.72× slower | local 1.83× slower |
+/// | 64 | 4.12× | 2.68× |
+/// | 128 | 6.54× | 3.86× |
+/// | 256 | 7.76× | 4.78× |
+/// | 1024 | 6.37× | 4.00× |
+///
+/// The default-build column is the severe one and explains itself: the old
+/// AVX2 arm was gated `#[cfg(target_feature = "avx2")]`, a **compile-time**
+/// predicate that is OFF by default on x86_64, so the shipped path fell
+/// through to a 4-accumulator scalar loop while the shipped kernel probed
+/// CPUID once at runtime and used AVX2. Agreement was `<= 1e-6` there and
+/// **bit-identical** under `+avx2`.
+///
+/// AGENTS.md cites this file for 30 `unsafe_op_in_unsafe_fn` findings and
+/// blames *"two transcriptions of one kernel"*. Both transcriptions were of a
+/// kernel that was already in the graph; removing them takes this file's
+/// `unsafe` surface to zero.
 #[inline]
 pub fn simd_dot_f32(a: &[f32], b: &[f32]) -> f32 {
     let n = a.len().min(b.len());
-
-    // SAFETY: we only access elements within bounds
-    #[cfg(target_arch = "aarch64")]
-    {
-        unsafe { simd_dot_neon(a.as_ptr(), b.as_ptr(), n) }
-    }
-
-    #[cfg(all(not(target_arch = "aarch64"), target_arch = "x86_64"))]
-    {
-        #[cfg(target_feature = "avx2")]
-        {
-            unsafe { simd_dot_avx2(a.as_ptr(), b.as_ptr(), n) }
-        }
-        #[cfg(not(target_feature = "avx2"))]
-        {
-            simd_dot_scalar(a, b, n)
-        }
-    }
-
-    #[cfg(all(not(target_arch = "aarch64"), not(target_arch = "x86_64")))]
-    {
-        simd_dot_scalar(a, b, n)
-    }
-}
-
-#[allow(dead_code)]
-#[inline]
-fn simd_dot_scalar(a: &[f32], b: &[f32], n: usize) -> f32 {
-    // Chunked loop for auto-vectorization (4-wide)
-    let mut sum0 = 0.0f32;
-    let mut sum1 = 0.0f32;
-    let mut sum2 = 0.0f32;
-    let mut sum3 = 0.0f32;
-
-    let chunks = n / 4;
-    let remainder = n % 4;
-
-    for i in 0..chunks {
-        let base = i * 4;
-        sum0 += a[base] * b[base];
-        sum1 += a[base + 1] * b[base + 1];
-        sum2 += a[base + 2] * b[base + 2];
-        sum3 += a[base + 3] * b[base + 3];
-    }
-
-    let mut sum = sum0 + sum1 + sum2 + sum3;
-    for i in (n - remainder)..n {
-        sum += a[i] * b[i];
-    }
-    sum
-}
-
-/// NEON-optimized dot product (AArch64).
-#[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
-#[inline]
-unsafe fn simd_dot_neon(a: *const f32, b: *const f32, n: usize) -> f32 {
-    use std::arch::aarch64::*;
-
-    // SAFETY: Caller guarantees valid pointers with at least `n` elements.
-    unsafe {
-        let mut acc0 = vdupq_n_f32(0.0);
-        let mut acc1 = vdupq_n_f32(0.0);
-        let mut acc2 = vdupq_n_f32(0.0);
-        let mut acc3 = vdupq_n_f32(0.0);
-
-        // Process 16 elements per iteration (4 NEON vectors × 4 f32 each)
-        let chunks16 = n / 16;
-        let mut i = 0usize;
-
-        for _ in 0..chunks16 {
-            let v0 = vld1q_f32(a.add(i));
-            let v1 = vld1q_f32(b.add(i));
-            acc0 = vmlaq_f32(acc0, v0, v1);
-
-            let v2 = vld1q_f32(a.add(i + 4));
-            let v3 = vld1q_f32(b.add(i + 4));
-            acc1 = vmlaq_f32(acc1, v2, v3);
-
-            let v4 = vld1q_f32(a.add(i + 8));
-            let v5 = vld1q_f32(b.add(i + 8));
-            acc2 = vmlaq_f32(acc2, v4, v5);
-
-            let v6 = vld1q_f32(a.add(i + 12));
-            let v7 = vld1q_f32(b.add(i + 12));
-            acc3 = vmlaq_f32(acc3, v6, v7);
-
-            i += 16;
-        }
-
-        // Process remaining 4-element chunks
-        while i + 4 <= n {
-            let va = vld1q_f32(a.add(i));
-            let vb = vld1q_f32(b.add(i));
-            acc0 = vmlaq_f32(acc0, va, vb);
-            i += 4;
-        }
-
-        // Horizontal add all accumulators
-        let sum_vec = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
-        let mut result = [0.0f32; 4];
-        vst1q_f32(result.as_mut_ptr(), sum_vec);
-        let mut sum = result[0] + result[1] + result[2] + result[3];
-
-        // Handle remaining elements
-        while i < n {
-            sum += *a.add(i) * *b.add(i);
-            i += 1;
-        }
-
-        sum
-    }
-}
-
-/// AVX2-optimized dot product (x86_64).
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn simd_dot_avx2(a: *const f32, b: *const f32, n: usize) -> f32 {
-    use std::arch::x86_64::*;
-
-    // SAFETY: Caller guarantees valid pointers with at least `n` elements.
-    unsafe {
-        let mut acc0 = _mm256_setzero_ps();
-        let mut acc1 = _mm256_setzero_ps();
-        let mut acc2 = _mm256_setzero_ps();
-        let mut acc3 = _mm256_setzero_ps();
-
-        // Process 32 elements per iteration (4 AVX2 vectors × 8 f32)
-        let chunks32 = n / 32;
-        let mut i = 0usize;
-
-        for _ in 0..chunks32 {
-            let v0 = _mm256_loadu_ps(a.add(i));
-            let v1 = _mm256_loadu_ps(b.add(i));
-            acc0 = _mm256_fmadd_ps(v0, v1, acc0);
-
-            let v2 = _mm256_loadu_ps(a.add(i + 8));
-            let v3 = _mm256_loadu_ps(b.add(i + 8));
-            acc1 = _mm256_fmadd_ps(v2, v3, acc1);
-
-            let v4 = _mm256_loadu_ps(a.add(i + 16));
-            let v5 = _mm256_loadu_ps(b.add(i + 16));
-            acc2 = _mm256_fmadd_ps(v4, v5, acc2);
-
-            let v6 = _mm256_loadu_ps(a.add(i + 24));
-            let v7 = _mm256_loadu_ps(b.add(i + 24));
-            acc3 = _mm256_fmadd_ps(v6, v7, acc3);
-
-            i += 32;
-        }
-
-        // Process remaining 8-element chunks
-        while i + 8 <= n {
-            let va = _mm256_loadu_ps(a.add(i));
-            let vb = _mm256_loadu_ps(b.add(i));
-            acc0 = _mm256_fmadd_ps(va, vb, acc0);
-            i += 8;
-        }
-
-        // Horizontal add
-        let sum256 = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
-        let hi = _mm256_extractf128_ps(sum256, 1);
-        let lo = _mm256_castps256_ps128(sum256);
-        let sum128 = _mm_add_ps(hi, lo);
-        let mut result = [0.0f32; 4];
-        _mm_storeu_ps(result.as_mut_ptr(), sum128);
-        let mut sum = (result[0] + result[1]) + (result[2] + result[3]);
-
-        // Handle remaining elements
-        while i < n {
-            sum += *a.add(i) * *b.add(i);
-            i += 1;
-        }
-
-        sum
-    }
+    katgpt_core::simd::simd_dot_f32(a, b, n)
 }
 
 // ---------------------------------------------------------------------------

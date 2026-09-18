@@ -222,6 +222,18 @@ required-features = ["asentmax_schedule"]
 name = "asentmax_alloc_check"
 required-features = ["asentmax_schedule"]
 
+# Bench 845 (Issue 845) — `channel_aware::simd_dot_f32`'s AVX2 arm is gated on a
+# COMPILE-time `target_feature`, which is off by default on x86_64, so the
+# shipped path runs a 4-accumulator scalar loop while katgpt-types'
+# runtime-CPUID-dispatched kernel sits in the graph via katgpt-core's re-export.
+# Measures the local ~200-line duplicate against the shipped kernel at the
+# routing/head dims its own doc names. REPORT (instrument health + numerical
+# agreement asserted, no bar): the verdict is build-configuration-dependent by
+# construction, so run it with and without RUSTFLAGS="-C target-feature=+avx2".
+[[test]]
+name = "bench_845_channel_aware_dot_dispatch"
+required-features = ["dash_attn"]
+
 # Issue 747 P1 — derived-k budget G1 length-independence gate (Lemma-2
 # boundary law: realized support == k̂ = 4/Δ̂² at every n ∈ 1k..1M).
 [[test]]

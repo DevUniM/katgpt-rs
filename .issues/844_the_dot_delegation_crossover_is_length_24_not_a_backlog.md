@@ -93,7 +93,17 @@ the plain loop 350%.
 - [x] **T1 — DONE. Measure the crossover** rather than asserting one.
       `tests/bench_844_dot_delegation_crossover.rs`, reproduced three times
       across two independent harnesses.
-- [ ] **T2 — Read the 21 CHUNKED f32 `src` sites and separate the two kinds.**
+- [~] **T2 — STARTED, and the first read found a live defect: [Issue 845](845_channel_aware_duplicated_a_kernel_and_gated_its_avx2_arm_at_compile_time.md).**
+      `channel_aware.rs` carried a same-named ~200-line duplicate of
+      `simd_dot_f32` whose AVX2 arm was gated on a COMPILE-time
+      `target_feature`, so the shipped path ran a scalar loop — 2.7–7.8× slower
+      on a default build, 1.8–4.8× slower even with `+avx2`. Repaired by
+      delegation, `unsafe` surface of that file now zero, regression-gated with
+      a canary. **11 of the 21 are outside `katgpt-types`; 5 of those
+      (`simd_lut_dequant.rs`) are a different operation (dequant-through-LUT,
+      then dot) and 3 are `katgpt-moka-wasm`'s standalone wasm bundle, whose
+      dependency surface is its own call.** So the residual read is small and
+      named. Remaining:
       This is the actionable class per rule 3, and the classifier cannot do it:
       the bucket mixes `katgpt-types`' *genuine* intrinsic kernels (correct, and
       the thing everything else should call) with hand-rolled multi-accumulator
