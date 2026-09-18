@@ -20,19 +20,24 @@
 # BY DESIGN and somebody has said so.
 #
 #  repo                  package
-mmorpg-remaster     mmorpg-poc-submodule
-# 2026-09-16: the mmorpg-core migration (12a4ce3) left the OLD copy behind. Every
-# dependent in this repo now path-deps `../../../mmorpg-remake/crates/mmorpg-core`,
-# so the local `crates/mmorpg-core` is orphaned — it used to be covered BY-DEP
-# through those dependents and is UNCOVERED the moment they stopped pointing at
-# it. Not a lane gap to close: whether the duplicate should exist at all is the
-# deprecated repo's owner's call, and adding a wasm32 row for a crate that is
-# probably about to be deleted is the wrong repair.
-mmorpg-remaster     mmorpg-core
-
-# mmorpg-poc-submodule is the standing NEGATIVE CONTROL, recorded as such in
+mmorpg-remaster     seal-poc-submodule
+# 2026-09-19 (Issue 842 close-out): the sweep read this repo for the FIRST time
+# through the alias seam and the package SET has changed wholesale since the old
+# rows were typed — the 2026-09-16 owner migration moved seal-core and
+# seal-edge-worker OUT of this deprecated repo into mmorpg-remake, taking the old
+# mmorpg-core / mmorpg-poc-submodule packages (and their wasm32 surface) with
+# them. Their two rows are dropped in the same commit — the sweep reds on a pin
+# that no longer describes anything, and that red is correct.
+#
+# seal-poc-submodule is the SUCCESSOR of the standing NEGATIVE CONTROL below:
+# deliberately excluded from its repo's CI and depended on by nothing, so it
+# must stay UNCOVERED rather than be "fixed". Same posture, new name — the
+# by-dep amnesty probe (Issue 774) survives the rename.
+#
+# Historical record of the control it succeeds:
+# mmorpg-poc-submodule was recorded as the standing negative control in
 # AGENTS.md since 2026-09-14: deliberately excluded from its repo's CI and
 # depended on by nothing, so it must stay UNCOVERED rather than be "fixed". It
-# is also what proves the by-dep credit (Issue 774) did not become a blanket
+# was also what proved the by-dep credit (Issue 774) did not become a blanket
 # amnesty — that repo is read-only from here, and arm-vs-row is its owner's
 # call.

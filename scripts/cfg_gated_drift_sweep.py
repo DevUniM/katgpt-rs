@@ -65,7 +65,7 @@ sys.path.insert(0, str(HERE))
 # DRY: the scanner, the classifier and the selftest are the report's, so the
 # sweep and the per-push gate can never disagree about what is load-bearing.
 import cfg_gated_target_audit as cga  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, delta_of,  # noqa: E402
                             head_tree, sweep_advisory)
 
@@ -505,11 +505,14 @@ def main() -> int:
 
     n_uncommitted = n_masked = 0
     for repo in repos:
-        got = audit(repo)
+        # Issue 842: the derived handle is CONTRACT-named; the DIRECTORY is
+        # the on-disk spelling. Audit the real checkout, label by the handle.
+        path = open_repo(repo.name, WORKSPACE)
+        got = audit(path)
         # Issue 822 T5j — the DISPLAY reads the worktree (it is what the files
         # say today); every CEILING and both FLOORS read what a commit of this
         # checkout would produce.
-        delta, head = adjudicate(repo, got)
+        delta, head = adjudicate(path, got)
         j = got if head is None else head
         held = {finding_key(f) for f in delta.uncommitted}
         n_uncommitted += len(delta.uncommitted)

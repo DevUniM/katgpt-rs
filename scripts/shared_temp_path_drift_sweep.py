@@ -104,7 +104,7 @@ console_safe.apply()
 
 import shared_temp_path_gate as stp  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import pin_row_exempt, population_verdict  # noqa: E402
+from sweep_population import open_repo, pin_row_exempt, population_verdict  # noqa: E402
 from worktree_state import head_delta, sweep_advisory  # noqa: E402
 
 # The repo that owns the membership pin — derived, never typed.
@@ -515,7 +515,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
     n_uncommitted = n_masked = 0
 
     for name in sorted(names):
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         rows, n_temp, n_files = classify(repo)
 
         # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───

@@ -100,7 +100,7 @@ sys.path.insert(0, str(HERE))
 # second thing to get wrong).
 import markdown_fence_gate as mfg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, head_delta,  # noqa: E402
                             sweep_advisory)
 
@@ -435,7 +435,7 @@ def main() -> int:
     n_uncommitted = n_masked = 0
 
     for name in names:
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         found, walked = mfg.unterminated(repo)
 
         # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───

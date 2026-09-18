@@ -75,7 +75,7 @@ sys.path.insert(0, str(HERE))
 # wrong).
 import toolchain_override_audit as toa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, delta_of, head_overlay,  # noqa: E402
                             sweep_advisory)
 
@@ -488,11 +488,12 @@ def main() -> int:
 
     n_uncommitted = n_masked = 0
     for name in names:
-        scan = toa.scan_repo(WORKSPACE / name, name)
+        repo = open_repo(name, WORKSPACE)
+        scan = toa.scan_repo(repo, name)
         # Issue 822 — the DISPLAY reads the worktree (it is what the files say
         # today, and hiding that would be its own lie); the CEILINGS read
         # `.head`, the only thing a commit of this checkout would reproduce.
-        delta = adjudicate(WORKSPACE / name, scan)
+        delta = adjudicate(repo, scan)
         n_uncommitted += len(delta.uncommitted)
         n_masked += len(delta.masked)
         held = {occ_key(o) for o in delta.uncommitted}

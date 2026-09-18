@@ -56,6 +56,11 @@ from skill_repo_set_gate import (  # noqa: E402
 # that go through the wrapper.
 import console_safe  # noqa: E402
 
+# Issue 842: the sweeps' population arrives as CONTRACT names, and the repos
+# open under the on-disk spellings. The seam below is the one copy of that
+# resolution; importing the codec it delegates to.
+import repo_alias  # noqa: E402
+
 console_safe.apply()
 
 
@@ -90,6 +95,24 @@ def pin_row_exempt(name: str) -> bool:
     `name in declared` test here would have silently skipped that.
     """
     return bool(known_extra_state([name])[0])
+
+
+def open_repo(name: str, workspace: Path) -> Path:
+    """The on-disk directory for a contract repo name (Issue 842).
+
+    Every sweep opens repos through this, never `WORKSPACE / name` directly:
+    on a box whose `repo_alias.local.txt` maps on-disk sibling names into the
+    contract vocabulary, the contract spelling IS not a directory, and a sweep
+    that opens it measures zeros against pins typed from the real repos —
+    measured 2026-09-18 across seven sweeps, every red a TRUE pin measured
+    against the WRONG DIRECTORY.
+
+    Identity on unaliased boxes (CI, fresh clones, synthetic-workspace
+    canaries), and it changes no name the sweep prints: pins, floors and
+    verdict lines stay keyed on the CONTRACT spelling — the alias content
+    itself must never reach stdout (repo_alias's own rule).
+    """
+    return Path(workspace) / repo_alias.disk(name)
 
 
 def population_verdict(pins, present) -> tuple[list[str], list[str], int]:
@@ -168,6 +191,7 @@ def selftest() -> list[str]:
     """
     import os
 
+    import repo_alias
     from skill_repo_set_gate import SNAPSHOT
 
     global _N_ASSERTIONS
@@ -294,6 +318,33 @@ def selftest() -> list[str]:
         os.environ.pop(KNOWN_EXTRA_MARKER, None)
         check(not pin_row_exempt("seal-x"),
               "with NO marker set, nobody is excused")
+
+        # ── open_repo (Issue 842) ──────────────────────────────────────────
+        # Injected codec state, not the machine's own alias file: the arms
+        # must be box-independent, and the file is machine-local (possibly
+        # absent). Setting `_loaded` directly is the same cache every accessor
+        # reads; `None` restores the lazy re-read of the real file.
+        saved_loaded = repo_alias._loaded
+        try:
+            repo_alias._loaded = {"seal-alias-x": "contract-alias-x"}
+            ws = Path("/synthetic-workspace-842")   # pure path math, no I/O
+            check(open_repo("contract-alias-x", ws) == ws / "seal-alias-x",
+                  "open_repo did not resolve a mapped contract name to its "
+                  "on-disk directory")
+            check(open_repo("unmapped-name", ws) == ws / "unmapped-name",
+                  "open_repo must be identity for an unmapped name")
+            # The full codec round-trip the sweeps rely on: the derived walk
+            # speaks on-disk, apply() translates to contract for the pins,
+            # disk() must take it back.
+            check(repo_alias.disk(repo_alias.apply(["seal-alias-x"])[0])
+                  == "seal-alias-x",
+                  "disk(apply(name)) is not the identity — the sweep's pin "
+                  "vocabulary and its open paths would diverge")
+            check(repo_alias.display("seal-alias-x") == "contract-alias-x",
+                  "display() must return the contract spelling for gate "
+                  "output — the alias content must never leak to stdout")
+        finally:
+            repo_alias._loaded = saved_loaded
     finally:
         if saved is None:
             os.environ.pop(PARTIAL_MARKER, None)

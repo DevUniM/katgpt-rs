@@ -85,6 +85,24 @@ def disk(contract: str) -> str:
     return contract
 
 
+def real(repo: Path) -> Path:
+    """The on-disk directory for a (possibly contract-named) repo path.
+
+    Issue 842: the derived predicates return CONTRACT names, and every pin,
+    floor and snapshot is keyed on that vocabulary — but the DIRECTORY is the
+    on-disk spelling, which on an alias box is a different name. `derive_repos`
+    hands out `WORKSPACE / <contract-name>` handles that open nothing; every
+    file-access seam resolves through this and keeps labeling by the handle's
+    own `.name`, so pins, verdicts and stdout stay in the contract vocabulary
+    (the alias CONTENT must never reach stdout — run logs get pasted into
+    tracked docs).
+
+    Identity for any unmapped name, which is what makes it fixture-safe: a
+    selftest's `tmp_ws / "fakerepo"` resolves to itself on every box.
+    """
+    return repo.parent / disk(repo.name)
+
+
 def display(name: str) -> str:
     """The contract spelling of one name, for gate OUTPUT lines."""
     return _load().get(name, name)

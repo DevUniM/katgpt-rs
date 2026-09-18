@@ -91,7 +91,7 @@ import instrument_reachability_gate as irg  # noqa: E402
 # The repo that owns the membership pin — derived, never typed.
 SELF = irg.REPO_ROOT.name
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (  # noqa: E402
     delta_of, head_overlay, sweep_advisory)
 
@@ -469,7 +469,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
     per_repo: dict[str, tuple[int, int]] = {}
 
     for name in names:
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         scripts, roots, unreached = classify(repo)
 
         # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───

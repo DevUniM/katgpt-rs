@@ -86,7 +86,7 @@ sys.path.insert(0, str(HERE))
 # the gate can never disagree about what "orphaned" means.
 import orphaned_attr_gate as oag  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
 from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
                             sweep_advisory)
@@ -482,7 +482,7 @@ def main() -> int:
     n_uncommitted = n_masked = 0
 
     for name in names:
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         s = oag.scan(repo)
 
         # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───

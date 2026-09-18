@@ -234,7 +234,9 @@ def half_a(repo: Path, rep: Report) -> None:
     `TreeVerifyPlan::from_parents_topo` sitting after them (Issue 766 T3:
     those kernels derive every dim from `params` — the correct pattern).
     """
-    for f in rs_files(repo):
+    # Issue 842: the walk reads the on-disk directory; labels stay repo.name.
+    disk = repo_alias.real(repo)
+    for f in rs_files(disk):
         rep.files_scanned += 1
         try:
             src = f.read_text(encoding="utf-8", errors="replace")
@@ -254,7 +256,8 @@ def half_a(repo: Path, rep: Report) -> None:
             if not bufs:
                 continue
             rep.kernels.append(
-                Kernel(repo.name, str(f.relative_to(repo)), m.group("name"), bufs)
+                Kernel(repo.name, str(f.relative_to(disk)),
+                       m.group("name"), bufs)
             )
             rep.guard_only.setdefault(m.group("name"), all(guard_only_uses(body, b) for b in bufs))
 
@@ -297,7 +300,9 @@ def half_b(repo: Path, kernels: list[Kernel], rep: Report) -> None:
     names = {k.name for k in kernels}
     if not names:
         return
-    for f in rs_files(repo):
+    # Issue 842: the walk reads the on-disk directory; labels stay repo.name.
+    disk = repo_alias.real(repo)
+    for f in rs_files(disk):
         try:
             src = f.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -340,7 +345,7 @@ def half_b(repo: Path, kernels: list[Kernel], rep: Report) -> None:
                     BindSite(
                         m.group("kernel"),
                         repo.name,
-                        str(f.relative_to(repo)),
+                        str(f.relative_to(disk)),
                         line,
                         b.group("handle").strip(),
                         b.group("length").strip(),
@@ -353,7 +358,7 @@ def half_b(repo: Path, kernels: list[Kernel], rep: Report) -> None:
                     BindSite(
                         m.group("kernel"),
                         repo.name,
-                        str(f.relative_to(repo)),
+                        str(f.relative_to(disk)),
                         line,
                         "<no BufferArg in span>",
                         "",
@@ -632,7 +637,9 @@ def collect_calls(repo: Path, fn_names: set[str], calls: dict) -> None:
     """One walk: every path-form `Struct::fn::<T>(args)` whose fn name is
     wanted, with top-level arg extraction. Comment-prefixed lines skipped —
     a dead call in prose must never count as a caller (false-clean guard)."""
-    for f in rs_files(repo):
+    # Issue 842: the walk reads the on-disk directory; labels stay repo.name.
+    disk = repo_alias.real(repo)
+    for f in rs_files(disk):
         try:
             src = f.read_text(encoding="utf-8", errors="replace")
         except OSError:
@@ -662,7 +669,7 @@ def collect_calls(repo: Path, fn_names: set[str], calls: dict) -> None:
             args = [normalize_expr(a) for a in split_top_commas(args_src)]
             line = src.count("\n", 0, m.start()) + 1
             calls.setdefault((m.group("typ"), m.group("fn")), []).append(
-                CallSite(repo.name, str(f.relative_to(repo)), line, args)
+                CallSite(repo.name, str(f.relative_to(disk)), line, args)
             )
 
 
@@ -679,7 +686,8 @@ def trace_unresolved(binds: list[BindSite], repo_paths: dict[str, Path]) -> None
         ckey = (b.repo, b.file)
         if ckey not in src_cache:
             try:
-                src_cache[ckey] = (repo_paths[b.repo] / b.file).read_text(encoding="utf-8", errors="replace")
+                # Issue 842: resolve the handle to its on-disk directory.
+                src_cache[ckey] = (repo_alias.real(repo_paths[b.repo]) / b.file).read_text(encoding="utf-8", errors="replace")
             except OSError:
                 src_cache[ckey] = ""
         if ckey not in span_cache:

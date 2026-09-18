@@ -81,7 +81,7 @@ sys.path.insert(0, str(HERE))
 # required-features family documents (Issue 755).
 import wasm32_surface_audit as wsa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, delta_of, head_tree,  # noqa: E402
                             sweep_advisory)
 
@@ -441,13 +441,14 @@ def main() -> int:
 
     n_uncommitted = n_masked = 0
     for name in names:
-        s = wsa.classify_repo(WORKSPACE / name)
+        repo = open_repo(name, WORKSPACE)
+        s = wsa.classify_repo(repo)
         v = s.verdicts()
         # Issue 822 — the DISPLAY reads the worktree (it is what the files say
         # today, and hiding that would be its own lie); the CEILING and the
         # MEMBERSHIP wall read `.head`, the only thing a commit of this
         # checkout would reproduce.
-        delta = adjudicate(WORKSPACE / name, s)
+        delta = adjudicate(repo, s)
         n_uncommitted += len(delta.uncommitted)
         n_masked += len(delta.masked)
         held = {pkg for pkg, _x in delta.uncommitted}

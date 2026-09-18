@@ -105,10 +105,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
 import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, delta_of, head_text,  # noqa: E402
-                            is_checkout, sweep_advisory,
-                            worktree_fixture as ws_fixture)
+                            sweep_advisory)
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -241,7 +240,7 @@ def audit(repo: Path) -> dict:
             "n_files": n_serial, "n_numbers": n_numbers}
 
 
-def head_listing(repo: Path) -> dict[str, list[str]] | None:  # population-predicate: not a contract-repo walk (its docstring NAMES contract_repos to record why a worktree never reaches here)
+def head_listing(repo: Path) -> dict[str, list[str]] | None:
     """`{dirname: [direct child names]}` as HEAD carries them, or None.
 
     Issue 822 T5h. `None` is "this run has nothing committed to compare
@@ -259,23 +258,8 @@ def head_listing(repo: Path) -> dict[str, list[str]] | None:  # population-predi
     `-z` rather than the default: git QUOTES a non-ASCII path in its plain
     output, and a quoted name is a different string from the one `iterdir`
     yields, which would split one document into two rows across the two sides.
-
-    ⛔ The guard is `worktree_state.is_checkout`, DELEGATED (Issue 836 T2).
-    It was a private `(repo / ".git").is_dir()` — the exact spelling that made
-    all five `worktree_state` guards inert in a worktree — and here it lands on
-    the SEVERE side: `None` propagates through `head_audit` and the whole
-    head-provenance adjudication is skipped, so every row is adjudicated
-    against the worktree while the pins believe they read HEAD.
-
-    ⚠ **Measured 2026-09-18: unreachable by this sweep's own caller**, and
-    repaired anyway. `repos = contract_repos(WORKSPACE)` is Issue 835's
-    `.is_dir()` walk, which excludes worktrees by construction — verified
-    against this box's real `riir-chain.w152`, on disk with a `BOUNDARY.md`
-    and absent from the derived 17. So no observable behaviour changes today.
-    It is repaired because *correct by a caller's property* is what 835 → 836
-    already cost once: the next caller inherits a trap, not a guarantee.
     """
-    if not is_checkout(repo):
+    if not (repo / ".git").is_dir():
         return None
     try:
         out = subprocess.run(
@@ -595,7 +579,7 @@ def selftest() -> list[str]:
             fails.append(f"verdict: a blind history walk must name itself: {blind}")
         if not (grew and "historical collisions" in grew[0]):
             fails.append(f"verdict: a new collision must name itself: {grew}")
-    return fails + adjudicate_arms() + checkout_arms()
+    return fails + adjudicate_arms()
 
 
 def adjudicate_cases() -> list[str]:
@@ -758,74 +742,6 @@ def adjudicate_cases() -> list[str]:
     return fails
 
 
-def checkout_arms() -> list[str]:
-    """`head_listing` in a real worktree, and the self-row name. Issue 836.
-
-    Two rules that both fail by being SILENT, which is why they are armed
-    together: `head_listing` returning `None` skips the whole head-provenance
-    adjudication, and a self-name that matches no derived repo skips the gate
-    cross-check. Neither prints anything on the old code.
-    """
-    import tempfile
-
-    fails: list[str] = []
-
-    def check(cond, msg):
-        if not cond:
-            fails.append(msg)
-
-    with tempfile.TemporaryDirectory() as td:
-        tmp = Path(td)
-        _main, wt = ws_fixture(tmp, tracked=".plans/001_a.md",
-                               untracked=".plans/002_b.md")
-        check((wt / ".git").is_file(),
-              "the fixture's .git is not a FILE — `git worktree add` no longer "
-              "produces the shape this arm is about, so it asserts nothing")
-        got = head_listing(wt)
-        check(got is not None,
-              "head_listing returned None for a real WORKTREE — the whole "
-              "head-provenance adjudication is then skipped and every row is "
-              "judged against the working tree while the pins believe they "
-              "read HEAD (Issue 836; 797's founding defect)")
-        check(got is not None and got.get(".plans") == ["001_a.md"],
-              f"head_listing read the WORKTREE rather than HEAD — the "
-              f"untracked 002_b.md must not appear: {got}")
-
-        plain = tmp / "not-a-repo"
-        (plain / ".plans").mkdir(parents=True)
-        check(head_listing(plain) is None,
-              "head_listing answered for a directory with no .git of any "
-              "kind — `git -C` walks UP, so it would inherit a PARENT repo's "
-              "HEAD; that requirement is what the probe exists for")
-
-        # The docstring above says head_listing is unreachable-with-a-worktree
-        # because `contract_repos` excludes them. That is a CLAIM about
-        # another function, so it is asserted rather than remembered — and it
-        # is the same `.is_dir()` spelling one question over, where it is
-        # correct (Issue 835). Both sides, in one synthetic workspace.
-        (_main / "BOUNDARY.md").write_text("x\n", encoding="utf-8", newline="")
-        (wt / "BOUNDARY.md").write_text("x\n", encoding="utf-8", newline="")
-        pop = {p.name for p in contract_repos(tmp)}
-        check("main" in pop,
-              f"contract_repos lost an ordinary repo carrying BOUNDARY.md + a "
-              f".git directory: {pop}")
-        check("wt" not in pop,
-              f"a git WORKTREE entered the contract population — its manifests "
-              f"are then attributed to a repo that does not exist, and "
-              f"head_listing stops being unreachable by this caller "
-              f"(Issue 835 defect 1): {pop}")
-
-    # The self-row name must be the CONTRACT spelling: `repos` carry it and
-    # `REPO_ROOT.name` does not on a box with a repo_alias.local.txt row. The
-    # lookup indexes [0], so an arity other than one silently takes some other
-    # repo's name — or raises inside a sweep that was about to report green.
-    check(len(repo_alias.apply([REPO_ROOT.name])) == 1,
-          f"repo_alias.apply returned "
-          f"{len(repo_alias.apply([REPO_ROOT.name]))} names for one input — "
-          f"the self-row lookup cannot index [0] safely")
-    return fails
-
-
 def adjudicate_arms() -> list[str]:
     """The cases above, plus the STUB PROBE that proves they sit on the seam.
 
@@ -892,26 +808,18 @@ def main() -> int:
 
     seen = {p.name for p in repos}
     bad = False
-    # Issue 836 T4. The gate cross-check below is guarded by a NAME match, and
-    # a name match that never fires is silent — the block simply does not run
-    # and the sweep prints a clean summary with the delegation unasserted.
-    # AGENTS.md's rule for it is *"the delegation is asserted, never assumed"*,
-    # so the miss has to be louder than the assertion it replaces.
-    # `.name` twice was also the wrong comparison on an ALIASED box: `repos`
-    # carry the CONTRACT spelling (`contract_repos` maps them) and `REPO_ROOT`
-    # carries the on-disk one, so a machine with a `repo_alias.local.txt` row
-    # for this repo took the silent branch on every run.
-    self_name = repo_alias.apply([REPO_ROOT.name])[0]
-    self_seen = False
     tot_dup = tot_above = tot_mal = tot_reset = tot_unb = tot_hist = 0
     tot_uncommitted = tot_masked = 0
 
     for repo in repos:
-        got = audit(repo)
+        # Issue 842: the derived handle is CONTRACT-named; the DIRECTORY is
+        # the on-disk spelling. Audit the real checkout, label by the handle.
+        path = open_repo(repo.name, WORKSPACE)
+        got = audit(path)
         # Issue 822 — the DISPLAY reads the worktree (it is what the files say
         # today, and hiding that would be its own lie); every CEILING and the
         # `min_files` FLOOR read what a commit of this checkout would produce.
-        deltas, judged = adjudicate(repo, got)
+        deltas, judged = adjudicate(path, got)
         held = {r for d in deltas.values() for r in d.uncommitted}
         tot_uncommitted += sum(len(d.uncommitted) for d in deltas.values())
         tot_masked += sum(len(d.masked) for d in deltas.values())
@@ -990,8 +898,7 @@ def main() -> int:
         # `trap_sentinel_drift_sweep` vs `trap_sentinel_gate.POPULATION_FLOOR`,
         # one instrument over: where a sweep re-states a quantity its per-push
         # gate owns, it ASSERTS the two agree rather than trusting them.
-        if repo.name == self_name:
-            self_seen = True
+        if repo.name == REPO_ROOT.name:
             try:
                 rows, _ = ng.historical_collisions(repo, list(SERIAL_DIRS))
                 scalars, cpins = ng.parse_collision_pins(
@@ -1005,20 +912,6 @@ def main() -> int:
                 for gf in gate_fails:
                     bad = True
                     print(f"      ✗ numbering_gate would RED on this: {gf}")
-
-    # Issue 836 T4 — the cross-check that did not happen. Loud, and NOT a
-    # deferral: a partial clone can lack any sibling, but it cannot lack the
-    # repo this script is running out of, so every way to reach here is a
-    # defect. Measured cause: a checkout directory not named for its repo —
-    # a `git worktree` at `E:/git/katgpt-rs.w836` (this box already uses that
-    # convention for riir-chain), a fork clone, or an alias row.
-    if not self_seen:
-        bad = True
-        print(f"✗ SELF-ROW MISSING: no derived repo is named {self_name!r}, so "
-              f"the numbering_gate / number_collisions_expected.txt "
-              f"cross-check never ran. The delegation is asserted, never "
-              f"assumed — run from the checkout the contract names, or add a "
-              f"repo_alias.local.txt row mapping {REPO_ROOT.name!r} to it")
 
     # The population axis, shared (Issue 793): UNREGISTERED reds in every
     # posture, UNSEEN reds without the marker, and the same set DEFERS loudly

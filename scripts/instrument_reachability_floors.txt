@@ -82,9 +82,9 @@ riir-neuron-db                   0          2                0
 riir-shader                      1          1                2
 riir-train                      36          1               65  # 2026-09-17: 61 -> 65, ADJUDICATED not absorbed. The four are the Plan 403 cluster (build_capture_manifest, fetch_lph_corpus, modelless_floors, probe_verdict). Each name carries its plan number and each is a one-task artifact, which is the state this header calls CORRECT for this repo; modelless_floors is unreachable only because its two importers are, so the closure is working. Documenting them in riir-train's AGENTS.md would contradict that repo's own convention (it names none of its plan scripts). They were NOT left alone on the other axis: all five landed undefended streams too, and that was repaired at riir-train 21f19504 (Issue 804).
 riir-viewbridge                  0          1                0
-mmorpg-editor                 1          1                1
+mmorpg-editor                 6          2                4  # Issue 842: first REAL measurement 2026-09-19 (6 scripts / 2 roots) — the alias-mapped open used to measure nothing. unreachable 1->4: bake_gltf_material_extras, migrate_materials, regate.py, strip_inter_pua are documented in the repo's own scripts/README.md, which is not a REACHABILITY ROOT (AGENTS.md / docs_gate.sh / workflows are) — making them findable in the repo's AGENTS.md is the editor owners' repair, not this pin's.
 mmorpg-remaster             0          1                0
-mmorpg-remake                      3          1                6
+mmorpg-remake                      7          3                7  # Issue 842: first REAL measurement 2026-09-19 — 7 scripts / 3 roots / 7 unreachable. The set is the riir-train plan-scoped class: poc-check and GLB-inspection one-task tools (check_damage_popup_poc, inspect_glb_*, compute_weapon_grip, texture_audit...) whose whole life is one lane; documenting them in AGENTS.md contradicts nothing but is the repo owners' call.
 #
 # ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
 # riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).

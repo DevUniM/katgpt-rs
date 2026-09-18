@@ -57,11 +57,15 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import restatement_theorem_audit as audit  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
+
+# Issue 842: the sweep's population names and its opens go through the codec.
+import repo_alias  # noqa: E402
 from worktree_state import (HeadDelta, delta_of,  # noqa: E402
                             head_tree, ordinal_keys, sweep_advisory)
 
@@ -414,7 +418,10 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     root = os.path.dirname(here)
     floors = read_floors()
-    present = audit.repos(root)
+    # Issue 842: `audit.repos()` lists ON-DISK names; the pins, floors and the
+    # shared population verdict speak CONTRACT. Translate both populations
+    # through the codec and open repos through the seam.
+    present = repo_alias.apply(audit.repos(root))
 
     print("=== restatement-theorem drift sweep (every repo with .proofs) ===\n")
 
@@ -429,9 +436,10 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
     # repo WITHOUT proofs read as absent — measured: 16 phantom rows, and the
     # run failed. A subset-population sweep has TWO populations and they are
     # not interchangeable.
-    contract = [d for d in os.listdir(root)
-                if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
-                and os.path.isdir(os.path.join(root, d, ".git"))]
+    contract = repo_alias.apply(
+        d for d in os.listdir(root)
+        if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
+        and os.path.isdir(os.path.join(root, d, ".git")))
     pop_lines, deferred, pop_fail = population_verdict(floors, contract)
 
     # Issue 797 — the worktree is not the repo. This run reads files that
@@ -472,7 +480,9 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
         if repo not in floors:
             continue
         f = floors[repo]
-        repo_path = os.path.join(root, repo)
+        # Issue 842: `repo` is the CONTRACT spelling; the directory is the
+        # on-disk one.
+        repo_path = str(open_repo(repo, Path(root)))
         m = measure(repo_path)
         # Issue 822 T5j — the DISPLAY reads the worktree (it is what the files
         # say today); every CEILING and both FLOORS read what a commit of this

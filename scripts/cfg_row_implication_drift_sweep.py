@@ -75,7 +75,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # DRY: the classification is the report's, so the sweep, the per-push gate and
 # the report can never disagree about what EMPTY-AT-ROW means.
 import cfg_row_implication_audit as cria  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from cfg_gated_target_audit import derive_repos  # noqa: E402
 from worktree_state import (HeadDelta, delta_of,  # noqa: E402
                             head_tree, sweep_advisory)
@@ -403,7 +403,11 @@ def main(argv: list[str]) -> int:
         print("✗ pins file declares no repos — refusing to run vacuously")
         return 2
 
-    repos = derive_repos(Path(argv[0]) if argv else WORKSPACE)
+    # Issue 842: keep the root the repos were derived from — an argv root (a
+    # synthetic fixture workspace) is not WORKSPACE, and the per-repo open
+    # must resolve within the SAME root.
+    root = Path(argv[0]) if argv else WORKSPACE
+    repos = derive_repos(root)
     if len(repos) < 2:
         print(f"✗ derived only {len(repos)} repo(s) — this sweep is cross-repo "
               f"by definition and a single-checkout run would be vacuous")
@@ -418,13 +422,16 @@ def main(argv: list[str]) -> int:
     print(f"{'repo':<24} {'rows':>6} {'#![cfg]':>8} {'EMPTY':>6} {'UNRES':>6}   pins")
     n_uncommitted = n_masked = 0
     for repo in sorted(repos, key=lambda p: p.name):
-        found = cria.audit_repo(repo)
+        # Issue 842: the derived handle is CONTRACT-named; the DIRECTORY is
+        # the on-disk spelling. Audit the real checkout, label by the handle.
+        path = open_repo(repo.name, root)
+        found = cria.audit_repo(path)
         # Issue 822 — the DISPLAY reads the worktree (it is what the files say
         # today); every CEILING and both FLOORS read what a commit of this
         # checkout would produce. `judged` falls back to the worktree's own
         # findings when there is no HEAD to compare against, which is the
         # conservative direction for a bucket the pins read.
-        delta, head = adjudicate(repo, found)
+        delta, head = adjudicate(path, found)
         judged = found if head is None else head
         held = {finding_key(f) for f in delta.uncommitted}
         n_uncommitted += len(delta.uncommitted)

@@ -334,6 +334,25 @@ logs get pasted into tracked docs. Instruments that OPEN sibling files by the
 contract name need the on-disk spelling back — `repo_alias.disk()` is the
 reverse half (the skill-census glob uses it).
 
+⛔ **The open seam is ONE, and it is `sweep_population.open_repo(name,
+workspace)` / `repo_alias.real(repo)` (Issue 842, closed 2026-09-19).** The
+derived predicates return CONTRACT names, so `WORKSPACE / name` — the shape
+17 of 19 drift sweeps used — opens a directory that DOES NOT EXIST on an
+alias box, and every walk on it returns 0: seven sweeps red walk floors
+against pins typed from the real repos, every red a TRUE pin measured against
+the WRONG DIRECTORY, and the two sweeps that DID import the alias
+docs/numbering built `ws / contract-name` paths — the same hole wearing the
+codec. The fix is one seam, not 19 patches: sweeps open through
+`open_repo`, audit modules resolve at the file-access seam via
+`repo_alias.real(repo)` (identity for any unmapped name, which is what makes
+it fixture-safe), `worktree_state.sweep_advisory` resolves bare names and
+prints CONTRACT labels (the alias content itself must never reach stdout),
+and every audit labels findings by the handle's `.name` while reading the
+resolved directory. First post-fix run measured the other direction: 19/19
+non-citation sweeps green, and the citation sweep surfaced ~35 REAL
+file-addressed defects across 6 repos that the zero-read had hidden — filed
+as Issue 846, the sweep's red there is true positives, not the 842 class.
+
 `scripts/docs_gate.sh` runs the manifest/doc/skill drift assertions and
 **prints its own timing** — a hand-typed duration drifts exactly like a
 hand-typed count, and it was also the wrong quantity. Measured three times:

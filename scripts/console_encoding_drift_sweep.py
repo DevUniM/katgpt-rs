@@ -106,7 +106,7 @@ console_safe.apply()
 # never disagree about what "defended" means.
 import console_encoding_gate as ceg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import head_delta, sweep_advisory  # noqa: E402
 
 # The repo that owns the membership pin — derived, never typed.
@@ -601,7 +601,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
     per_repo: dict[str, tuple[int, int]] = {}
 
     for name in names:
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         n_walk, defended, undefended, unparsed = classify(repo)
         n_pop = len(defended) + len(undefended)
 

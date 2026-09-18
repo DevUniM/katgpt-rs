@@ -54,7 +54,7 @@ sys.path.insert(0, str(HERE))
 # two can never disagree about what "uses the system locale" means (Issue 755).
 import locale_io_gate as lig  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
 from worktree_state import (head_delta, line_free,  # noqa: E402
                             ordinal_keys, sweep_advisory)
@@ -272,7 +272,7 @@ def main() -> int:
     n_uncommitted = n_masked = 0
 
     for name in names:
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         offenders, py_files, calls, unparsed = lig.scan(repo)
 
         # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ──

@@ -50,7 +50,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (dirty_in_population,  # noqa: E402
                             head_tree, sweep_advisory)
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
@@ -127,7 +127,13 @@ def run_auditor(script: str, pattern: re.Pattern[str], repos: list[Path]) -> dic
             continue
         hit = pattern.search(line)
         if hit and current:
-            counts[current] = (int(hit.group(1)), int(hit.group(2)))
+            # Issue 842: the auditors are handed the on-disk directories, so
+            # the header carries the ON-DISK name; the pins are keyed on the
+            # CONTRACT spelling. display() is the identity on unaliased boxes
+            # and normalizes the alias box — the alias content itself must
+            # never leak further than this one mapping.
+            counts[repo_alias.display(current)] = (int(hit.group(1)),
+                                                   int(hit.group(2)))
     return counts
 
 
@@ -385,16 +391,20 @@ def main() -> int:
     repos = derive_population()
     floors = read_floors()
     present = {p.name for p in repos}
+    # Issue 842: the derived handles are CONTRACT-named; the auditors walk
+    # real directories. `repos` stays the contract handle list (the per-repo
+    # loop labels with it); the auditors get the on-disk resolutions.
+    repos_real = [open_repo(p.name, WORKSPACE) for p in repos]
 
     print(f"▸ derived population: {len(repos)} contract repos under {WORKSPACE}")
     print(f"▸ committed floors:   {len(floors)} label-bearing repos "
           f"({FLOORS_FILE.name})\n")
 
-    results = {script: run_auditor(script, pat, repos) for script, pat, _ in AUDITORS}
+    results = {script: run_auditor(script, pat, repos_real) for script, pat, _ in AUDITORS}
     # Issue 822 T5j — the DISPLAY reads the worktree (it is what the files say
     # today); every WALL and every FLOOR reads what a commit of these checkouts
     # would produce.
-    judged, head = adjudicate(repos, results)
+    judged, head = adjudicate(repos_real, results)
 
     failures: list[str] = []
     notes: list[str] = []

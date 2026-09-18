@@ -62,7 +62,7 @@ sys.path.insert(0, str(HERE))
 # second thing to get wrong).
 import pipefail_discard_audit as pda  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
                             sweep_advisory)
 from tracked_walk import tracked_files  # noqa: E402
@@ -605,7 +605,7 @@ def main() -> int:
     tot = {"sh": 0, "sites": 0, "find": 0, "unp": 0}
     n_uncommitted = n_masked = 0
     for name in names:
-        repo = WORKSPACE / name
+        repo = open_repo(name, WORKSPACE)
         res = pda.audit_repo(repo)
         # Issue 822 — the DISPLAY reads the worktree (it is what the files say
         # today, and hiding that would be its own lie); the PINS read `.head`,

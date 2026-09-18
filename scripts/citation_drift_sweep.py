@@ -242,6 +242,9 @@ sys.path.insert(0, str(HERE))
 # disagree about what a citation IS.
 import issue_citation_gate as icg  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+
+# Issue 842: the derived handles are CONTRACT-named; reads resolve to disk.
+import repo_alias  # noqa: E402
 from worktree_state import (  # noqa: E402
     STALE_FETCH_HOURS, behind_origin, dirty_files, fetch_age_hours, head_text,
     worktree_advisory)
@@ -300,11 +303,13 @@ def crate_map(repos: list[Path]) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for r in repos:
-        ls = subprocess.run(["git", "-C", str(r), "ls-files", "*Cargo.toml"],
+        # Issue 842: git reads the on-disk directory.
+        rs = repo_alias.real(r)
+        ls = subprocess.run(["git", "-C", str(rs), "ls-files", "*Cargo.toml"],
                             capture_output=True, encoding="utf-8", errors="replace")
         for rel in ls.stdout.split():
             try:
-                text = (r / rel).read_text(encoding="utf-8", errors="replace")
+                text = (rs / rel).read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
             m = _PKG_NAME.search(text)
@@ -403,20 +408,25 @@ def unreliable_oracles(sibs: list[Path]) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for s in sibs:
-        beh = behind_origin(s, NUMBERED_GLOBS)
+        # Issue 842: git reads the on-disk directory; the printed key is the
+        # CONTRACT spelling.
+        beh = behind_origin(repo_alias.real(s), NUMBERED_GLOBS)
         if beh is None:
             continue
         if beh[1]:
-            out[s.name] = (f"{beh[0]} commits behind upstream, {beh[1]} of "
-                           f"them touching a numbered directory")
+            out[repo_alias.display(s.name)] = (
+                f"{beh[0]} commits behind upstream, {beh[1]} of "
+                f"them touching a numbered directory")
             continue
         if beh == (0, 0):
-            age = fetch_age_hours(s)
+            age = fetch_age_hours(repo_alias.real(s))
             if age is None:
-                out[s.name] = "reports up to date, but has never been fetched"
+                out[repo_alias.display(s.name)] = (
+                    "reports up to date, but has never been fetched")
             elif age > STALE_FETCH_HOURS:
-                out[s.name] = (f"reports up to date from a remote-tracking ref "
-                               f"last refreshed {age:.0f}h ago")
+                out[repo_alias.display(s.name)] = (
+                    f"reports up to date from a remote-tracking ref "
+                    f"last refreshed {age:.0f}h ago")
     return out
 
 
@@ -433,7 +443,10 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
     a repo with no HISTORY.md and a repo whose HISTORY.md is empty read alike.
     """
     mine = alloc[repo.name]
-    top = top_allocated(repo, mine)
+    # Issue 842: the reads go to the ON-DISK directory; every NAME (alloc
+    # keys, qualifier matching) stays the CONTRACT spelling of the handle.
+    disk = repo_alias.real(repo)
+    top = top_allocated(disk, mine)
     elsewhere: dict[str, dict[int, list[str]]] = {k: {} for k in icg.KINDS}
     for s in sibs:
         for kind in icg.KINDS:
@@ -446,7 +459,7 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
            "unseen_width": 0, "alias_trailing": 0,
            CROSS: [], IN_RANGE: [], ORPHAN: [], ORACLE_STALE: []}
     for doc in docs:
-        text = read(repo / doc)
+        text = read(disk / doc)
         if text is None:
             continue          # absence is not a finding, but the doc COUNT is
         got["n_docs"] += 1    # printed, so it must not silently include it
@@ -1179,7 +1192,10 @@ def main() -> int:
     crates = crate_map(repos)
     patterns = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                 for c in crates}
-    alloc = {r.name: {k: icg.allocated(r, d) for k, d in icg.KINDS.items()}
+    # Issue 842: allocations and the heading-oracle cost read the ON-DISK
+    # directories, keyed by the CONTRACT name of the handle.
+    alloc = {r.name: {k: icg.allocated(repo_alias.real(r), d)
+                      for k, d in icg.KINDS.items()}
              for r in repos}
     # Issue 781: how much of each repo's own allocation record the heading
     # oracle declines to read, ON STYLE ALONE. Summed over kinds; a triage
@@ -1200,14 +1216,16 @@ def main() -> int:
     for r in repos:
         acc = shp = nov = 0
         for k, d in icg.KINDS.items():
-            a, t = icg.heading_style_blind(r, d, [q.name for q in repos])
+            a, t = icg.heading_style_blind(repo_alias.real(r), d,
+                                           [q.name for q in repos])
             acc += a
             shp += t
             # `alloc` holds the FULL union (heading path included), so the
             # non-heading half is recomputed rather than subtracted: a number
             # in both halves must not be credited to the heading oracle, and
             # a set difference cannot tell the two apart.
-            nov += icg.heading_unread_novel(r, d, [q.name for q in repos])
+            nov += icg.heading_unread_novel(repo_alias.real(r), d,
+                                            [q.name for q in repos])
         blind[r.name] = (acc, shp, nov)
 
     # Issue 827: which sibling checkouts cannot be trusted to answer "do you
@@ -1223,6 +1241,10 @@ def main() -> int:
     dirty_scope: dict[str, int] = {}
     n_uncommitted = n_masked = 0
     for repo in repos:
+        # Issue 842: the handle is CONTRACT-named, the directory on-disk. All
+        # git/filesystem reads go through `repo_disk`; every NAME (alloc keys,
+        # pins, printouts) stays the contract spelling.
+        repo_disk = repo_alias.real(repo)
         sibs = [s for s in repos if s != repo]
         # A repo is never its own oracle — `n in mine` short-circuits first —
         # so its own staleness is irrelevant here and is filtered out rather
@@ -1243,13 +1265,13 @@ def main() -> int:
         # PINS adjudicate HEAD. A tracked expectations file is a claim about a
         # repo, and a repo's state is its commits — a ceiling re-pinned against
         # somebody's in-flight edit reds on every other box.
-        scope = sorted(set(dirty_files(repo)) & set(docs))
+        scope = sorted(set(dirty_files(repo_disk)) & set(docs))
         judge = got
         if scope:
             dirty_scope[repo.name] = len(scope)
-            heads = {d: head_text(repo, d) for d in scope}
+            heads = {d: head_text(repo_disk, d) for d in scope}
 
-            def _read(p: Path, _heads=heads, _repo=repo) -> str | None:
+            def _read(p: Path, _heads=heads, _repo=repo_disk) -> str | None:
                 rel = p.name if p.parent == _repo else str(p.relative_to(_repo))
                 if rel in _heads:
                     return _heads[rel]      # None = not in HEAD (a NEW file)
@@ -1286,7 +1308,7 @@ def main() -> int:
         # wearing a pin (Issue 785's rule).
         for cls in (CROSS, IN_RANGE, ORPHAN, MISATTR_IN_RANGE, ORACLE_STALE):
             tot[cls] += len(got[cls])
-        if repo.resolve() == REPO_ROOT:
+        if repo_disk.resolve() == REPO_ROOT:
             mine_row = got
 
         flags = []

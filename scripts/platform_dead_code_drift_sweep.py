@@ -68,7 +68,7 @@ import platform_dead_code_floor_gate as gate      # noqa: E402
 # are one definition shared by population_sync_gate and issue_citation_gate too
 # (Issue 765). A second copy would be a second thing to get wrong, and this one
 # decides whether a short population is a partial clone or a stale file.
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, delta_of, head_overlay,  # noqa: E402
                             sweep_advisory)
 
@@ -390,13 +390,17 @@ def main() -> int:
 
     n_uncommitted = n_masked = 0
     for repo in sorted(present):
-        m = measure(present[repo])
+        # Issue 842: `repo` is the CONTRACT name and `present[repo]` the
+        # contract-named handle; measure the on-disk directory, label by the
+        # name.
+        path = open_repo(repo, WORKSPACE)
+        m = measure(path)
         # Issue 822 — the ratchet is a claim about the REPO, and a repo's
         # state is its commits. The DISPLAY reads the worktree (it is what the
         # files say today, and hiding that would be its own lie); the PINS read
         # `.head`, which is the only quantity a commit of this checkout would
         # reproduce. One ghost row, two provenances, opposite verdicts.
-        f_delta, mod_delta = adjudicate(present[repo], m)
+        f_delta, mod_delta = adjudicate(path, m)
         n_uncommitted += len(f_delta.uncommitted) + len(mod_delta.uncommitted)
         n_masked += len(f_delta.masked) + len(mod_delta.masked)
         held = {row_key(r) for r in f_delta.uncommitted} | {

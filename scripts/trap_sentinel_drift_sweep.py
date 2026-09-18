@@ -98,7 +98,7 @@ sys.path.insert(0, str(HERE))
 # about what EXPOSED means.
 import trap_exit_launder_audit as tela  # noqa: E402
 import trap_sentinel_gate as tsg  # noqa: E402
-from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (HeadDelta, head_delta,  # noqa: E402
                             sweep_advisory)
 
@@ -578,11 +578,12 @@ def main() -> int:
 
     n_uncommitted = n_masked = 0
     for name in names:
-        got = audit(WORKSPACE / name)
+        repo = open_repo(name, WORKSPACE)
+        got = audit(repo)
         # Issue 822 — the DISPLAY reads the worktree (it is what the files say
         # today); every CEILING and both FLOORS read what a commit of this
         # checkout would produce.
-        delta, judged = adjudicate(WORKSPACE / name, got)
+        delta, judged = adjudicate(repo, got)
         held = {row_key(r) for r in delta.uncommitted}
         n_uncommitted += len(delta.uncommitted)
         n_masked += len(delta.masked)

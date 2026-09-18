@@ -867,18 +867,22 @@ def main():
     # sweep half never noticed: it imports this module and never calls main().
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if len(sys.argv) > 1:
-        targets = [os.path.abspath(sys.argv[1])]
-        root = os.path.dirname(targets[0])
+        _t = os.path.abspath(sys.argv[1])
+        targets = [(os.path.basename(_t), _t)]
+        root = os.path.dirname(_t)
     else:
-        targets = [os.path.join(root, r) for r in repos(root)]
+        # Issue 842: `repos(root)` returns CONTRACT names; the directory is
+        # the on-disk spelling. Keep the contract name for the report, open
+        # the resolved directory.
+        targets = [(r, os.path.join(root, repo_alias.disk(r)))
+                   for r in repos(root)]
 
     print(f"percentile-index audit — MIN_SUPPORT={MIN_SUPPORT}, "
           f"{len(targets)} repo(s) (derived: BOUNDARY.md + .git)\n")
     grand = {}
     pop = {}
     all_findings = []
-    for t in targets:
-        name = os.path.basename(t)
+    for name, t in targets:
         found = []
         files, vendored = list_rs_files(t)
         pop[name] = (len(files), vendored)
