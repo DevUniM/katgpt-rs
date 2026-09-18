@@ -612,7 +612,19 @@ loses its non-zero row in `orphaned_attr_drift_floors.txt` reds, and a
 delegated file it cannot PARSE is refused rather than read as an empty dict,
 which would turn the assertion into the no-op it exists to prevent. katgpt-rs's
 row asserts the GATE'S VERDICT rather than restating a count this sweep derives
-from the same `scan()`, so a stale membership row reds here too),
+from the same `scan()`, so a stale membership row reds here too. Repair half:
+`scripts/shared_temp_path_fix.py` (the `locale_io_fix.py` pattern — idempotent,
+LF-preserving, and it REFUSES to leave a line over `--max-width` rather than
+invite the `cargo fmt -p` that reformats ~1300 unrelated lines here). It
+IMPORTS the gate's own `mask` and `FIXED_JOIN` rather than re-deriving them:
+a repair pass whose idea of a site differs from the gate's either misses rows
+the gate will red on or edits code the gate never asked about. `examples/` and
+`src/bin/` are skipped by default — the adjudication the pinned rows record,
+not squeamishness — and `--include-demos` overrides it for a repo whose owner
+decides otherwise. ⛔ Its first version tested CRLF **before** asking whether
+the file had a site at all, and printed a loud per-file refusal for 18 riir-ai
+files carrying none: a message that invites work nobody needs to do is this
+workspace's own cries-wolf failure mode, one instrument down),
 `pipefail_discard_audit.py` + `pipefail_discard_drift_sweep.py` (every
 contract repo, on demand — the shell class where a `var="$(pipeline)"`
 assignment under `set -euo pipefail` is killed by a legitimately-empty grep
