@@ -63,13 +63,31 @@ it removes**, on a default-on flag. Probed against its own scalar reference it i
 a healthy 4.32× (539.7 µs → 125.0 µs), which refutes the obvious explanation.
 Filed as **Issue 843**; deliberately not folded into this GOAT's verdicts.
 
-⚠ **That result weakens T7's premise and T7 should not be spent on the old
-one.** T7 assumes ternary factors will be cheaper than f32 factors. At `n = 32`
-on this box the ternary *dense* kernel is not cheaper than f32 dense at all. The
-hypothesis may still hold for 32×32 factors, where the operand fits a register
-file and the SWAR balance is different — but that is a measurement nobody has
-taken, and T7's first step is now to take it rather than to implement the
-fusion.
+⛔ **And the measurement that paragraph asked for has now been TAKEN, at the
+factor widths, and it refutes T7's latency premise** (Bench 843's sweep,
+2026-09-19). An earlier version of this section said the hypothesis "may still
+hold for 32×32 factors, where the operand fits a register file and the SWAR
+balance is different". Measured:
+
+| width | f32 ns | ternary ns | ternary/f32 |
+|---|---|---|---|
+| 32 | 111 | 172 | **1.56× slower** |
+| 64 | 277 | 593 | **2.24× slower** |
+
+The register-file intuition points the wrong way: a 32×32 f32 factor is **4
+KiB** and already L1-resident, so a 16× smaller footprint relieves no pressure,
+and what is left is the per-MAC cost — where add/sub-accumulate loses to FMA on
+this box. The ternary/f32 ratio across `m = 32..4096` peaks at 3.70× (m=512)
+and only crosses 1.0 above 2048, i.e. the win is a **cache-residency** effect
+and 32 is as deep inside the losing regime as the sweep goes.
+
+⚠ **A proxy, and only the latency half is refuted.** A stage is two 32×32
+matrix products, not one matvec, so a fused kernel could beat this ratio; and
+T7's **footprint** claim (6,144 weights ≈ 1.5 KB/layer) is untouched and is a
+different argument on the axis the sweep shows actually pays. So T7 stays
+deferred with its justification narrowed to size rather than speed — not
+cancelled, and no longer resting on a hypothesis this repo can already
+contradict.
 
 ## Where it lives
 

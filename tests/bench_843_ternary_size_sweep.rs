@@ -16,10 +16,25 @@
 //! ternary footprint advantage buys nothing. The honest question is where the
 //! f32 operand stops fitting, and whether the ternary arm wins there.
 //!
+//! # It prices Issue 839 T7 as a side effect, and that is deliberate
+//!
+//! Issue 839 T7 (ternary-factor fusion) assumes `A`, `B` quantized to
+//! `{-1,0,+1}` will be cheaper than f32 factors. The factor widths there are
+//! **32 and 64**, which are the bottom of this very curve — so the rows below
+//! `m = 256` are not padding, they are the measurement T7's premise needs. It
+//! is a **proxy**, stated as one: a Kronecker stage is two 32×32 *matrix*
+//! products, not one matvec, so the arithmetic intensity differs. What the
+//! `m = 32` row settles is the narrower question underneath — whether a
+//! multiplication-free 32×32 multiply is cheaper than an f32 one on this box
+//! at all.
+//!
 //! Footprints, which are the whole hypothesis:
 //!
 //! | `m` | f32 operand | packed ternary (2 bitplanes) | ratio |
 //! |---|---|---|---|
+//! | 32 | 4 KiB | 0.25 KiB | 16× |
+//! | 64 | 16 KiB | 1 KiB | 16× |
+//! | 128 | 64 KiB | 4 KiB | 16× |
 //! | 256 | 256 KiB | 16 KiB | 16× |
 //! | 512 | 1 MiB | 64 KiB | 16× |
 //! | 1024 | 4 MiB | 256 KiB | 16× |
@@ -55,7 +70,20 @@ use ab_timing::ab_median_ratio;
 /// spends a comparable wall budget. Hand-chosen rather than derived: a derived
 /// count would be one more thing to get wrong in a target whose only job is to
 /// report.
-const SWEEP: [(usize, usize); 5] = [(256, 200), (512, 60), (1024, 20), (2048, 6), (4096, 2)];
+const SWEEP: [(usize, usize); 8] = [
+    // The low end is not padding: 32 and 64 are the Kronecker FACTOR widths of
+    // Issue 839, whose T7 assumes ternary factors will be cheaper than f32
+    // ones. This sweep is the cheapest instrument that can price that
+    // assumption, so it reaches down to where the answer lives.
+    (32, 4000),
+    (64, 2000),
+    (128, 800),
+    (256, 200),
+    (512, 60),
+    (1024, 20),
+    (2048, 6),
+    (4096, 2),
+];
 
 struct Lcg(u64);
 impl Lcg {

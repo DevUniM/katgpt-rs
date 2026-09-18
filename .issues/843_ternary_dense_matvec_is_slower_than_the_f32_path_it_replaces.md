@@ -119,15 +119,26 @@ implementation is not a speedup over the implementation you replaced.
 
 | `m` | f32 ns/call | ternary ns/call | ternary/f32 | f32 operand |
 |---|---|---|---|---|
-| 256 | 3,172 | 8,417 | **2.73** | 0.25 MiB |
-| 512 | 9,810 | 32,785 | **3.59** | 1 MiB |
-| 1024 | 63,249 | 124,493 | **1.94** | 4 MiB |
-| 2048 | 333,488 | 489,008 | **1.55** | 16 MiB |
-| 4096 | 2,633,723 | 1,997,855 | **0.75** | 64 MiB |
+| 32 | 111 | 172 | **1.56** | 4 KiB |
+| 64 | 277 | 593 | **2.24** | 16 KiB |
+| 128 | 817 | 2,236 | **2.77** | 64 KiB |
+| 256 | 3,080 | 8,383 | **2.79** | 256 KiB |
+| 512 | 8,927 | 33,060 | **3.70** | 1 MiB |
+| 1024 | 54,754 | 123,074 | **2.26** | 4 MiB |
+| 2048 | 318,921 | 490,897 | **1.49** | 16 MiB |
+| 4096 | 2,766,395 | 2,107,814 | **0.74** | 64 MiB |
+
+(Second run of the same binary; the `m ≥ 256` rows reproduce the first run's
+2.73 / 3.59 / 1.94 / 1.55 / 0.75 to within a few percent, which is the
+interleaved harness doing its job.)
 
 **So the kernel is not wrong — it is size-conditional, and the condition is
-cache residency.** The ratio falls monotonically from `m = 512` and crosses 1.0
-between 2048 and 4096. This box (i7-13700K) has **30 MB of L3** (`Win32_CacheMemory`,
+cache residency.** The curve is **not monotone: it PEAKS at `m = 512`** and
+falls from there, crossing 1.0 between 2048 and 4096. The rising limb below 512
+is its own regime — at `m ≤ 256` both operands are L1/L2-resident, so there is
+no memory pressure for a 16× smaller footprint to relieve and the ratio is
+pure per-MAC cost. Read the two limbs separately; a single "ternary is N×
+slower" figure is an average over two different mechanisms. This box (i7-13700K) has **30 MB of L3** (`Win32_CacheMemory`,
 read rather than assumed — L1 0.4+0.2+0.2+0.5 MB, L2 16+8 MB, L3 30 MB ×2
 reported per-socket-view), so:
 
@@ -171,3 +182,24 @@ A **report**: it asserts instrument health only (every round surviving, every
 ratio finite) and prints its own reading, deliberately pinning no bar — a bar
 written before the sweep would have been a bar written from the hypothesis, and
 the hypothesis was wrong in the direction that mattered.
+
+### The low end prices Issue 839 T7, and refutes its LATENCY premise
+
+The `m = 32` and `m = 64` rows are the Kronecker **factor** widths of Issue 839,
+whose T7 proposes quantizing `A`, `B` to `{-1,0,+1}` so the stage becomes
+add/sub accumulate. Measured: **1.56× and 2.24× SLOWER** than the f32 factors
+T7 would replace, with the mechanism visible — a 32×32 f32 factor is **4 KiB**
+and lives in L1, which is as far from the crossover as this sweep reaches.
+
+⚠ **It is a PROXY and only the latency half is refuted.** A Kronecker stage is
+two 32×32 *matrix* products, not one matvec, so the arithmetic intensity is not
+identical and a fused ternary kernel could do better than this ratio. What the
+row does establish is that the multiplication-free arithmetic is not *itself*
+cheaper at this width on this box, so T7 cannot be justified by "add/sub is
+faster than multiply" — that is the claim the number contradicts.
+
+T7's **footprint** premise is untouched and is written into its own task text
+(6,144 weights ≈ 1.5 KB/layer). That remains a real win and it is a different
+argument, on the axis this very sweep shows is the one that pays. Recorded in
+Issue 839 §T7 as well, so the deferral carries its reason rather than a
+hypothesis.
