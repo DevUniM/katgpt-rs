@@ -831,6 +831,29 @@ neighbour. It also asserts its
 katgpt-rs row against `issue_citation_gate.py`'s own parsed run rather than
 trusting the two to agree.
 
+⛔ **Issue 846 — the alias seam has a PROSE half, and it is spelled
+`spelling_aliases`.** The contract names `mmorpg-editor` / `mmorpg-remake` /
+`mmorpg-remaster` live in `repo_set.txt` only — on BOTH measured boxes (M3,
+4090) the directories are on disk as `seal-game-editor` / `seal-remake` /
+`seal-online-remaster`, and every document citing their plans was written
+against the ON-DISK spelling. 842's `open_repo`/`real()` seam taught the
+sweeps to READ the aliased directories; the first real read then surfaced
+44 true CROSS rows, nearly every specimen naming the owner correctly in
+prose the qualifier matcher could not see. The repair is in
+`issue_citation_gate.spelling_aliases` (consumed by `qualifiers()`): a
+spelling qualifies in exactly the two places the contract full name is
+already accepted — the 40-char lead and the 3-line window (which reads the
+citation's own line forward) — and matches with the `_NAME` boundary regex,
+so the retired `seal-remake-unity` does not name `seal-remake` (the plain
+`\b` the short aliases use MATCHES inside it — the boundary arm caught that
+before it shipped). LENIENCY ONLY: `written_names` stays contract-only, so
+a spelling can clear a row but never accuse one. In CODE, not in the
+gitignored `repo_alias.local.txt` — a box-local qualifier table would make
+the verdict itself machine-local. Measured at the landing: 37 rows cleared
+by the classifier, 7 by prose qualification in riir-dao / riir-kat /
+riir-neuron-db (committed there at `160f9a1` / `25006d1` / `3f6cf67`),
+sweep rc=0 for the first time since 842 opened the aliased repos.
+
 Those 45 are the reason to distrust a lone error rate: every other FP class
 this family documents **inflates** a count, and this one **deflated** it by
 ~15%. Qualification asked *"is a repo named?"* and never *"does that repo own

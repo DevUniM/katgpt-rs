@@ -904,6 +904,51 @@ def selftest() -> list[str]:
         if audit(me, [sib, other], alloc, ["AGENTS.md"], crates, pats)["alias_trailing"]:
             fails.append("alias-trailing counted a NON-owner alias")
 
+        # ── Issue 846: the ON-DISK spellings of the aliased repos ─────────
+        # The contract names mmorpg-editor / mmorpg-remake / mmorpg-remaster
+        # exist only in repo_set.txt; the directories are on disk as
+        # seal-game-editor / seal-remake / seal-online-remaster on every box
+        # measured, and the docs name them that way. A spelling qualifies via
+        # the lead OR the window (which reads the citation's own line
+        # forward), never accuses, and a longer name does not match. The
+        # fixture resolves its files through repo_alias.disk() so the arms
+        # are box-independent: identity on a clean box, the aliased spelling
+        # on one that carries the mapping.
+        import repo_alias as ra
+        alias_disk = ws / ra.disk("mmorpg-remake")
+        (alias_disk / ".issues").mkdir(parents=True, exist_ok=True)
+        (alias_disk / ".issues" / "011_spelled.md").write_text("x", encoding="utf-8")
+        alias_sib = ws / "mmorpg-remake"          # the CONTRACT handle
+        alloc["mmorpg-remake"] = {k: (set() if k != "Issue" else {11})
+                                  for k in icg.KINDS}
+
+        (me / "AGENTS.md").write_text("seal-remake Issue 011 is addressed.\n", encoding="utf-8")
+        sp = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if sp[CROSS] or sp["misattributed"]:
+            fails.append(f"846: a spelling ON the lead must qualify: "
+                         f"{sp[CROSS]} {sp['misattributed']}")
+
+        (me / "AGENTS.md").write_text("authored at seal-remake:\nIssue 011 came from there.\n", encoding="utf-8")
+        spw = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if spw[CROSS]:
+            fails.append(f"846: a spelling in the WINDOW must qualify: {spw[CROSS]}")
+
+        (me / "AGENTS.md").write_text("Issue 011 landed in seal-remake later.\n", encoding="utf-8")
+        spt = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if spt[CROSS]:
+            fails.append(f"846: a spelling TRAILING on the citation's own line "
+                         f"must qualify through the window: {spt[CROSS]}")
+        if spt["alias_trailing"]:
+            fails.append("846: a spelling must not count as alias-trailing "
+                         "cost — the window already settles it")
+
+        (me / "AGENTS.md").write_text("seal-remake-unity Issue 011 is the longer name.\n", encoding="utf-8")
+        spb = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if len(spb[CROSS]) != 1:
+            fails.append(f"846: seal-remake-unity must NOT name seal-remake: {spb[CROSS]}")
+
+        del alloc["mmorpg-remake"]
+
         # padding is the SAME number (Issue 751 T2b) — `006` must read as 6
         (me / "AGENTS.md").write_text("Issue 0500 no; Issue 500 yes.\n", encoding="utf-8")
         pad = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)

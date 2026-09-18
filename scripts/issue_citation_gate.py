@@ -554,6 +554,31 @@ def file_and_history_allocated(repo: Path, subdir: str) -> set[int]:
     return out
 
 
+# Issue 846: the PROSE half of the 842 alias seam. The contract names
+# `mmorpg-editor` / `mmorpg-remake` / `mmorpg-remaster` live in repo_set.txt
+# only — on BOTH measured boxes (M3, 4090) the directories are on disk as
+# `seal-game-editor` / `seal-remake` / `seal-online-remaster`, and every
+# document citing their plans was written against the ON-DISK spelling
+# (measured: 44 CROSS rows at 846's first real read, nearly every specimen
+# naming the owner correctly in prose the matcher could not see). 842's
+# `open_repo`/`real()` seam reads the aliased directories; this table lets
+# QUALIFICATION accept the spelling as naming the repo, in exactly the two
+# places the contract full name is already accepted — on the 40-char lead and
+# inside the 3-line window. LENIENCY ONLY: `written_names` (the accusation
+# half) stays contract-only, so no new ⛔MISATTRIBUTED class is created and
+# a spelling can clear a row but never accuse one.
+#
+# In CODE, not in the gitignored repo_alias.local.txt: the spellings are the
+# same on every box measured, and a box-local qualifier table would make the
+# verdict itself machine-local — a floor pinned on this box would mean
+# nothing on the next.
+DISK_SPELLING_ALIASES = {
+    "mmorpg-editor": ["seal-game-editor"],
+    "mmorpg-remake": ["seal-remake"],
+    "mmorpg-remaster": ["seal-online-remaster"],
+}
+
+
 def aliases(repo_name: str) -> list[str]:
     """Full directory name, plus a SHORT-FORM alias where one is unambiguous.
 
@@ -565,12 +590,44 @@ def aliases(repo_name: str) -> list[str]:
     The alias is the name minus a `riir-` prefix, and ONLY when >= 4 characters:
     `ai`, `kat`, `dao` are too short to appear in prose without colliding with
     ordinary words. Short aliases keep the full name as their only form.
+
+    Deliberately NOT the on-disk spellings (Issue 846): `seal-remake` and
+    friends match with the `_NAME` boundary regex — never this function's
+    plain `\b`, which matches inside `seal-remake-unity` — and they are
+    consumed explicitly by `qualifiers()`. See `spelling_aliases`.
     """
     out = [repo_name]
     stem = repo_name[5:] if repo_name.startswith("riir-") else ""
     if len(stem) >= 4:
         out.append(stem)
     return out
+
+
+def spelling_aliases(repo_name: str) -> list[str]:
+    """The ON-DISK directory spellings a repo is known by (Issue 846).
+
+    The contract names `mmorpg-editor` / `mmorpg-remake` / `mmorpg-remaster`
+    live in repo_set.txt only — on BOTH measured boxes (M3, 4090) the
+    directories are on disk as `seal-game-editor` / `seal-remake` /
+    `seal-online-remaster`, and every document citing their plans was written
+    against the ON-DISK spelling (measured: 44 CROSS rows at the first real
+    read, nearly every specimen naming the owner correctly in prose the
+    matcher could not see). 842's `open_repo`/`real()` seam reads the aliased
+    directories; this is the PROSE half of the same seam.
+
+    A spelling qualifies in exactly the two places the contract full name is
+    already accepted — on the 40-char lead and inside the 3-line window — and
+    matches with the `_NAME` boundary regex, so `seal-remake-unity` (the
+    retired repo) does not name `seal-remake`. LENIENCY ONLY:
+    `written_names` (the accusation half) stays contract-only, so a spelling
+    can clear a row but never accuse one.
+
+    In CODE, not in the gitignored repo_alias.local.txt: the spellings are
+    the same on every box measured, and a box-local qualifier table would
+    make the verdict itself machine-local — a floor pinned on this box would
+    mean nothing on the next.
+    """
+    return DISK_SPELLING_ALIASES.get(repo_name, [])
 
 
 class _NameRx(dict):
@@ -626,15 +683,31 @@ def qualifiers(lines: list[str], ln: int, lead: str, sibs: list[Path]) -> tuple[
 
     `window` is the full directory name anywhere in the 3-line backward window;
     `adjacent` is the subset sitting ON the citation (inside `lead`), plus the
-    short-form aliases, which are only ever accepted there.
+    short-form aliases and the on-disk spellings (Issue 846), which are only
+    ever accepted there. The window ALSO accepts an on-disk spelling in place
+    of the contract full name — a spelling is a full directory name, written
+    against a box where the directory carries that name.
 
     Split because the two carry different weight once the caller checks
     OWNERSHIP (Issue 752): an adjacent non-owner is somebody writing a wrong
     address, a window-only non-owner is a name that was never an attribution.
     """
     ctx = "\n".join(lines[max(0, ln - 3):ln])
-    window = {s.name for s in sibs if _NAME[s.name].search(ctx)}
+
+    def _names_in(text: str) -> set[str]:
+        """Full names + on-disk spellings, both at `_NAME` boundaries."""
+        out = set()
+        for s in sibs:
+            if _NAME[s.name].search(text):
+                out.add(s.name)
+            elif any(_NAME[v].search(text)
+                     for v in spelling_aliases(s.name)):
+                out.add(s.name)
+        return out
+
+    window = _names_in(ctx)
     adjacent = written_names(lead, sibs)
+    adjacent |= _names_in(lead)
     adjacent |= {s.name for s in sibs for a in aliases(s.name)[1:]
                  if re.search(rf"\b{re.escape(a)}\b", lead)}
     return window | adjacent, adjacent
@@ -667,6 +740,9 @@ def alias_trail_owners(line: str, kind: str, n: int,
     if not m:
         return set()
     trail = line[m.end():m.end() + _ALIAS_REACH]
+    # The on-disk spellings (Issue 846) are NOT here: a spelling trailing on
+    # the citation's own line is already inside the 3-line window, so it
+    # QUALIFIES — it is not a suppression cost the way a short alias is.
     return {s.name for s in sibs for a in aliases(s.name)[1:]
             if re.search(rf"\b{re.escape(a)}\b", trail)}
 
@@ -806,6 +882,10 @@ def selftest() -> list[str]:
        aliases("riir-ai"), ["riir-ai"])
     eq("a 3-char stem does not", aliases("riir-dao"), ["riir-dao"])
     eq("a non-riir name has no stem", aliases("mmorpg-remake"), ["mmorpg-remake"])
+    eq("⚑ the on-disk spelling is a separate accessor (Issue 846)",
+       spelling_aliases("mmorpg-remake"), ["seal-remake"])
+    eq("an unaliased repo has no spelling",
+       spelling_aliases("riir-ai"), [])
 
     # ── _NAME: a repo name is only a name when nothing extends it ─────────
     eq("⚑ mmorpg-remake-unity does not name mmorpg-remake",
@@ -817,6 +897,37 @@ def selftest() -> list[str]:
        bool(_NAME["riir-ai"].search("riir-ai's scripts")), True)
     eq("a path component still names the repo",
        bool(_NAME["riir-ai"].search("../riir-ai/scripts/x.py")), True)
+
+    # ── Issue 846: the ON-DISK spellings of the aliased repos ─────────
+    # The contract names mmorpg-editor / mmorpg-remake / mmorpg-remaster
+    # match no directory on either measured box; every document citing their
+    # plans was written against the on-disk spelling (44 CROSS rows at the
+    # first real read, nearly every specimen naming the owner correctly in
+    # prose the matcher could not see). A spelling qualifies in exactly the
+    # two places the contract full name does — the lead and the 3-line
+    # window — and NEVER accuses: `written_names` stays contract-only, so a
+    # spelling can clear a row but never produce a ⛔MISATTRIBUTED.
+    spell_sibs = [Path("/w/mmorpg-remake")]
+
+    def spell_quals(lines, ln, lead):
+        w, a = qualifiers(lines, ln, lead, spell_sibs)
+        return sorted(w), sorted(a)
+
+    eq("⚑ a spelling ON the citation qualifies (the lead)",
+       spell_quals(["seal-remake Issue 011"], 1, "seal-remake "),
+       (["mmorpg-remake"], ["mmorpg-remake"]))
+    eq("⚑ a spelling in the 3-line window qualifies",
+       spell_quals(["authored at seal-remake", "", "see Issue 011"], 3, "see "),
+       (["mmorpg-remake"], []))
+    eq("⚑ a spelling trailing ON the citation's own line qualifies "
+       "(the window reads forward text)",
+       spell_quals(["Issue 011 landed in seal-remake later"], 1, ""),
+       (["mmorpg-remake"], []))
+    eq("⚑ a LONGER name does not name the repo (seal-remake-unity)",
+       spell_quals(["seal-remake-unity Issue 011"], 1, "seal-remake-unity "),
+       ([], []))
+    eq("⛔ a spelling NEVER accuses (written_names stays contract-only)",
+       sorted(written_names("seal-remake Issue 500", spell_sibs)), [])
 
     # ── qualifiers(): window vs adjacent, and the alias's one direction ───
     sibs = [Path("/w/riir-ai"), Path("/w/riir-chain"), Path("/w/riir-train")]
