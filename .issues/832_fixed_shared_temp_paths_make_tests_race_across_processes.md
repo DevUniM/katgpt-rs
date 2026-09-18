@@ -245,6 +245,20 @@ this repo's own most-repeated shape.
 
 ## Standing
 
+⛔ **VERIFIED in the instrument that found it, 2026-09-18 @ `a77c46c0`:**
+`scripts/x86_64_execution_matrix.sh` is **fully green for the first time** —
+8 cells, **11177 assertions, 0 failures**, against `✗ FAILED — 2 red cell(s)`
+on 2026-09-16. Cell 5 (`katgpt-rs --lib --all-features`) 577 passed, and
+cell 7 (`katgpt-types`, the five-at-once *"File too small for header"* block)
+263 passed. The direct two-process reproduction proved the mechanism; this
+proves the repair where the defect was first seen.
+
+⚠ Cell 8's other red, `test_bench_171_thinking_prune_goat`, also passed this
+run — that is **consistent with** [Issue 831](831_bench_171_p3_bar_is_a_coin_flip_on_x86_64.md)'s
+measurement (4 failures in 20 captured-mode runs) and is **not** evidence it is
+fixed. A coin-flip bar passing once is the expected majority outcome; 831 stays
+open.
+
 The x86_64 matrix's cell-5 red is closed by T1. Its other red
 (`test_bench_171_thinking_prune_goat`) is a different defect and is
 [Issue 831](831_bench_171_p3_bar_is_a_coin_flip_on_x86_64.md) — that one is a

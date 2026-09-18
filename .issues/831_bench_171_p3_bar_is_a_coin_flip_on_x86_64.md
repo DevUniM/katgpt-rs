@@ -126,3 +126,17 @@ The x86_64 matrix stays RED on this row until T1/T2 land. That is correct and
 deliberate: AGENTS.md's rule that *a stale pin reds too — the file must not only
 ever loosen* has an inverse, which is that a row must not be pinned before it is
 diagnosed.
+
+## 2026-09-18 — one more sample, and it is NOT evidence of a fix
+
+The Issue-832 matrix re-run (`a77c46c0`, 8 cells, 11177 assertions) came back
+**fully green**, `bench_171` included. Read that as the 16-in-20 outcome this
+issue already measured, not as a repair: nothing in that commit range touched
+the bar, the schedule, or the harness, and a bar that fails 4 times in 20 runs
+passes most of the time by construction.
+
+⛔ The trap is the same one this issue and Issue 832 were both filed about, in
+its other direction: 832's defect passed ALONE and was filed TRANSIENT, and
+this one passes IN THE CELL and would now be filed FIXED. A single green run
+distinguishes neither. The verdict for a load-sensitive bar needs the
+distribution, which T2 is for.

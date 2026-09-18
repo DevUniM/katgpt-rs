@@ -58,5 +58,28 @@ katgpt-types                 155
 # BUILD going blind (a target that stops being discovered is a line that stops
 # being printed); `__root_tests_passed` catches the binaries EMPTYING while the
 # target count holds, which is exactly what a `#![cfg]` regression does.
-__root_tests_targets         100
-__root_tests_passed          600
+#
+# ⛔ RE-PINNED 2026-09-18 (Issue 832's matrix re-run) because they did not
+# follow this file's OWN convention. Every per-package row above is at 58-60%
+# of its measurement, as the header prescribes; these two were at **41% and
+# 38%** of theirs (100/245 and 600/1584). A floor that low cannot detect what
+# the two lines above say it is for — at 100, more than half the integration
+# targets could stop being discovered and the cell would still report a green.
+# Nothing was broken by it: both numbers are far above either floor on every
+# run. It is re-pinned to the house 60% of a CLEAN measurement rather than left
+# as the one pair of rows this file exempts from its own rule.
+#
+# The measurement: 2026-09-18, this box, repo @ a77c46c0, the first fully green
+# matrix run — 8 cells, 11177 assertions, 0 failures. The root cell reported
+# **232 targets / 1523 passed**, and 232 unique `Running` lines confirm the
+# target count is not double-counting anything.
+#
+# ⚠ It is LOWER than the 245/1584 recorded on 2026-09-16, and that is not a
+# shrink: diffing the two runs' target lists shows **nothing disappeared and
+# one target appeared** (`tests/test_mtp_lora_gated_integration.rs`). The
+# earlier pair came from a run with a confirmed failure, whose scratch
+# directory was reused across invocations, so its per-cell artifacts cannot be
+# attributed to that summary with confidence. The clean run is the better
+# basis; 60% of it sits comfortably under both.
+__root_tests_targets         139
+__root_tests_passed          914
