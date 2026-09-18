@@ -6,6 +6,15 @@ measured (`HAND-ROLLED`, `provenance_hits` incl. relative differences, and the
 GATES-vs-report annotation), plus two classifier defects found in the process
 (`HARNESS` self-certification, and ADOPTED matching a name where the treatment is a
 shape); T5's cross-repo figure taken. See §T3.
+**T3 — the BLIND-SPOT axis is COMPLETE 2026-09-19.** A sixth resolver
+(`comparison_hits`) closed the shape the other five could not see, and the two
+remaining stated blind spots were each MEASURED rather than left as cautions —
+both empty, 4 candidates read apiece. Every stated blind spot now carries a number
+or a closure; see §T3 status. What remains open in T3 is the per-target read of the
+2+-timer asserting residue, which is now the ONLY place a finding can hide.
+**T4's precondition is met for the blind-spot axis**, and its answer is unchanged:
+orientation is not statically decidable, so the verdict half stays declined — now
+on a measurement rather than a caution.
 T2 / T4 / T5 OPEN — the class is a **magnitude, not a pin**; see §What must not be
 done. ⚠ The counts written in §The class is ~57 targets are the 2026-09-18 census and
 are **superseded by the §T3 run**; take every figure from the audit, not from prose.
@@ -656,3 +665,62 @@ a cheap armed detector for re-measuring. Nothing to repair, and the right outcom
 to report: a negative result that retires a line of investigation is worth as much
 as a finding, and this one was reached in four reads rather than by a per-target
 sweep of the 1-timer bucket's 324 rows.
+
+### T3: the "ratio built through a HELPER" blind spot — 4 candidates, 4 read, 0 real
+
+The last STATED blind spot, and the hardest to detect because there is nothing to
+find at the call site: no `/`, no `-`, no comparison operator.
+
+```rust
+let r = speedup(baseline_ns, tuned_ns);   // the comparison happens inside
+assert!(r > 1.2);
+```
+
+**Detector:** a CALL whose argument list names **two or more distinct
+timing-derived locals** — the structural signature of handing two arms to
+something that will compare them. Deliberately BROAD, since it also catches
+logging and reporting, so every hit is READ rather than counted. That is the
+difference between a probe and a resolver, and it is why this one stays a probe.
+
+Restricted to the population where a finding could matter — UNRESOLVED, asserting,
+≥2 timing locals — over the 14 contract repos: **4 candidates, all read, 0 are the
+class.**
+
+| target | what it is |
+|---|---|
+| katgpt-rs `bench_693_mi_est_goat` | `and_then(\|e\| e.score())` — closure parameter colliding with a timing-local name |
+| riir-ai `bench_662_clustered_lm_head_real_checkpoint` | `max_by(\|a, b\| …)` — same collision, twice |
+| riir-ai `bench_584_karc_hebbian_arm_goat` | `pass(name, detail)` is a REPORT constructor; `fit_us`/`freeze_us` appear only inside its `format!` |
+| riir-dapps `kat_fast_settle_g2` | `burn_report(…)` / `show(…)` — reporting |
+
+⚠ **Three of the four are closure-parameter collisions** (`a`, `b`, `e` are both
+ordinary closure parameter names and plausible timing-local names). Worth recording
+because it bounds what a *resolver* on this shape would cost: it would need scope
+awareness that none of the existing ones have, to buy a class currently measured at
+zero. That is the argument for leaving this a probe.
+
+⚠ **Stated scope:** a helper receiving its arms through a STRUCT, or through locals
+`timing_locals` could not resolve, is not seen. The detector requires the two arms
+to appear as identifiers in one argument list.
+
+### T3 status after these three measurements
+
+All four STATED blind spots now have a number against them rather than a shrug:
+
+| blind spot | standing |
+|---|---|
+| a ratio timing-derived by VALUE not NAME | **CLOSED** — `provenance_hits` (8 here, 8/8 true) |
+| the **divided** half of subtraction/percentage | **CLOSED** — `REL_DIFF` |
+| a two-arm **comparison** with no operator to key on | **CLOSED** — `comparison_hits` (10 workspace-wide, 8 of them previously covered only by luck) |
+| subtraction never divided **and never compared** | narrowed — the *compared* half closed by `comparison_hits`; the riir-train specimen was living in it |
+| two arms differenced off ONE `Instant::now()` | **MEASURED EMPTY** — 4 candidates, 0 real, armed detector kept |
+| a ratio built through a HELPER | **MEASURED EMPTY** — 4 candidates, 0 real, probe kept, resolver judged not worth its cost |
+| arm ORIENTATION | **not statically decidable** — unchanged, and the reason T4 declines a verdict half |
+
+⚑ So the residue is no longer "blind spots we have not looked at". It is 284
+UNRESOLVED rows of which the 2+-timer asserting slice is the only one where a
+finding can still hide, and the shapes that would hide there are now enumerated
+and each measured. **T4's precondition — a calibrated population — is met for the
+blind-spot axis.** What remains uncalibrated is orientation, which is exactly what
+T4 says cannot be decided statically, so the answer to "is a verdict half
+warranted" is unchanged and now rests on a measurement instead of a caution.
