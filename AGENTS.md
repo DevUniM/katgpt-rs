@@ -851,7 +851,9 @@ a spelling can clear a row but never accuse one. In CODE, not in the
 gitignored `repo_alias.local.txt` — a box-local qualifier table would make
 the verdict itself machine-local. Measured at the landing: 37 rows cleared
 by the classifier, 7 by prose qualification in riir-dao / riir-kat /
-riir-neuron-db (committed there at `160f9a1` / `25006d1` / `3f6cf67`),
+riir-neuron-db (committed there at `160f9a1` / `51994ee` / `3f6cf67` —
+riir-kat's three were independently fixed at origin by the Issue-837
+close-out before this box pulled; the local twin was skipped in rebase),
 sweep rc=0 for the first time since 842 opened the aliased repos.
 
 Those 45 are the reason to distrust a lone error rate: every other FP class
