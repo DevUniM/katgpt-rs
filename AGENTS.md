@@ -2440,6 +2440,14 @@ else happening to be watching the process table.
   set` (fully evicted, so invisible to a working-set view), and the commit
   limit itself moved **62.8 → 78.3 GB** mid-session as Windows grew the
   pagefile, which is why the rule is a comparison rather than a number.
+  ⛔ **And it moves DOWN too, which is the half that bites** (riir-ai, 2026-09-18,
+  4090 box): re-measured forty minutes after a first reading, the limit had gone
+  **68.8 → 62.8 GB** with no process allocating the difference — Windows SHRANK
+  the pagefile under a box that was in use — taking headroom from 9.8 GB to 3.1
+  GB. A run cleared against a limit can lose that clearance without anything
+  happening. So re-read the LIMIT at the moment of launch, not just the usage;
+  "I checked headroom" is a claim with a timestamp on it. Physical free read
+  11.8 GB at the same instant and was again not the binding quantity.
 - ⚠ Free RAM read **right after another job exits** is a trough between phases,
   not a window. 18.2 GB was read as clear and an 11 GB job launched into it;
   the next stage of the same sibling pipeline ramped behind it and the box went
