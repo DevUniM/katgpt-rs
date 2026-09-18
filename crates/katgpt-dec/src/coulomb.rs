@@ -148,6 +148,14 @@ impl CoulombFlowField {
     ///
     /// `O(V log V + E)`, allocating. The per-NPC path is
     /// [`CrowdRouter::step`].
+    ///
+    /// ⛔ `router` MUST be the one built from THIS field's `edge_flow` — take
+    /// it from [`CoulombFlowField::router`]. The topological order comes from
+    /// `self.potential`, so a router built from some other flow (a hand-made
+    /// attract field, say) would be walked in an order that is not a
+    /// topological order of ITS graph, and the result would be a well-formed
+    /// wrong number rather than an error. It is a parameter only so a caller
+    /// that already built the table does not build it twice.
     #[must_use]
     pub fn expected_arrivals(&self, router: &CrowdRouter, mu0: &[f32]) -> Vec<f32> {
         let n = mu0.len();
