@@ -467,7 +467,8 @@ mod tests {
 
     #[test]
     fn test_domino_lora_load_invalid_magic() {
-        let temp = std::env::temp_dir().join("test_domino_bad_magic.bin");
+        let temp =
+            std::env::temp_dir().join(format!("test_domino_bad_magic_{}.bin", std::process::id()));
         let mut data = vec![0u8; 128];
         data[0..4].copy_from_slice(b"XXXX");
         std::fs::write(&temp, &data).unwrap();
@@ -479,7 +480,10 @@ mod tests {
 
     #[test]
     fn test_domino_lora_load_bad_checksum() {
-        let temp = std::env::temp_dir().join("test_domino_bad_checksum.bin");
+        let temp = std::env::temp_dir().join(format!(
+            "test_domino_bad_checksum_{}.bin",
+            std::process::id()
+        ));
         // Write valid header but wrong checksum
         let mut data = vec![0u8; 128];
         data[0..4].copy_from_slice(b"DMAD");

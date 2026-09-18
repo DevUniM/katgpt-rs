@@ -247,7 +247,8 @@ fn test_cache_roundtrip() {
     let pruner = VocabChannelPruner::new(map);
 
     // Save cache
-    let cache_path = std::env::temp_dir().join("bench_228_test_cache.bin");
+    let cache_path =
+        std::env::temp_dir().join(format!("bench_228_test_cache_{}.bin", std::process::id()));
     let fake_hash = [0xAB_u8; 32];
     save_pruner_cache(&cache_path, &fake_hash, &pruner, vocab_size, 1).unwrap();
 
@@ -298,7 +299,10 @@ fn test_cache_dimension_mismatch() {
     let map = VocabChannelMap::from_channels(&[channels], vocab_size);
     let pruner = VocabChannelPruner::new(map);
 
-    let cache_path = std::env::temp_dir().join("bench_228_test_dim_mismatch.bin");
+    let cache_path = std::env::temp_dir().join(format!(
+        "bench_228_test_dim_mismatch_{}.bin",
+        std::process::id()
+    ));
     let hash = [0x11_u8; 32];
     save_pruner_cache(&cache_path, &hash, &pruner, vocab_size, 1).unwrap();
 

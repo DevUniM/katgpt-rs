@@ -98,7 +98,10 @@ fn test_early_exit_defaults_disabled() {
 #[test]
 #[cfg(feature = "domain_latent")]
 fn test_domain_latent_save_load_roundtrip() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_domain_latent.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_domain_latent_{}.bin",
+        std::process::id()
+    ));
     let original = DomainLatent::from_vec(vec![1.0, 2.0, 3.0, 4.0]);
     original.save(&tmp).unwrap();
     let loaded = DomainLatent::load(&tmp).unwrap();
@@ -117,7 +120,10 @@ fn test_domain_latent_zeros() {
 #[test]
 #[cfg(feature = "domain_latent")]
 fn test_domain_latent_invalid_magic() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_bad_magic.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_bad_magic_{}.bin",
+        std::process::id()
+    ));
     let mut buf = b"XXXX".to_vec();
     buf.push(1); // version
     buf.extend_from_slice(&4u32.to_le_bytes()); // kv_dim
@@ -140,7 +146,10 @@ fn test_domain_latent_invalid_magic() {
 #[test]
 #[cfg(feature = "domain_latent")]
 fn test_domain_latent_checksum_mismatch() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_bad_checksum.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_bad_checksum_{}.bin",
+        std::process::id()
+    ));
     let mut buf = b"DLAT".to_vec();
     buf.push(1); // version
     buf.extend_from_slice(&4u32.to_le_bytes()); // kv_dim
@@ -154,7 +163,10 @@ fn test_domain_latent_checksum_mismatch() {
 #[test]
 #[cfg(feature = "domain_latent")]
 fn test_domain_latent_file_too_small() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_too_small.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_too_small_{}.bin",
+        std::process::id()
+    ));
     std::fs::write(&tmp, b"DLAT").unwrap();
     assert!(DomainLatent::load(&tmp).is_err());
     drop(std::fs::remove_file(&tmp));
@@ -245,7 +257,8 @@ fn test_gpart_tamper_detection() {
 #[test]
 #[cfg(feature = "gpart_adapter")]
 fn test_gpart_save_load_roundtrip() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_gpart.bin");
+    let tmp =
+        std::env::temp_dir().join(format!("katgpt_core_test_gpart_{}.bin", std::process::id()));
     let adapter = GpartAdapter {
         d: 8,
         seed: 42,
@@ -440,7 +453,10 @@ fn build_test_lora_file(path: &std::path::Path, n_adapters: usize, rank: usize) 
 
 #[test]
 fn test_lora_load_single_adapter_returns_one_element_vec() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_lora_single.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_lora_single_{}.bin",
+        std::process::id()
+    ));
     build_test_lora_file(&tmp, 1, 4);
     let adapters = LoraAdapter::load(&tmp).expect("single-adapter load should succeed");
     assert_eq!(
@@ -459,7 +475,10 @@ fn test_lora_load_single_adapter_returns_one_element_vec() {
 /// must load ALL 12 adapters. Previously `load()` returned only the first.
 #[test]
 fn test_lora_load_multi_adapter_returns_all() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_lora_multi.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_lora_multi_{}.bin",
+        std::process::id()
+    ));
     build_test_lora_file(&tmp, 12, 4);
     let adapters = LoraAdapter::load(&tmp).expect("12-adapter load should succeed");
     assert_eq!(
@@ -491,7 +510,10 @@ fn test_lora_load_multi_adapter_returns_all() {
 
 #[test]
 fn test_lora_load_first_returns_only_first_adapter() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_lora_first.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_lora_first_{}.bin",
+        std::process::id()
+    ));
     build_test_lora_file(&tmp, 6, 4);
     let first = LoraAdapter::load_first(&tmp).expect("load_first should succeed");
     assert_eq!(first.rank, 4);
@@ -504,7 +526,10 @@ fn test_lora_load_first_returns_only_first_adapter() {
 #[test]
 fn test_lora_load_rejects_truncated_multi_adapter() {
     // Truncate a 12-adapter file so only 6 adapters' bytes fit — loader must error
-    let tmp = std::env::temp_dir().join("katgpt_core_test_lora_truncated.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_lora_truncated_{}.bin",
+        std::process::id()
+    ));
     build_test_lora_file(&tmp, 12, 4);
     let full = std::fs::read(&tmp).unwrap();
     // Cut the payload in half (keep header + checksum + ~half the adapters)
@@ -522,7 +547,10 @@ fn test_lora_load_rejects_truncated_multi_adapter() {
 
 #[test]
 fn test_lora_load_rejects_bad_magic() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_lora_bad_magic.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_lora_bad_magic_{}.bin",
+        std::process::id()
+    ));
     std::fs::write(&tmp, b"NOPE\0\0\0\0").unwrap();
     assert!(LoraAdapter::load(&tmp).is_err());
     drop(std::fs::remove_file(&tmp));
@@ -530,7 +558,10 @@ fn test_lora_load_rejects_bad_magic() {
 
 #[test]
 fn test_lora_load_rejects_zero_adapters() {
-    let tmp = std::env::temp_dir().join("katgpt_core_test_lora_zero.bin");
+    let tmp = std::env::temp_dir().join(format!(
+        "katgpt_core_test_lora_zero_{}.bin",
+        std::process::id()
+    ));
     // Build a valid-checksum file that declares 0 adapters
     let mut payload = Vec::new();
     payload.extend_from_slice(&0u32.to_le_bytes()); // n_adapters = 0

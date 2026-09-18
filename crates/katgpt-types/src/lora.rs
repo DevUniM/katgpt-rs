@@ -685,7 +685,10 @@ mod tests {
 
     #[test]
     fn save_load_roundtrip_preserves_all_adapters() {
-        let tmp = std::env::temp_dir().join("katgpt_lora_roundtrip_test.bin");
+        let tmp = std::env::temp_dir().join(format!(
+            "katgpt_lora_roundtrip_test_{}.bin",
+            std::process::id()
+        ));
         let original = make_test_adapters();
         let refs: Vec<&LoraAdapter> = original.iter().collect();
 
@@ -713,7 +716,8 @@ mod tests {
 
     #[test]
     fn save_rejects_empty_adapter_list() {
-        let tmp = std::env::temp_dir().join("katgpt_lora_empty_test.bin");
+        let tmp =
+            std::env::temp_dir().join(format!("katgpt_lora_empty_test_{}.bin", std::process::id()));
         let empty: Vec<&LoraAdapter> = vec![];
         let result = LoraAdapter::save(&empty, 4, 8.0, &tmp);
         assert!(result.is_err());
@@ -722,7 +726,10 @@ mod tests {
 
     #[test]
     fn save_rejects_rank_mismatch() {
-        let tmp = std::env::temp_dir().join("katgpt_lora_rankmismatch_test.bin");
+        let tmp = std::env::temp_dir().join(format!(
+            "katgpt_lora_rankmismatch_test_{}.bin",
+            std::process::id()
+        ));
         let adapters = make_test_adapters();
         let refs: Vec<&LoraAdapter> = adapters.iter().collect();
         // Pass rank=8 but adapters have rank=4
@@ -744,7 +751,10 @@ mod tests {
             );
         }
         // Round-trip through the binary format: same bytes, same epoch.
-        let tmp = std::env::temp_dir().join("katgpt_lora_epoch_roundtrip.bin");
+        let tmp = std::env::temp_dir().join(format!(
+            "katgpt_lora_epoch_roundtrip_{}.bin",
+            std::process::id()
+        ));
         let refs: Vec<&LoraAdapter> = adapters.iter().collect();
         LoraAdapter::save(&refs, 4, 8.0, &tmp).expect("save should succeed");
         let loaded = LoraAdapter::load(&tmp).expect("load should succeed");
