@@ -15,6 +15,7 @@ riir-deployer
 riir-esp32
 riir-game-sdk
 riir-kat
+riir-llm
 riir-mmorpg-examples
 riir-neuron-db
 riir-shader
