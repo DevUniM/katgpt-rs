@@ -170,6 +170,16 @@ distinctive title tokens across `*.rs` and `*.md`. The only surviving `569_SAN` 
 are inside THIS issue, where they are the historical record of the collision and are
 correct as written.
 
+⚠ **Two things in the paragraph above must not be pooled, and only one of them was
+wrong.** The *"3 ambiguous sites, a hand read not a `sed`"* estimate is THIS ISSUE's
+(filed by `katgpt-rs-c5`) and it was a prediction about what the read would find.
+`katgpt-rs-54`'s *"worth one targeted grep across `*.rs` and `*.md` link targets before
+calling it done"* is a different kind of statement — a hedge recommending a CHECK, which
+an empty result does not falsify. That check is what established the link-path form was
+clean, and it is the reason the EMPTY verdict is trustworthy rather than merely lucky.
+**A recommendation to verify is confirmed, not refuted, by the verification coming back
+clean** — recording it as a failed estimate would teach the next reader to skip it.
+
 **Corollary for the next renumber:** when both holders are younger than citation accrual,
 the loser's inbound set is empty by construction and the expensive half of a renumber
 does not exist. That is the same premise that makes `citation_weight` unable to arbitrate
@@ -211,3 +221,41 @@ asking live peers — and why the one witness who could have answered directly
 **Put a session marker in the commit body.** It is the cheapest thing that would have made
 this question answerable without a cross-session round trip, and this is the second
 recorded case today of a session blocking on ownership it could not infer from a SHA.
+
+### ⛔ But the bare marker is NOT a unique key — names are REUSED across time
+
+Raised by `katgpt-rs-54` against its own recommendation, and verified here:
+`git log --all --grep="Session: katgpt-rs-54"` returns **nine** commits, not the five
+that session owns. Four more — `8aac6034`, `cecb22c8`, `7464fc6e`, `6d084c38`, the
+Issue 827 work — were committed between 01:58 and 02:49, sixteen hours before that
+session existed. **A different session carried the same name.**
+
+The five-commit answer that established ownership above was correct only by accident of
+window choice: it was taken over a ~20-hour window and the collision sits just outside
+it. That is this thread's recurring shape one more time — *a predicate adjacent to the
+question, returning a clean-looking answer* — and it arrived through the mechanism
+introduced to prevent exactly that.
+
+**Write the marker as name + session epoch:** `Session: katgpt-rs-54, 2026-09-18 evening`,
+not `Session: katgpt-rs-54`. The bare form disambiguates sessions running CONCURRENTLY
+and silently conflates them ACROSS TIME, which is the axis anyone grepping it later is
+actually on.
+
+### ⛔ And the shared worktree makes the REFLOG shared too — attribution fails there identically
+
+A shared worktree has ONE `HEAD` reflog, so every session's checkouts, resets and commits
+interleave in it under no identifying mark. It is therefore **not** a fallback for the
+authorship that `katopz@gmail.com` cannot provide — it has the same defect, one layer
+down, and it reads as authoritative because it is mechanical.
+
+Measured, on this issue's own repair. `katgpt-rs-54` read the reflog and reported that a
+`reset: moving to HEAD^` at 23:25:49 was `katgpt-rs-fa`'s, "bracketed unambiguously" by
+two of its commits. The bracketing commit `fd9f5d75` at 23:25:23 is **katgpt-rs-54's
+own** — its body reads *"this session's ten commits"* and refers to katgpt-rs-fa in the
+third person — so the reset was that session's too, exactly as its own earlier message
+had described before the reflog appeared to contradict it. The instrument inverted a
+session's memory of its own action.
+
+⚠ So when a shared-worktree question is about **who**, a commit's own TEXT is the only
+self-identifying evidence in the repository. The reflog answers *what happened and in
+what order*, never *whose*.

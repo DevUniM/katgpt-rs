@@ -2511,6 +2511,26 @@ build HEAD's version + your edit, `git hash-object -w`, then `git
 update-index --cacheinfo`. Their hunks stay uncommitted; the worktree stays
 coherent for them.
 
+⛔ **Nothing in git identifies WHICH session did something here, and the two
+obvious fallbacks both fail** (Issue 840). Every commit in this worktree authors
+as one address, so authorship is blank; and a shared worktree has **one `HEAD`
+reflog**, in which every session's checkouts, resets and commits interleave under
+no mark at all. The reflog is the worse trap of the two because it is mechanical
+and therefore reads as authoritative — measured, a session used it to attribute a
+`reset` to a peer and the bracketing commit was **its own**, inverting its own
+memory of an action it had already described correctly. *The reflog answers what
+happened and in what order, never whose.*
+- **Put `Session: <name>, <epoch>` in the commit body** — a commit's own TEXT is
+  the only self-identifying evidence in the repository, and it is what let one
+  session rule itself out of Issue 840 in a single `git log --grep`.
+- ⛔ **The epoch is not decoration: session names are REUSED.** Measured the day
+  the convention was adopted — `--grep="Session: katgpt-rs-54"` returns **nine**
+  commits spanning two unrelated sessions sixteen hours apart, and the
+  five-commit answer that established ownership was correct only by accident of
+  a ~20-hour search window. A bare name disambiguates sessions running
+  CONCURRENTLY and silently conflates them ACROSS TIME, which is the axis anyone
+  grepping it later is actually on.
+
 ### The same hazard one layer down: a FIXED temp path — `scripts/shared_temp_path_gate.py`
 
 The rule above is about the WORKTREE. One layer down, concurrent sessions share
