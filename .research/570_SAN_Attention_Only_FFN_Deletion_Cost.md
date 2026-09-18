@@ -1,4 +1,4 @@
-# Research 569: SAN — What a Transformer Loses Without Feed-Forward Layers (0.006 nats at matched params)
+# Research 570: SAN — What a Transformer Loses Without Feed-Forward Layers (0.006 nats at matched params)
 
 > **Source:** "Simple Attention Networks: What a Transformer Loses Without Feed-Forward Layers" — Henry Ndubuaku, Cactus Compute blog, 2026-09-17. https://cactuscompute.com/blog/simple-attention-networks — companion to the paper **"A Controlled Study of Attention-Only Transformers"** (Cactus, Jul 2026, alphaxiv). Architecture behind Needle 3.
 > **Date:** 2026-09-18
