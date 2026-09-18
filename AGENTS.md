@@ -1256,10 +1256,18 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   Read the SEQUENTIAL figure as a MAGNITUDE: three predicates over overlapping
   populations returned 55 · 57 · 60 for this repo alone. Take it from a run.
 - ⛔ **No verdict half, deliberately** (Issue 833 T4, 834 T4) — do not add one by
-  symmetry with the sweep family. Migration is a per-target read: the `a`/`b`
-  ORIENTATION (`AbRatio::median` is a TIME ratio and half these gates state a
-  THROUGHPUT claim — backwards inverts the bar silently), the chunk size off the
-  target's own printed range, and `black_box` at both ends. A slice chosen from
+  symmetry with the sweep family. Migration is a per-target read on FOUR axes,
+  none of them statically decidable: the `a`/`b` ORIENTATION (`AbRatio::median`
+  is a TIME ratio and half these gates state a THROUGHPUT claim — backwards
+  inverts the bar silently); the CLAIM DIRECTION (a performance **win** with no
+  slack must be precise, so interleaving is right; an overhead **ceiling** with
+  deliberate room is nearer the `best_of_us` absolute-budget family and gains
+  almost nothing — `belief_drafter_goat.rs` g8 and
+  `bench_217_belief_drafter_goat.rs` B6 compute the IDENTICAL
+  `cached_us / uncached_us` and assert opposite things); the chunk size off the
+  target's own printed range; and `black_box` at both ends. ⚠ Arms must also be
+  a PAIRED A/B — where they are not, the fixture needs reworking before the
+  timing does. A slice chosen from
   a classifier with hundreds of unresolved rows is a slice chosen from a guess.
 - ⚠ **STATED blind spots:** a ratio built through a helper; a comparison written
   as a subtraction or a percentage; two arms differenced off ONE

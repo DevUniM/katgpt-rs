@@ -205,12 +205,40 @@ instead of re-deriving them:
   census flags it SEQUENTIAL. A codemod would treat them the same. A read does
   not:
 
-  | | `belief_drafter_goat.rs` g8 (fired) | `bench_217_…:1010` (not fired) |
+  | | `belief_drafter_goat.rs` g8 (fired) | `bench_217_…:1010` (B6, not fired) |
   |---|---|---|
-  | sequential arms | yes | yes |
+  | ratio expression | `cached_us / uncached_us` | `cached_us / uncached_us` — **identical** |
+  | **CLAIM** | `cached_us < uncached_us / 2.0` — cache is ≥2x **FASTER** | `ratio < 2.0` — cache is not >2x **SLOWER** |
+  | **direction** | a performance **WIN** | an overhead **CEILING** |
+  | slack | none — the bar sits ON the claim | ~5x, and deliberate |
   | Class A2 (`let _ = f()`) | **yes, both arms** | **no** — `black_box` on both |
-  | bar | cached must be FASTER, no slack | `ratio < 2.0` on a ratio that runs ~0.4 |
-  | headroom | none | ~5x |
+  | a regression | flips the sign of a near-zero margin | must cross 5x before anything notices |
+
+  ⛔ **CLAIM DIRECTION is a THIRD axis, and a syntactic classifier is
+  structurally blind to it** (`katgpt-rs-54`, verified here against both
+  asserts). The two tests compute the *same expression* and assert *opposite
+  things*. A **win** claim with no slack has to be precise, so
+  `ab_median_ratio` is the right instrument; an **overhead ceiling** with
+  deliberate room is nearer in spirit to the `best_of_us` absolute-budget
+  family, and migrating it buys almost nothing because flakiness is not its
+  exposure. My census keys on the ratio expression and therefore cannot see
+  this at all — add it to orientation and chunk size as the reads T2 owes.
+
+  ⚠ **"Slack" is not one smell and 834 must not let it read as one.** G2's
+  10x is slack *bolted onto* a claim it was failing to measure, with "timing
+  is noisy" written at the line. B6's 2x **is** the claim — a ceiling is
+  supposed to have room. Same word, opposite diagnoses.
+
+  ⚠ **B6's arms are not a paired A/B**, so a migration would need the FIXTURE
+  reworked before the timing: arm A is 1000 `drafter.draft()` calls, arm B is
+  1000x5 nested cache lookups living elsewhere in the function.
+  ⇒ One correction to 54's reading, which **strengthens** the point: the
+  pre-warm loop keys on `dt.token_idx` while the timed loop keys on `step`, so
+  the pre-warm is largely **inert** rather than the thing making arm B a hit
+  path. The miss closure *does* run — about five times, on iteration 1 — and
+  it is the timed loop's **own** `get_or_insert` inserts that make iterations
+  2..1000 hits. The arms are even less comparable than "pre-populated, so the
+  closure never runs" suggests.
 
   So the twin is the same shape at materially lower risk, and it is a
   *candidate*, not a defect. `katgpt-rs-54` read three timing gates in the
