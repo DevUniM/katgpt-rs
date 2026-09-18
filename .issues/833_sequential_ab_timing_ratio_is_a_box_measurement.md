@@ -167,3 +167,73 @@ that any loaded box can trip. It is repaired, not excused.
 - The treatment + its three defenses: `tests/common/ab_timing.rs` (Issue 723 Class A, T7)
 - The sibling migration that landed the same day: Issue 831 T2 (`bench_171` P3)
 - Census + independent idle-box verification: session `katgpt-rs-c5`, 2026-09-18
+
+## 2026-09-18 — the SECOND matrix run: T1 holds in-cell, and a DIFFERENT member of the 57 fired
+
+Second run at `aba3827f` (log `/f/matrix_0918_run2.log`, scratch `/f/avx2scratch2`),
+**PASSED — 8 cells, 11176 assertions, 0 CONFIRMED failures**. Run once, and this issue is
+one repaired target; run twice, and it is a class with a lottery in it.
+
+**T1 holds.** `goat_2_gdn2_within_10pct_of_ahla_throughput` is absent from the failure
+list. That is the verification T1 still owed and standalone runs could not give: eight
+greens outside the cell do not close a defect that only appeared inside it, because
+standalone and in-cell are different load regimes and in-cell is the one that failed.
+
+**And a different row took its place:** `g8_cached_faster_than_uncached`
+(`tests/belief_drafter_goat.rs`) — PASSED-ALONE, 3/3. Adjudicated with the same three
+greps rather than assumed:
+
+| class | verdict | evidence |
+|---|---|---|
+| CONCURRENCY | **ruled out** | 0 `temp_dir` / `"/tmp"` sites |
+| unseeded-RNG coin flip | **ruled out** | 0 unseeded draws |
+| load-sensitive BAR | **CONFIRMED** | 5 `Instant::now()` sites, no `ab_timing`; already in the DECIDED census |
+
+⛔ **The lottery is the finding.** Two runs, a commit range that touched neither test's
+code, and two *different* members of the 57 surfaced. Which one fires is decided by what
+else the box was doing. So the DECIDED count is not a backlog of latent rows waiting for
+attention — it is a population any run samples from, and the sampling is what has been
+reporting itself as TRANSIENT. This is the strongest available argument for T2, and it is
+measured rather than argued.
+
+### T2's first member — `g8_cached_faster_than_uncached` (DONE 2026-09-18)
+
+It carried **both** defects, which is why it is the better worked example than T1:
+
+1. **Sequential arms** — 1000 MLP forwards timed to completion, then 1000 cache lookups,
+   asserted against a **2× bar with no slack**.
+2. ⛔ **`let _ = f(...)` on BOTH arms** — Issue 723 **Class A2**. rustc 1.98.1 + fat LTO
+   deletes an inlined callee whose outer result is dead, and cell 8 is release + `+avx2`,
+   the configuration where that bites. **A deleted arm does not read as a failure; it
+   reads as a very fast one.** This defect is ORTHOGONAL to interleaving and survives it —
+   migrating the timing alone would have left it in place, looking repaired.
+
+Repaired: `ab_median_ratio` with `a` = MLP forward (the baseline the claim is *stated
+against*) and `b` = cache lookup, so `ab.median` is `t_cached / t_uncached` and "at least
+2× faster" is `median < 0.5`. Both arms `black_box`ed at input and output. The input set
+is 64 distinct pairs against a 256-entry cache, so every `get` is a **hit** — stated in
+the fixture, because a miss rate would make this a measurement of blake3 rather than of
+the cache.
+
+| run | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| median b/a | 0.3975 | 0.3966 | 0.3978 | 0.4086 | 0.4028 | 0.3870 | 0.4004 | 0.3946 |
+
+**8/8 pass**, medians inside a **2.2%** band against a 0.5 bar. With the arms live the
+work is real and measurable — a 360.3 ns/iter, b 141.7 ns/iter. Run 5's per-round range
+reached **0.8724**, a preemption spike that would have been the whole verdict under the
+old form; the median discarded it, which is the mechanism working in public.
+
+### Siblings in the same file — READ, not swept
+
+- **G2** (`g2_variable_length_control`) is the same two-arm shape and is **left alone**:
+  its bar is `ratio_time < ratio_tokens * 10.0`, and its author wrote "timing is noisy,
+  allow 10× slack" at the line. A 10× slack bar tolerates the defect instead of measuring
+  it, so it will not fire — that is a claim-strength question for whoever owns Plan 217,
+  not a flake.
+- **G3** (`g3_cache_empty_overhead_near_zero`) is an **absolute budget** with one arm, so
+  it is the `best_of_us` class and not this one. Do not migrate it to `ab_median_ratio`;
+  there is no second arm to ratio against.
+
+Recording both is the point of "per target, not mechanically": three timing gates in one
+file, three different correct answers.
