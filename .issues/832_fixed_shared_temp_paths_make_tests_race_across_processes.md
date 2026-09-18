@@ -290,14 +290,23 @@ this repo's own most-repeated shape.
   look more urgent than it is — and the four remaining rows have never been
   re-read with a line-level predicate.
 
-  ⚠ **VERIFICATION LIMIT, stated because a green claim would be false.** That
-  repo's suite was NOT run and could not be: riir-clippy path-depends on
-  `../riir-llm` (`Cargo.toml:124`, added at `fbf698e6`), cargo resolves path
-  deps even when `optional = true`, and **riir-llm is absent from this box and
-  absent from `scripts/repo_set.txt`**. What was verified instead: every
-  edited file parses, and `rustfmt --edition 2024 --check` has zero objections
-  to any added line. That is weaker than a green suite. Run `cargo test --lib`
-  there on a box that has riir-llm.
+  ✓ **VERIFIED — `cargo test --lib`, 1945 passed, 0 failed** (2026-09-18,
+  after the blocker below cleared).
+
+  ⚠ It was committed BEFORE that, under a stated limit, and the limit is kept
+  here rather than deleted because it is the interesting part: riir-clippy
+  path-depends on `../riir-llm` (`Cargo.toml:124`, added at `fbf698e6`
+  **that same day**), cargo resolves path deps **even when `optional = true`**,
+  and riir-llm was absent from this box and from `scripts/repo_set.txt` — so
+  no cargo command in that repo could run at all. What was verified in the
+  meantime: every edited file parses, `rustfmt --edition 2024 --check` has zero
+  objections to any added line. That is weaker than a green suite and the
+  commit message says so. The repo was then cloned and registered (`b5dd81dc`),
+  which is what made the real verification possible.
+
+  ⇒ The DISCOVERY posture of that blocker — a repo that is absent AND
+  unregistered reds nothing, while breaking a registered repo's build — is its
+  own finding, filed as Issue 835.
 
   ⛔ **1 site remains untouched in a CRLF file** (`clippy_oracle.rs`) — the
   tool REFUSES rather than rewriting line endings, which is correct: a scripted
