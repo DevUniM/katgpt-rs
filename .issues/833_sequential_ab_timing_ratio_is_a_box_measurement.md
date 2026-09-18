@@ -1,8 +1,11 @@
 # Issue 833: a ratio of two SEQUENTIALLY-timed arms measures the box, not the code — `bench_105` GOAT 2 fired on x86_64, and the class is ~57 targets, not one
 
 **Status:** T1 **DONE 2026-09-18** (`bench_105_gdn2_goat` GOAT 2 migrated + stability
-measured). **T3 PARTIAL 2026-09-18** — two whole resolution classes mechanised and
-measured (`HAND-ROLLED`, `provenance_hits`), T5's cross-repo figure taken; see §T3.
+measured). **T3 PARTIAL 2026-09-18** — all THREE resolution classes T3 names are mechanised and
+measured (`HAND-ROLLED`, `provenance_hits` incl. relative differences, and the
+GATES-vs-report annotation), plus two classifier defects found in the process
+(`HARNESS` self-certification, and ADOPTED matching a name where the treatment is a
+shape); T5's cross-repo figure taken. See §T3.
 T2 / T4 / T5 OPEN — the class is a **magnitude, not a pin**; see §What must not be
 done. ⚠ The counts written in §The class is ~57 targets are the 2026-09-18 census and
 are **superseded by the §T3 run**; take every figure from the audit, not from prose.
