@@ -234,6 +234,21 @@ g200 training run and three resident agent sessions, the 24-way `cmake --paralle
 identical exposure, and capping one and not the other is this repo's most-repeated drift shape. The failure is
 loud and self-identifying and the remedy is one line, both recorded at the layer.
 
+## Issue 819, second holder (2026-09-17) — the sigmoid prior-logit lane KEPT the number; RESOLVED (file removed)
+
+The OTHER 819 — the one that won the same-day dual allocation (7 of 10 inbound
+sites, 0% unresolved, Issue 724 T2; adjudication pinned in
+`scripts/number_collisions_expected.txt`). T1–T3 + T5 LANDED with Bench 813
+(`.benchmarks/813_prior_lane_margin_goat.md`) G1–G4 ALL PASS: the sigmoid
+prior-logit lane + sink-stability forecast (Research 566, arXiv:2601.15380)
+shipped as two OPT-IN features under the no-default-consumer rule. T4
+(owner-gated) closed unclaimed. Full task record: git history
+(`819_sigmoid_prior_logit_lane_sink_margin_forecast`, removed per
+noise-reduction); the surviving records are Bench 813 + the collision pin row
++ this section. Citations saying "Issue 819" in the research thread
+(.research/566, 258, 392) mean THIS lane, never the x86_64 lint lane (whose
+record is the 819 section above, disambiguated in place per Issue 794).
+
 ## Issue 815 (2026-09-17) — CLOSED by its own criterion: the box is green. Option 2 landed as `DOCS_GATE_KNOWN_EXTRA`, and options 1 and 3 remain the owner's
 
 ⚠ **Read this as the REVERSIBLE option taken in the absence of a decision, not as the decision.** The issue asked the
