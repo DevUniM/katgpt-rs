@@ -342,7 +342,15 @@ def mask_file(text: str):
                 k += 1
             raw = text[j:k]
             preds = []
-            for pm in re.finditer(r"\b(?:cfg|cfg_attr)\s*\(", raw):
+            # `cfg(` ONLY — a `cfg_attr(pred, attr)` predicate selects when
+            # the ATTRIBUTE applies, never whether the ITEM exists, so its
+            # pred must not gate the item. Folding it gated ungated items:
+            # seal-remake lighting_panel's `#[cfg_attr(target_arch =
+            # "wasm32", allow(unused_mut))]` fn made its own parameter's
+            # type use read wasm32-only and flagged a live import (rustc's
+            # native build warns nothing there). The `allow(dead_code)` half
+            # still works — `pending_allow` reads the RAW text, not preds.
+            for pm in re.finditer(r"\bcfg\s*\(", raw):
                 p0 = pm.end()
                 pd = 1
                 p = p0
@@ -1248,6 +1256,15 @@ use std::process::ProcessStatus;
 #[cfg(unix)]
 fn wait() -> ProcessStatus { todo!() }
 '''}, {"ProcessStatus"}),
+
+    ("a cfg_attr pred does NOT gate its item (seal-remake lighting_panel)", {
+        "src/lib.rs": '''
+use platform::FrameRateCap;
+#[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
+fn panel(mut cap: Option<FrameRateCap>) { let _ = &mut cap; }
+#[cfg(target_arch = "wasm32")]
+fn wasm_only(c: &FrameRateCap) { let _ = c; }
+'''}, set()),
 
     ("a trait's associated items are never this finding", {
         "src/lib.rs": '''
