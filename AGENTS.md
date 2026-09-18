@@ -2591,6 +2591,15 @@ question it is, not as a typo.
   name the message SIGNED rather than the pipe it ARRIVED on. A rule about
   attribution written from a conversation you are misattributing encodes the
   defect instead of the fix.
+  - ⚑ It has a LIVE specimen, which is a better argument than the principle it
+    was derived from: a message arriving on one pipe signed itself with a
+    DIFFERENT session's name, and no session by that name was in the roster.
+    The signature lied; the pipe did not, and was distinguishable at the moment
+    of reading.
+  - ⚠ **A pipe identifies a CONNECTION, not a person**, and whether a pipe id
+    can be reused by a successor session is UNMEASURED. So "quote the pipe" is
+    stronger than "quote the signed name" and is still evidence rather than
+    proof — the same standing as a `Session:` trailer, for the same reason.
 - ✅ **The one form that survives a roster you cannot enumerate: say what you
   CHECKED, not who you concluded.** Four independent failures in one evening —
   shared authorship, the shared reflog, an incomplete roster, and mis-signed

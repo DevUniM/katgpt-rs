@@ -608,3 +608,51 @@ quote a bar out of this report as flaky without the measured value beside it. Th
 target lives in riir-train and running it is that repo's call; **no repair is
 proposed here and none is owed** — Issue 833 T4 deliberately declines a verdict
 half for exactly this reason.
+
+### T3: the "two arms differenced off ONE `Instant::now()`" blind spot is MEASURED EMPTY
+
+AGENTS.md lists it as a STATED blind spot and it had never been counted. It is the
+one shape that escapes `classify` *before any resolver runs*: with a single timer,
+`n < 2` short-circuits straight to UNRESOLVED, and the 1-timer sub-bucket is
+documented as "mostly ordinary single-arm bars" — which is exactly where it would
+hide.
+
+```rust
+let t = Instant::now();
+a();
+let mid   = t.elapsed();   // arm A
+b();
+let total = t.elapsed();   // arm A + arm B
+let b_ns  = total - mid;   // arm B, by difference
+```
+
+**Detector:** the SAME `Instant` binding read by `.elapsed()` **two or more
+times**. That is the structural signature — a single-arm bar reads its timer once.
+Armed in both directions (the shape above is found; a once-read timer is not).
+
+**Measured over the 14 contract repos on this box: 4 candidates, all 4 read, 0 are
+the class.**
+
+| repo / target | what it actually is |
+|---|---|
+| riir-ai `issue879_t3_kv_weight_quant_nll` | progress rate `pos / t0.elapsed()` + a `wall_s` field |
+| riir-ai `plan582_phase1_measurement` | elapsed-seconds progress logging |
+| riir-dapps `kat_staking_chaos` | `while start.elapsed() < secs` loop bound + a final duration report |
+| riir-train `plan363_smoke_training` | progress log + total `wall_seconds` |
+
+Every one re-reads its timer to report *cumulative* elapsed time, which is the
+ordinary and correct use. **0 live instances of the differenced-arms shape.**
+
+⚠ **Scope, stated rather than implied:** this measures the STRICT form — a file
+with exactly ONE `Instant::now()`. A file with two or more timers could also
+difference one of them, and those land in the 2+-timer buckets where the other
+resolvers apply but would not necessarily catch a difference. That adjacent
+population (UNRESOLVED, 2+ timers, a twice-read timer, asserting) is **246 files
+workspace-wide** and is NOT covered by this measurement.
+
+**Standing:** the blind spot stays listed — the class is real and a future target
+can land in it — but it is now *measured empty today* rather than *unknown*, with
+a cheap armed detector for re-measuring. Nothing to repair, and the right outcome
+to report: a negative result that retires a line of investigation is worth as much
+as a finding, and this one was reached in four reads rather than by a per-target
+sweep of the 1-timer bucket's 324 rows.
