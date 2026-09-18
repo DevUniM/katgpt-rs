@@ -1348,6 +1348,14 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
 - `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
+- Re-measured 2026-09-18 after `comparison_hits`, over the **14** contract repos
+  present on this box: **1 HARNESS · 7 ADOPTED · 9 HAND-ROLLED · 154 SEQUENTIAL
+  (35 asserting nothing) · 784 UNRESOLVED** over 2435 target files / 8120
+  tracked `*.rs`. ⚠ **Not comparable term-by-term with the 17-repo line below**
+  — the population is three repos smaller, so SEQUENTIAL rising 152 → 154 across
+  a SMALLER walk is a floor on what the sixth resolver moved, not a measurement
+  of it. Take both figures with their repo count, which is the whole reason this
+  bullet prints one.
 - Measured 2026-09-18 over 17 repos, after Issue 833 T3: **1 HARNESS ·
   7 ADOPTED · 9 HAND-ROLLED · 152 SEQUENTIAL (35 asserting nothing) ·
   794 UNRESOLVED** over 2515 target files / 9125 tracked `*.rs`. Read the SEQUENTIAL figure as a

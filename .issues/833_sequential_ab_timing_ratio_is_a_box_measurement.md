@@ -470,3 +470,93 @@ are answerable without opening the file.
 one session's three passes. It is a **magnitude** and every pass widened the classifier
 rather than the code changing — so a bar quoted from an earlier run of this issue is not
 comparable with a later one. Take it from a run.
+
+## 2026-09-18 — T3: a SIXTH resolver, because every existing one is DIVISION-shaped
+
+⛔ **`RATIO`, `ANY_RATIO` and `REL_DIFF` all key on an OPERATOR, and the single
+best-documented member of this class has none.** Issue 831's P3 was:
+
+```rust
+assert!(
+    ns_frozen < ns_uniform,
+    "FrozenBaseGuard should be faster ({ns_frozen}ns vs {ns_uniform}ns)",
+);
+```
+
+Two sequentially-timed arms, compared as a bare **inequality** — no ratio
+expression anywhere, and no ratio-shaped identifier to key on. It fired, was
+diagnosed as a coin flip at a **20% failure rate**, and was repaired the same day.
+So the resolver set would have missed the one member this repo has the most
+evidence about, and `sequential_ab_timing_audit` would have reported its file
+UNRESOLVED throughout.
+
+`katgpt-rs-54` sharpened the axis and the sharpening is what generalises: the class
+is **two timing-derived identifiers in ONE comparison**, of which a ratio is one
+surface form. `g8` was `assert!(cached_us < uncached_us / 2.0)` — an inequality
+whose right side merely happens to contain a `/`, already caught expression-wise.
+Key on the axis and every spelling falls out, including the next one.
+
+### Measured, this repo
+
+**5 targets** carry an asserted comparison of two timing-derived locals:
+
+| verdict before | target | site |
+|---|---|---|
+| SEQUENTIAL | `tests/bench_148_plasma_path_goat.rs` | `scalar_us > f32_us * 0.5` |
+| SEQUENTIAL | `tests/bench_217_belief_drafter_goat.rs` | `belief_us < mtp_us * 5.0` |
+| SEQUENTIAL | `tests/bench_bfcf_tree.rs` | `region_per_iter < token_per_iter` |
+| SEQUENTIAL | `tests/bench_turboquant_zero_alloc.rs` | `dequant_{key,val}_zero_ns <= …_alloc_ns * 1.05` |
+| **UNRESOLVED** | `crates/katgpt-tokenizer/tests/fast_bpe_goat_pretok.rs` | `warm_ns < cold_ns` |
+
+⚑ **Four of the five were already SEQUENTIAL by LUCK, not by reach** — caught by a
+*different* expression elsewhere in the same file, not by the comparison they
+assert on. That is the more important half of this measurement: the resolver gap
+is one target wide today and the coverage of the other four rests on an
+accident of file content.
+
+Population moves `UNRESOLVED 285 → 284`, `SEQUENTIAL 72 → 73`.
+
+### The one gap, read per target — IN the class, NOT a migration candidate
+
+`fast_bpe_goat_pretok::g2_pretok_cache_warm_vs_cold` is a true positive: `cold_ns`
+brackets one call that populates the cache, `warm_ns` the mean of 100 that hit it,
+and the bar is `warm_ns < cold_ns` — **zero slack**, the exact shape Issue 831
+condemns.
+
+Measured before calling it exposed, per AGENTS.md's *"do not quote a bar out of this
+report as a flaky gate without the measured value beside it"* — release binary run
+directly, 9 runs:
+
+```
+cold=23700 warm=778 | cold=16000 warm=765 | cold=14100 warm=768
+cold=13200 warm=766 | cold=17800 warm=767 | cold=15600 warm=765
+cold=18300 warm=759 | cold=16400 warm=762 | cold=15600 warm=761
+```
+
+Warm is **3.2%–5.8%** of cold across every run — ~94 points of head-room at its
+tightest, which ±21.7% sequential drift cannot reach. **Correctly in the class and
+not a migration candidate**, the same verdict the two bars measured earlier
+received, and the same lesson: *a bar's exposure is its SLACK, not its size.*
+
+⚠ The noise direction also favours it, which a static read cannot see: `cold_ns` is
+a single observation, so a scheduler hiccup during it makes cold LARGER and the
+assertion MORE likely to pass, while `warm_ns` is averaged over 100.
+
+### Two rules this resolver had to get right, both armed
+
+- ⛔ **Balanced argument extraction, not line-scoped.** Rust asserts wrap, so the
+  macro opener and the comparison sit on different lines. The line-scoped first
+  draft printed a confident **0 over every bucket** — blind to the exact shape it
+  was written for, which is this repo's own most-repeated instrument failure. The
+  arm carries the WRAPPED form and separately asserts that `assert_args` spans
+  lines, so it cannot pass for the wrong reason.
+- ⛔ **`COUNTY` must NOT filter this resolver.** It exists to reject `time / count`
+  as a RATE; but comparing two *rates* is still comparing two arms.
+  `region_per_iter < token_per_iter` names a count token in **both** operands and
+  is a live specimen here — applying COUNTY would drop it. Armed as its own case.
+
+⚠ **STATED cost of the scope:** restricted to `assert!`/`panic!` ARGUMENTS, so a
+two-arm comparison feeding only a `println!` or an `if` is not seen. An ordinary
+`while start.elapsed() < deadline` has two timing-derived operands and is a loop
+bound, not a claim — scoping to assertions is what keeps that out, and the cost is
+recorded rather than argued away.

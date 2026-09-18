@@ -245,6 +245,72 @@ def provenance_hits(masked: str, already: list) -> list:
     return hits
 
 
+# ── the comparison axis, because every resolver above is DIVISION-shaped ────
+# `RATIO`, `ANY_RATIO` and `REL_DIFF` all key on an operator. Issue 831's P3 —
+# the single best-documented member of this class, diagnosed as a coin flip at a
+# 20% failure rate and repaired — was `assert!(ns_frozen < ns_uniform, ...)`:
+# two sequentially-timed arms compared with no ratio expression anywhere and no
+# ratio-shaped identifier to key on. So the real axis is TWO TIMING-DERIVED
+# IDENTIFIERS IN ONE COMPARISON, of which a ratio is one surface form; the bare
+# inequality is the surface form with no operator to find.
+CMP_IDENTS = re.compile(r"\b([A-Za-z_]\w*)\s*(?:<=|>=|<|>)\s*([A-Za-z_]\w*)\b")
+ASSERT_OPEN = re.compile(r"\b(?:debug_)?assert(?:_eq|_ne)?\s*!\s*\(|\bpanic\s*!\s*\(")
+
+
+def assert_args(masked: str):
+    """The balanced argument text of each assert!/panic! invocation.
+
+    ⛔ Balanced, not line-scoped, and that is the whole of it: Rust asserts wrap,
+    so `assert!(\\n    a_ns < b_ns,\\n    "...",\\n);` puts the macro opener and
+    the comparison on different lines. A line-scoped first draft of this reported
+    a confident **0 over every bucket** — it could not see the exact shape it was
+    written for, which is this repo's own blind-instrument failure mode.
+    """
+    for m in ASSERT_OPEN.finditer(masked):
+        i = m.end() - 1
+        depth, j = 0, i
+        while j < len(masked):
+            if masked[j] == "(":
+                depth += 1
+            elif masked[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+        yield masked[i + 1: j]
+
+
+def comparison_hits(masked: str, already: list) -> list:
+    """Two timing-derived locals compared inside an assertion.
+
+    ⚠ Scoped to `assert!`/`panic!` ARGUMENTS deliberately, and it is the one
+    resolver here that is: an ordinary `while start.elapsed() < deadline` is a
+    loop bound, not a claim about two arms, and both of its operands can be
+    timing-derived. The cost of that scope is STATED — a two-arm comparison that
+    only feeds a `println!` or an `if` is not seen — rather than argued away.
+
+    ⛔ `COUNTY` is deliberately NOT applied. It exists to reject `time / count`,
+    which is a RATE and not this class; but comparing two rates is still
+    comparing two arms. `region_per_iter < token_per_iter` names a count token in
+    both operands and IS the class — filtering on COUNTY here would drop it.
+    """
+    names = timing_locals(masked)
+    if len(names) < 2:
+        return []
+    seen, hits = set(already), []
+    for args in assert_args(masked):
+        for m in CMP_IDENTS.finditer(args):
+            a, b = m.group(1), m.group(2)
+            if a == b or a not in names or b not in names:
+                continue
+            text = m.group(0)
+            if text in seen:
+                continue
+            seen.add(text)
+            hits.append(text)
+    return hits
+
+
 def hand_rolled(masked: str) -> bool:
     """Does this target already implement the treatment under another name?
 
@@ -305,6 +371,7 @@ def classify(text: str, rel: str = "") -> tuple:
         return ("HAND-ROLLED", n, [], gates)
     hits = ratio_hits(masked)
     hits = hits + provenance_hits(masked, hits)
+    hits = hits + comparison_hits(masked, hits)
     return (("SEQUENTIAL" if hits else "UNRESOLVED"), n, hits, gates)
 
 
@@ -608,6 +675,81 @@ def selftest() -> list:
     if MIN_RS_FILES <= 0 or MIN_TIMED <= 0:
         fails.append("a floor of 0 is not a floor")
 
+    # ── the COMPARISON axis (Issue 833 T3) ──────────────────────────────────
+    # A. The Issue-831 P3 shape: a bare inequality between two timed arms, with
+    #    the assert WRAPPED. The line-scoped first draft of this resolver read a
+    #    confident 0 over every bucket precisely because of the wrapping, so the
+    #    arm carries it rather than the one-line form.
+    wrapped = """
+    fn g() {
+        let t = Instant::now();
+        for _ in 0..N { a(); }
+        let ns_uniform = t.elapsed().as_nanos();
+        let t2 = Instant::now();
+        for _ in 0..N { b(); }
+        let ns_frozen = t2.elapsed().as_nanos();
+        assert!(
+            ns_frozen < ns_uniform,
+            "not faster ({ns_frozen} vs {ns_uniform})",
+        );
+    }"""
+    if v(wrapped) != "SEQUENTIAL":
+        fails.append(f"a WRAPPED two-arm inequality read {v(wrapped)}, not SEQUENTIAL")
+    #    ...and the wrapping is the load-bearing half: assert the balanced
+    #    extractor actually spans lines, or this arm passes for the wrong reason.
+    if not any("ns_frozen" in a and "ns_uniform" in a
+               for a in assert_args(mask_file(wrapped)[0])):
+        fails.append("assert_args must span lines — a line-scoped reader is blind here")
+
+    # B. A comparison against a CONSTANT is a single-arm budget, not this class.
+    budget = """
+    fn g() {
+        let t = Instant::now(); a(); let ns_total = t.elapsed().as_nanos();
+        let t2 = Instant::now(); b(); let ns_other = t2.elapsed().as_nanos();
+        assert!(ns_total < 5_000_000);
+    }"""
+    if v(budget) != "UNRESOLVED":
+        fails.append(f"a bar against a constant read {v(budget)}, not UNRESOLVED")
+
+    # C. Two COUNTS compared is not this class either — the operands must be
+    #    timing-derived, which is what makes this a provenance rule and not a
+    #    comparison-shaped grep.
+    counts = """
+    fn g() {
+        let t = Instant::now(); a(); let ns_total = t.elapsed().as_nanos();
+        let t2 = Instant::now(); b(); let ns_other = t2.elapsed().as_nanos();
+        assert!(n_hits > n_miss);
+    }"""
+    if v(counts) != "UNRESOLVED":
+        fails.append(f"a comparison of two counts read {v(counts)}, not UNRESOLVED")
+
+    # D. ⛔ COUNTY must NOT filter this resolver. It rejects `time / count` as a
+    #    RATE, but comparing two rates is still comparing two arms —
+    #    `region_per_iter < token_per_iter` is a live specimen in this repo and
+    #    names a count token in BOTH operands. Applying COUNTY here drops it.
+    rates = """
+    fn g() {
+        let t = Instant::now(); a(); let region_per_iter = t.elapsed().as_nanos() / iters;
+        let t2 = Instant::now(); b(); let token_per_iter = t2.elapsed().as_nanos() / iters;
+        assert!(region_per_iter < token_per_iter);
+    }"""
+    if v(rates) != "SEQUENTIAL":
+        fails.append(f"a comparison of two per-iteration RATES read {v(rates)}, not SEQUENTIAL")
+
+    # E. The resolvers must not double-count: a site both a ratio resolver and
+    #    this one can see is reported ONCE, or the hit counts stop being
+    #    comparable with their own history.
+    both = """
+    fn g() {
+        let t = Instant::now(); a(); let a_ns = t.elapsed().as_nanos();
+        let t2 = Instant::now(); b(); let b_ns = t2.elapsed().as_nanos();
+        assert!(a_ns / b_ns < 1.0);
+    }"""
+    masked_both = mask_file(both)[0]
+    r = ratio_hits(masked_both)
+    if comparison_hits(masked_both, r + provenance_hits(masked_both, r)):
+        fails.append("a site already resolved by a ratio must not be counted twice")
+
     return fails
 
 
@@ -693,6 +835,18 @@ def main(argv) -> int:
           "    actually costs time to migrate. What T3 CLOSED is the fifth: a ratio\n"
           "    whose locals are timing-derived by VALUE but not by NAME, which\n"
           "    `provenance_hits` now resolves (8 found here, 8 of 8 true on a read).\n"
+          "  ⛔ And the SIXTH, closed by `comparison_hits`: every resolver above is\n"
+          "    DIVISION-shaped, but Issue 831's P3 — the best-documented member of\n"
+          "    this class, a measured 20% coin flip — was `assert!(a_ns < b_ns)`,\n"
+          "    with no ratio to key on. The axis is TWO TIMING-DERIVED IDENTIFIERS\n"
+          "    IN ONE COMPARISON; a ratio is one surface form of it. Measured here:\n"
+          "    5 targets carry the shape, 4 already SEQUENTIAL via another\n"
+          "    expression in the same file — i.e. covered by LUCK, not by reach —\n"
+          "    and 1 was the whole resolver gap. ⚠ Its STATED cost: scoped to\n"
+          "    assert!/panic! ARGUMENTS, so a two-arm comparison feeding only a\n"
+          "    println! or an `if` is not seen (an ordinary `while elapsed < \n"
+          "    deadline` loop bound has two timing-derived operands and is not a\n"
+          "    claim about two arms).\n"
           "  Report only; exit 0. Migration is a per-target read — Issue 833 T4.")
     return 0
 
