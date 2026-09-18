@@ -1143,6 +1143,31 @@ non-repo directory inside a repo would answer with its PARENT's paths); a tree
 with no `.git` — `git archive`, a synthetic self-test fixture — falls back to
 the walk rather than erroring.
 
+⛔ **`.git` answers TWO questions and each spelling is wrong for the other
+one** (Issues 835, 836). Pick by the question, never by symmetry with the
+nearest instrument:
+
+| the question | probe | why |
+|---|---|---|
+| *Is this a canonical REPO?* | **`.is_dir()`** | a `git worktree` has a `.git` **FILE**; counting one attributes its manifests to a repo that does not exist (835) |
+| *Can I run git rooted HERE?* | **`.exists()`** | a worktree is a perfectly good checkout, and `.is_dir()` silently says otherwise (836) |
+
+Never write a fresh contract-repo walk for the first — **delegate to
+`skill_repo_set_gate.derive_repos`** (through `repo_alias.disk()` if you
+intend to OPEN the directories); `population_sync_gate` exists to catch two
+predicates disagreeing about the population. The second is
+`worktree_state._is_checkout`, and it is the spelling `tracked_walk.py` had
+right all along. ⛔ The second direction is the SILENT one: all five
+`worktree_state` guards took `.is_dir()`, and every false branch of theirs
+returns the value meaning *nothing to report* — so in a worktree
+`sweep_advisory` returned `[]` against a modified tracked file, and a sweep run
+there re-pinned from another session's in-flight edits believing it had read
+HEAD. Issue 797's founding defect, reintroduced inside the mechanism built to
+prevent it, by the repair for the *other* question. ⚠ And the probe is not the
+whole of it: a path CONSTRUCTED under `<root>/.git` (`FETCH_HEAD`) cannot
+exist in a worktree either — ask git (`rev-parse --git-path`), which answers
+ABSOLUTELY there and relatively otherwise.
+
 ## A Lean theorem can RESTATE its own definition — `scripts/restatement_theorem_audit.py`
 
 `theorem sidecarHeaderSize_eq_sum : sidecarHeaderSize = magicSize + versionSize
