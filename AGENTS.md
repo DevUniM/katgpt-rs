@@ -228,20 +228,29 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` compiles to
   nothing without it, and the run then exercises the scalar fallback and proves
   nothing. `katgpt-attn`'s `channel_aware.rs` carries exactly that shape.
-- ⛔ **`CMAKE_BUILD_PARALLEL_LEVEL=1` on Windows, and it is a MEASUREMENT.**
-  `highs-sys` builds HiGHS through cmake + MSVC, and cmake-rs derives
-  `--parallel` from the CPU count. Measured one variable at a time on shikuwa,
-  cell 6 (`katgpt-tokenizer`): `--parallel 6` and `--parallel 2` both die with
-  `C1001 Internal compiler error` in `<vector>` plus `cl D8040 error creating
-  or communicating with child process` — the second on an otherwise QUIET box
-  — and `--parallel 1` passes 74 tests in 15.6s. D8040 is cl.exe failing to
-  spawn its own child, i.e. resource exhaustion; the C1001 is collateral. The
-  matrix reported it as *"died without a failures block — nothing asserted"*,
-  which is the correct refusal AND a red cell over a toolchain flake in the
-  only lane on this box that executes anything. Capped rather than retried: a
-  retry loop hides a genuine build break, and the failure is a property of the
-  host. Overridable, and applied only on MSYS/MinGW — a Linux box has no
-  reason to pay for it.
+- ⚠ **`CMAKE_BUILD_PARALLEL_LEVEL=1` on Windows is a LOAD-ROBUSTNESS cap, and
+  the first write-up of it named the wrong cause.** Twice, cell 6
+  (`katgpt-tokenizer`) died building `highs-sys` with `C1001 Internal compiler
+  error` in `<vector>` plus `cl D8040 error creating or communicating with
+  child process` — D8040 being cl.exe failing to SPAWN its own child, i.e.
+  resource exhaustion, with the C1001 as collateral. The matrix reported it as
+  *"died without a failures block — nothing asserted"*: the correct refusal,
+  and also a red cell over a toolchain flake in the only lane on this box that
+  executes anything.
+  ⛔ The obvious hypothesis was cmake's own `--parallel`. **Measured, and
+  refuted** (highs-sys build dir deleted between runs): `cmake 6 x cargo 6`
+  → 74 passed, 13.8s; `cmake 2 x cargo 2` → 74 passed, 13.9s; `cmake 1 x
+  cargo 2` → 74 passed, 15.6s. Every quiet-box run passes at every
+  parallelism and the timings are indistinguishable; both failures happened
+  while ANOTHER heavy cargo build ran concurrently in a different target dir.
+  So the trigger is whole-box concurrent compiler load, the cap only shrinks
+  this lane's own contribution to the peak, and **the actual remedy is to run
+  the matrix ALONE**. The cap is kept because it costs nothing detectable and
+  the peak is the one part of the load this lane controls — not because it
+  fixes anything. Applied only on MSYS/MinGW and only when unset.
+  ⚠ The causal claim that survives is weaker than it looks: two failures
+  under concurrent load, three passes without it, and no experiment isolating
+  load itself.
 - Population **derived** (any package owning a tracked `*.rs` that mentions
   `target_arch = "x86_64"`), so a new such crate joins by EXISTING. Issue 806's
   own hand-typed cell list named three packages; the tracked tree has six.

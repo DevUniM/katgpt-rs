@@ -117,25 +117,40 @@ export RUSTFLAGS="-C target-feature=+avx2"
 # verdict about any crate.
 JOBS="${X86_MATRIX_JOBS:-6}"
 
-# ⛔ The same bound one toolchain over, and the matrix red it without it.
-# `highs-sys` builds HiGHS through cmake + MSVC, and cmake-rs passes
-# `--parallel` derived from the CPU count. Measured on this box, one variable
-# at a time, cell 6 (katgpt-tokenizer):
+# ⚠ A load-robustness cap, and the FIRST version of this comment named the
+# wrong cause — the refutation is the part worth keeping.
 #
-#   --parallel 6  -> C1001 Internal compiler error in <vector> + cl D8040
-#                    "error creating or communicating with child process"
-#   --parallel 2  -> same, on an otherwise QUIET box
-#   --parallel 1  -> 74 passed (floor 44), 15.6s
+# `highs-sys` builds HiGHS through cmake + MSVC. Twice, cell 6
+# (katgpt-tokenizer) died with `C1001 Internal compiler error` in <vector> plus
+# `cl D8040 "error creating or communicating with child process"`. D8040 is
+# cl.exe failing to SPAWN its own child — resource exhaustion — and the C1001
+# is collateral; nothing in katgpt-tokenizer is involved. The matrix reports it
+# as `died without a failures block — nothing asserted`, the correct refusal,
+# and also a RED CELL over a toolchain flake in the only lane on this box that
+# EXECUTES anything.
 #
-# D8040 is cl.exe failing to spawn its own child, i.e. resource exhaustion, and
-# the accompanying C1001 is its collateral — not a defect in any crate here.
-# The matrix reports it as `died without a failures block — nothing asserted`,
-# which is the correct refusal and also a RED CELL over a toolchain flake, in
-# the only lane on this box that EXECUTES anything.
+# The obvious hypothesis was cmake`s own `--parallel`, derived from the CPU
+# count. MEASURED, and it is WRONG (2026-09-18, highs-sys build dir deleted
+# between runs so each rebuilds):
 #
-# Capped rather than retried: a retry loop would hide a genuine build break,
-# and the failure is a property of the host, not of the run. Overridable,
-# because a Linux box has no reason to pay for it.
+#   cmake 6 x cargo 6, quiet box   -> 74 passed, 13.8s
+#   cmake 2 x cargo 2, quiet box   -> 74 passed, 13.9s
+#   cmake 1 x cargo 2, quiet box   -> 74 passed, 15.6s
+#
+# Both failures happened while ANOTHER heavy cargo build ran concurrently in a
+# different target dir; every quiet-box run passes at every parallelism, and
+# the three timings are indistinguishable. So the trigger is WHOLE-BOX
+# concurrent compiler load, and the cap does not address it — it only shrinks
+# this lane`s own contribution to the peak.
+#
+# Kept anyway, on the measurement: it costs nothing detectable here, and a
+# smaller peak is the one part of the load this lane controls. ⛔ It is NOT a
+# fix — the remedy is to run the matrix ALONE. That is also the causal claim
+# this comment can actually support: two failures under concurrent load, three
+# passes without it, and no experiment isolating load itself.
+#
+# Capped rather than retried: a retry loop would hide a genuine build break.
+# Overridable, because a Linux box has no reason to pay for it.
 if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then
     case "$(uname -s)" in
         MINGW* | MSYS* | CYGWIN*) export CMAKE_BUILD_PARALLEL_LEVEL=1 ;;
