@@ -284,3 +284,37 @@ issues it touched, which could be matched against a marked commit elsewhere. Tha
 luck. The reflog answers *what happened and in what order*, never *whose*; elimination
 answers nothing until the roster is counted, and `ListAgents` lists only sessions still
 ALIVE, so it is a floor on that count and never the count itself.
+
+### ⛔ A FIFTH fallback, one layer UP — a message's SIGNATURE is not its sender
+
+Every fallback above is inside the repository. The roster that the elimination ran over
+did not come from the repository at all: it came from the **live message stream**, and
+that layer has the same defect in a form that is easier to miss, because a message
+appears to say who wrote it.
+
+A peer message carries two independent claims of identity:
+
+- its **`from=` pipe**, which the harness assigns — mechanical, and reliable;
+- the name the message **signs itself with in prose** — self-asserted, and not.
+
+Measured in this same incident: **two distinct pipes were live, and the messages
+arriving on one of them signed themselves with the OTHER pipe's session name.** Read by
+signature, three sessions' traffic collapsed into two — which is precisely the roster of
+2 the elimination above ran over, and the reason it had no chance of being right. The
+sequence is worth stating in order, because the failure did not begin at the eliminator:
+a mis-signed message understated the roster, and the eliminator then produced a
+confident wrong attribution *from a correct rule over a wrong population*. Same shape as
+every other finding in this issue — **a predicate adjacent to the question, returning a
+clean-looking answer.**
+
+**Attribute a message by its `from=` pipe, never by its signature.** A signature that
+disagrees with its pipe is not a typo to be normalised away; it is the two-session
+question it looks like, and it must be resolved before any roster derived from those
+messages is counted.
+
+⚠ **This finding has no artifact in the repository, and that is its own limit.** The four
+above can each be re-derived by a later reader — `git log --grep`, the reflog, the commit
+bodies are all still there. The message stream is not committed anywhere, so this
+paragraph is the only record, and nothing can red if it drifts. It is written down in
+`AGENTS.md § Before committing in a shared worktree` for that reason: the rule has to
+survive in the document, because no instrument will ever re-measure it.

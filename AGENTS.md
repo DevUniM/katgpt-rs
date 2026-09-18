@@ -1402,6 +1402,33 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   statically decidable. Two are CLOSED by `provenance_hits`: a ratio whose
   locals are timing-derived by VALUE but not by NAME, and the **divided** half
   of the subtraction/percentage shape.
+- ⛔ **A SIXTH, closed by `comparison_hits`: every other resolver is
+  DIVISION-shaped, and the best-documented member of the class has no
+  operator.** Issue 831's P3 — a measured 20% coin flip — was
+  `assert!(ns_frozen < ns_uniform)`: two sequentially-timed arms compared as a
+  bare INEQUALITY, with no ratio expression and no ratio-shaped identifier to
+  key on, so the resolver set would have reported its file UNRESOLVED
+  throughout. The axis is **two timing-derived identifiers in ONE comparison**;
+  a ratio is one surface form of it (`g8`'s
+  `assert!(cached_us < uncached_us / 2.0)` is an inequality that merely
+  contains a `/`). Measured here: **5 targets carry the shape, and 4 were
+  already SEQUENTIAL by LUCK** — caught by a different expression elsewhere in
+  the same file rather than by the comparison they assert on — leaving a
+  one-target resolver gap (`fast_bpe_goat_pretok`, `warm_ns < cold_ns`, zero
+  slack, measured at 94 points of head-room and therefore NOT a migration
+  candidate). Read that 4-of-5 as the finding: coverage resting on file
+  content is not reach.
+  - ⚠ Two rules it had to get right, both armed: the argument extraction is
+    **balanced, not line-scoped** (Rust asserts wrap, and the line-scoped first
+    draft printed a confident **0 over every bucket** — blind to the exact shape
+    it was written for), and **`COUNTY` must NOT filter it** (COUNTY rejects
+    `time / count` as a rate, but comparing two *rates* is still comparing two
+    arms — `region_per_iter < token_per_iter` names a count token in both
+    operands and is a live specimen).
+  - ⚠ STATED cost: scoped to `assert!`/`panic!` ARGUMENTS, so a two-arm
+    comparison feeding only a `println!` or an `if` is not seen. An ordinary
+    `while start.elapsed() < deadline` has two timing-derived operands and is a
+    loop bound, not a claim.
 - **UNRESOLVED carries two sub-populations with opposite priors, and pooling
   them is this bucket's own hazard one level down** (Issue 833 T3). A
   **1-timer** row is mostly an ordinary single-arm bar; a **2+-timer** row is
@@ -2522,6 +2549,16 @@ produced a wrong answer. Measured: an unmarked commit was reasoned about as
 `54`'s"* — sound only in a **two**-session worktree, and four were live. Count the
 roster before eliminating over it; `ListAgents` shows only sessions still alive,
 so it is a floor on that count, never the count.
+
+⛔ **The same defect exists one layer UP, in the messages** — and it is how the
+roster gets miscounted in the first place. A peer's `from=` names the PIPE and is
+reliable; the name a message **signs itself** with is self-asserted prose and is
+not. Measured in the same incident: two distinct pipes were live, and the messages
+from one of them signed themselves with the OTHER's session name, so three
+sessions' messages were read as two sessions' — after which the elimination above
+had no chance. **Attribute a message by its `from=` pipe, never by its
+signature**, and treat a signature that disagrees with the pipe as the two-session
+question it is, not as a typo.
 - **Put `Session: <name>, <epoch>` in the commit body** — a commit's own TEXT is
   the only self-identifying evidence in the repository, and it is what let one
   session rule itself out of Issue 840 in a single `git log --grep`.
