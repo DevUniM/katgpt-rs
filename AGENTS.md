@@ -1185,6 +1185,60 @@ scripts/restatement_theorem_audit.py -v            # every row, not just finding
   `--prove-fires` plants a restatement into a COPY of each repo and requires
   the count to move, so the ceiling is never a pin nobody has watched fail.
 
+## A ratio of two SEQUENTIALLY-timed arms measures the BOX — `scripts/sequential_ab_timing_audit.py`
+
+```rust
+let t = Instant::now(); for _ in 0..N { a(); } let a_ns = t.elapsed();
+let t = Instant::now(); for _ in 0..N { b(); } let b_ns = t.elapsed();
+assert!(a_ns as f64 / b_ns as f64 >= 0.90);
+```
+
+Two sequential arms of the **same** work measured **+5.2% and +21.7%** thirty
+seconds apart on a loaded box (Issue 723 T5), so a 10% bar is a measurement of
+the scheduler. `tests/common/ab_timing.rs` is the treatment this repo already
+ships — interleaved `(a-chunk, b-chunk)` pairs, median across pairs, and a loud
+zero when the optimiser deletes an arm.
+
+⛔ **The finding is the DISCOVERY METHOD.** Issue 723 converted the 8 its census
+could see; Issue 831 converted a 9th by walking into it; Issue 833's
+`bench_105_gdn2_goat.rs` GOAT 2 was caught by
+`scripts/x86_64_execution_matrix.sh` reporting it PASSED-ALONE (0.844 against a
+0.90 bar in cell 8, then 3/3 alone). **None of the three was found by a
+census** — the treatment has existed for months and its members are found by
+tripping over them (Issue 834).
+
+```bash
+scripts/sequential_ab_timing_audit.py            # this repo
+scripts/sequential_ab_timing_audit.py ../riir-ai # or one, by path
+scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
+```
+
+- A **report, exit 0** — except a blindness floor or a failing self-test, which
+  exit **2**; the self-test runs on every invocation.
+- **ADOPTED** (names `common/ab_timing.rs` or calls `ab_median_ratio`, read off
+  the UNMASKED text because `#[path = "…"]` is a string literal) · **SEQUENTIAL**
+  (≥2 `Instant::now()` + a ratio whose BOTH sides are timing-derived, minus
+  count-like denominators) · **UNRESOLVED**, which is **not clean** and is never
+  folded into either neighbour — a two-arm comparison the regex cannot see lands
+  there, and so does an ordinary single-arm latency bar that is not the class.
+- `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
+  three sibling instruments have reported findings inside their own fixture
+  strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
+- Measured 2026-09-18 over 16 repos: **7 ADOPTED · 131 SEQUENTIAL · 865
+  UNRESOLVED** over 2677 target files / 9621 tracked `*.rs`. ⚠ **ADOPTED is 0 in
+  every repo but katgpt-rs** — the class generalised and the harness did not.
+  Read 131 as a MAGNITUDE: three predicates over overlapping populations
+  returned 55 · 57 · 60 for this repo alone. Take the figure from a run.
+- ⛔ **No verdict half, deliberately** (Issue 833 T4, 834 T4) — do not add one by
+  symmetry with the sweep family. Migration is a per-target read: the `a`/`b`
+  ORIENTATION (`AbRatio::median` is a TIME ratio and half these gates state a
+  THROUGHPUT claim — backwards inverts the bar silently), the chunk size off the
+  target's own printed range, and `black_box` at both ends. A slice chosen from
+  a classifier with 865 unresolved rows is a slice chosen from a guess.
+- ⚠ **STATED blind spots:** a ratio built through a helper; a comparison written
+  as a subtraction or a percentage; two arms differenced off ONE
+  `Instant::now()`; and orientation, which is not statically decidable.
+
 ## A gate that ABORTS reports exit 0 — `scripts/trap_exit_launder_audit.py`
 
 Every script above is a shell gate with `set -euo pipefail` and a cleanup
