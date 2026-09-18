@@ -354,8 +354,6 @@ def classify(text: str, rel: str = "") -> tuple:
     """
     masked, _attrs = mask_file(text)
     n = len(INSTANT.findall(masked))
-    if n == 0:
-        return ("UNTIMED", 0, [], False)
     gates = bool(ASSERTING.search(masked))
     # The harness is not an adopter of itself. `ADOPTED_RE` matches the module
     # by NAME, and the module's own path contains that name, so `ab_timing.rs`
@@ -368,8 +366,22 @@ def classify(text: str, rel: str = "") -> tuple:
         return ("HARNESS", n, [], gates)
     # ADOPTED is read off the UNMASKED text on purpose: `#[path = "..."]` puts
     # the module path inside a string literal, which masking blanks.
+    #
+    # ⛔ BOTH of these are tested BEFORE the `n == 0` short-circuit, and that
+    # ordering is the whole point. A target that adopts the harness COMPLETELY
+    # delegates its timing to `ab_median_ratio` and therefore contains ZERO
+    # `Instant::now()` of its own — so an `n == 0 -> UNTIMED` return placed
+    # first makes a perfectly-migrated target invisible to the census.
+    # The direction is the worst available: the better the migration, the more
+    # certainly the target disappears, so ADOPTED under-counts exactly the
+    # successes and the migration backlog shrinks its own denominator as it is
+    # worked. Measured on `tests/bench_839_kron_tile_goat.rs`, a full adopter
+    # with 0 timers that classified UNTIMED and appeared in no bucket at all.
+    # Same bucket-boundary class as the HARNESS self-certification above.
     if ADOPTED_RE.search(text):
         return ("ADOPTED", n, [], gates)
+    if n == 0:
+        return ("UNTIMED", 0, [], False)
     if n < 2:
         # One timer cannot bracket two arms separately in the ordinary shape.
         # Not proven — see the STATED blind spot about differencing one timer
@@ -688,6 +700,31 @@ def selftest() -> list:
     #    The floors must be non-trivial: a floor of 0 can never fire.
     if MIN_RS_FILES <= 0 or MIN_TIMED <= 0:
         fails.append("a floor of 0 is not a floor")
+
+    # ── a COMPLETE adopter has no timer of its own (Issue 833 T3) ───────────
+    # The defect this arms against ran in the WORST direction: `n == 0 ->
+    # UNTIMED` was tested first, so a target that delegates all timing to
+    # `ab_median_ratio` — i.e. the fully-migrated end state this whole audit
+    # exists to push targets toward — vanished from every bucket.
+    full_adopter = """
+    #[path = "common/ab_timing.rs"]
+    mod ab_timing;
+    use ab_timing::ab_median_ratio;
+    fn g() {
+        let r = ab_median_ratio(8, 64, 3, || a(), || b());
+        assert!(r.median < 0.9);
+    }"""
+    if v(full_adopter) != "ADOPTED":
+        fails.append(f"a full adopter with ZERO Instant::now() read {v(full_adopter)}, "
+                     "not ADOPTED — the better the migration, the more invisible it gets")
+    #    ...and the negative must survive: a file with no timer and no harness
+    #    reference is genuinely UNTIMED and must not be swept into ADOPTED.
+    if v("fn g() { let x = 1 + 1; assert!(x == 2); }") != "UNTIMED":
+        fails.append("a target with no timing and no harness must stay UNTIMED")
+    #    ...and the HARNESS short-circuit must still outrank ADOPTED even with
+    #    no timer of its own, or the module re-certifies itself.
+    if classify(full_adopter, "tests/common/ab_timing.rs")[0] != "HARNESS":
+        fails.append("the harness must read HARNESS regardless of timer count")
 
     # ── the COMPARISON axis (Issue 833 T3) ──────────────────────────────────
     # A. The Issue-831 P3 shape: a bare inequality between two timed arms, with

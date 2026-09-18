@@ -6,6 +6,13 @@ measured (`HAND-ROLLED`, `provenance_hits` incl. relative differences, and the
 GATES-vs-report annotation), plus two classifier defects found in the process
 (`HARNESS` self-certification, and ADOPTED matching a name where the treatment is a
 shape); T5's cross-repo figure taken. See §T3.
+⛔ **A THIRD classifier defect, 2026-09-19: a target became INVISIBLE by being
+MIGRATED.** `classify` returned `UNTIMED` at `n == 0` before testing ADOPTED, so a
+full adopter — which keeps no `Instant::now()` of its own — fell out of every
+bucket. ADOPTED **7 → 12**, five previously invisible, and the specimen is Issue
+831's own repair. Every ADOPTED figure printed before this was an under-count, and
+the AGENTS.md conclusion that the duplicated treatment outnumbered the shared one
+is **RETRACTED**.
 **T3 — the BLIND-SPOT axis is COMPLETE 2026-09-19.** A sixth resolver
 (`comparison_hits`) closed the shape the other five could not see, and the two
 remaining stated blind spots were each MEASURED rather than left as cautions —
@@ -724,3 +731,69 @@ and each measured. **T4's precondition — a calibrated population — is met fo
 blind-spot axis.** What remains uncalibrated is orientation, which is exactly what
 T4 says cannot be decided statically, so the answer to "is a verdict half
 warranted" is unchanged and now rests on a measurement instead of a caution.
+
+## 2026-09-19 — a target became INVISIBLE by being MIGRATED (bucket-boundary defect #3)
+
+⛔ **`classify` returned `UNTIMED` at `n == 0` BEFORE testing ADOPTED.** A target
+that adopts the harness *completely* delegates its timing to `ab_median_ratio` and
+therefore contains **zero `Instant::now()` of its own** — so it fell out of every
+bucket and appeared in no count.
+
+**The direction is the worst available.** The fully-migrated target is the end
+state this entire audit pushes toward, so the better a migration was done, the more
+certainly its target disappeared. The migration backlog was **shrinking its own
+denominator as it was worked**, and the ADOPTED figure — the one number that
+measures success here — under-reported exactly the successes.
+
+Found because `katgpt-rs-9a` (pipe `cc-msg-39d46cd5…`) reported that its new
+`tests/bench_839_kron_tile_goat.rs` was an adopter and that ADOPTED should read 8.
+The audit still read **7**, and the target appeared in no bucket at all. **Their
+claim was right and the instrument was wrong** — worth stating plainly, because the
+first hypothesis on a count disagreement is usually the reporter's error.
+
+### Measured: 7 → 12, and 5 were invisible, not 1
+
+| target | timers | verified |
+|---|---|---|
+| `crates/katgpt-types/tests/bench_817_argmax_dispatch_ab.rs` | 0 | `#[path]` + `mod ab_timing` + 1 call |
+| `tests/bench_171_thinking_prune_goat.rs` | 0 | ditto |
+| `tests/bench_257_gpart_adapter_goat.rs` | 0 | ditto |
+| `tests/bench_839_kron_tile_goat.rs` | 0 | ditto, 4 calls |
+| `tests/substrate_gate_goat.rs` | 0 | `#[path]` + 2 `ab_timing::ab_median_ratio(` calls |
+
+**Zero false positives** — each was checked for a real module declaration and a
+live call rather than a prose mention, which matters because `ADOPTED_RE` reads the
+UNMASKED text by design.
+
+⚑ **The specimen that proves the mechanism is `bench_171_thinking_prune_goat`:
+Issue 831's own repair.** That target was migrated to `ab_median_ratio` earlier the
+same day *as the fix for a measured 20% coin flip* — and the fix is what removed it
+from the census. An instrument that loses sight of a target at the moment the
+target is repaired cannot measure its own programme.
+
+### What this retracts
+
+AGENTS.md concluded that *"workspace-wide the **duplicated** treatment (9) now
+outnumbers the **shared** one (7)"*. **Retracted**: the 7 was the artifact. The
+corrected counts are **12 shared vs 9 duplicated**, so the shared treatment leads.
+The DRY finding survives only in its weaker form — 6 of the 9 duplications sit
+outside this repo — and that is a real finding about the MODULE not travelling,
+not about the treatment being unpopular.
+
+### Fix + arms
+
+The `HARNESS` and `ADOPTED` tests now run **before** the `n == 0` return. Three
+arms pin it, because the ordering is the whole content:
+
+- a full adopter with **zero** timers must read `ADOPTED` (the defect itself);
+- a target with no timing **and** no harness reference must stay `UNTIMED` (the
+  fix must not sweep ordinary untimed tests into ADOPTED);
+- the harness must still read `HARNESS` regardless of timer count, or the module
+  re-certifies itself — the *first* bucket-boundary defect, reintroduced by the
+  repair for the third.
+
+**Third bucket-boundary defect in this classifier** (after `HARNESS`
+self-certification and ADOPTED matching a NAME where the treatment is a SHAPE).
+All three inflated or deflated the one figure the section is quoted for, and none
+was reachable by reading the code — each needed a case whose answer was known
+independently, which is `wasm32_surface_audit`'s recorded lesson.

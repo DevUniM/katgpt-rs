@@ -1348,10 +1348,21 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
 - `mask_file` is **imported** from `platform_dead_code_audit`, not re-written:
   three sibling instruments have reported findings inside their own fixture
   strings, and a second hand-rolled Rust lexer is a second thing to get wrong.
+- ⛔ **Re-measured 2026-09-19 after the `n == 0` ordering fix: 1 HARNESS ·
+  **12 ADOPTED** · 9 HAND-ROLLED · 154 SEQUENTIAL (35 asserting nothing) ·
+  784 UNRESOLVED** over 2436 target files / 8123 tracked `*.rs`, 14 repos.
+  **Every ADOPTED figure printed before this — 7, and the 8 the HARNESS bullet
+  corrects — was an UNDER-COUNT by 5**, because `classify` short-circuited
+  `n == 0 → UNTIMED` ahead of the ADOPTED test. ⚑ **The direction is the worst
+  available: a target became invisible by being MIGRATED**, since the end state
+  this audit pushes toward is one with no `Instant::now()` of its own. The
+  specimen that proves it is `bench_171_thinking_prune_goat` — Issue 831's own
+  repair, which dropped out of the census on the day it was fixed — so the
+  migration backlog was shrinking its own denominator as it was worked.
 - Re-measured 2026-09-18 after `comparison_hits`, over the **14** contract repos
   present on this box: **1 HARNESS · 7 ADOPTED · 9 HAND-ROLLED · 154 SEQUENTIAL
   (35 asserting nothing) · 784 UNRESOLVED** over 2435 target files / 8120
-  tracked `*.rs`. ⚠ **Not comparable term-by-term with the 17-repo line below**
+  tracked `*.rs`. ⚠ Its ADOPTED 7 is the under-count described above. ⚠ **Not comparable term-by-term with the 17-repo line below**
   — the population is three repos smaller, so SEQUENTIAL rising 152 → 154 across
   a SMALLER walk is a floor on what the sixth resolver moved, not a measurement
   of it. Take both figures with their repo count, which is the whole reason this
@@ -1381,8 +1392,20 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
   second, and the second is the one anybody acts on.** ADOPTED is still 0
   everywhere else. But the shape-based verdict measures **9 HAND-ROLLED, and
   6 of the 9 are OUTSIDE this repo** — riir-ai 3, riir-neuron-db 2,
-  riir-train 1 — so workspace-wide the **duplicated** treatment (9) now
-  outnumbers the **shared** one (7). The **treatment** generalised; what did
+  riir-train 1. ⛔ **That paragraph then concluded the duplicated treatment (9)
+  outnumbered the shared one (7), and the conclusion is RETRACTED — the 7 was a
+  classifier artifact.** `classify` returned `UNTIMED` at `n == 0` *before*
+  testing ADOPTED, so a target that adopts the harness COMPLETELY — delegating
+  all timing to `ab_median_ratio` and keeping no `Instant::now()` of its own —
+  fell out of every bucket. Corrected count: **12 ADOPTED, 5 of them
+  previously invisible** (`bench_817_argmax_dispatch_ab`,
+  `bench_171_thinking_prune_goat`, `bench_257_gpart_adapter_goat`,
+  `bench_839_kron_tile_goat`, `substrate_gate_goat` — all verified as real
+  adopters, `#[path]` + `mod ab_timing` + live `ab_median_ratio(` calls, zero
+  false positives). So the **shared** treatment (12) outnumbers the
+  **duplicated** one (9), and the DRY finding survives only in the weaker form
+  that 6 of the 9 duplications sit outside this repo. The **treatment**
+  generalised; what did
   not is the shared MODULE, independently re-written six times. That is a DRY finding rather
   than a coverage gap, and it is the measurement Issue 833 T5 / 834 T3 ask for
   before the cross-repo question is answered — it does not answer it, because
