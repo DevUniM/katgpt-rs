@@ -40,8 +40,19 @@
 //!
 //! # Gates (T3.4)
 //!
-//! - **G8 (headline):** mass/age recall ≥ raw-H2O recall at EVERY cap in
-//!   the sweep. FAIL here = keep the negative artifact + demote (plan rule).
+//! - **G8 (headline):** every USAGE-RATE-CONSUMING arm — `mass_age`,
+//!   `mass_age_sink` and the `ega_x_usage` hybrid — must reach recall ≥
+//!   raw-H2O recall at EVERY cap in the sweep. FAIL here = keep the negative
+//!   artifact + demote (plan rule).
+//!   ⛔ This line read *"mass/age recall"* until 2026-09-18 while the code
+//!   had always gated three arms, and `ega_x_usage` is not mass/age. The
+//!   under-description was not free: this bench's own doc recorded *"one
+//!   genuine regime miss"* and *"G8 PASS at 32/48/64"* while this gate
+//!   printed a third, deterministic miss at cap 32 on every run. The
+//!   population is the RIGHT one — the hybrid consumes the primitive under
+//!   gate, so its regime is part of the claim — and narrowing it to make the
+//!   sentence true would be the tuning-away this file's own G8 comment
+//!   forbids. The LABEL moved instead.
 //! - **G1 determinism:** the full policy × cap × seed matrix run twice —
 //!   accuracy tables bit-identical.
 //! - **G2 update latency:** `observe` + `score` < 10 ns/row (release).
@@ -737,11 +748,15 @@ fn main() {
             mean_out
         );
     }
-    // G8: the mass/age family must be >= raw_h2o at every cap. A per-cap
-    // miss is recorded honestly — the regime boundary (WHERE the score
-    // wins) is a finding, not noise to be tuned away. Indices are derived
-    // from ALL, never hardcoded (the 10-arm addendum reordered nothing,
-    // but derivation is the drift-proof form).
+    // G8: every usage-rate-consuming arm must be >= raw_h2o at every cap. A
+    // per-cap miss is recorded honestly — the regime boundary (WHERE the
+    // score wins) is a finding, not noise to be tuned away. Indices are
+    // derived from ALL, never hardcoded (the 10-arm addendum reordered
+    // nothing, but derivation is the drift-proof form).
+    //
+    // ⚠ The arm list below is the CLAIM. Read it, not the gate's printed
+    // label, when citing what G8 covers — the two disagreed for sixteen days
+    // and the doc inherited the label's narrower version.
     let idx_of = |p: Policy| -> usize {
         Policy::ALL
             .iter()
@@ -771,7 +786,7 @@ fn main() {
         println!("  G8 MISS: {m}");
     }
     println!(
-        "  G8 GATE (mass/age family >= raw_h2o at every cap): {}",
+        "  G8 GATE (mass_age + mass_age_sink + ega_x_usage >= raw_h2o at every cap): {}",
         pass_fail(g8_all)
     );
 
