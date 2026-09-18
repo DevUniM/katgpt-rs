@@ -992,7 +992,9 @@ fn g2_update_latency() -> f64 {
         acc += s[0];
     }
     let elapsed = start.elapsed().as_secs_f64();
-    let _ = acc;
+    // `black_box`, not `let _ = acc` — see bench_415 / Issue 831: a dropped
+    // accumulator does not keep a timed loop alive.
+    std::hint::black_box(acc);
     elapsed * 1e9 / (n as f64 * ticks as f64)
 }
 

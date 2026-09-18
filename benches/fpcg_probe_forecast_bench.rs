@@ -118,9 +118,12 @@ fn main() {
         let proj_elapsed = start.elapsed();
         let proj_ns_per_it = proj_elapsed.as_secs_f64() * 1e9 / BENCH_ITERS as f64;
 
-        // Keep accumulators live (sum to a single comparison so the loop
-        // bodies can't be DCE'd).
-        let _ = acc_probe + acc_proj;
+        // Keep the accumulators live. ⚠ What actually protects these loops
+        // is the `black_box` INSIDE each body, not this line: `let _ = x`
+        // does not prevent DCE (Issue 831, where a bench relying on that
+        // belief measured a screener that cost nothing). Kept and made a
+        // real `black_box` so the two agree.
+        black_box(acc_probe + acc_proj);
 
         let verdict = if probe_ns_per_it < 200.0 {
             "PASS ✅"
