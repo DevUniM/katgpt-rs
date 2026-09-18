@@ -243,6 +243,37 @@ this repo's own most-repeated shape.
   cite the sibling SHA in whatever record claims one. riir-clippy in
   particular is written by a concurrent session as of this filing.
 
+  **Progress 2026-09-18 — 54 of the 72 live test hazards closed**, each
+  committed in the sibling before its ratchet moved (the Issue 798 rule):
+
+  | repo | SHA | test sites closed | residual | note |
+  |---|---|---|---|---|
+  | riir-ai | `7d22f0d8b` | 44 | 4 | residual all `examples/` |
+  | riir-chain | `8a3b0f5` | 9 | 1 | residual all `examples/` |
+  | riir-game-sdk | `d2c0bab` | 1 | 0 | ratchet is now a wall |
+  | riir-train | — | — | 12 | dry run: **0 non-demo sites**; all 12 are `examples/`+`src/bin/` |
+  | riir-neuron-db | — | — | 3 | all `examples/` |
+  | riir-clippy | — | — | 24 | **the only repo with live test sites left (17)** |
+
+  So the live-hazard backlog is **riir-clippy's 17**, and it is BLOCKED on
+  contention rather than on work: a concurrent session holds 16 dirty files
+  there, 7 of them in this sweep's own population. Repairing into another
+  session's worktree is the shared-worktree hazard `staged_set_audit.py`
+  exists for. Do it when that repo is clean; `scripts/shared_temp_path_fix.py
+  ../riir-clippy --dry-run` is the whole of the work.
+
+  ⚠ The riir-train row is the one worth reading twice: this issue's own T5
+  triage table says *"riir-train 3 test"*, and the repair tool measures **0**.
+  The 3 either moved or were miscounted by the file-level `#[cfg(test)]`
+  heuristic the triage used. **Take the split from the tool's dry run, not
+  from the table above it** — the table is a dated census and the dry run is
+  the instrument.
+
+  ⚠ Four repos carry a STALE advisory on this sweep (riir-ai 4 behind on 4
+  in-scope commits among them). A count read on this box is what this
+  checkout says, not what origin says — confirm before repairing there
+  (Issue 798).
+
 ## Standing
 
 ⛔ **VERIFIED in the instrument that found it, 2026-09-18 @ `a77c46c0`:**
