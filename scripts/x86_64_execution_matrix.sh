@@ -210,10 +210,35 @@ SEEN_FAILS="$SCRATCH/.failing_tests.txt"
 # diary, not a wall.
 #
 # So every failure is RE-RUN ALONE before it is adjudicated — this session's
-# own finding, mechanised: a load-sensitive bar passes the second time and a
-# real failure does not. TRANSIENT rows are printed (they are what the box did)
-# and never counted, never pinned. The re-run is cheap: everything is already
-# built and `--exact` makes every other binary run zero tests.
+# own finding, mechanised. The re-run is cheap: everything is already built and
+# `--exact` makes every other binary run zero tests.
+#
+# ⛔ **But "passed alone" is EVIDENCE, not a CAUSE, and calling it TRANSIENT
+# has now been wrong three times.** The word asserts "load-sensitive bar", and
+# at least three distinct classes produce the identical observation:
+#
+#   1. a load-sensitive perf BAR       — Issue 831. TRANSIENT is correct here.
+#   2. a shared-fixed-path CONCURRENCY — Issue 832. Passes alone BY
+#      CONSTRUCTION; alone there is no second process. One was filed TRANSIENT
+#      and the defect shipped.
+#   3. an unseeded-RNG COIN FLIP       — `player_type_creates_instances`,
+#      2026-09-18: asserted `Place` against a documented
+#      `PASS_PROBABILITY = 0.02` twelve lines away. 9 failures in 400 seeds, so
+#      a single clean re-run is what you EXPECT 98% of the time.
+#
+# Re-running N times narrows (2) not at all and (3) only weakly — a 2% flake
+# survives five re-runs 90% of the time — so the repair is not more re-runs
+# alone. It is to stop naming a cause the instrument cannot observe: rows print
+# as PASSED-ALONE with the three classes and their disambiguating checks
+# attached, so the reader adjudicates instead of inheriting a guess. The extra
+# runs still buy real evidence for (3) and cost nothing, so they are kept.
+#
+# PASSED-ALONE rows are still never counted and never pinned: what they are NOT
+# is explained.
+CONFIRM_RUNS="${CONFIRM_RUNS:-3}"
+PASSED_ALONE_FILE="$SCRATCH/.passed_alone"
+: > "$PASSED_ALONE_FILE"
+
 collect_fails() {  # $1 = log, $2 = the cargo args of the cell it came from
     sed -n 's/^test \(.*\) \.\.\. FAILED$/\1\t'"$2"'/p' "$1" >> "$SEEN_FAILS" || true
 }
@@ -221,14 +246,53 @@ collect_fails() {  # $1 = log, $2 = the cargo args of the cell it came from
 confirm_fails() {  # stdin: name<TAB>args ; stdout: names that failed AGAIN
     while IFS="$(printf '\t')" read -r name args; do
         [ -n "$name" ] || continue
-        # shellcheck disable=SC2086 -- $args is a deliberate word list
-        if (cd "$SCRATCH" && cargo test $args -j "$JOBS" -- --exact "$name") \
-                > "$SCRATCH/.confirm.log" 2>&1; then
-            echo "    · TRANSIENT $name — failed in the cell, PASSED alone" >&2
+        passes=0
+        failed=0
+        i=0
+        while [ "$i" -lt "$CONFIRM_RUNS" ]; do
+            i=$((i + 1))
+            # shellcheck disable=SC2086 -- $args is a deliberate word list
+            if (cd "$SCRATCH" && cargo test $args -j "$JOBS" -- --exact "$name") \
+                    > "$SCRATCH/.confirm.log" 2>&1; then
+                passes=$((passes + 1))
+            else
+                failed=1
+                break
+            fi
+        done
+        if [ "$failed" -eq 0 ]; then
+            echo "    · PASSED-ALONE $name — failed in the cell, passed $passes/$CONFIRM_RUNS alone" >&2
+            # ⛔ A FILE, not a variable: this function runs on the right-hand
+            # side of a pipeline, i.e. in a subshell, so `PASSED_ALONE=$((…))`
+            # here is invisible to the caller and the note below would never
+            # print. Exactly the shape AGENTS.md's pipefail-discard audit is
+            # about, one hazard over.
+            echo x >> "$PASSED_ALONE_FILE"
         else
             echo "$name"
         fi
     done
+}
+
+# Printed once, after the confirm pass, whenever anything landed in that
+# bucket — at the place a reader decides what to do about it, not in a
+# docstring they will not open.
+passed_alone_note() {
+    [ -s "$PASSED_ALONE_FILE" ] || return 0
+    cat >&2 <<'NOTE'
+
+  ⚠ PASSED-ALONE is an OBSERVATION, not a diagnosis. Three classes produce it
+    and they need opposite responses — adjudicate before dismissing:
+      · load-sensitive perf BAR   → check whether the bar is ISA-calibrated for
+        another arch, and what else was running. The only class the old
+        "TRANSIENT" label was right about.
+      · CONCURRENCY on a shared path → grep the test for a FIXED
+        env::temp_dir()/"/tmp" path; it passes alone BY CONSTRUCTION, because
+        alone there is no second process (scripts/shared_temp_path_gate.py).
+      · unseeded-RNG COIN FLIP    → grep for fastrand::Rng::new()/default() or
+        a free-function draw; re-run it across a few hundred SEEDS, not a few
+        processes. A 2% flake survives three re-runs 94% of the time.
+NOTE
 }
 
 run_lib_cell() {
@@ -353,8 +417,9 @@ else
     : > "$PINNED"
 fi
 echo ""
-echo "▸ confirming each failure ALONE (a load-sensitive bar passes the second time)"
+echo "▸ confirming each failure ALONE, $CONFIRM_RUNS run(s) each (passing alone is EVIDENCE, not a cause — see the note below)"
 sort -u "$SEEN_FAILS" | confirm_fails | sort -u > "$SEEN_FAILS.sorted"
+passed_alone_note
 UNPINNED="$(comm -23 "$SEEN_FAILS.sorted" "$PINNED")"
 STALE="$(comm -13 "$SEEN_FAILS.sorted" "$PINNED")"
 n_fail_tests="$(wc -l < "$SEEN_FAILS.sorted" | tr -d ' ')"

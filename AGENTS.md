@@ -248,7 +248,7 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   *a pin file re-typed after every run is a diary, not a wall*, and re-typing
   it is how a real regression gets absorbed as "probably the box again". The
   confirm step is this workspace's own lesson mechanised: a load-sensitive bar
-  passes the second time and a real failure does not. TRANSIENT rows print and
+  passes the second time and a real failure does not. Such rows print and
   are never counted, never pinned; it costs nothing, because everything is
   already built and `--exact` makes every other binary run zero tests. What
   survived was three reproducible rows, and none of the three survived
@@ -262,6 +262,26 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   unexpected again. A stale pin (its test passes now) reds
   too — the file must not only ever loosen — except under `--libs-only`, which
   DEFERS that check because it skips the cell those rows come from.
+- ⛔ **The bucket is `PASSED-ALONE`, not `TRANSIENT`, and the rename is the
+  finding** (2026-09-18). "TRANSIENT" asserts a CAUSE the instrument cannot
+  observe, and it has now been wrong three times — three classes produce the
+  identical "failed in the cell, passed alone" observation and they need
+  opposite responses:
+  - a load-sensitive perf **BAR** (Issue 831) — the only one the old label
+    was right about;
+  - a shared-fixed-path **CONCURRENCY** defect (Issue 832), which passes alone
+    BY CONSTRUCTION, because alone there is no second process. One was filed
+    TRANSIENT and the defect shipped;
+  - an unseeded-RNG **COIN FLIP** — `player_type_creates_instances`, which
+    asserted `Place` against a documented `PASS_PROBABILITY = 0.02` twelve
+    lines away and failed 9 times in 400 seeds. A single clean re-run is what
+    you EXPECT 98% of the time.
+  ⚠ More re-runs is NOT the repair and the arithmetic says so: re-running
+  narrows the concurrency class not at all, and a 2% flake survives three
+  re-runs 94% of the time. `CONFIRM_RUNS` defaults to 3 because the evidence
+  is free, but what actually fixes the reader is that the row no longer names
+  a cause — the three classes and their disambiguating greps print at the
+  place the reader decides, not in a docstring nobody opens.
 - Floors in `scripts/x86_64_matrix_floors.txt` — `min_passed` per package plus
   the integration cell's **two** (targets AND assertions: a target that
   compiles to an empty binary stops printing a line, and the target count can
