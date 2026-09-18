@@ -215,9 +215,33 @@ this repo's own most-repeated shape.
     and a record here claiming one must CITE THE SIBLING SHA (Issue 798 —
     measured: two tracked files recorded sibling repairs as landed and green
     when two of five existed and both sweeps were red for six hours).
-  - Some of the 98 are `examples/` and `src/bin/` (riir-clippy has several),
-    which is the adjudicated-not-repaired class — so this is 98 *reads*, not
-    98 mechanical edits.
+  - Some of the 98 are `examples/` and `src/bin/`, which is the
+    adjudicated-not-repaired class — so this is 98 *reads*, not 98 mechanical
+    edits.
+
+  **Triaged 2026-09-18** (a site is TEST if its file carries `#[cfg(test)]` or
+  lives under `tests/`), so the backlog is addressable rather than a number:
+
+  | repo | test | example/bin | other |
+  |---|---|---|---|
+  | riir-ai | **42** | 4 | 2 |
+  | riir-clippy | **17** | 7 | 0 |
+  | riir-chain | **9** | 1 | 0 |
+  | riir-train | 3 | 9 | 0 |
+  | riir-game-sdk | 1 | 0 | 0 |
+  | riir-neuron-db | 0 | 3 | 0 |
+  | **total** | **72** | **24** | **2** |
+
+  So the live hazard is **72 sites**, not 98, and it is concentrated: riir-ai
+  and riir-clippy carry 59 of them. The 24 example/bin rows get the same read
+  the two pinned rows here got — a demo's path is meant to stay findable, and
+  no gate runs two examples concurrently — and the 2 `other` rows are
+  non-test, non-demo code and want a per-site read before anything is assumed
+  about them.
+
+  ⚠ Do the repairs **per repo, in that repo, with its tests run there**, and
+  cite the sibling SHA in whatever record claims one. riir-clippy in
+  particular is written by a concurrent session as of this filing.
 
 ## Standing
 
