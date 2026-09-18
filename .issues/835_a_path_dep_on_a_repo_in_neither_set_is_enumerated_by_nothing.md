@@ -119,6 +119,19 @@ The only thing standing between these arms and that is their own perturbation
 **nothing** under perturbation, because one exclusion had two code paths and
 the arm certified the path it was not aimed at.
 
+⛔ **How this was found is its own lesson, and it favours the boring
+instrument.** The external walk was HYPOTHESIS-DRIVEN — it asked "are the
+seven absent-but-registered repos referenced?", which is a question about
+DEFERRED, and it answered exactly that question. What generalised the finding
+to three buckets was the classifier's **own full verdict distribution**,
+`{RESOLVED: 311}`, which is not a question at all: it cannot return a clean
+answer about a bucket nobody thought to ask about, because every bucket is in
+the output whether or not anyone had a theory about it. BROKEN-SUBPATH was in
+identical condition and no hypothesis pointed at it.
+⇒ **Print the whole distribution, not the buckets you have a hypothesis
+about** — and when checking an instrument, read its census before writing a
+targeted probe. A targeted probe confirms or refutes; it does not enumerate.
+
 ### Three defects found while building it, all by other instruments
 
 ⛔ **1. `population_sync_gate` refused an eleventh independent walk, and it was
