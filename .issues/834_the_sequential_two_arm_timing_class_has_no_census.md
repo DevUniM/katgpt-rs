@@ -179,11 +179,17 @@ instead of re-deriving them:
   |---|---|---|
   | 1 | `d7a34822` | `goat_2_gdn2_within_10pct_of_ahla_throughput` (`bench_105`) |
   | 2 | `aba3827f` | `g8_cached_faster_than_uncached` (`belief_drafter_goat.rs`) |
+  | 3 | `dd8dadbb` | **none — clean**, both of the above repaired by then |
 
   Both were already in the DECIDED set. Both passed the same three-grep
   adjudication as load-sensitive BARs. Run 2 also confirmed `bench_105`'s
   repair **in cell**, which its 8 standalone runs could not — standalone and
   in-cell are different load regimes, and in-cell is the one that failed.
+
+  **Run 3** (`dd8dadbb`) was **CLEAN — `failed=0`, zero PASSED-ALONE rows,
+  11177 assertions.** `katgpt-rs-54` predicted a third distinct member and it
+  did not fire. Recorded because it was pre-committed, and because a prediction
+  reported only when it lands is not a prediction.
 
   ⇒ **The DECIDED count is not a backlog of latent rows awaiting their turn.
   It is a population every run SAMPLES FROM**, and which member surfaces is
@@ -196,6 +202,30 @@ instead of re-deriving them:
   is shrinking.** With sampling, the expected number of runs to observe a given
   member is a function of the population size, so converting members lowers the
   per-run hit rate long before it reaches zero.
+
+  ⛔ **And that corollary binds THIS issue first — run 3 discriminates
+  nothing.** Two readings survive it and the run cannot separate them:
+  - a sampling population with its **two most fragile members now repaired**
+    (run 3 is the first run in which BOTH `goat_2` and `g8` are fixed, so it
+    did not sample the population runs 1 and 2 sampled), or
+  - simply a quieter box.
+
+  3 runs, 2 firings, 1 quiet: a sampling model **expects** quiet runs, so this
+  is not evidence against sampling either. What it does refute is the strong
+  form — *every run surfaces a member* — which nobody should have held at n=2.
+  **Do not read run 3 as progress; that is exactly the inference the corollary
+  above forbids**, and it is easier to catch in someone else's reasoning than
+  in one's own.
+
+  ⛔ **What WOULD discriminate, and the gap is real:** the matrix records no
+  BOX STATE. AGENTS.md §Feature Flag Discipline G2 already rules that *"a
+  latency number without its BOX STATE is not a measurement"* — and every
+  PASSED-ALONE row is a latency-bar outcome, recorded with no free RAM, no
+  commit-vs-limit, and no concurrent-job note. So runs are not comparable to
+  each other even in principle, and three of them cannot be pooled into a rate.
+  Logging box state per run would make the sampling claim testable instead of
+  arguable. Filed as a candidate, not done — it is the matrix's call, not this
+  issue's.
 
   ### A worked per-target read — same SHAPE, different RISK
 
