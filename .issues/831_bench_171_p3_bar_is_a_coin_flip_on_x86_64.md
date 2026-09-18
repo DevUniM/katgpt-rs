@@ -112,7 +112,8 @@ there is a reason with a number in it.
   schedules build the same tree" stayed invisible. Either assert strict
   inequality against a fixture that produces it, or assert the equality
   deliberately and move the node-count claim to where it is actually tested.
-- [ ] **T4 — Re-adjudicate the fixture.** If the screener never prunes, decide
+- [x] **T4 — Re-adjudicate the fixture. DONE 2026-09-18, and the narrowed
+  reading was the wrong reason.** If the screener never prunes, decide
   whether `work_per_call` should rise until the mechanism is expressible, or
   whether P3's claim should be restated as "skips N screener calls" and measured
   as a **call count** — which is exact, arch-independent, and immune to every
@@ -199,11 +200,23 @@ the claim is not wrong — the instrument and the fixture were both broken.
 that used to fail 4 of 20: **8/8 release, 5/5 debug**, plus 10/10 and 6/6
 during development. 29 consecutive passes against the old harness's 80%.
 
-⚠ **T4 is NARROWED, not closed.** The fixture CAN express the mechanism, so the
-"restate P3 as a call count" option is no longer forced. What remains is that
-`VaryingScreener` keys only on `depth` — it ignores `token_idx` and
-`parent_tokens` — so all 10 P1 seeds produce identical counts and the trials
-are a loop over one case. That is recorded at the assertion rather than fixed.
+✅ **T4 is CLOSED (2026-09-18), and the narrowed reading above named the wrong
+cause.** `VaryingScreener` did key only on `depth`, and fixing that does NOT
+make the seeds vary — measured both ways. `build_screened` is not a top-k: it
+admits every token with `prob > 0` that clears the screener, and
+`random_marginals` returns an all-positive vector, so the marginals decide each
+node's SCORE and the heap ORDER, never membership. The node COUNT is a function
+of (screener, threshold, vocab, depths, budget) alone, so no screener change can
+turn a seed loop over a count into ten cases.
+
+The loop now ASSERTS that marginal-independence instead of pretending to sample
+it — canaried, a +1 perturbation on one seed reds with the diagnosis attached.
+The screener is token-dependent on its own merits (keyed on depth alone it was
+all-or-nothing WITHIN a depth, so it could not distinguish a builder applying it
+per TOKEN from one applying it per DEPTH), and the jitter range carries its
+measured budget coupling at the knob: making every depth partial puts all 10
+seeds at the 12288-node cap with 10/10 ties, because depth 2's hard reject is
+what keeps this fixture small enough for P1 to mean anything.
 
 ⚠ **T1 is still owed for aarch64** as a measurement, but its premise has
 changed: any pre-2026-09-18 aarch64 number was taken against a deleted screener
