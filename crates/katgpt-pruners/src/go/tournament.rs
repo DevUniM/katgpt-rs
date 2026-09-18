@@ -819,8 +819,12 @@ mod tests {
                         );
                         placed += 1;
                     }
+                    // Exhaustive on purpose — no `_` arm. `GoAction` is
+                    // Place|Pass today, so a catch-all is an UNREACHABLE
+                    // pattern (a warning the full gate counts), and if a third
+                    // variant is ever added this match should be a compile
+                    // ERROR here rather than a silently-ignored case.
                     GoAction::Pass => {}
-                    other => panic!("{} returned {other:?} at seed {seed}", p.name()),
                 }
             }
             assert!(
