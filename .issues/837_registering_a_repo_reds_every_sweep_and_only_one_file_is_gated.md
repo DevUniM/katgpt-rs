@@ -65,12 +65,48 @@ multi-minute runs.
 
 ## Tasks
 
-- [ ] **T1 — write the 21 `riir-llm` rows**, each from a real measurement of
-  that repo by the sweep that owns the file, in the commit that adds it.
-  Unblocking work, and it comes first: the family is red *today*, and a red
-  family is one nobody reads. ⚠ Take each value from the sweep's own run —
-  a floor typed from a neighbouring row is the "diary, not a wall" shape this
-  repo already refuses.
+- [x] **T1 — the 20 `riir-llm` rows, DONE 2026-09-18.** Measured first: **19
+  of 21 sweeps RED**, the two greens being `docs_drift` and `restatement`,
+  both legitimately SUBSET-scoped (docs_drift's own header says it records
+  "only WHICH repos are known to carry drift-auditable labels"; restatement's
+  population is repos with `.proofs`). Every value read off the sweep's own
+  printed row for riir-llm.
+
+  ⛔ **The first attempt CLONED a neighbouring repo's row and was wrong
+  eleven times** — riir-auth's floors are not riir-llm's measurements, so
+  `citation_drift_floors` got `min_citations 8` for a repo with 0 citations.
+  That is the "diary, not a wall" shape, reached by the shortcut it warns
+  about. Reverted; the rows are typed from the run.
+
+  ⚑ **The arity assertion earned its keep immediately**, and what it caught is
+  its own finding: `percentile_drift_floors` and `trap_sentinel_drift_floors`
+  declare **4** columns in their format headers while every row carries **6**
+  and **7**. A pin file's format line is what a human adjudicates a row from,
+  and a stale one reds nothing. Both repaired against the sweeps' own `FIELDS`
+  tuples, which are the only authority.
+
+### ⛔ What the pins surfaced — three live findings that were sitting behind
+the reds
+
+This is Issue 793's measured claim reproduced exactly (*"a sweep that always
+reds is a sweep nobody runs"*), and it is the argument for T2 far more than
+the inconvenience is. With riir-llm pinned, three sweeps went from **red for a
+bookkeeping reason** to **red for a real one**:
+
+| sweep | finding | repaired |
+|---|---|---|
+| `citation` | riir-kat: 3 unqualified cross-repo citations — `Bench 053` ×2 and `Proposal 006`, the first ⛔MISLEADING (the only crate in its window is riir-dapps, which does **not** own 53, while katgpt-rs owns two documents at that number) | riir-kat `51994ee` |
+| `trap_sentinel` | riir-shader: `gamefx_feature_matrix.sh` EXPOSED — `set -eu`, an EXIT trap, 6 triggers, and a window that deliberately corrupts a tracked source, so a laundered abort restores the file and prints PASS having run neither arm | riir-shader `176da06` |
+| `instrument_reachability` | riir-clippy: 11 unreachable vs 4 pinned — 7 plan/bench-scoped one-offs landed undocumented | ratcheted at measured (the documented OVER-CAPTURE class; documenting them is riir-clippy's own call) |
+| `numbering` | riir-shader: `.plans/.highwater` left at 004 while `.plans/005` exists — the next allocator reads 004, takes 005 and files a second document at a held number | riir-shader `6f045d4` |
+
+**Final state: 21 of 21 sweeps green** (from 19 red), docs gate 28/28.
+
+⚠ The riir-shader row is also an Issue-798 near-miss worth recording: that repo
+was **2 commits behind origin** when the finding appeared, so the first
+question was whether it was already fixed upstream. It was not — neither
+commit touches a `.sh` — but *confirm against origin before repairing* is what
+made that a fact rather than an assumption.
 
 - [ ] **T2 — the gate: every per-repo pin file has a row for every ON-DISK
   canonical repo.** The scope must come from `repo_set.txt` ∩ the derived
@@ -89,8 +125,12 @@ multi-minute runs.
   the commit that registers a repo rather than on somebody's next workstation
   run.
 
-- [ ] **T3 — the inverse direction, UNMEASURED.** A pin row for a repo that
-  has since left `repo_set.txt` is a stale row that can never be evaluated,
-  and nothing looks for it either. Whether any exist is a measurement, not an
-  assumption — **count first**, the `console_encoding_gate` lesson this
-  workspace has now been wrong about twice.
+- [x] **T3 — the inverse direction, MEASURED 2026-09-18: zero.** A pin row for
+  a repo that has since left `repo_set.txt` can never be evaluated, and
+  nothing looks for it. Counted rather than assumed: across every
+  `scripts/*floors.txt` and `*expected.txt`, the only repo-shaped row keys
+  absent from the registry are the **six package names** in
+  `x86_64_matrix_floors.txt` — a package-keyed file, a false positive of the
+  heuristic and not a stale row. So the direction is empty today, which is a
+  measurement and not an absence of the class; T2's gate should still assert
+  it, since the cost is one set difference it already computes.

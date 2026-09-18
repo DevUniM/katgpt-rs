@@ -127,6 +127,7 @@ riir-deployer        	4	0	0	0	0	0	0	# observed 2026-09-05: 5 files  ⛔ min_numb
 riir-esp32           	1	0	0	0	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
 riir-game-sdk        	6	0	0	0	0	33	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
 riir-kat              	0	0	0	0	0	0	0	# observed 2026-09-12: 0 allocator-serial files
+riir-llm	0	0	0	0	0	0	0  # observed 2026-09-18: joined the workspace 2026-09-18; no numbered documents
 riir-mmorpg-examples	28	0	0	0	1	108	4	# reset: Plan (1) — first pinned under the 770 walk (invisible to the 769 one); malformed .issues allocator repaired 097 2026-09-06 (adc8877, push-wins)
 riir-neuron-db      	37	0	0	0	0	88	3	# observed 2026-09-05: 47 files
 riir-shader           	2	0	0	0	1	18	0	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)

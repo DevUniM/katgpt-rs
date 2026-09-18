@@ -5,6 +5,12 @@
 #   <repo> <min_rs_files> <min_sites> <max_degenerate> <max_degenerate_asserted>
 #          <max_weak_asserted> <max_trunc_var>
 #
+# ⛔ The four-column form above is what this header USED to say while every
+# row carried SIX (Issue 837). A pin file's format line is what a human
+# adjudicates a row from, and a stale one reds nothing — take the columns
+# from the sweep's own FIELDS tuple, which is the only authority.
+#          <max_weak_asserted> <max_trunc_var>
+#
 # Re-pin DELIBERATELY, in the commit that changes the measured value, with the
 # reason in the commit message. A pin that drifts behind reality is a pin
 # nobody trusts.
@@ -90,6 +96,7 @@ riir-deployer                 35      0    0      0       0     0
 riir-esp32                     1      0    0      0       0     0
 riir-game-sdk                160      0    0      0       0     0
 riir-kat                    15      0    0      0       0     0  # observed 2026-09-12: 26 .rs, 0 sites
+riir-llm                       1      0    0      0       0     0  # observed 2026-09-18: joined the workspace 2026-09-18; 1 .rs, 0 percentile sites
 riir-mmorpg-examples          40      0    0      0       0     0
 riir-neuron-db               125      6    0      0       0     0
 riir-shader                 27      0    0      0       0     0  # observed 2026-09-12: 46 .rs, 0 sites

@@ -5,6 +5,12 @@
 #   <repo> <min_scripts> <min_population> <max_exposed> <max_precautionary>
 #          <max_live_forward> <max_unparsed> <max_replaced>
 #
+# ⛔ The five-column form above is what this header USED to say while every
+# row carried SEVEN (Issue 837). A pin file's format line is what a human
+# adjudicates a row from, and a stale one reds nothing — take the columns
+# from the sweep's own FIELDS tuple, which is the only authority.
+#          <max_live_forward> <max_unparsed> <max_replaced>
+#
 # Re-pin DELIBERATELY, in the commit that changes the measured value, with the
 # reason in the commit message. A pin that drifts behind reality is a pin
 # nobody trusts.
@@ -64,6 +70,7 @@ riir-deployer                   2    1    0     0         0         0         0
 riir-esp32                      1    0    0     0         0         0         0
 riir-game-sdk                   3    0    0     0         0         0         0
 riir-kat                       2    1    0     0         0         0         0  # observed 2026-09-12
+riir-llm                        0    0    0     0         0         0         0  # observed 2026-09-18: joined the workspace 2026-09-18; no .sh
 riir-mmorpg-examples            8    3    0     0         0         0         0
 riir-neuron-db                  2    0    0     0         0         0         0
 riir-shader                    5    0    0     0         0         0         0  # observed 2026-09-12: 0 of 5 scripts carry set -e/-u

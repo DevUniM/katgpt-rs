@@ -101,6 +101,7 @@ riir-dapps               10    0
 #   passed. A 0 here is a WALL in effect — the next such site reds.
 riir-game-sdk             3    0
 riir-kat                 15    0
+riir-llm                  0    0  # observed 2026-09-18: joined the workspace 2026-09-18; no temp_dir sites
 riir-mmorpg-examples      5    0
 riir-neuron-db            3    3
 riir-shader               2    0
