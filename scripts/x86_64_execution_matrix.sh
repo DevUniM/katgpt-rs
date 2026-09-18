@@ -117,6 +117,31 @@ export RUSTFLAGS="-C target-feature=+avx2"
 # verdict about any crate.
 JOBS="${X86_MATRIX_JOBS:-6}"
 
+# ⛔ The same bound one toolchain over, and the matrix red it without it.
+# `highs-sys` builds HiGHS through cmake + MSVC, and cmake-rs passes
+# `--parallel` derived from the CPU count. Measured on this box, one variable
+# at a time, cell 6 (katgpt-tokenizer):
+#
+#   --parallel 6  -> C1001 Internal compiler error in <vector> + cl D8040
+#                    "error creating or communicating with child process"
+#   --parallel 2  -> same, on an otherwise QUIET box
+#   --parallel 1  -> 74 passed (floor 44), 15.6s
+#
+# D8040 is cl.exe failing to spawn its own child, i.e. resource exhaustion, and
+# the accompanying C1001 is its collateral — not a defect in any crate here.
+# The matrix reports it as `died without a failures block — nothing asserted`,
+# which is the correct refusal and also a RED CELL over a toolchain flake, in
+# the only lane on this box that EXECUTES anything.
+#
+# Capped rather than retried: a retry loop would hide a genuine build break,
+# and the failure is a property of the host, not of the run. Overridable,
+# because a Linux box has no reason to pay for it.
+if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then
+    case "$(uname -s)" in
+        MINGW* | MSYS* | CYGWIN*) export CMAKE_BUILD_PARALLEL_LEVEL=1 ;;
+    esac
+fi
+
 # ── The POPULATION is DERIVED ───────────────────────────────────────────────
 # Every package owning a tracked *.rs that mentions `target_arch = "x86_64"`.
 # A new x86_64-bearing crate joins by EXISTING, which is the whole reason not

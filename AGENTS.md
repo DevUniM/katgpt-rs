@@ -228,6 +228,20 @@ X86_MATRIX_DIR=/f/scratch scripts/x86_64_execution_matrix.sh
   `cfg(all(target_arch = "x86_64", target_feature = "avx2"))` compiles to
   nothing without it, and the run then exercises the scalar fallback and proves
   nothing. `katgpt-attn`'s `channel_aware.rs` carries exactly that shape.
+- ⛔ **`CMAKE_BUILD_PARALLEL_LEVEL=1` on Windows, and it is a MEASUREMENT.**
+  `highs-sys` builds HiGHS through cmake + MSVC, and cmake-rs derives
+  `--parallel` from the CPU count. Measured one variable at a time on shikuwa,
+  cell 6 (`katgpt-tokenizer`): `--parallel 6` and `--parallel 2` both die with
+  `C1001 Internal compiler error` in `<vector>` plus `cl D8040 error creating
+  or communicating with child process` — the second on an otherwise QUIET box
+  — and `--parallel 1` passes 74 tests in 15.6s. D8040 is cl.exe failing to
+  spawn its own child, i.e. resource exhaustion; the C1001 is collateral. The
+  matrix reported it as *"died without a failures block — nothing asserted"*,
+  which is the correct refusal AND a red cell over a toolchain flake in the
+  only lane on this box that executes anything. Capped rather than retried: a
+  retry loop hides a genuine build break, and the failure is a property of the
+  host. Overridable, and applied only on MSYS/MinGW — a Linux box has no
+  reason to pay for it.
 - Population **derived** (any package owning a tracked `*.rs` that mentions
   `target_arch = "x86_64"`), so a new such crate joins by EXISTING. Issue 806's
   own hand-typed cell list named three packages; the tracked tree has six.
