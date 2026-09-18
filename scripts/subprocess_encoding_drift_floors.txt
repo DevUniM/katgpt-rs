@@ -55,11 +55,15 @@
 #
 #                       min_py  min_calls  max_decode  max_child
 katgpt-rs                  40         30           0          0
+katgpt-web                  0          0           0          0  # observed 2026-09-18: no .py
 riir-ai                     4          4           0          0
 riir-auth                   0          0           0          0
 riir-chain                  1          0           0          0
 riir-clippy                 3          6           0          0
+riir-dao                    0          0           0          0  # observed 2026-09-18: no .py
 riir-dapps                  0          0           0          0
+riir-deployer               0          0           0          0  # observed 2026-09-18: no .py
+riir-esp32                  0          0           0          0  # observed 2026-09-18: no .py
 riir-game-sdk               0          0           0          0
 riir-kat                    0          0           0          0
 riir-llm                    0          0           0          0  # observed 2026-09-18: joined the workspace 2026-09-18; no .py

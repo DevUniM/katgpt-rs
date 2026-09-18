@@ -11,6 +11,28 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 838 — CLOSED-as-decided: a shell script spawning a NATIVE child is a third encoding seam, and the population is measured at zero live instances, so it is deliberately NOT gated (2026-09-18)
+
+**Status: MEASURED and CLOSED as a decision — no instrument landed (`c9afca9dd`; found by session `katgpt-rs-54` adding the box-state block to `scripts/x86_64_execution_matrix.sh`, where a `·` inside a PowerShell format string came back mangled through the box's cp874 console; repaired at source by keeping the child ASCII and letting bash own the separators).** The workspace gates two encoding seams — our own prints (`console_encoding_gate`) and a Python child's PIPE (`subprocess_encoding_gate`); a `.sh` handing non-ASCII to `powershell.exe`/`wmic`/`cmd.exe` falls between them, and neither instrument can see it.
+
+The census, over 197 tracked `*.sh` in 16 contract repos: **43 native-child invocation lines, 2 carrying non-ASCII on the same line — both comments** (`riir-ai/scripts/perf_rematch.sh:509`, `riir-train/scripts/c13_auto_gate.sh:243`). Live instances: **0**, the one real case having been repaired at source. A gate would govern an empty population AND need the comment/string-masking machinery three instruments already grew, just to suppress its only two rows — a cries-wolf instrument by construction.
+
+This is the `check_validation_gate` T4 shape, deliberately the OPPOSITE of the `console_encoding_gate` mistake: 789 measured a population of one and declined a sweep, correctly; `console_encoding_gate` then *assumed* the answer carried across and was wrong by seven repos. The rule both episodes teach: **measure the population, then decide** — re-run the census before reopening, and keep native children ASCII in the meantime (a non-ASCII glyph in a `.sh` comment is harmless and not this class).
+
+Adjacent gap recorded in the issue, NOT closed there: the matrix's first box-state read selected the memory source on whether `/proc/meminfo` EXISTED rather than whether it ANSWERED — MSYS ships a readable `/proc/meminfo` with no `MemAvailable`/`CommitLimit`; the Issue-835 `.git`-FILE shape one level over, repaired by selecting on ANSWERS and printing which one did.
+
+## Issue 837 — CLOSED: registering a contract repo reds the whole sweep family, and the ONE file a gate checks is not the twenty-one that make them red (2026-09-18)
+
+**Status: RESOLVED same day (T1–T3). Found by session `katgpt-rs-c5` when an Issue-836 sweep run reported `✗ riir-llm … UNPINNED`, a failure unrelated to the change under test. ⚠ Honest landing note: the session's issue file claimed T2 landed when it had not — no gate file, no commit, no CHECKS row existed on develop; T2 was built and landed afterwards (this record's session), and T1 was completed then too: the sweeps' own UNPINNED verdicts on the current tree showed four more registered repos (`katgpt-web`, `riir-dao`, `riir-deployer`, `riir-esp32`) owed rows in 8 more floors files — the Issue-798 class, claim preceding disk, caught by reading the tree instead of the prose.**
+
+The class: `riir-llm` was registered (`b5dd81dc`) with `repo_set.txt` + AGENTS.md §Repo count updated — everything `agents_repo_set_gate` asserts — and every per-repo pin file keyed on that registry was left behind. 19 of 21 drift sweeps then red `UNPINNED` for a bookkeeping reason on a repo nobody had looked at; four live findings sat behind those reds (riir-kat 3 unqualified citations, fixed riir-kat `51994ee`; riir-shader `gamefx_feature_matrix.sh` EXPOSED trap window, fixed riir-shader `176da06`; riir-clippy 7 undocumented plan-scoped scripts, ratcheted at measured — the documented OVER-CAPTURE class; riir-shader `.plans/.highwater` stale at 004, fixed riir-shader `6f045d4`). Registration is a 22-file operation with exactly one file gated — the eleventh recorded instance of the rule-landed-in-one-instrument shape (777, 778, 782, 783, 789, 793, 797, 820, 822, 836).
+
+- **T1 — the pin rows.** Every value typed from the owning sweep's own printed row, never a neighbour's (`2d348a470` + the completion rows; the first attempt cloned riir-auth's row and was wrong eleven times — reverted; *a pin copied from a neighbour is a diary, not a wall*). The arity assertion caught two floors files whose format headers declared 4 columns while rows carried 6/7 — repaired against the sweeps' own `FIELDS` tuples. Final state on the landing run: every `*_drift_floors.txt` file complete for the demanded set.
+- **T2 — `scripts/repo_registration_gate.py`, docs-gate CHECK 29:** every `*_drift_floors.txt` pin file carries a row for every on-disk canonical repo (registry ∩ `derive_repos` — the sweeps' own demanded set, delegated not re-derived). The two legitimately subset-scoped files (`docs_drift_floors` — its sweep demands rows only for repos with labels; `restatement_drift_floors` — population is repos with `.proofs`) are declared with reasons in `scripts/repo_registration_scope.txt`, membership, reds in BOTH directions: a scope row over a file that now covers everything is STALE-SCOPE, a scope row for a non-candidate is UNKNOWN-SCOPE, a reasonless row is refused, a non-scoped file missing a repo is INCOMPLETE by name. The inverse direction (a repo-shaped row for a repo outside the registry) is asserted too — measured at zero, asserted anyway, one set difference the gate already computes. Non-repo keys (`TOTALS`, citation's global floors) are out of scope by the shape regex, not an allowlist. Unconditional arms + `--prove-fires` (rewinds the founding state in memory: the console file without its four repos must red INCOMPLETE naming them).
+- **T3 — the inverse direction, MEASURED at zero** across every floors/expected pin file: the only repo-shaped keys outside the registry were the six PACKAGE names in `x86_64_matrix_floors.txt` — a package-keyed file, a heuristic false positive, not a stale row. Zero is a measurement, not an absence of the class.
+
+The standing census lives in the gate's own PASS line (candidate count, demanded-set size, scoped files, absent-repo posture) — never in prose. What it does NOT claim: that a present row is CORRECT. The sweeps own their row values; this gate owns the set.
+
 ## Issue 825 — CLOSED POSITIVE, after a same-day RETRACTION of its own negative close. Coulomb crowd redistribution ships as `coulomb_flow`; the "negative result" was a bench walker with two defects (2026-09-18)
 
 **Status: RESOLVED. `coulomb_flow` ships opt-in ([Bench 825](.benchmarks/825_coulomb_crowd_redistribution_goat.md), G1–G4 all PASS). [Bench 815](.benchmarks/815_coulomb_redistribution_poc.md) is the independent second implementation and now agrees.**
@@ -409,9 +431,13 @@ that way contributes nothing whichever way the rule goes. Only the residue can
 change a verdict, so **the residue is the blast radius**.
 
 Measured over 16 repos: of **153 unread records, 2** contribute a number no
-other oracle knows — riir-ai's `## Issue 969 resolved — …` and riir-clippy's
-`## Issue 097 resolved — …`, both exactly the Issue-754 never-committed shape
-the heading path exists for. Everything else is redundant.
+other oracle knows. One is riir-ai's `## Issue 969 resolved — …` heading. The
+other is riir-clippy's heading, quoted —
+
+`## Issue 097 resolved — …`
+
+— and both are exactly the Issue-754 never-committed shape the heading path
+exists for. Everything else is redundant.
 
 So the 153 was never a backlog. It is a cost figure that is **98.7%
 redundant**, and the case for adopting a rule this document calls unsound in

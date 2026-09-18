@@ -58,15 +58,21 @@
 # (numbering_drift_sweep's rule), so a stale membership row in
 # shared_temp_path_expected.txt reds the sweep too.
 #
-# ── the SEVEN canonical repos with no row ───────────────────────────────────
-# katgpt-web, riir-dao, riir-deployer, riir-esp32, mmorpg-editor,
-# mmorpg-remake and mmorpg-remaster are not on this box; they DEFER under
-# DOCS_GATE_PARTIAL_CLONE=1 and are deliberately unpinned rather than guessed
-# at. Pin them from one full-checkout run — the wasm32_surface_drift_floors
-# precedent, which says exactly this about its own four absent rows. They will
-# flag UNPINNED the first time they are present, which is the intended signal.
+# ── the seven former no-row repos, pinned 2026-09-18 ────────────────────────
+# The block below once read "the SEVEN canonical repos with no row": they were
+# absent from the box that landed this file and were deliberately unpinned
+# rather than guessed at, with the wasm32_surface_drift_floors precedent named
+# for the day they became present. That day came in the same week: the
+# repo-alias codec now resolves all 21 contract names on this box, the sweep
+# VISITED all seven, and the rows below are typed from that run's printed
+# per-repo values (the Issue-837 T1 discipline — never from a neighbour's
+# row). Three of the seven (mmorpg-*) resolve through alias to differently
+# named on-disk dirs the sweep does not open, so their measured cells read 0
+# on this box — floors of 0 stay honest (always true) and the max_fixed
+# ratchets tighten the moment any of them is measured with content.
 
 katgpt-rs                20    2
+katgpt-web                0    0  # observed 2026-09-18: no temp_dir sites
 # ⬇ 48 → 4, riir-ai `9d138531b` (2026-09-18): 44 test sites repaired IN that
 #   repo, `cargo check --tests` + `cargo test --lib` green over all 8 affected
 #   packages. A ratchet that only ever loosens is a backlog wearing a pin, so
@@ -95,7 +101,10 @@ riir-chain               40    1
 #   silently vanishes teaches nobody why the row once said less.
 #   ⛔ 1 more site is in a CRLF file the tool REFUSED rather than reformat.
 riir-clippy              85   17
+riir-dao                  2    0  # observed 2026-09-18: 4 temp_dir sites, 0 fixed
 riir-dapps               10    0
+riir-deployer             6    5  # observed 2026-09-18: 11 temp_dir sites, 5 fixed
+riir-esp32                0    0  # observed 2026-09-18: no temp_dir sites
 # ⬇ 1 → 0, riir-game-sdk `ef66117` (2026-09-18): the single site
 #   (`node_identity_from_ssh_key_roundtrip`) repaired IN that repo; lib 29
 #   passed. A 0 here is a WALL in effect — the next such site reds.
@@ -107,3 +116,6 @@ riir-neuron-db            3    3
 riir-shader               2    0
 riir-train               30   12
 riir-viewbridge           2    0
+mmorpg-editor             0    0  # observed 2026-09-18: 0/0 — alias-invisible on this box (seal-game-editor)
+mmorpg-remaster           0    0  # observed 2026-09-18: 0/0 — alias-invisible on this box (seal-online-remaster)
+mmorpg-remake             0    0  # observed 2026-09-18: 0/0 — alias-invisible on this box (seal-remake)

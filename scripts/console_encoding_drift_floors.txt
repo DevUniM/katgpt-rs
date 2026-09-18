@@ -115,11 +115,15 @@
 #
 #                       min_scripts  min_population  max_undefended
 katgpt-rs                       44              55               0
+katgpt-web                      0               0               0  # observed 2026-09-18: no scripts/*.py
 riir-ai                          4               3               0
 riir-auth                        0               0               0
 riir-chain                       1               0               0
 riir-clippy                      3               3               0
+riir-dao                         0               0               0  # observed 2026-09-18: no scripts/*.py
 riir-dapps                       0               0               0
+riir-deployer                    0               0               0  # observed 2026-09-18: no scripts/*.py
+riir-esp32                       0               0               0  # observed 2026-09-18: no scripts/*.py
 riir-game-sdk                    0               0               0
 riir-kat                         0               0               0
 riir-llm                         0               0               0  # observed 2026-09-18: joined the workspace 2026-09-18; no scripts/*.py
