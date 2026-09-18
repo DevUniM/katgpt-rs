@@ -67,7 +67,7 @@
 # flag UNPINNED the first time they are present, which is the intended signal.
 
 katgpt-rs                20    2
-# ⬇ 48 → 4, riir-ai `7d22f0d8b` (2026-09-18): 44 test sites repaired IN that
+# ⬇ 48 → 4, riir-ai `9d138531b` (2026-09-18): 44 test sites repaired IN that
 #   repo, `cargo check --tests` + `cargo test --lib` green over all 8 affected
 #   packages. A ratchet that only ever loosens is a backlog wearing a pin, so
 #   the tightening lands with the repair rather than later. The 4 that remain
@@ -83,7 +83,7 @@ riir-auth                 0    0
 riir-chain               40    1
 riir-clippy              85   24
 riir-dapps               10    0
-# ⬇ 1 → 0, riir-game-sdk `d2c0bab` (2026-09-18): the single site
+# ⬇ 1 → 0, riir-game-sdk `ef66117` (2026-09-18): the single site
 #   (`node_identity_from_ssh_key_roundtrip`) repaired IN that repo; lib 29
 #   passed. A 0 here is a WALL in effect — the next such site reds.
 riir-game-sdk             3    0

@@ -248,9 +248,9 @@ this repo's own most-repeated shape.
 
   | repo | SHA | test sites closed | residual | note |
   |---|---|---|---|---|
-  | riir-ai | `7d22f0d8b` | 44 | 4 | residual all `examples/` |
+  | riir-ai | `9d138531b` | 44 | 4 | residual all `examples/` |
   | riir-chain | `8a3b0f5` | 9 | 1 | residual all `examples/` |
-  | riir-game-sdk | `d2c0bab` | 1 | 0 | ratchet is now a wall |
+  | riir-game-sdk | `ef66117` | 1 | 0 | ratchet is now a wall |
   | riir-train | — | — | 12 | dry run: **0 non-demo sites**; all 12 are `examples/`+`src/bin/` |
   | riir-neuron-db | — | — | 3 | all `examples/` |
   | riir-clippy | — | — | 24 | **the only repo with live test sites left (17)** |
