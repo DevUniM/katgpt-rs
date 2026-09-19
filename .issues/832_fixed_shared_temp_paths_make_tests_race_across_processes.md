@@ -371,6 +371,51 @@ this repo's own most-repeated shape.
   checkout says, not what origin says — confirm before repairing there
   (Issue 798).
 
+  **Progress 2026-09-19 — full sweep + per-repo dry-run census over all 21
+  contract repos; riir-deployer closed (`b551028`); the remaining non-demo
+  backlog is exactly 2 sites, both in repos with live sibling sessions.**
+
+  - The instrument first (`shared_temp_path_drift_sweep.py`): green against
+    every pin, live totals 46 sites / 496 `env::temp_dir()` calls / 302
+    files. Run advisories: worktree-dirty in katgpt-rs (3) / mmorpg-remake
+    (33) / riir-ai (4) — counts from that run describe a state no commit
+    contains (Issue 797), so the per-site census below came from the fix
+    tool's dry run, not the sweep's counters; and katgpt-rs 1 behind origin
+    (the 847 commit — its katgpt-core `Cargo.toml` leg collides with this
+    box's uncommitted sibling edit, so this checkout has not pulled it;
+    this record was committed in a push worktree off `origin/develop` for
+    the same reason).
+  - **riir-deployer `b551028` (pushed, origin-reachable) — 5 sites closed.**
+    The 4 the tool offered (`control-do/tests/interop_sign.rs` x2,
+    `crates/riir-deployer/tests/manifest_suite.rs` x2) plus ONE HAND FIX in
+    the gate's own STATED blind spot — `let root = env::temp_dir();` bound
+    before the `.join("bad-deploy.yaml")` in
+    `unresolved_template_ref_fails_closed` — which the tool never offered
+    but which two concurrent runs still share. Validated in-repo:
+    `--test manifest_suite` 15/15, control-do `--test interop_sign` 1/1
+    (the real node e2e), clippy clean on both edited targets.
+  - **riir-clippy: the tool re-offers exactly the 9 production sites
+    adjudicated at `83f4cd89`** — predicted by this issue ("the fix tool
+    does not make this distinction and will offer them again"); no action,
+    the `[documented-fixed-root]` markers stand.
+  - **The 2 that remain, owner-referenced:** seal-game-editor 1
+    (`crates/editor-core/src/services.rs` — a PRODUCTION file, wants the
+    per-site read) and seal-remake 1 (`crates/seal-view/tests/
+    quest_sim_front.rs` — a test site; that repo carried 33 in-scope dirty
+    files on the census run, a session mid-flight). Both repos have active
+    sibling sessions today; not this pass's to write.
+  - Every other repo: 0 non-demo offers. Demo residuals re-counted live:
+    riir-ai 4 files, riir-train 8, riir-neuron-db 3, riir-clippy 6,
+    katgpt-rs 2, riir-chain 1 — the adjudicated demo class, no edits.
+    ⚠ riir-train's live count is 8 demo FILES vs the triage table's "12":
+    the table's file-level `#[cfg(test)]` heuristic over-counted, exactly
+    as the note below predicted when it said to take the split from the
+    tool's dry run.
+  - Unrelated, found during validation, NOT touched: control-do
+    `src/contract.rs:978` `erasing_op` (lib-test target, `key.len() * 0`
+    form) reds `cargo clippy --all-targets` for that package at riir-deployer
+    HEAD `1be37b9` — a riir-deployer-owner item, named in the b551028 body.
+
 ## Standing
 
 ⛔ **VERIFIED in the instrument that found it, 2026-09-18 @ `a77c46c0`:**
