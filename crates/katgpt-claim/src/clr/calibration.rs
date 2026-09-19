@@ -159,6 +159,103 @@ impl<T, V: ClaimVerifier<T>> ClaimVerifier<T> for CalibratedVerifier<V> {
     }
 }
 
+/// Bind a calibrated verifier to the WEIGHTS its Platt pair was fitted
+/// against (katgpt-rs Issue 841 §B-3, seam 3 of 4).
+///
+/// This module's own docs already argue the staleness and ship no mechanism
+/// for it: a `(T, b)` pair is fitted from `(sigmoid_output, outcome)` pairs
+/// produced by ONE set of weights, and the modelless mandate's first
+/// permitted runtime mutation is swapping a frozen snapshot. After that swap
+/// the transform is still strictly monotone, still returns a plausible
+/// `Verdict` in `[0, 1]`, and is describing a verifier that no longer exists.
+///
+/// ⛔ **`CalibratedVerifier::commitment` does not answer this.** It commits
+/// the CALIBRATOR's own state, so it moves on a refit and is constant across
+/// a weight swap — the event that makes the pair wrong. Independent axes.
+///
+/// A wrapper, not a signature change: [`ClaimVerifier::verify_embedding`] is a
+/// shipped trait method returning a bare [`Verdict`] and is untouched, so a
+/// caller that has not opted in compiles and behaves byte-identically.
+#[cfg(feature = "calibration_staleness")]
+pub use bound::{direction_pool_id, BoundCalibratedVerifier};
+
+#[cfg(feature = "calibration_staleness")]
+mod bound {
+    use super::CalibratedVerifier;
+    use crate::clr::traits::{ClaimVerifier, DirectionVectorSource};
+    use crate::clr::types::Verdict;
+    use katgpt_core::calibration_staleness::{SnapshotBound, SnapshotId};
+
+    impl<V> CalibratedVerifier<V> {
+        /// Bind this verifier to the snapshot identity its Platt pair was
+        /// fitted under.
+        ///
+        /// ⚠ ASSERTS a fact the type cannot check. Calling it to silence a
+        /// refusal re-attaches a stale pair under a fresh-looking identity,
+        /// which is worse than the original defect — the guard then certifies
+        /// it.
+        #[inline]
+        #[must_use]
+        pub fn bound_to(self, fitted: SnapshotId) -> SnapshotBound<Self> {
+            SnapshotBound::new(self, fitted)
+        }
+    }
+
+    /// The identity of the direction pool a verdict is projected onto.
+    ///
+    /// ⚑ **The supply side is already here**, and it is the RIGHT one for this
+    /// seam: a Platt pair is fitted from `(sigmoid_output, outcome)` pairs, and
+    /// the sigmoid output is a projection onto the DIRECTION POOL — so the
+    /// thing that makes the pair stale is a direction-vector update, not an
+    /// attention-weight swap. [`DirectionVectorSource`] already ships both
+    /// halves: `version()` is documented as *"monotonic freeze/thaw version,
+    /// bumps on every direction-vector update"* — a generation ordinal, not a
+    /// FORMAT version, which is what makes it safe to use here — and
+    /// `blake3()` commits the whole pool.
+    ///
+    /// A free function rather than a blanket `impl SnapshotIdentity for T`:
+    /// the trait is katgpt-core's and `T` is a bare type parameter, so that
+    /// impl is not ours to write.
+    #[inline]
+    #[must_use]
+    pub fn direction_pool_id(src: &impl DirectionVectorSource) -> SnapshotId {
+        SnapshotId::new(src.version(), src.blake3())
+    }
+
+    /// The guarded verdict. An extension trait because `SnapshotBound` is
+    /// katgpt-core's and `CalibratedVerifier` is ours.
+    pub trait BoundCalibratedVerifier<T> {
+        /// `Some(verdict)` while the binding still describes the live
+        /// weights, `None` once the snapshot identity has moved.
+        ///
+        /// ⛔ `None` must not be turned into the RAW verdict by the caller.
+        /// Falling back to the uncalibrated path silently discards a
+        /// calibration somebody fitted and hides the refit they now owe; the
+        /// decision is theirs to make explicitly (the
+        /// `CalibratedPolicy::fell_back` precedent — *the caller is told, not
+        /// protected by accident*).
+        fn verify_embedding_checked(
+            &self,
+            current: SnapshotId,
+            embedding: &[f32],
+            direction_idx: usize,
+        ) -> Option<Verdict>;
+    }
+
+    impl<T, V: ClaimVerifier<T>> BoundCalibratedVerifier<T> for SnapshotBound<CalibratedVerifier<V>> {
+        #[inline]
+        fn verify_embedding_checked(
+            &self,
+            current: SnapshotId,
+            embedding: &[f32],
+            direction_idx: usize,
+        ) -> Option<Verdict> {
+            self.get(current)
+                .map(|v| ClaimVerifier::<T>::verify_embedding(v, embedding, direction_idx))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +283,149 @@ mod tests {
         // Unit-norm direction so dot(emb, dir) = emb[0].
         OneDir {
             v: vec![1.0, 0.0, 0.0, 0.0],
+        }
+    }
+
+    /// katgpt-rs Issue 841 §B-3 seam 3. This module's docs already ARGUED the
+    /// staleness and shipped no mechanism; these arms are the mechanism's
+    /// proof, and each asserts a DISTINCTION rather than a value.
+    #[cfg(feature = "calibration_staleness")]
+    mod bound_calibrated_verifier {
+        use super::*;
+        use crate::clr::calibration::{direction_pool_id, BoundCalibratedVerifier};
+        use katgpt_core::calibration_staleness::{SnapshotId, Staleness};
+
+        /// A pool whose generation and contents both move — the real shape,
+        /// unlike the fixture above which pins `version` at 1.
+        struct Pool {
+            v: Vec<f32>,
+            version: u64,
+        }
+
+        impl DirectionVectorSource for Pool {
+            fn direction(&self, _i: usize) -> &[f32] {
+                &self.v
+            }
+            fn blake3(&self) -> [u8; 32] {
+                *blake3::hash(bytemuck::cast_slice(&self.v)).as_bytes()
+            }
+            fn version(&self) -> u64 {
+                self.version
+            }
+        }
+
+        fn pool(first: f32, version: u64) -> Pool {
+            Pool {
+                v: vec![first, 0.0, 0.0, 0.0],
+                version,
+            }
+        }
+
+        fn calibrated(p: &Pool) -> CalibratedVerifier<SigmoidProjectionVerifier<'_>> {
+            CalibratedVerifier::new(SigmoidProjectionVerifier::new(p, 4), 64, 8)
+        }
+
+        /// ⚑ The supply side was already here: `version()` is documented as
+        /// bumping on every direction-vector update, i.e. a GENERATION
+        /// ordinal. That is the distinction that makes it usable — a FORMAT
+        /// version would be constant and would degrade the guard silently to
+        /// the commitment check alone.
+        #[test]
+        fn the_pool_identity_is_a_generation_ordinal_not_a_format_version() {
+            let a = direction_pool_id(&pool(1.0, 4));
+            let b = direction_pool_id(&pool(1.0, 5));
+            assert_eq!(a.commitment, b.commitment, "same pool, same commitment");
+            assert_ne!(a, b, "a generation bump must move the identity");
+            assert!(!a.is_unversioned());
+        }
+
+        /// Fresh: the guarded verdict is BIT-IDENTICAL to the shipped trait
+        /// method, so opting in changes no number.
+        #[test]
+        fn fresh_verdicts_are_bit_identical_to_the_shipped_trait_method() {
+            let p = pool(1.0, 4);
+            let emb = [0.6f32, 0.1, 0.2, 0.3];
+            let raw = ClaimVerifier::<()>::verify_embedding(&calibrated(&p), &emb, 0);
+            let fitted = direction_pool_id(&p);
+            let bound = calibrated(&p).bound_to(fitted);
+            assert_eq!(bound.staleness(fitted), Staleness::Fresh);
+            assert_eq!(
+                BoundCalibratedVerifier::<()>::verify_embedding_checked(&bound, fitted, &emb, 0),
+                Some(raw)
+            );
+        }
+
+        /// ⛔ THE POINT: the direction pool is updated, the Platt pair is now
+        /// describing projections onto vectors that are no longer there, and
+        /// the shipped path would return a plausible `Verdict` in [0, 1] with
+        /// nothing to distinguish it from a live one.
+        #[test]
+        fn a_direction_pool_update_invalidates_the_platt_pair() {
+            let old = pool(1.0, 4);
+            let fitted = direction_pool_id(&old);
+            let bound = calibrated(&old).bound_to(fitted);
+            let emb = [0.6f32, 0.1, 0.2, 0.3];
+
+            let updated = pool(0.5, 5);
+            let now = direction_pool_id(&updated);
+            assert_ne!(now, fitted);
+            assert_eq!(bound.staleness(now), Staleness::VersionMoved);
+            assert!(
+                BoundCalibratedVerifier::<()>::verify_embedding_checked(&bound, now, &emb, 0).is_none(),
+                "a stale Platt pair returns a plausible verdict, not a NaN — \
+                 which is why this is a refusal and not a warning"
+            );
+        }
+
+        /// Directions changed under a held generation: its own verdict,
+        /// because the repair is a broken bump site and not a refit.
+        #[test]
+        fn a_pool_edit_that_forgot_to_bump_is_commitment_moved() {
+            let old = pool(1.0, 4);
+            let fitted = direction_pool_id(&old);
+            let bound = calibrated(&old).bound_to(fitted);
+            let sneaky = direction_pool_id(&pool(0.5, 4));
+            assert_eq!(sneaky.version, fitted.version, "the generation was NOT bumped");
+            assert_eq!(bound.staleness(sneaky), Staleness::CommitmentMoved);
+        }
+
+        /// ⛔ The refusal must not be mistaken for the COLD-START path, which
+        /// is also bit-identical to the raw verifier. A cold start has no
+        /// fitted claim to be wrong about; a stale pair does, and returning
+        /// the raw verdict there silently discards a calibration somebody
+        /// fitted. `None` and "identity transform" are different answers.
+        #[test]
+        fn refusal_is_not_the_cold_start_identity_path() {
+            let p = pool(1.0, 4);
+            let emb = [0.6f32, 0.1, 0.2, 0.3];
+            let cold = ClaimVerifier::<()>::verify_embedding(&calibrated(&p), &emb, 0);
+            let bound = calibrated(&p).bound_to(direction_pool_id(&p));
+            let stale = direction_pool_id(&pool(1.0, 9));
+            assert!(cold.is_finite() && (0.0..=1.0).contains(&cold));
+            assert_eq!(
+                BoundCalibratedVerifier::<()>::verify_embedding_checked(&bound, stale, &emb, 0),
+                None
+            );
+        }
+
+        /// The unwired caller refuses rather than returning a plausible score.
+        #[test]
+        fn an_unversioned_binding_refuses() {
+            let p = pool(1.0, 4);
+            let bound = calibrated(&p).bound_to(SnapshotId::UNVERSIONED);
+            assert_eq!(
+                bound.staleness(SnapshotId::UNVERSIONED),
+                Staleness::Unversioned
+            );
+            assert_eq!(
+                BoundCalibratedVerifier::<()>::verify_embedding_checked(
+                    &bound,
+                    SnapshotId::UNVERSIONED,
+                    &[0.6, 0.1, 0.2, 0.3],
+                    0
+                ),
+                None
+            );
         }
     }
 

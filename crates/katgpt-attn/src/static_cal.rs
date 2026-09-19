@@ -163,6 +163,84 @@ pub fn check_rv_recalibration(
     }
 }
 
+/// Bind a calibration table to the WEIGHTS it was fitted against
+/// (Issue 841 §B-3, seam 2 of 4).
+///
+/// ⛔ **`StaticCalTable::commitment` is the identity of the TABLE, not of the
+/// weights** — it is a BLAKE3 over `scales`, so it moves when the table is
+/// recalibrated and is *constant across a weight swap*, which is precisely the
+/// event that makes the table wrong. The two are independent and neither
+/// substitutes for the other: `verify()` answers *were these scales
+/// corrupted*, this answers *are these scales still describing the live
+/// weights*.
+///
+/// A wrapper, deliberately, rather than a field: [`StaticCalTable::get_scale`]
+/// is a shipped signature returning a bare `f32` and it is untouched, so a
+/// caller that has not opted in compiles and behaves byte-identically. The
+/// guarded read is an additive sibling.
+///
+/// ```ignore
+/// use katgpt_core::calibration_staleness::SnapshotIdentity;
+/// let bound = table.bound_to(store.snapshot_id()?);
+/// // … after somebody swaps the snapshot …
+/// match bound.get_scale_checked(store.snapshot_id()?, layer, head) {
+///     Some(s) => apply(s),
+///     None => refit_or_abstain(),   // never a default — see the module docs
+/// }
+/// ```
+#[cfg(feature = "calibration_staleness")]
+pub use bound::BoundStaticCal;
+
+#[cfg(feature = "calibration_staleness")]
+mod bound {
+    use super::StaticCalTable;
+    use katgpt_core::calibration_staleness::{SnapshotBound, SnapshotId};
+
+    impl StaticCalTable {
+        /// Bind this table to the snapshot identity it was calibrated under.
+        ///
+        /// ⚠ This ASSERTS a fact the type cannot check: that the scales in
+        /// `self` were fitted against those weights. Calling it to silence a
+        /// refusal re-attaches a stale table under a fresh-looking identity,
+        /// which is worse than the original defect — the guard then certifies
+        /// it. Same warning as `SnapshotBound::rebind`, at the seam where the
+        /// mistake is easiest to make.
+        #[inline]
+        #[must_use]
+        pub fn bound_to(self, fitted: SnapshotId) -> SnapshotBound<Self> {
+            SnapshotBound::new(self, fitted)
+        }
+    }
+
+    /// The guarded read. An extension trait because `SnapshotBound` is
+    /// katgpt-core's and `StaticCalTable` is ours — an inherent impl on the
+    /// combination is not ours to write.
+    pub trait BoundStaticCal {
+        /// `Some(scale)` while the binding still describes the live weights,
+        /// `None` once the snapshot identity has moved.
+        ///
+        /// ⛔ `None` is the whole point and must not be turned into `1.0` by
+        /// the caller. A neutral scale is right for a table that was never
+        /// fitted and wrong for one that was: the cold start has no claim to
+        /// be wrong about, a stale head does, and silently substituting the
+        /// identity hides a refit that somebody owes.
+        fn get_scale_checked(&self, current: SnapshotId, layer: usize, head: usize)
+            -> Option<f32>;
+    }
+
+    impl BoundStaticCal for SnapshotBound<StaticCalTable> {
+        #[inline]
+        fn get_scale_checked(
+            &self,
+            current: SnapshotId,
+            layer: usize,
+            head: usize,
+        ) -> Option<f32> {
+            self.get(current).map(|t| t.get_scale(layer, head))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +345,104 @@ mod tests {
         assert!(final_scale > 1.0 && final_scale < 1.5);
         // Verify commitment still valid after all updates
         assert!(table.verify());
+    }
+
+    /// Issue 841 §B-3 seam 2 — the guarded read over a shipped `f32` return.
+    /// Every arm asserts the INDEPENDENCE of two identities that are easy to
+    /// confuse: `commitment` says whether these SCALES were corrupted, the
+    /// binding says whether they still describe the LIVE WEIGHTS.
+    #[cfg(feature = "calibration_staleness")]
+    mod bound_static_cal {
+        use super::*;
+        use crate::static_cal::BoundStaticCal;
+        use katgpt_core::calibration_staleness::{SnapshotId, Staleness};
+
+        fn table() -> StaticCalTable {
+            let mut t = StaticCalTable::new(2, 4);
+            t.set_scale(1, 2, 0.75);
+            t.commit();
+            t
+        }
+
+        fn id(version: u64, byte: u8) -> SnapshotId {
+            SnapshotId::new(version, [byte; 32])
+        }
+
+        /// Fresh: the guarded read is BIT-IDENTICAL to the shipped one, so
+        /// opting in changes no number.
+        #[test]
+        fn fresh_reads_are_bit_identical_to_the_shipped_accessor() {
+            let raw = table().get_scale(1, 2);
+            let fitted = id(3, 0xAB);
+            let bound = table().bound_to(fitted);
+            assert_eq!(bound.get_scale_checked(fitted, 1, 2), Some(raw));
+            assert_eq!(bound.staleness(fitted), Staleness::Fresh);
+        }
+
+        /// ⛔ THE POINT, and the distinction the whole seam exists for: the
+        /// table is INTACT — `verify()` passes and `commitment` has not moved
+        /// — and it is nonetheless describing weights that are no longer
+        /// there. Integrity and freshness are different questions and the
+        /// shipped `get_scale` answers neither.
+        #[test]
+        fn an_intact_table_still_refuses_once_the_weights_moved() {
+            let fitted = id(3, 0xAB);
+            let t = table();
+            let commitment_before = t.commitment;
+            let bound = t.bound_to(fitted);
+
+            let moved = id(4, 0xAB); // same weights bytes, next generation
+            assert_eq!(bound.staleness(moved), Staleness::VersionMoved);
+            assert_eq!(bound.get_scale_checked(moved, 1, 2), None);
+
+            let still = bound.peek_unchecked();
+            assert!(still.verify(), "the table itself was never corrupted");
+            assert_eq!(still.commitment, commitment_before, "its own identity is unmoved");
+        }
+
+        /// The mirror: RECALIBRATING moves the table's own commitment and
+        /// leaves the binding alone. Two axes, neither derivable from the
+        /// other — which is why a `commitment`-only check could never have
+        /// implemented this rule.
+        #[test]
+        fn recalibration_moves_the_tables_commitment_and_not_the_binding() {
+            let fitted = id(3, 0xAB);
+            let mut t = table();
+            let before = t.commitment;
+            t.set_scale(0, 0, 1.25);
+            t.commit();
+            assert_ne!(t.commitment, before, "recalibration must move the table hash");
+
+            let bound = t.bound_to(fitted);
+            assert_eq!(bound.staleness(fitted), Staleness::Fresh);
+            assert_eq!(bound.get_scale_checked(fitted, 0, 0), Some(1.25));
+        }
+
+        /// A swap that changed the weights without bumping the generation is
+        /// its own verdict — the repair is a broken bump site, not a refit.
+        #[test]
+        fn a_weight_change_under_a_held_generation_is_commitment_moved() {
+            let fitted = id(3, 0xAB);
+            let bound = table().bound_to(fitted);
+            let sneaky = id(3, 0xCD);
+            assert_eq!(bound.staleness(sneaky), Staleness::CommitmentMoved);
+            assert!(bound.get_scale_checked(sneaky, 1, 2).is_none());
+        }
+
+        /// The unwired caller — no generation counter anywhere — gets refusal,
+        /// not a plausible scale. `StaticCalTable::new` fills every entry with
+        /// the neutral 1.0, which is exactly the number that would look fine.
+        #[test]
+        fn an_unversioned_binding_refuses_rather_than_returning_the_neutral_scale() {
+            let bound = StaticCalTable::new(2, 4).bound_to(SnapshotId::UNVERSIONED);
+            assert_eq!(
+                bound.peek_unchecked().get_scale(0, 0),
+                1.0,
+                "the neutral scale is what a refusal would otherwise look like"
+            );
+            assert_eq!(bound.staleness(SnapshotId::UNVERSIONED), Staleness::Unversioned);
+            assert_eq!(bound.get_scale_checked(SnapshotId::UNVERSIONED, 0, 0), None);
+        }
     }
 
     #[test]

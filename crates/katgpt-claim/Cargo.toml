@@ -46,3 +46,13 @@ clr = []
 # boundary. Opt-in per the no-default-consumer rule until each consumer's
 # own GOAT lands.
 clr_calibration = ["clr", "katgpt-core/sigmoid_calibration"]
+
+# calibration_staleness (katgpt-rs Issue 841 §B-3 follow-up, seam 3 of 4). The
+# Platt (T, b) pair `clr_calibration` fits is fitted against ONE set of
+# weights, and this module's own docs already ARGUE that staleness while
+# shipping no mechanism for it. Binds a `CalibratedVerifier` to the
+# `SnapshotId` it was fitted under; `verify_embedding` — a shipped trait
+# method returning a bare `Verdict` — is untouched, and the guarded read is an
+# additive sibling. Implies clr_calibration (there is nothing to go stale
+# without it).
+calibration_staleness = ["clr_calibration", "katgpt-core/calibration_staleness"]
