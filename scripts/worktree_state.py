@@ -728,7 +728,7 @@ def sweep_advisory(repos, patterns, root=None,
     """
     scope: dict[str, int] = {}
     stale: dict[str, tuple[int, int]] = {}
-    unverified: dict[str, float | None] = {}
+    unverified: dict[str, tuple[float | None, int]] = {}
     for r in repos:
         s = str(r)
         if isinstance(r, Path) or '/' in s or chr(92) in s:
@@ -766,7 +766,16 @@ def sweep_advisory(repos, patterns, root=None,
             # no upstream answers `None` and claims nothing to begin with.
             age = fetch_age_hours(path)
             if age is None or age > STALE_FETCH_HOURS:
-                unverified[label] = age
+                # ⛔ The BUCKET rides along, and it is not decoration. The
+                # trigger was widened to both silent readings (Issue 850 T1)
+                # and the SENTENCE was left saying "report 'up to date'" —
+                # which is FALSE for `(n, 0)`, the reading that says "behind,
+                # and none of it touches your population". A reader told a
+                # repo reads 'up to date' has been given the one fact the
+                # sweep knows to be wrong. Pooling two readings the module
+                # documents as "never pooled" in the DISPLAY is the same
+                # defect one layer down.
+                unverified[label] = (age, beh[0])
     return worktree_advisory(scope, uncommitted_rows, masked_rows,
                              stale=stale, unverified=unverified)
 
@@ -775,7 +784,7 @@ def worktree_advisory(scope_counts: dict[str, int],
                       uncommitted_rows: int = 0,
                       masked_rows: int = 0,
                       stale: dict[str, tuple[int, int]] | None = None,
-                      unverified: dict[str, float | None] | None = None
+                      unverified: dict[str, tuple[float | None, int]] | None = None
                       ) -> list[str]:
     """The lines that ride a sweep's FINAL line. Empty when nothing is dirty.
 
@@ -812,17 +821,26 @@ def worktree_advisory(scope_counts: dict[str, int],
             "is what the sweep read, so confirm against origin before "
             "repairing (Issue 798)")
     if unver:
-        detail = ", ".join(
-            f"{k} (never fetched)" if v is None else f"{k} ({v:.0f}h)"
-            for k, v in sorted(unver.items()))
+        def _row(k, v):
+            age, behind = v
+            when = "never fetched" if age is None else f"{age:.0f}h"
+            # The two silent readings, NAMED. `(0, 0)` claims not-behind;
+            # `(n, 0)` claims behind-but-out-of-scope, which is the stronger
+            # claim because it asserts something about the CONTENT of the
+            # commits — read from the same unrefreshed ref (Issue 850).
+            reads = ("reads 'up to date'" if not behind
+                     else f"reads '{behind} behind, none in this population'")
+            return f"{k} ({when}, {reads})"
+        detail = ", ".join(_row(k, v) for k, v in sorted(unver.items()))
         out.append(
-            f"⚠ UNVERIFIED UPSTREAM: {len(unver)} repo(s) report 'up to date' "
-            f"from a remote-tracking ref last refreshed over "
-            f"{STALE_FETCH_HOURS:.0f}h ago — {detail}. That is not a "
-            "measurement of the remote, it is what this box last heard, so it "
-            "cannot support either verdict: a finding there may already be "
+            f"⚠ UNVERIFIED UPSTREAM: {len(unver)} repo(s) rest a SILENT "
+            f"verdict on a remote-tracking ref last refreshed over "
+            f"{STALE_FETCH_HOURS:.0f}h ago — {detail}. Neither reading is a "
+            "measurement of the remote; both are what this box last HEARD, so "
+            "neither can support a verdict: a finding there may already be "
             "fixed upstream, and a CLEAN row there may be a false green. "
-            "`git fetch` in the named repo before trusting it (Issue 827 T5)")
+            "`git fetch` in the named repo before trusting it "
+            "(Issue 827 T5, 850 T3)")
     if uncommitted_rows:
         out.append(
             f"⚠ UNCOMMITTED: {uncommitted_rows} row(s) sit on a file that "
@@ -1812,6 +1830,21 @@ def fetch_age_arms() -> list[str]:
               f"fetch was SILENT — its claim that the commits it is behind "
               f"by miss this population is read from the same unrefreshed "
               f"ref: {lines}")
+        # ⛔ PRESENCE is not CONTENT, and asserting only the former is how
+        # the sentence came to be false here for a full day (Issue 850 T3).
+        # T1 widened the trigger to this bucket and left the line saying
+        # "report 'up to date'" — the one thing the sweep KNOWS is wrong
+        # about an `(n, 0)` repo, since it has read the count.
+        txt = " ".join(lines)
+        check("up to date" not in txt,
+              f"an (n, 0) repo was described as reading 'up to date' — the "
+              f"sweep knows it is BEHIND and says so nowhere: {txt}")
+        check("behind, none in this population" in txt,
+              f"the (n, 0) reading was not NAMED in the advisory, so a reader "
+              f"cannot tell which of two pooled readings is unverified: {txt}")
+        check(f"{beh[0]} behind" in txt,
+              f"the commits-behind count the reading rests on was not shown "
+              f"(want {beh[0]}): {txt}")
 
     # A future-dated mtime clamps to 0 rather than going negative, and
     # unknown-ness keeps its single spelling.
@@ -1826,12 +1859,32 @@ def fetch_age_arms() -> list[str]:
 
     # The renderer, independent of git: an explicit None reads as the loud
     # "never fetched" rather than as an hour count.
-    lines = worktree_advisory({}, unverified={"r": None})
+    lines = worktree_advisory({}, unverified={"r": (None, 0)})
     check(any("never fetched" in ln for ln in lines),
           f"a None age was not rendered as never-fetched: {lines}")
-    lines = worktree_advisory({}, unverified={"r": 99.0})
+    lines = worktree_advisory({}, unverified={"r": (99.0, 0)})
     check(any("99h" in ln for ln in lines),
           f"an age was not rendered in hours: {lines}")
+    # Both directions of the bucket split, at the renderer, where no git tree
+    # is needed to state them: a `(0, 0)` row must still SAY 'up to date' —
+    # the repair must not blur the two the other way.
+    z = " ".join(worktree_advisory({}, unverified={"r": (30.0, 0)}))
+    check("reads 'up to date'" in z,
+          f"a (0, 0) row lost its own reading in the split: {z}")
+    check("behind" not in z,
+          f"a (0, 0) row was described as behind something: {z}")
+    n = " ".join(worktree_advisory({}, unverified={"r": (30.0, 7)}))
+    check("7 behind, none in this population" in n,
+          f"an (n, 0) row did not render its count and scope: {n}")
+    check("up to date" not in n,
+          f"an (n, 0) row was described as up to date: {n}")
+    # One line, both readings — the split must not fragment the advisory into
+    # a second line nobody reads.
+    both = worktree_advisory({}, unverified={"a": (30.0, 0), "b": (30.0, 4)})
+    check(len(both) == 1,
+          f"the two readings were split across lines: {both}")
+    check("reads 'up to date'" in both[0] and "4 behind" in both[0],
+          f"one line did not carry both readings: {both[0]}")
     return fails
 
 

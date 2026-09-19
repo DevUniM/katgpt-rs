@@ -11,7 +11,10 @@ under a file already claiming it. Adjudicated by Issue 724 T2: the other side
 is pushed and carries an inbound HISTORY record, this one was uncommitted.
 
 **Status:** **RESOLVED** 2026-09-19 — both silent buckets are challenged now,
-armed, and the arm is proven to red against the original code.
+armed, and the arm is proven to red against the original code. T3 then observed
+the line end to end and found the guard PRINTING a false statement about the
+bucket T1 added; repaired, 9 new arms, 7 of them proven to red against it.
+**T2 open** — should a sweep fetch?
 
 Found while chasing a red `shared_temp_path_drift_sweep`, by walking into the
 exact failure Issue 798 and Issue 827 exist to prevent.
@@ -133,8 +136,61 @@ Proven two-sided: with `elif beh == (0, 0)` planted back, the arm reds with
       first). ⚠ **Do not answer by reflex** — an `--fetch` flag nobody passes
       is not a repair, and an automatic fetch changes a sweep from an observer
       into a writer of other repos' refs.
-- [ ] **T3 — The three seal repos were never named by ANY advisory line.**
-      After T1 they would be, if their fetch was stale. Re-run the family
-      after leaving this box alone for a day and check that the line appears
-      — an advisory whose trigger no run has been observed to reach is the
-      same silence one layer up.
+- [x] **T3 — DONE, and the observation found a SECOND defect: the line the
+      guard prints makes a FALSE statement about the bucket T1 added.**
+
+      The task said to re-run the family after a day idle and check the line
+      appears. That was the wrong instrument for the question: measured
+      2026-09-19, **all 17 repos on this box are 0.2–9.7h fresh**, so the
+      trigger is unreachable by waiting and the observation would have been
+      deferred indefinitely. It was made by CONSTRUCTION instead — stub only
+      the clock-reading seam (`fetch_age_hours`), run a REAL sweep, read its
+      real stdout. That is this module's own `premise_arms` pattern: assert
+      the thing that could actually change, rather than waiting for the world
+      to produce it.
+
+      **Reachable, confirmed end to end.** `trap_sentinel_drift_sweep`
+      printed the line, on its FINAL line, naming all 17 repos, with
+      **rc = 0** — advisory, never a failure, exactly as specified.
+
+      ⛔ **And the line said this, of every repo:** *"17 repo(s) report 'up
+      to date' from a remote-tracking ref last refreshed over 24h ago"*. For
+      an `(n, 0)` repo that is FALSE, and it is false about the one fact the
+      sweep has already read — it knows the repo is `n` commits behind,
+      because that is what `(n, 0)` MEANS. T1 widened the trigger to both
+      silent readings and left a sentence written for `(0, 0)` alone.
+
+      A reader is then given the worst of both: told a repo is "up to date"
+      (wrong, and it is the reassuring direction) while being told not to
+      trust it. The module's own rule is that the four readings are **never
+      pooled**; T1 honoured that in the TRIGGER and the DISPLAY pooled them
+      one layer down — the `heading_style_blind` shape, where the meter was
+      anchored to the same thing the rule was.
+
+      **Repair:** the bucket rides along. `unverified` carries
+      `(age, commits_behind)` rather than a bare age, and each repo renders
+      its own reading on the one line:
+
+          ⚠ UNVERIFIED UPSTREAM: 17 repo(s) rest a SILENT verdict on a
+          remote-tracking ref last refreshed over 24h ago — katgpt-rs (38h,
+          reads 'up to date'), mmorpg-editor (38h, reads '3 behind, none in
+          this population'), …
+
+      ONE line, not two — splitting a class across lines is the banner nobody
+      reads, and an arm pins that.
+
+      ⚠ **Why the existing arm could not catch it: it asserted PRESENCE, not
+      CONTENT.** Every arm in this bucket tested `"UNVERIFIED UPSTREAM" in
+      ln`, which is true of a line saying anything at all. `worktree_state`
+      selftest **148 → 157**, and the nine are two-sided: replayed against
+      the pre-repair renderer, **7 of the 9 red** (the other two are the
+      pre-existing never-fetched/hours arms, re-typed for the tuple), and 0
+      red at HEAD. Both directions of the split are armed — a `(0, 0)` row
+      must still SAY 'up to date', or the repair blurs them the other way.
+
+      ⚠ Cosmetic, NOT repaired and recorded rather than fixed silently: on
+      the population-FAILURE print path the advisory line comes out as
+      `⚠ ⚠ UNVERIFIED…` (the failure printer prepends its own glyph). It is
+      per-sweep display, not this module, and it appears only on a run that
+      is already red.
+
