@@ -447,6 +447,21 @@ down is 2.7-3.4x its own quiet-box twin. So **do not read 71.67s as the
 figure when a quiet box is available. The cells at 18, 19, 20 and 26-31 checks
 will never be measured at all, which remains the argument for writing the
 CHECKS count beside the number rather than the number alone.
+⚑ **A NEAR-QUIET third reading at 33 checks — 50.11s CPU / 52.5s wall** (M3,
+loadavg **3.9-4.8**, one concurrent single-core job), and it is the one that
+constrains the paragraph above rather than agreeing with it. It is **7%
+HIGHER** than the 46.74s taken under moderate load, not lower. So at this
+CHECKS count the **2.7-3.4x inflation measured at 17 checks does NOT
+reproduce**: the three readings are 71.67s (32 checks, heavy load), 46.74s (33,
+sibling builds finished) and 50.11s (33, near-quiet) — a ~7% spread across the
+latter two, which is nearer the original 1.4% quiet-box claim than the
+loaded-box story. Read that honestly in both directions: the **71.67s outlier
+is confirmed** as a load artefact, and the 46.74s figure is confirmed as an
+ordinary reading — but "load inflates CPU" is NOT a monotone rule, and a run
+this file calls loaded can measure *less* CPU than a quiet one. The quantity is
+still the right one to cite; the **load class beside it is a disclosure, not a
+correction factor**.
+
 ⚑ **And the load caveat was immediately worth its ink: 46.74s CPU / 49.2s wall
 at 33 checks**, same box, ~90 minutes later, with the sibling builds finished.
 That is MORE work measuring **35% less CPU** — so the 71.67s figure is
