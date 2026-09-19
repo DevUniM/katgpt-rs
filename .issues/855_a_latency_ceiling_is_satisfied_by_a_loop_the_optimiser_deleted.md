@@ -1,6 +1,6 @@
 # Issue 855: a latency ceiling is satisfied by a loop the optimiser DELETED — `0 ns/op` over 100 000 iterations, asserted `< 10 000 ns`, PASS
 
-**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); **T4 CLOSED** — the proposed `let _ =` predicate is REFUTED by the execution run (20.0% vs a 21.1% base rate) and `scripts/timed_region_guard_gate.py` shipped in its place as a docs-gate CHECK (membership wall over the READ tier, ratchet over the unread one); **T5's cross-repo axis COUNTED** (60 strictly-decidable unguarded regions workspace-wide, 33 of them outside this repo across 7 siblings) — running them, and a ratchet-only sweep half, remain open.
+**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); **T4 CLOSED** — the proposed `let _ =` predicate is REFUTED by the execution run (20.0% vs a 21.1% base rate) and `scripts/timed_region_guard_gate.py` shipped in its place as a docs-gate CHECK (membership wall over the READ tier, ratchet over the unread one); **T5 RUN — all 33 sibling rows executed 2026-09-19** (1 UNBUILDABLE, 32 executed, **2 VANISHED = 6.3%** against this repo's 20.6%; both repaired in riir-ai `3712d51b6`, issue `986` there; riir-chain `039728c8` filed for the unbuildable one). Three new buckets fell out of the run — PRINTS-NOTHING, `#[ignore]`d, UNBUILDABLE — none foldable. Only the **ratchet-only sweep half** remains open.
 **Found by:** Issue 833 T2's per-target read, 2026-09-19. Not by a census, and
 not by anything failing — by **reading the printed values next to the bars**,
 which is the one thing 833 T2 refuses to skip.
@@ -502,7 +502,9 @@ read by a human as a result. It is a division by a deleted loop.
     (a pure fn of hoistable inputs) and through an identity **receiver** (an
     even number of `mem::swap`es). The invariant is that the optimiser must
     not be able to prove the loop's effect; the sink is one of three sources.
-- [ ] **T5 — the cross-repo axis is UNMEASURED and must not inherit an
+- [x] **T5 — the cross-repo axis is MEASURED: counted, then RUN.** (The
+      ratchet-only sweep half is carved out as T6.) Original framing follows.
+      **T5 — the cross-repo axis is UNMEASURED and must not inherit an
       answer.** `let _ = f()` in a timed loop is not a katgpt-rs idiom; the
       siblings carry 71 sequential-timing targets (Issue 834 T3). Whether any
       of them prints a zero is unknown, and the honest first step is to run
@@ -551,15 +553,99 @@ read by a human as a result. It is a division by a deleted loop.
         to 33 that is a *magnitude* — expect a handful — and AGENTS.md's own
         rule is that a static count over an unread bucket is a candidate
         ordering, not a finding.
-      - **What is left, and the shape it must take.** The honest next step is
-        still T5's original one: run those 33 at their own `required-features`
-        and read the printed numbers. Until somebody does, a cross-repo
+      - ⚑ **RUN 2026-09-19 — all 33 executed, and the sibling rate is ONE
+        THIRD of this repo's.** 1 UNBUILDABLE, 32 executed, **2 VANISHED
+        (6.3%)** against katgpt-rs's 7 of 34 (20.6%).
+
+        | repo | rows | VANISHED | note |
+        |---|---|---|---|
+        | riir-ai | 18 | **2** | both in `riir-games-civ`, repaired |
+        | riir-chain | 6 | 0 | 1 UNBUILDABLE, 4 `#[ignore]`d |
+        | riir-neuron-db | 3 | 0 | |
+        | riir-clippy | 2 | 0 | |
+        | riir-train | 2 | 0 | |
+        | riir-game-sdk | 1 | 0 | |
+        | riir-shader | 1 | 0 | |
+
+        **The two VANISHED** (riir-ai `.issues/986`, committed there at
+        `3712d51b6`):
+
+        | target :: fn | bound | before | asserted | after |
+        |---|---|---|---|---|
+        | `feeling_brain_p5_goat` :: `g2_reactive_fsm_node_tick_sub_5ns` | 100 000 | **`0.00 ns/tick`** | `< 5 ns` | **0.56 ns/tick** |
+        | `feeling_brain_p7_goat` :: `g2_from_inputs_latency_under_10ns` | 10 000 | **printed NOTHING**; probe `0 ns/call` | `< 10 ns` | **6.04–6.32 ns/call** |
+
+        ⛔ **Neither was fixable by `black_box` on the RESULT**, which is the
+        T3 lesson reproduced in a different repo: `from_inputs` is pure in a
+        loop-invariant ARGUMENT (the `bench_225` shape — the call hoists and
+        a result-only sink is computed once) and `tick` returns `()`, so there
+        is no result at all (the `async_qdq` RECEIVER shape). Both arms gained
+        the loud-zero assertion; every bar is byte-identical; pass counts
+        unchanged (12 / 17).
+        ⚑ **The p7 arm consumed 63% of its budget once it was real** —
+        6.04–6.32 ns against `< 10 ns`. It was passing on nothing *while
+        sitting close to a bar it had never been measured against*.
+
+      - ⛔ **THREE buckets this issue did not have, each found by running
+        rather than by reasoning, and none foldable into the others:**
+        - **PRINTS NOTHING — 4 of 33, and it is the highest-yield slice by
+          a factor of four.** Their quantity lives only inside an `assert!`
+          message, i.e. it is visible ONLY on failure, so the method that
+          found every other row — *read the printed value next to the bar* —
+          cannot see them at all. Each needed a temporary `eprintln!` probe,
+          run, then restored byte-identically (`git diff --quiet`, verified).
+          **1 of those 4 was a VANISHED (25%)** against the population rate of
+          6.3%. That is a real ordering signal and the mechanism is plain:
+          nobody can have read a number nobody prints.
+        - **`#[ignore]`d — 4 of 33, all riir-chain.** `cargo test --exact <fn>`
+          reports `ok. 0 passed; 1 ignored`, **exit 0** — byte-for-byte the
+          green-zero shape this issue family is about, met inside T5's own
+          runner and nearly recorded as a result. Re-run with `--ignored` all
+          four are live (0.430 / 16.92 / 194.76 / 198.62 ns). ⚠ The region is
+          neither guarded nor satisfied-by-absent-work: it is **unexecuted**,
+          which is a third state, and `timed_region_guard_gate` cannot see it
+          because `#[ignore]` is orthogonal to every axis the gate reads.
+        - **UNBUILDABLE — 1 of 33.** riir-chain's
+          `crates/riir-chain-engine-bridge` is workspace-`exclude`d, so it is
+          its own root, and its `[patch]` covers katgpt-rs but not the forked
+          `arc-swap` its path dep `riir-engine` needs. **Every** cargo command
+          there dies at manifest resolution, so that GOAT gate is compiled by
+          nothing. Filed as riir-chain `.issues/157` (`039728c8`). An unbuilt
+          gate is *unknown*, not passing — and the one instrument that looks
+          at that crate reads its MANIFEST for three hand-typed patch rows,
+          so it is structurally incapable of noticing a fourth is missing.
+      - ⚠ **A residue, stated rather than resolved.** Four SURVIVED rows print
+        sub-nanosecond figures (riir-ai `bench_133` 0.78–1.08 ns/check,
+        riir-chain `bench_013` 0.430 ns, `sufficiency_gates` 2 ns). They are
+        non-zero, which is this issue's criterion, and they did **not** get the
+        4x scaling probe that T3 applied to this repo's small readings — so
+        *fast* and *partly eliminated* are not separated for them. Unmeasured,
+        deliberately, and recorded so a later census does not read the 2 as
+        exhaustive.
+      - ⚠ **One row is Issues 833/834's class and is NOT folded in:**
+        `feeling_brain_p7_goat::g2_auto_tier_tick_overhead_under_50ns_vs_manual`
+        measures two sequentially-timed arms (auto 14.16, manual 17.79 ns) and
+        reports overhead **−3.63 ns** — negative, so the sign its bar reads is
+        decided by the box. It wants the opposite repair (interleave, not
+        consume) and a target can carry both.
+      - **What is left.** A cross-repo sweep half, still **RATCHET-ONLY**: Until somebody does, a cross-repo
         verdict half must be **RATCHET-ONLY** — the shipped gate's membership
         WALL rests on a per-row MEASURED number, and 27 such rows cost two
         agent sessions of release builds in this repo alone; a wall in a
         sibling would be a wall over an unread bucket, which is exactly what
         T4 refused. And a cross-repo repair is not landed until it is
         COMMITTED in the sibling with a cited SHA (Issue 798).
+
+- [ ] **T6 — the cross-repo sweep half, RATCHET-ONLY.** T5 supplies what the
+      wall tier needed and the shipped gate could not have: a MEASURED number
+      per sibling row. But 30 of the 32 are SURVIVED readings taken once, on a
+      loaded box, without the 4x scaling probe — enough to pin a ratchet on the
+      derivative, not enough for a membership wall with a reason per row. ⚠ And
+      three of the buckets T5 found are invisible to the current classifier:
+      `#[ignore]`d, PRINTS-NOTHING, and UNBUILDABLE. A sweep that reports 33
+      rows while 4 of them are never executed and 1 cannot compile is reporting
+      a population it has not measured. Decide whether those become reported
+      columns (the `print-only` precedent) before the sweep lands, not after.
 
 ## Records
 
