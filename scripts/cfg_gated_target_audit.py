@@ -437,8 +437,181 @@ class RepoReport:
         return [f for f in self.silent_now() if f.load_bearing]
 
 
+# Issue 856: the SECOND spelling of the same zero. A file whose ENTIRE body is
+#
+#     #[cfg(feature = "x")]
+#     mod tests { … }
+#
+# compiles to a byte-identical empty binary when `x` is off — same
+# `ok. 0 passed`, same exit 0 — and `INNER_CFG` cannot see it, because that
+# regex is distinguishing `#![cfg]` from *other inner attributes* and never
+# decided anything about the outer-attribute-on-a-module form. That was an
+# UNSTATED blind spot rather than a scoped exclusion, which is the worse of
+# the two: a stated exclusion is re-readable and this one was invisible. It
+# reported `SILENT-NOW 0` over 24 katgpt-rs targets, 9 of them named `*_goat`.
+#
+# ⛔ The predicate is **the mod is the WHOLE body**, never "a `#[cfg] mod`
+# exists". A file with live `#[test]` fns outside a gated helper module is not
+# zeroed, and flagging it is the cries-wolf outcome this report exists to
+# avoid. `selftest` pins that negative in both spellings.
+_MOD_OPEN = re.compile(r"(?:pub\s*(?:\([^)]*\)\s*)?)?mod\s+(?:r#)?\w+\s*[{;]")
+_ATTR_CFG = re.compile(r"\A\s*#\s*\[\s*cfg\s*\(")
+_USE_ITEM = re.compile(r"(?:pub\s*(?:\([^)]*\)\s*)?)?use\s")
+
+
+def whole_body_cfg_mod(text: str) -> str | None:
+    """The gate of a file whose only items are `#[cfg(…)]`-gated `mod`s.
+
+    One module is the shape Issue 856 measured; SEVERAL is the same file with
+    its gated body split in two, and it is 6 of the 27 here — so the run is
+    read, not just the first item. The effective gate of a run is
+    **`any(...)`**, never `all(...)`: the binary is empty only when EVERY
+    module is gated out. That lands a multi-feature run in the `any_of` class,
+    which is exactly right — cargo's `required-features` is AND-only and
+    cannot express it — while a run gating on ONE feature stays an ordinary,
+    fixable finding.
+
+    `None` when any top-level item is not a gated module, when a module
+    carries no `cfg` at all, or when the braces do not balance — the same
+    refusal `cfg_body` makes on an unbalanced inner attribute, and for the
+    same reason: a partial read under-reports exactly as the defect being
+    repaired did.
+
+    Comments, string literals and attribute interiors are blanked by the
+    SHARED masker, so "a top-level item" is read off the file's real structure
+    rather than off text that may live inside a doc comment.
+    """
+    # Issue 856: the SECOND spelling needs the file's ITEM structure, and a
+    # second hand-rolled Rust lexer is a second thing to get wrong — three
+    # sibling instruments have each reported a finding inside their own
+    # fixture strings. IMPORTED, never re-written (AGENTS.md).
+    #
+    # DEFERRED, because `platform_dead_code_audit` imports `derive_repos` from
+    # THIS module: a top-level import is a cycle, and the cycle is real rather
+    # than an artifact — the population predicate lives here and the masker
+    # lives there, which is where each belongs.
+    from platform_dead_code_audit import mask_file
+
+    masked, attrs = mask_file(text)
+    # Outer attributes only: an `#![…]` governs the file and is `cfg_body`'s
+    # business, not this one's.
+    outer = [a for a in attrs if not a.inner]
+    if not outer:
+        return None
+
+    gates: list[str] = []
+    pos = 0
+    while True:
+        nxt = _first_item(masked, pos)
+        if nxt is None:
+            break  # only blanks left — every item was a gated module
+        u = _USE_ITEM.match(masked, nxt)
+        if u:
+            # A `use` declaration cannot carry a `#[test]`, so it changes the
+            # binary's test COUNT by nothing and does not make the file live.
+            # Admitting it is not cosmetic: `bench_dflare_modelless` — one of
+            # the 15 — opens with nine individually-gated `use` lines, and a
+            # mod-only predicate rejects it for an item that can never be the
+            # reason a target is non-empty.
+            end = _skip_to_semi(masked, nxt)
+            if end < 0:
+                return None
+            pos = end + 1
+            continue
+        m = _MOD_OPEN.match(masked, nxt)
+        if not m:
+            return None  # a sibling item that is not a module: NOT zeroed
+        body = _anded_cfg(outer, pos, m.start())
+        if body is None:
+            return None  # ungated module, or an unbalanced cfg
+        if masked[m.end() - 1] == ";":
+            pos = m.end()
+        else:
+            close = _match_brace(masked, m.end() - 1)
+            if close < 0:
+                return None
+            pos = close + 1
+        gates.append(body)
+
+    if not gates:
+        return None
+    if len(gates) == 1:
+        return gates[0]
+    return "any(" + ", ".join(gates) + ")"
+
+
+def _skip_to_semi(masked: str, pos: int) -> int:
+    """Index of the `;` ending a `use` item, or -1. Brace-aware, because
+    `use a::{b, c};` nests — masked text only, so every token is real."""
+    depth = 0
+    for j in range(pos, len(masked)):
+        c = masked[j]
+        if c in "{(":
+            depth += 1
+        elif c in "})":
+            depth -= 1
+        elif c == ";" and depth == 0:
+            return j
+    return -1
+
+
+def _first_item(masked: str, pos: int) -> int | None:
+    """Index of the next non-blank char at/after `pos`, or None at EOF."""
+    rest = masked[pos:]
+    stripped = rest.lstrip()
+    return None if not stripped else pos + (len(rest) - len(stripped))
+
+
+def _match_brace(masked: str, open_i: int) -> int:
+    """Index of the `}` closing `masked[open_i]`, or -1. Masked text only:
+    strings and comments are already blanked, so every brace here is real."""
+    depth = 0
+    for j in range(open_i, len(masked)):
+        if masked[j] == "{":
+            depth += 1
+        elif masked[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return j
+    return -1
+
+
+def _anded_cfg(outer: list, lo: int, hi: int) -> str | None:
+    """Every `cfg(...)` body among the attributes in `[lo, hi)`, ANDed.
+
+    rustc ANDs an item's attributes exactly as it ANDs a file's — the
+    `all(...)` wrapper is what lets every downstream predicate stay unchanged.
+    `None` when the run carries no `cfg` (an ungated item) or one that does
+    not balance.
+    """
+    bodies: list[str] = []
+    for a in outer:
+        if not (lo <= a.start < hi):
+            continue
+        if not _ATTR_CFG.match(a.raw):
+            continue
+        i = a.raw.index("(", a.raw.index("cfg"))
+        depth = 0
+        for j in range(i, len(a.raw)):
+            if a.raw[j] == "(":
+                depth += 1
+            elif a.raw[j] == ")":
+                depth -= 1
+                if depth == 0:
+                    bodies.append(a.raw[i + 1 : j])
+                    break
+        else:
+            return None
+    if not bodies:
+        return None
+    if len(bodies) == 1:
+        return bodies[0]
+    return "all(" + ", ".join(bodies) + ")"
+
+
 def cfg_body(text: str) -> str | None:
-    """The balanced body of EVERY whole-file `#![cfg(...)]`, ANDed, or None.
+    """The whole-file gate: every `#![cfg(...)]` ANDed, else the Issue-856
+    `#[cfg] mod`-as-whole-body form, else None.
 
     Balanced-paren scan rather than a regex: `cfg(all(feature = "a",
     feature = "b"))` is the common shape and a non-greedy `\\)` stops at the
@@ -491,7 +664,12 @@ def cfg_body(text: str) -> str | None:
             # first-only bug did, so refuse the file instead.
             return None
     if not bodies:
-        return None
+        # Issue 856: no whole-file `#![cfg]` does NOT mean no whole-file gate.
+        # The `#[cfg] mod`-as-whole-body spelling zeroes the target identically
+        # and lands in the same buckets, so every consumer (the severity split,
+        # the PROFILE dimension, the required-features check, the floor gate,
+        # the drift sweep) inherits it without changing.
+        return whole_body_cfg_mod(text)
     if len(bodies) == 1:
         return bodies[0]
     return "all(" + ", ".join(bodies) + ")"
@@ -715,6 +893,95 @@ def selftest() -> None:
     for src, want in cases:
         got = cfg_body(src)
         assert got == want, f"cfg_body({src!r}) = {got!r}, want {want!r}"
+
+    # ---- Issue 856: the `#[cfg] mod`-as-whole-body spelling ----------------
+    # Byte-identical outcome to `#![cfg]` — empty binary, `ok. 0 passed`,
+    # exit 0 — and `INNER_CFG` was blind to it over 26 katgpt-rs targets,
+    # 9 of them named `*_goat`. Every bucket boundary below was measured
+    # against a real file, because a classifier's boundaries ARE the finding.
+    GATED_MOD = (
+        '//! doc comment\n//! second line\n\n'
+        '#[cfg(feature = "toast_tokenizer")]\nmod tests {\n'
+        "    #[test]\n    fn a() {}\n}\n"
+    )
+    assert cfg_body(GATED_MOD) == 'feature = "toast_tokenizer"', (
+        "the second spelling is unread — `SILENT-NOW 0` over 26 real targets"
+    )
+    # ⛔ The `//!` preamble is load-bearing, not decoration: the first cut
+    # anchored the module match with `\A` and handed it a non-zero `pos`,
+    # where `\A` still means the start of the STRING and can never match. It
+    # returned None for EVERY file, i.e. the repair read exactly like the
+    # defect it was repairing. Every real specimen opens with a doc comment.
+    assert cfg_body('#[cfg(feature = "x")]\nmod t {}\n') == 'feature = "x"', (
+        "the no-preamble form regressed"
+    )
+
+    # ⛔ THE NEGATIVE, and it is a MEASURED one rather than a hypothetical:
+    # `tests/test_freeze_thaw.rs` carries four gated modules AND an ungated
+    # `#[test] fn frozen_struct_sizes_reasonable` at its end, so a plain
+    # `cargo test --test test_freeze_thaw` runs ONE test, not zero. Issue 856
+    # listed it among the opt-in 15; the classifier says 14, and the
+    # classifier is right. "a `#[cfg] mod` exists" is the cries-wolf
+    # predicate; "the gated items are the whole body" is the real one.
+    assert cfg_body(GATED_MOD + "\n#[test]\nfn live() {}\n") is None, (
+        "a file with a live ungated #[test] read as zeroed — cries wolf on "
+        "a target that runs"
+    )
+    assert cfg_body(GATED_MOD + "\nfn helper() {}\n") is None, (
+        "an ungated sibling item read as zeroed"
+    )
+    assert cfg_body("mod plain {\n    #[test]\n    fn a() {}\n}\n") is None, (
+        "an UNgated module read as a gate"
+    )
+
+    # A run of gated modules is gated by `any(...)`, never `all(...)`: the
+    # binary is empty only when EVERY module is gated out. `all()` here would
+    # under-report the gate and hand a wrong `required-features` row to T4.
+    run = cfg_body(
+        '#[cfg(feature = "a")]\nmod m1 { }\n#[cfg(feature = "b")]\nmod m2 { }\n'
+    )
+    assert run == 'any(feature = "a", feature = "b")', f"run of mods -> {run!r}"
+    # …and that lands it in the class cargo CANNOT express, not the fixable one.
+    assert "any(" in run.replace(" ", "") and len(set(FEATURE_IN_CFG.findall(run))) > 1
+
+    # Two attributes on ONE module are ANDed, exactly as rustc ANDs a file's
+    # inner attributes — the shape `tests/bench_269_chiaroscuro.goat.rs` has.
+    both = cfg_body('#[cfg(feature = "a")]\n#[cfg(test)]\nmod m { }\n')
+    assert both == 'all(feature = "a", test)', f"attr run -> {both!r}"
+
+    # A `use` cannot carry a `#[test]`, so it never makes a target non-empty.
+    # `tests/bench_dflare_modelless.rs` opens with nine individually-gated
+    # `use` lines; a mod-only predicate rejects it for an item that can never
+    # be the reason a binary has tests. Brace-aware, because `use a::{b, c};`
+    # nests.
+    withuse = cfg_body(
+        '#[cfg(feature = "a")]\nuse foo::{bar, baz};\n'
+        'use std::fmt;\n'
+        '#[cfg(feature = "a")]\nmod m { }\n'
+    )
+    assert withuse == 'feature = "a"', f"use-preamble -> {withuse!r}"
+
+    # ⚠ STATED cost of that rule, pinned so it is re-readable rather than
+    # remembered: an ungated non-`use`, non-test item (a helper `fn`, a
+    # `const`) makes the file read NOT-zeroed. That under-reports; it never
+    # cries wolf, which is the direction this report chooses everywhere.
+    assert cfg_body('const K: usize = 1;\n#[cfg(feature = "a")]\nmod m { }\n') is None
+
+    # The SHARED masker is why a fixture string is not source. Three sibling
+    # instruments have each reported a finding inside their own test data.
+    assert cfg_body('fn f() -> &\'static str { r#"\n#[cfg(feature = "a")]\nmod m {}\n"# }\n') is None, (
+        "a `#[cfg] mod` inside a raw string read as source"
+    )
+
+    # An inner `#![cfg]` still wins, and an UNBALANCED one is still a REFUSAL
+    # — the fall-through must not convert a refusal into a reading.
+    assert cfg_body('#![cfg(feature = "inner")]\n#[cfg(feature = "outer")]\nmod m { }\n') == (
+        'feature = "inner"'
+    ), "the fall-through fired while a whole-file gate was present"
+    assert cfg_body('#![cfg(all(feature = "a"\n#[cfg(feature = "b")]\nmod m { }\n') is None, (
+        "an unbalanced inner attribute was rescued by the mod path — a "
+        "refusal turned into a partial read"
+    )
 
     # The nested case must yield BOTH features — the bug a truncating scan hides.
     body = cfg_body('#![cfg(all(feature = "a", feature = "b"))]\n')

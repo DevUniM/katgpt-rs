@@ -217,7 +217,27 @@ def leading_inner_cfgs(path: str) -> list[str] | None:
                     pending = [bare]  # continued on later lines
             continue
         break  # first real item — inner attributes cannot follow it
-    return out
+    if out:
+        return out
+    # Issue 856: a file with NO whole-file `#![cfg]` can still be gated in its
+    # entirety by the `#[cfg(feature = …)] mod`-as-whole-body spelling, which
+    # zeroes the binary identically. Leaving that unread here would reproduce,
+    # one instrument over, the blind spot 856 was filed for — and this gate is
+    # the one that catches a row that EXISTS and is WRONG, which is strictly
+    # worse than a missing row. The predicate is SHARED, never re-derived.
+    from cfg_gated_target_audit import whole_body_cfg_mod
+
+    body = whole_body_cfg_mod(text)
+    if body is None:
+        return out
+    # ⛔ A RUN of gated modules is gated by `any(...)`: the binary empties only
+    # when every module does, so no single feature is REQUIRED and the
+    # implication this gate checks does not hold. Those are the `any_of` class
+    # cargo's AND-only `required-features` cannot express; reading one here
+    # would invent a finding demanding features the row must not name.
+    if body.replace(" ", "").startswith("any("):
+        return out
+    return [body]
 
 
 def required_features(pred: str) -> set[str] | None:

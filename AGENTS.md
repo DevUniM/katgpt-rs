@@ -1071,6 +1071,32 @@ plain `cargo test`, and it **survives the fix** — adding a
 `required-features` row moves the target into "w/ req-f", which reads as
 protected and does not make it compile.
 
+⛔ **There are TWO spellings of that zero and this paragraph was written
+about one of them (Issue 856).** A file whose entire body is
+
+```rust
+#[cfg(feature = "x")]
+mod tests { … }
+```
+
+produces a byte-identical outcome — same empty binary, same `ok. 0 passed`,
+same exit 0 — and `cfg_gated_target_audit`'s predicate was a single regex for
+the INNER attribute, whose comment distinguishes `#![cfg]` from `#![allow]`
+and never decided anything about the outer-on-a-module form. **An unstated
+blind spot, not a scoped exclusion**, which is the worse of the two: a stated
+exclusion is re-readable. It printed `SILENT-NOW 0` for this repo over **26**
+such targets, 7 of them named `*_goat`, hiding **175 assertions** that were
+reporting a green zero to anyone who invoked them by name. `cfg_body` reads
+both spellings now, so every consumer inherits it; the predicate is
+**the gated items are the WHOLE body**, never "a `#[cfg] mod` exists" — a
+file with one live ungated `#[test]` is not zeroed, and `tests/test_freeze_thaw.rs`
+is the measured specimen that was miscounted before the classifier existed.
+Two rules the same issue measured rather than reasoned toward: a **run** of
+gated modules is gated by **`any(...)`**, not `all(...)` (it empties only when
+every module does — so it is the class cargo's AND-only `required-features`
+cannot express), and a top-level `use` never makes a target non-empty and is
+skipped.
+
 **Two traps in the profile dimension (Issue 741).** First: a file may carry
 **more than one** whole-file `#![cfg]`, and rustc **ANDs** them — reading only
 the first under-reports the profile term AND the feature set (56 of 1634 gated

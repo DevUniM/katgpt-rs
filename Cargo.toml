@@ -3425,6 +3425,63 @@ required-features = ["recfm", "spechop"]
 name = "verify_tiktoken_fix"
 required-features = ["kimi_k3_loader"]
 
+# Issue 856 T4 — the `#[cfg(feature = …)] mod` whole-body spelling.
+# These twelve carry NO whole-file `#![cfg]`; their entire body is one or
+# more feature-gated modules, which zeroes the binary identically — same
+# empty binary, same `ok. 0 passed`, same exit 0. The `#![cfg]` protects
+# the COUNT and these files already have that; `required-features`
+# protects the READER, and that is what was missing. Seven are named
+# `*_goat`, i.e. invoking one by name and reading `ok. 0` was
+# indistinguishable, at the terminal, from having proved something.
+
+[[test]]
+name = "bench_181_dmoe_vocab_coreset_goat"
+required-features = ["vocab_coreset"]
+
+[[test]]
+name = "bench_sdpg_bandit_modelless"
+required-features = ["sdpg_bandit"]
+
+[[test]]
+name = "go_integration"
+required-features = ["go"]
+
+[[test]]
+name = "go_komi_test"
+required-features = ["go"]
+
+[[test]]
+name = "goat_090_tower_search"
+required-features = ["unit_distance"]
+
+[[test]]
+name = "interval_pruner"
+required-features = ["interval_pruner"]
+
+[[test]]
+name = "test_121_randopt_goat"
+required-features = ["randopt_weight"]
+
+[[test]]
+name = "test_122_toast_goat"
+required-features = ["toast_tokenizer"]
+
+[[test]]
+name = "test_124_event_log_goat"
+required-features = ["event_log"]
+
+[[test]]
+name = "test_127_convex_tok_goat"
+required-features = ["convex_tok"]
+
+[[test]]
+name = "test_129_opus_boltzmann_goat"
+required-features = ["opus_selection"]
+
+[[test]]
+name = "test_pgd_analytics"
+required-features = ["go"]
+
 [[bench]]
 name = "bench_841_legal_token_set_goat"
 path = "benches/bench_841_legal_token_set_goat.rs"
