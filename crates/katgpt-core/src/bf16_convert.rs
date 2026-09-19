@@ -157,14 +157,46 @@ pub fn bf16_bits_to_f32_into(src: &[u16], dst: &mut [f32]) {
     {
         unsafe { bf16_bits_to_f32_neon(src, dst) }
     }
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    // Issue 847 T6: a RUNTIME probe, for the same reason T2 gave the RNE
+    // dispatcher one — `target_feature = "avx2"` is OFF by default on
+    // x86_64, so this arm compiled to nothing on every ordinary build.
+    //
+    // ⛔ T2 left this kernel UNDECIDED and the reason turned out to be the
+    // INSTRUMENT, not the kernel. The apparent "crossover" (a cell swinging
+    // 97 ↔ 173 ns between two runs of one binary) is BUFFER ALIGNMENT: every
+    // AVX2-bearing arm here is bimodal on `src.as_ptr() % 32` with the two
+    // clusters 1.6-2.2x apart, `vec![]` picks the residue by chance, and the
+    // scalar arm beside them is stable to under 1%. Comparing two arms across
+    // uncontrolled allocations was comparing two coin flips.
+    //
+    // Measured with the residue CONTROLLED on a quiet box
+    // (`t6_widen_bimodality_vs_buffer_alignment`, ns/call, release):
+    //
+    //   n      scalar (best..worst)   intrinsics (best..worst)
+    //   256    13..14                 6..16
+    //   4096   170..234               108..167
+    //   32768  1699..2337             1833..2252
+    //
+    // So the intrinsics win 2.2x at 256 and 1.57x at 4096 on the favourable
+    // residue and tie on the others, while n=32768 is memory-bound and a
+    // wash (they lose ~1.1x at two residues of four and win at the other
+    // two). ⚠ The deployed consumer is riir-engine's
+    // `weight_tensor::dequantize_row` — a ROW, i.e. the 4096 regime — which
+    // is what decides it; the large-n wash is STATED rather than hidden,
+    // because a caller widening a whole tensor in one call is the case this
+    // choice does not help.
+    #[cfg(target_arch = "x86_64")]
     {
-        unsafe { bf16_bits_to_f32_avx2(src, dst) }
+        // `if/else` and NO `return`: the cfg blocks are mutually exclusive,
+        // so exactly one compiles and it is already the last statement
+        // (`clippy::needless_return`, carried at zero residual here).
+        if crate::simd::simd_level() == crate::simd::SimdLevel::Avx2 {
+            unsafe { bf16_bits_to_f32_avx2(src, dst) }
+        } else {
+            bf16_bits_to_f32_scalar_into(src, dst);
+        }
     }
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         bf16_bits_to_f32_scalar_into(src, dst);
     }
@@ -465,7 +497,11 @@ unsafe fn f32_to_bf16_trunc_neon(src: &[f32], dst: &mut [u16]) {
 /// SAFETY: caller guarantees `src`/`dst` are valid for reads/writes of
 /// `n = min(src.len(), dst.len())` elements (dispatch passes whole slices;
 /// every access below is bounded by `n`).
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+// Gated on the ARCH alone (Issue 847 T6): `#[target_feature(enable = "avx2")]`
+// is what makes the intrinsic body compile, and the cfg is what used to make
+// it compile to NOTHING on a default build. The runtime probe above is what
+// makes entering it safe.
+#[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn bf16_bits_to_f32_avx2(src: &[u16], dst: &mut [f32]) {

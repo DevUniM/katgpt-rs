@@ -643,3 +643,134 @@ fn t4_neon_vs_scalar_aarch64() {
          the delete case for the AVX2 kernel is measured on both arches."
     );
 }
+
+
+/// Issue 847 T6 — the widen "crossover" is a BIMODALITY, and the axis is
+/// BUFFER ALIGNMENT rather than box load.
+///
+/// T6 was filed as *"measure the crossover on a QUIET box"*, on the reading
+/// that a cell swinging 97 ↔ 173 ns between two runs of one binary was a
+/// loaded box. Measured on a quiet one (23.6 GB free, commit 27.8 / 62.8 GB,
+/// nothing heavy in the top five), five runs per build:
+///
+/// - the SCALAR dispatcher is stable to **under 1%** — 1692, 1696, 1696,
+///   1698, 1704 ns at n=32768;
+/// - every AVX2-bearing arm is **BIMODAL**, ~98 or ~170 ns at n=4096, with
+///   the two clusters separated by 1.75x and nothing in between;
+/// - the mode is picked per PROCESS and per ARM — one run had the dispatcher
+///   fast (97) and `_autovec` slow (175) in the same measurement.
+///
+/// A loaded box produces a SPREAD. Two clusters with a gap, while the scalar
+/// arm beside them does not move, is a property of the run rather than of
+/// the machine — so T6's premise is refuted and its instruction ("run it
+/// somewhere quiet") could never have settled the question.
+///
+/// This arm tests the leading hypothesis DIRECTLY instead of running the
+/// same benchmark again: `vec![…]` guarantees only the element's alignment,
+/// so a 256-bit `loadu`/`storeu` sequence starts at whatever the allocator
+/// returned, and a ~50/50 split is what a 32-byte-alignment coin flip looks
+/// like. It measures the SAME kernel over sub-slices whose start address is
+/// forced to a known residue mod 32, and prints the residue next to the
+/// time.
+///
+/// ⛔ A REPORT, and deliberately not a bar. The asserted part is the one no
+/// box state can touch: every alignment must produce BIT-IDENTICAL output,
+/// because an alignment cannot change a conversion. If the timings turn out
+/// flat across residues the hypothesis is refuted and the bimodality needs a
+/// different explanation — which is a result, and the reason this prints a
+/// table rather than a verdict.
+#[test]
+fn t6_widen_bimodality_vs_buffer_alignment() {
+    if !cfg!(target_arch = "x86_64") {
+        println!("   Issue 847 T6 is an x86_64 question — SKIPPED on this arch");
+        return;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        use katgpt_core::bf16_convert::{bf16_bits_to_f32_autovec, bf16_bits_to_f32_into};
+        println!("\n   Issue 847 T6 — is the widen bimodality BUFFER ALIGNMENT?");
+        println!("   cfg!(target_feature=\"avx2\") = {}", cfg!(target_feature = "avx2"));
+        println!("   {:>8}  {:>9}  {:>9}  {:>13}  {:>13}",
+                 "n", "src%32", "dst%32", "dispatch ns", "autovec ns");
+
+        // One oversized allocation per buffer, sliced at a controlled offset.
+        // Taking sub-slices of ONE allocation is what makes the residue the
+        // only thing that varies: a fresh `vec!` per residue would re-roll
+        // the allocator and measure two things at once.
+        for &(n, iters) in &NS {
+            let mut rng = Lcg::new(0x0847_6666 + n as u64);
+            let pad = 32usize;
+            let src_all: Vec<u16> = (0..n + pad)
+                .map(|_| u16::from(rng.next_u8()) << 8 | u16::from(rng.next_u8()))
+                .collect();
+            let mut d_all = vec![0.0f32; n + pad];
+            let mut a_all = vec![0.0f32; n + pad];
+
+            // The oracle is computed ONCE, from the aligned case, and every
+            // residue is compared against it — so a shifted window cannot
+            // silently compare against itself.
+            let mut oracle = vec![0.0f32; n];
+            bf16_bits_to_f32_into(&src_all[..n], &mut oracle);
+
+            for &(so, doff) in &[(0usize, 0usize), (1, 1), (8, 4), (9, 5)] {
+                let src = &src_all[so..so + n];
+                let sres = (src.as_ptr() as usize) % 32;
+                let dres =
+                    (unsafe { d_all.as_ptr().add(doff) } as usize) % 32;
+                {
+                    let d = &mut d_all[doff..doff + n];
+                    bf16_bits_to_f32_into(&src_all[..n], d);
+                    // ⛔ BITS, not values. `Vec<f32>` compares with
+                    // `PartialEq`, under which `NaN != NaN`, and a random
+                    // `u16` fixture widens to NaN — so a value comparison
+                    // fails on two byte-identical vectors. The module doc
+                    // records this trap for T2’s arm and the first draft of
+                    // THIS arm reproduced it anyway, which is the argument
+                    // for writing it at the line.
+                    let got: Vec<u32> = d.iter().map(|x| x.to_bits()).collect();
+                    let want: Vec<u32> = oracle.iter().map(|x| x.to_bits()).collect();
+                    assert_eq!(got, want,
+                               "alignment changed the RESULT (n={n}, src%32={sres}, \
+                                dst%32={dres}) — an alignment cannot change a \
+                                conversion, so the instrument is wrong");
+                }
+                let r = {
+                    let (d_chunk, a_chunk) = (doff, doff);
+                    let _ = (d_chunk, a_chunk);
+                    ab_median_ratio(
+                        11,
+                        iters,
+                        iters / 2,
+                        |_| {
+                            let d = &mut d_all[doff..doff + n];
+                            bf16_bits_to_f32_into(black_box(src), d);
+                            black_box(d[0]);
+                        },
+                        |_| {
+                            let a = &mut a_all[doff..doff + n];
+                            unsafe { bf16_bits_to_f32_autovec(black_box(src), a) };
+                            black_box(a[0]);
+                        },
+                    )
+                };
+                println!("   {n:>8}  {sres:>9}  {dres:>9}  {:>13.0}  {:>13.0}",
+                         r.a_ns_per_iter(), r.b_ns_per_iter());
+                println!("   ROW847T6 widen n={n} src_res={sres} dst_res={dres} \
+                          disp_ns={:.0} autovec_ns={:.0} avx2_cfg={}",
+                         r.a_ns_per_iter(), r.b_ns_per_iter(),
+                         cfg!(target_feature = "avx2"));
+                assert_eq!(r.ratios.len(), r.rounds,
+                           "instrument FAIL: {} of {} rounds survived \
+                            (T6, n={n}, src%32={sres})",
+                           r.ratios.len(), r.rounds);
+            }
+        }
+        println!(
+            "   ⚠ REPORT, no bar. If the times track the residue columns, the \
+             bimodality is alignment and the earlier 97-vs-173 'crossover' was \
+             one coin flip per process. If they are FLAT, the hypothesis is \
+             refuted and T6 needs a different axis — record which, because a \
+             refuted hypothesis measured on a quiet box is still an answer."
+        );
+    }
+}

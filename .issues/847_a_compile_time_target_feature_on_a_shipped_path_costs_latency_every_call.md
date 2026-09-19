@@ -6,11 +6,18 @@ default build). **T4 + T5 DONE 2026-09-19** — the aarch64 re-measure landed
 (`t4_neon_vs_scalar_aarch64`: RNE NEON wins 1.23x everywhere; widen + trunc
 NEON lose to LLVM's own loop) and the trunc AVX2 kernel is DELETED (T5, with
 the transcription hypothesis refuted — the loss is the `+avx2` build).
-**T6 alone remains** — the widen crossover on a quiet x86_64 box. T3's gate
-is landed and the class is WALLED
-(`scripts/shipped_target_feature_gate.py`). ⛔ T2's finding is that the reflex repair
-was right for ONE of three kernels, a REGRESSION for the second, and
-undecidable on this box for the third.
+**T6 DONE 2026-09-19 — ALL TASKS CLOSED.** The widen "crossover" was BUFFER
+ALIGNMENT, not n: on a quiet box the scalar arm is stable to under 1% while
+every AVX2-bearing arm is bimodal on `src.as_ptr() % 32` with the clusters
+1.6-2.2x apart, so T2's 78% swing was one coin flip per process and "measure
+it somewhere quiet" could never have settled it. With the residue controlled
+the intrinsics win 2.2x at n=256 and 1.57x at 4096 and tie elsewhere, so they
+are probed in. T3's gate is landed and the class is WALLED
+(`scripts/shipped_target_feature_gate.py`, now 2 pinned rows — only the
+probe's own body). ⛔ T2's finding stands and is worth keeping: the reflex
+repair was right for ONE of three kernels, a REGRESSION for the second, and
+— for the third — not undecidable but MIS-MEASURED, which is a different
+failure and the one that took longest to see.
 
 ⚠ **Filed as 846, renumbered to 847 before pushing.** A concurrent session
 allocated 846 for `citation_drift_first_real_alias_read` and pushed it first
@@ -285,11 +292,66 @@ Bench 847 is a **gate** now, not a report, and it bars exactly **one** row:
       `t2_bf16_autovec_vs_intrinsics` keeps measuring the absence every run,
       so a future re-transcription has to argue with a number.
 
-- [ ] **T6 — The widen crossover, on a QUIET box.** Three arms with three
-      different winners across 256 / 4096 / 32768, and a 78% run-to-run swing
-      in one cell here. Record free RAM, commit-vs-limit and concurrent heavy
-      jobs beside the figures (§Feature Flag Discipline G2), or the answer is
-      a measurement of the box.
+- [x] **T6 — DONE, and the quiet box REFUTED the task's own framing. There is
+      no crossover: the widen arm is BIMODAL on BUFFER ALIGNMENT.**
+
+      Box state per §Feature Flag Discipline G2: shikuwa, **23.6 GB free
+      physical, commit 27.8 / 62.8 GB limit**, nothing heavy in the top five
+      by CPU. Five runs per build.
+
+      ⛔ **The scalar arm is stable to under 1%** — 1692, 1696, 1696, 1698,
+      1704 ns at n=32768 — while every AVX2-bearing arm beside it is **two
+      clusters** at n=4096, ~98 and ~170, with a 1.75x gap and nothing
+      between. A loaded box produces a SPREAD; two clusters with a gap, next
+      to a stable arm in the same run, is a property of the RUN. So T6's
+      instruction ("go somewhere quiet") could never have settled it, and the
+      "78% swing" of T2 was one coin flip per process.
+
+      **The axis is `src.as_ptr() % 32`**, tested directly rather than by
+      re-running the same benchmark:
+      `t6_widen_bimodality_vs_buffer_alignment` slices ONE oversized
+      allocation at controlled offsets and prints the residue beside the
+      time. Each arm has a single fast residue and is 1.6–2.2x slower at
+      every other. `vec![]` guarantees only element alignment, so 32-byte
+      alignment is roughly a coin flip — which is exactly the ~50/50
+      bimodality observed.
+
+      **ns/call with the residue CONTROLLED (best..worst over 4 residues):**
+
+      | n | scalar | intrinsics |
+      |---|---|---|
+      | 256 | 13..14 | **6..16** |
+      | 4096 | 170..234 | **108..167** |
+      | 32768 | **1699..2337** | 1833..2252 |
+
+      **REPAIRED — runtime-probed in, like RNE (T2).** The intrinsics win
+      2.2x at 256 and 1.57x at 4096 on the favourable residue and TIE on the
+      others; n=32768 is memory-bound and a wash (they lose ~1.1x at two
+      residues of four and win at the other two). The deployed consumer is
+      riir-engine's `weight_tensor::dequantize_row` — a ROW, i.e. the 4096
+      regime — which is what decides it. ⚠ The large-n wash is STATED in the
+      dispatcher rather than hidden: a caller widening a whole tensor in one
+      call is the case this choice does not help.
+
+      A default build now measures **7–10 / 97–163 / 1887–2293** against the
+      old scalar path's **13–14 / 170–234 / 1699–2337** — landing on the
+      `+avx2` build's figures, the same signature T2a established. The kernel
+      is gated on the ARCH alone now; `#[target_feature(enable = "avx2")]` is
+      what compiles the body and the probe is what makes entering it safe.
+      Three rows leave `shipped_target_feature_expected.txt` (**159
+      attributes, 2 pinned, 0 stale** — only the probe's own body remains).
+
+      ⚠ **The first draft of the arm compared VALUES and failed on two
+      byte-identical vectors**, because `Vec<f32>` is `PartialEq` and
+      `NaN != NaN` — the exact trap this issue's T2 entry already records one
+      arm over. It compares BITS now, and the reason is written at the line
+      rather than in a module doc the next author will not read.
+
+      ⚠ **What is NOT claimed:** the micro-architectural mechanism. Each arm
+      prefers a different residue (the intrinsics are fast at one, the
+      autovec arm at another), which is consistent with a lane-crossing or
+      cache-line-straddle cost but is not measured. The alignment DEPENDENCE
+      is measured; the reason for it is not.
 - [x] **T3 — DONE. It needed one, and the census is what made it
       cheap: `scripts/shipped_target_feature_gate.py`** (docs-gate CHECK).
 

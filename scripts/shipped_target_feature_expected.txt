@@ -36,13 +36,20 @@ crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#2 = the probe's own `
 # number. The block is kept as a comment because a reader arriving from the
 # 847 write-up needs to find the resolution where the rows were.
 
-# ── bf16 WIDENING — UNDECIDED on this box, and the instrument says so ──────
-# The best arm changes with n: intrinsics at 256 (6 vs 13 ns), autovec around
-# 4096, plain scalar at 32768 (1670 vs 1837-2432) — and the same binary
-# measured 97 and 173 ns for one cell on two runs, a 78% swing on a box
-# carrying peer agent sessions. That is AGENTS.md's own "a latency number
-# without its BOX STATE is not a measurement". The crossover is real (Issue
-# 844's shape one operation over) and needs a quiet box: 847 T6.
-crates/katgpt-core/src/bf16_convert.rs::bf16_bits_to_f32_into#1 = 847 T6: the best arm changes with n and one cell swung 78% between runs on a loaded box. Undecided, not unexamined.
-crates/katgpt-core/src/bf16_convert.rs::bf16_bits_to_f32_into#2 = 847 T6: the `not(any(..))` complement of the row above; same construct, same adjudication.
-crates/katgpt-core/src/bf16_convert.rs::bf16_bits_to_f32_avx2#1 = 847 T6: the kernel the two rows above dispatch to. It WINS at n=256 and loses at n=32768, which is the crossover T6 must measure quietly.
+# ── bf16 WIDENING — RESOLVED by RUNTIME PROBE, no rows (847 T6) ──────
+# This block held three rows and now holds none. T2 left the widen kernel
+# UNDECIDED because the best arm appeared to change with n and one cell swung
+# 78% between two runs of one binary; T6 was filed to re-measure it on a quiet
+# box. The quiet box REFUTED that framing: the scalar arm is stable to under
+# 1% (1692-1704 ns at n=32768 over five runs) while every AVX2-bearing arm is
+# BIMODAL on `src.as_ptr() % 32`, two clusters 1.6-2.2x apart with nothing
+# between them. `vec![]` picks the residue by chance, so comparing two arms
+# across uncontrolled allocations was comparing two coin flips — the
+# "crossover" was never a property of n.
+#
+# With the residue CONTROLLED (`t6_widen_bimodality_vs_buffer_alignment`):
+# the intrinsics win 2.2x at n=256 and 1.57x at n=4096 on the favourable
+# residue and TIE on the others, and n=32768 is memory-bound and a wash. The
+# deployed consumer is riir-engine's `weight_tensor::dequantize_row` — the
+# 4096 regime — so it is probed in, and a default build now measures 7-10 /
+# 97-163 against the old scalar 13-14 / 170-234.
