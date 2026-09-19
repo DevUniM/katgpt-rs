@@ -1,7 +1,8 @@
 # Issue 848: `develop` was RED for 6h40m — one commit privatised a delegation target and deleted a shared fixture, and both of that module's EXTERNAL callers are docs-gate CHECKS
 
-**Status:** **RESOLVED** for the two breakages (both repaired, docs gate
-29/29 green). **T2–T4 open** — the class, the lane, and the wall.
+**Status:** **RESOLVED** — both breakages repaired and the class WALLED
+(`scripts/cross_module_attr_gate.py`, docs-gate CHECK, 30/30 green).
+**T3–T4 open** — the runtime half, and the cross-repo count.
 
 Broken at `6c6ca2ee` (2026-09-19 01:11:24 +0700), found 2026-09-19 07:51
 +0700 — **6h40m**, ended by a hand run of `scripts/docs_gate.sh` on a
@@ -88,7 +89,7 @@ exactly where nobody looks.
 ## Tasks
 
 - [x] **T1 — Repair both names and re-green the docs gate.**
-- [ ] **T2 — The CLASS: a tracked `scripts/*.py` naming an attribute another
+- [x] **T2 — DONE. The CLASS is walled: a tracked `scripts/*.py` naming an attribute another
       tracked module does not define.** Statically decidable for `import X` +
       `X.attr` and for `from X import name`, which is how every cross-module
       reference in `scripts/` is written. **Measured two-sided against a known
@@ -107,6 +108,26 @@ exactly where nobody looks.
       bound only inside a function. And the walk must be the whole `scripts/`
       tree rather than the CHECKS set — the two victims here happen to be
       CHECKS and the next one need not be.
+
+      **Shipped** as `scripts/cross_module_attr_gate.py`. Live run: 0 findings
+      over **86 tracked `scripts/*.py`** (floor 50) / **708 resolved
+      references** (floor 200), 0 pinned exemptions, 0 unparsed. Two floors
+      that fail differently — the walk, and the import RESOLUTION, which is
+      the one that matters: if `_aliases` stops building the local-binding
+      table every name reads trivially fine and the output is byte-identical
+      to a clean repo. Exemptions are membership + a reason per row, both
+      directions, and the file is deliberately EMPTY (the default for a
+      dangling reference is to restore the name, not to pin it).
+      `--prove-fires 6c6ca2ee` is the two-sided arm and runs opt-in, on the
+      `platform_dead_code_floor_gate` precedent.
+
+      ⛔ **The OPAQUE bucket is the one that had to be got right and is 0
+      today, which is why it is DISCLOSED rather than remembered.** A module
+      carrying `from x import *` has a namespace no parse of that file can
+      enumerate, so nothing is claimed against it — credited with everything,
+      the conservative direction for a gate whose false positive is a demand
+      to "fix" working code. A silent version of that rule would report
+      coverage it does not have.
 - [ ] **T3 — The LANE, and it is the more general finding.** T2's gate would
       have caught these two. It would NOT have caught a `TypeError` from a
       changed signature, a moved constant, or any other runtime break — and
