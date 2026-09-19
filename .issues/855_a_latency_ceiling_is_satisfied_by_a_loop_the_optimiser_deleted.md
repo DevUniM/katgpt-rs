@@ -1,6 +1,6 @@
 # Issue 855: a latency ceiling is satisfied by a loop the optimiser DELETED — `0 ns/op` over 100 000 iterations, asserted `< 10 000 ns`, PASS
 
-**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); T4–T5 open.
+**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); **T4 CLOSED** — the proposed `let _ =` predicate is REFUTED by the execution run (20.0% vs a 21.1% base rate) and `scripts/timed_region_guard_gate.py` shipped in its place as a docs-gate CHECK (membership wall over the READ tier, ratchet over the unread one); T5 open.
 **Found by:** Issue 833 T2's per-target read, 2026-09-19. Not by a census, and
 not by anything failing — by **reading the printed values next to the bars**,
 which is the one thing 833 T2 refuses to skip.
@@ -435,23 +435,93 @@ read by a human as a result. It is a division by a deleted loop.
         (`bench_225` read 8, 10, 11 and 22 ns/call across the session; the bar
         it must clear is 10 000 ns).
       - The only other heavy process throughout was `Zed Dev` at ~183% CPU.
-- [ ] **T4 — the STATIC detector is tempting and is the weaker instrument;
-      decide deliberately.** `let _ = f(…)` inside a timed region with no
-      `black_box` is greppable, and `bench_252` above is the measured
-      false positive — the spelling is present and the work survived. So a
-      static pass reports CANDIDATES, never findings, which is the
-      `percentile_index_audit` standing (*UNRESOLVED is not clean*). ⛔ Do not
-      add a verdict half by symmetry with the sweep family: AGENTS.md records
-      that `check_validation_gate` declined a sweep on a measured population of
-      one and `console_encoding_gate` assumed that answer carried and was wrong
-      by seven repos. **Re-measure the population first** — and note the
-      population here is *timed regions*, not repos.
+- [x] **T4 — the STATIC detector is tempting and is the weaker instrument;
+      decide deliberately.** DECIDED 2026-09-19, on the population T4 demanded
+      be re-measured first. The verdict is **the proposed detector is REFUTED,
+      and a different, decidable gate shipped in its place.**
+
+  **What the execution run says about the proposed predicate.** All 34
+  asserting regions at n ≥ 1000 were run (T3). Split by the spelling T4 names:
+
+  | slice | n | VANISHED | rate |
+  |---|---|---|---|
+  | carries `let _ =` | 15 | 3 | **20.0%** |
+  | does not | 19 | 4 | **21.1%** |
+
+  ⛔ **It has essentially no discriminating power — it fires on 20% of what it
+  selects and 21% of what it rejects. It is the base rate wearing a grep.**
+  T4 expected a low-precision CANDIDATE list and `bench_252` as the measured
+  false positive; the truth is worse than that, because a candidate list whose
+  precision equals the base rate ORDERS nothing. Building it would have
+  produced a report that costs a read and buys no information.
+
+  ⚑ **The column that DOES separate is `black_box`: 7 of 23 without it
+  vanished, 0 of 11 with it.** That is a real 30.4%-vs-0% split, and it is
+  still not a finding predicate — it is a reason to gate the *defence* rather
+  than the *symptom*.
+
+  **What shipped instead — `scripts/timed_region_guard_gate.py`, a docs-gate
+  CHECK.** It does not try to predict which region is broken. It gates the
+  strictly decidable thing: *does a timed region that loops ≥ 1000 times and
+  ASSERTS carry a loud-zero defence at all* — the shared harness
+  (`best_of_us` / `ab_median_ratio`, both of which panic when every measured
+  arm read 0) or its own non-zero assertion.
+  - Both halves of the scope are load-bearing and are pinned by arms.
+    **n ≥ 1000** is what makes a zero EXACT (below it a 0 is a
+    timer-resolution artefact and the detector would be guessing);
+    **asserts something** is what makes a zero MATTER (a region that only
+    prints has no verdict a deleted loop can satisfy — that residue is
+    reported on the verdict line, never gated, because it can still print
+    nonsense: T1's `Speedup: 8657.9×` and `-169873680.5%` are both prints).
+  - ⛔ **Two tiers, and the split is the honest part.** A LITERAL loop bound
+    is the population T3 executed end to end, 34 of 34, so it is adjudicated
+    and gets a MEMBERSHIP wall with one MEASURED number per row
+    (`scripts/timed_region_survivors_expected.txt`, 27 rows, both directions).
+    A bound that needs a hop of resolution is real and **unread** — 93 more
+    regions — and pinning an unread bucket by name is the backlog-wearing-a-pin
+    shape Issue 785 forbids, so it is a **ratchet on the derivative**: the
+    commit that adds a NEW unguarded timed region reds, the existing 93 stay
+    somebody's afternoon with a terminal.
+  - ⛔ **One hop is not optional, and finding that out is what stopped this
+    gate shipping blind to its own founding cases.** A literal-only predicate
+    cannot see `tests/bench_regime_transition.rs` — `let n = 100_000; for _ in
+    0..n` — and **both** arms T1 filed sit in that shape. A gate blind to the
+    cases that motivated it is a gate that would have shipped them. Two hops
+    is deliberately out (it needs a value model) and an arm pins that boundary.
+  - `--prove-fires 796fabfac^` is two-sided against a known answer: 34
+    unguarded regions at that commit, of which the pins admit 27, and the 7
+    extras are **exactly** the 7 measured as VANISHED — no more, no fewer.
+  - Perturbation-verified in all four directions: a dropped pin reds UNPINNED,
+    a phantom row reds STALE, a lowered ratchet reds, and a raised one prints
+    the tighten-it warning without failing (a ratchet that reds on an
+    improvement is a ratchet people delete).
+  - ⚠ STATED and printed on the verdict line rather than remembered: it does
+    NOT claim a pinned region is safe. `black_box` is the **weakest** of the
+    three defences, and T3 measured two arms that vanished carrying one — the
+    optimiser proved the loop's effect through a loop-invariant **argument**
+    (a pure fn of hoistable inputs) and through an identity **receiver** (an
+    even number of `mem::swap`es). The invariant is that the optimiser must
+    not be able to prove the loop's effect; the sink is one of three sources.
 - [ ] **T5 — the cross-repo axis is UNMEASURED and must not inherit an
       answer.** `let _ = f()` in a timed loop is not a katgpt-rs idiom; the
       siblings carry 71 sequential-timing targets (Issue 834 T3). Whether any
       of them prints a zero is unknown, and the honest first step is to run
       their benches and grep the output — the same thing that found these five.
       ⚠ A static census would answer a different question; see T4.
+      - ⛔ **And T4's measurement sharpens what a sweep half would have to be.**
+        It cannot be a port of the refuted `let _ =` predicate. The gate that
+        shipped is decidable and cross-repo-portable (`scan()` already takes a
+        root), but its **wall** tier rests on somebody having EXECUTED the
+        population — and 27 rows took two agent sessions and ~30 minutes of
+        release builds **in this repo alone**. In a sibling the wall would be
+        a wall over an unread bucket, which is the thing T4 refused. So a
+        sweep half is a **ratchet-only** instrument there, and the honest
+        first step is still T5's: run their benches and read the numbers.
+        ⚠ Do **not** add it by symmetry with the sweep family — `check_validation_gate`
+        declined a sweep on a measured population of one and `console_encoding_gate`
+        assumed that answer carried and was wrong by seven repos. **Count the
+        sibling timed regions first**; the count this repo produced (608
+        regions, 120 unguarded in scope) is not evidence about theirs.
 
 ## Records
 
