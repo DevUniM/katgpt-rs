@@ -79,6 +79,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -87,6 +88,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import arm_reach_audit as A  # noqa: E402
+import worktree_state  # noqa: E402
 
 EXPECTED = HERE / "arm_reach_survivors_expected.txt"
 
@@ -435,6 +437,31 @@ def gate_selftest() -> list[str]:
     import tempfile
     f: list[str] = []
 
+    # ⛔ `tree_drift`, the Issue-854 T6 disclosure. It is PURE over two
+    # snapshots on purpose, so the decision is armable without a
+    # seventeen-minute run and without a second git tree.
+    A0 = ("a" * 40, frozenset({"x.py"}))
+    if "STABLE" not in tree_drift(A0, A0):
+        f.append("an UNCHANGED tree did not say so — silence cannot be told "
+                 "from not having looked, which is exactly what left the "
+                 "straddled run with nothing to go on")
+    if "MOVED" in tree_drift(A0, A0):
+        f.append("an unchanged tree was reported as MOVED")
+    moved = tree_drift(A0, ("b" * 40, frozenset({"x.py"})))
+    if "MOVED" not in moved or "aaaaaaaa" not in moved or "bbbbbbbb" not in moved:
+        f.append(f"a HEAD move was not reported with BOTH shas: {moved}")
+    # The dirty-set axis is independent of HEAD: a sibling can edit a tracked
+    # module without committing, and that changes what gets mutated just as
+    # much as a commit does.
+    dirtied = tree_drift(A0, ("a" * 40, frozenset({"x.py", "y.py"})))
+    if "MOVED" not in dirtied or "y.py" not in dirtied:
+        f.append(f"a file becoming dirty at the SAME head was missed: {dirtied}")
+    cleaned = tree_drift(A0, ("a" * 40, frozenset()))
+    if "MOVED" not in cleaned or "x.py" not in cleaned:
+        f.append(f"a file being COMMITTED mid-run was missed: {cleaned} — "
+                 "that is the measured case, and it is the direction that "
+                 "makes a finding vanish rather than appear")
+
     # ── 1. the key is stable against LINE MOVEMENT, which is the whole point.
     a = build_keys([("m.py", "g", ">= -> >", "if n >= floor:")])
     b = build_keys([("m.py", "g", ">= -> >", "if n >= floor:")])
@@ -744,6 +771,66 @@ def gate_selftest() -> list[str]:
     return f
 
 
+def tree_state(paths) -> tuple[str, frozenset]:
+    """`(HEAD sha, the dirty subset of `paths`)` — a snapshot to compare.
+
+    ⛔ This run reads the WORKING TREE for **seventeen minutes**, and this
+    worktree has five-plus sessions writing it. Any commit landing in that
+    window changes the population, the arms and the pin file underneath the
+    run, so the report describes NO SINGLE TREE. Measured (Issue 854): a run
+    straddled a concurrent session's commit and its finding set was **13 at
+    one end and 0 at the other**, with nothing in the output saying so —
+    after which the 13 were written up as an artifact of something else
+    entirely, and the write-up had to be retracted.
+
+    ⚠ The sweep family's mechanisms do NOT transfer. `head_delta` /
+    `head_overlay` / `head_tree` re-classify ROWS against HEAD; a mutation run
+    EXECUTES the source, so there is nothing to re-classify and no cheap way
+    to re-run it. The affordable form is a DISCLOSURE, which is what this is.
+
+    ⚠ ADVISORY, never a failure — a gate that hard-reds because a sibling
+    committed during a sixteen-minute run is the cries-wolf instrument this
+    repo warns about.
+    """
+    head = subprocess.run(
+        ["git", "-C", str(HERE.parent), "rev-parse", "HEAD"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=60).stdout.strip() or "?"
+    try:
+        dirty = set(worktree_state.dirty_files(HERE.parent))
+    except OSError:
+        dirty = set()
+    want = {Path(x).name for x in paths}
+    return head, frozenset(n for n in (Path(d).name for d in dirty)
+                           if n in want)
+
+
+def tree_drift(before: tuple[str, frozenset],
+               after: tuple[str, frozenset]) -> str:
+    """The one clause the verdict line gains. Pure, so an arm reaches it.
+
+    Prints in BOTH directions: an unchanged tree says so in six words, because
+    silence cannot be told from *not having looked* — this file's own rule for
+    deferrals, and the reason the retracted write-up had nothing to go on.
+    """
+    (h0, d0), (h1, d1) = before, after
+    if h0 == h1 and d0 == d1:
+        return f"tree STABLE for the whole run (HEAD {h0[:8]})"
+    bits = []
+    if h0 != h1:
+        bits.append(f"HEAD moved {h0[:8]} → {h1[:8]}")
+    gone, came = sorted(d0 - d1), sorted(d1 - d0)
+    if came:
+        bits.append("became dirty: " + ", ".join(came))
+    if gone:
+        bits.append("stopped being dirty: " + ", ".join(gone))
+    return ("⛔ TREE MOVED DURING THE RUN — " + "; ".join(bits)
+            + ". This report describes NO SINGLE TREE: the population, the "
+              "arms and the pin file may all have changed under it. RESTART "
+              "rather than reading it, and do not write up a finding from it "
+              "(Issue 854 T6)")
+
+
 def main(argv: list[str]) -> int:
     for _stream in (sys.stdout, sys.stderr):
         try:
@@ -806,13 +893,15 @@ def main(argv: list[str]) -> int:
         return 2
 
     t0 = time.time()
+    _before = tree_state(A.population(False))
     m = measure(only or None)
     wall = time.time() - t0
+    _drift = tree_drift(_before, tree_state(A.population(False)))
 
     print(f"▸ arm-reach VERDICT over {m['modules']} module(s), "
           f"{m['mutants']} mutant(s), {m['killed']} killed, "
           f"{len(m['observed'])} live survivor(s) incl. "
-          f"{len(m['timeouts'])} TIMEOUT, {wall:.1f}s")
+          f"{len(m['timeouts'])} TIMEOUT, {wall:.1f}s · {_drift}")
 
     if m["errored"]:
         print(f"✗ {len(m['errored'])} module(s) do not parse: "

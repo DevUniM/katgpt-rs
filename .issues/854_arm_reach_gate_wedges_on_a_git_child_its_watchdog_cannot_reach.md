@@ -12,9 +12,10 @@ one was not.
 
 **Status:** OPEN — and INTERMITTENT: observed twice on 2026-09-19 (shikuwa)
 on the plain `scripts/arm_reach_gate.py` run over the CHECKS population, with a
-third run of the same population completing clean in 1068.9s. T1, T2, T4 and T5 are answered — and THREE of the four resolved by
+third run of the same population completing clean in 1068.9s. T1, T2, T4, T5 and T6 are DONE — and three of the five resolved by
 refuting the task's own proposal, which is what a measurement is for.
-T3 (blocked on T1 OBSERVING a stall, not on T1 existing) and T6 are open.
+**T3 alone remains**, and it is blocked by design: on T1 OBSERVING a stall,
+not on T1 existing.
 
 Found while doing something else — the run was started to pin survivors after
 Issue 847/848 landed, and never returned.
@@ -345,24 +346,40 @@ line that has not moved".
       claimed"* and returns **2 after 1.1s** — it refuses instead of spending
       the seventeen minutes and then claiming something. Canary 0 failures.
 
-- [ ] **T6 — A 1002s run over a shared worktree must DISCLOSE that the tree
-      moved.** Measured above: this run straddled another session's commit and
-      its finding set was 13 at one end and 0 at the other, with nothing in
-      the output saying so. The sweep family's head-provenance mechanisms do
-      not transfer — a mutation run EXECUTES the source rather than reading
-      rows from it, so there is nothing to re-classify. Record `HEAD` and the
-      dirty-set at entry, re-read at exit, and name the drift on the verdict
-      line. ⚠ Keep it ADVISORY: a gate that hard-reds because a sibling
-      committed during a sixteen-minute run is the cries-wolf instrument this
-      repo warns about. ⚠ `sweep_advisory_membership_gate` keys on the
-      `*_drift_sweep.py` FILENAME, which is why nothing asked this gate for
-      wiring — whether that predicate should widen is a separate question and
-      should be MEASURED (how many `_gate.py` files carry a long tree-reading
-      run?) rather than answered by symmetry.
+- [x] **T6 — DONE. The verdict line now says whether the tree held still.**
 
-## What this does not claim
+      A run of this gate reads the WORKING TREE for **seventeen minutes** in
+      a worktree five-plus sessions write. Measured here: a run straddled a
+      concurrent session's commit and its finding set was **13 at one end and
+      0 at the other**, with nothing in the output saying so — after which
+      the 13 were written up as an artifact of something else entirely, and
+      the write-up had to be retracted.
 
-Nothing about the gate's VERDICTS. When it completes, it completes correctly;
-the survivors it reports and the pins it adjudicates are unaffected. This is
-about a run that does not finish, which is a different failure from a run that
-finishes wrong — and the worse one only because it is silent.
+      `tree_state()` snapshots `(HEAD sha, the dirty subset of the
+      population)` at entry and exit; `tree_drift()` turns the pair into one
+      clause on the `▸ arm-reach VERDICT` line.
+
+      - **ADVISORY, never a failure.** A gate that hard-reds because a
+        sibling committed during a sixteen-minute run is the cries-wolf
+        instrument this repo warns about.
+      - **Prints in BOTH directions.** An unchanged tree says
+        `tree STABLE for the whole run (HEAD abc12345)` in six words, because
+        silence cannot be told from *not having looked* — which is precisely
+        what left the straddled run with nothing to go on.
+      - **Two axes, not one.** HEAD moving is the obvious one; a sibling
+        editing a tracked module WITHOUT committing changes what gets
+        mutated just as much, and a file that STOPS being dirty is the
+        measured case — the direction that makes a finding vanish rather
+        than appear. Both are armed, and the `gone`-set arm reds when that
+        half is dropped.
+      - **`tree_drift` is PURE over two snapshots**, so the decision is
+        armable without a seventeen-minute run and without a second git tree.
+        Five canary arms, proven two-sided against the two naive versions
+        (silent-on-stable, and dropping the vanishing direction).
+
+      ⚠ The sweep family's mechanisms do NOT transfer and that is stated at
+      the function: `head_delta` / `head_overlay` / `head_tree` re-classify
+      ROWS against HEAD, and a mutation run EXECUTES the source, so there is
+      nothing to re-classify and no cheap way to re-run it. A disclosure is
+      the affordable form, not a lesser one chosen for convenience.
+
