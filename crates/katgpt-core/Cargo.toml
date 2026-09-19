@@ -3322,3 +3322,20 @@ required-features = ["set_admission"]
 name = "bench_lthash"
 harness = false
 required-features = ["lthash"]
+
+# Bench 847 (Issue 847) — are `simd_lut_dequant`'s and `bf16_convert`'s AVX2
+# arms REACHED on an ordinary x86_64 build? Each dispatcher is compared against
+# its own PUBLIC scalar function, which makes the reading self-interpreting: a
+# ratio of ~1.00 on a default build IS the dispatcher being the scalar path,
+# because the AVX2 arm is gated on a compile-time `target_feature` that is off
+# by default. Run it twice — with and without RUSTFLAGS="-C target-feature=+avx2"
+# — since neither number means anything without the other. GATE, and it bars
+# exactly ONE row: `dequant_dot_via_lut` at n >= 4096 must measure >= 1.5x its
+# own scalar reference on x86_64 (5.30x/5.33x after the repair, 1.00-1.01x
+# before, so the bar sits in a 3x gap). `dequant_via_lut` is deliberately NOT
+# barred — it read 1.5-1.7x WHILE BROKEN, and a guard that passes the thing it
+# guards against is worse than none. Off x86_64 the bar is SKIPPED, not assumed.
+[[test]]
+name = "bench_847_avx2_arm_reachability"
+path = "tests/bench_847_avx2_arm_reachability.rs"
+required-features = ["simd_lut_dequant", "bf16_simd"]

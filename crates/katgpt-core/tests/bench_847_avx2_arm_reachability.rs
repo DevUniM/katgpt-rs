@@ -1,0 +1,323 @@
+//! Bench 847 — Issue 847: are `simd_lut_dequant`'s and `bf16_convert`'s AVX2
+//! arms REACHED on an ordinary x86_64 build?
+//!
+//! ```text
+//! # (1) the default build — the configuration everybody ships
+//! cargo test -p katgpt-core --release --features simd_lut_dequant,bf16_simd \
+//!     --test bench_847_avx2_arm_reachability -- --nocapture
+//!
+//! # (2) the same thing with the arm's compile-time predicate satisfied
+//! RUSTFLAGS="-C target-feature=+avx2" cargo test -p katgpt-core --release \
+//!     --features simd_lut_dequant,bf16_simd \
+//!     --test bench_847_avx2_arm_reachability -- --nocapture
+//! ```
+//!
+//! # The instrument, and why its DEFAULT reading is the proof
+//!
+//! Each dispatcher (`dequant_via_lut`, `dequant_dot_via_lut`,
+//! `bf16_bits_to_f32_into`) selects an AVX2 kernel behind
+//! `#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]` and otherwise
+//! falls through to a scalar one. `target_feature = "avx2"` is a **compile-time**
+//! predicate and is OFF by default on x86_64, so on an ordinary build the AVX2
+//! arm compiles to nothing and the dispatcher calls the scalar path.
+//!
+//! This target compares each **dispatcher** against its own **public scalar**
+//! function, and prints BOTH absolute figures. The reading rule is not the
+//! ratio:
+//!
+//! ⛔ **Compare a row's ABSOLUTE ns across the two builds; the within-build
+//! ratio is confounded and the first run of this target was read wrongly
+//! because of it.** Under `+avx2` the *scalar* arm is compiled with AVX2
+//! available too, so LLVM may autovectorise it — measured: `bf16` scalar goes
+//! 200 ns → 97 ns at n=4096 while the intrinsic arm goes 201 → 169. Both arms
+//! move between builds, so the ratio column mixes two effects. The
+//! **dispatcher's own** absolute time, default vs `+avx2`, is what isolates
+//! "what the compile-time gate costs".
+//!
+//! ⚠ And a within-build ratio near 1.00 is evidence only when the two arms are
+//! otherwise the same code. `dequant_via_lut` reads 1.5–1.7× on a build where
+//! its AVX2 arm cannot exist — a generic `#[inline]` dispatcher gets its
+//! `shift`/`mask` constants propagated into the inlined scalar body while a
+//! direct out-of-line call to the same scalar function does not. That row is
+//! confounded in BOTH builds and only its cross-build delta means anything.
+//! `dequant_dot_via_lut` and `bf16_bits_to_f32_into` read 1.00–1.01, which is
+//! the clean form of the evidence.
+//!
+//! # It is a GATE now, and it bars exactly ONE row
+//!
+//! The defect is repaired (both dispatchers take a runtime `simd_level()` probe),
+//! so the measurement above is history and what a run can still assert is the
+//! property the repair established: **on x86_64 the dispatcher must be
+//! meaningfully faster than its own scalar reference.** A compile-time gate
+//! re-introduced anywhere in that dispatch collapses it back to ~1.00 and reds.
+//!
+//! ⛔ **Only `dequant_dot_via_lut` is barred, and the reason is the confound
+//! above.** That row measured **1.00–1.01** while its AVX2 arm did not compile
+//! and **5.0×** after the repair, so a bar between those is a real wall.
+//! `dequant_via_lut` read **1.5–1.7× even while broken** (const-propagation into
+//! an inlined scalar body), so the same bar would have passed the defect — a
+//! guard that greens on the thing it guards against is worse than none.
+//! `bf16_bits_to_f32_into` is **deliberately unbarred**: its arm is still
+//! compile-gated and its intrinsics lose to LLVM's autovectorised scalar under
+//! `+avx2` (169 vs 97 ns), which is Issue 847 T2 and not a reachability
+//! question.
+//!
+//! The bar is 1.5× against a measured 5.0×: over 3× of slack, because this is a
+//! REACHABILITY assertion and not a perf budget.
+//!
+#![cfg(all(feature = "simd_lut_dequant", feature = "bf16_simd"))]
+
+use katgpt_core::bf16_convert::{bf16_bits_to_f32_into, bf16_bits_to_f32_scalar_into};
+use katgpt_core::simd_lut_dequant::{
+    QuantLut, UInt4Lut, dequant_dot_via_lut, dequant_dot_via_lut_scalar, dequant_via_lut,
+    dequant_via_lut_scalar,
+};
+use std::hint::black_box;
+
+#[path = "../../../tests/common/ab_timing.rs"]
+mod ab_timing;
+use ab_timing::ab_median_ratio;
+
+/// Element counts. 256 is a GGUF Q4_K super-block; 4096 and 32768 are row-ish
+/// and tensor-ish, where a dead vector kernel costs the most.
+const NS: [(usize, usize); 3] = [(256, 3000), (4096, 400), (32768, 60)];
+
+struct Lcg(u64);
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Self(seed)
+    }
+    fn next_u8(&mut self) -> u8 {
+        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        (self.0 >> 40) as u8
+    }
+    fn next_f32(&mut self) -> f32 {
+        self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+        2.0 * (((self.0 >> 33) as f32) / (1u64 << 31) as f32) - 1.0
+    }
+}
+
+fn banner() {
+    println!("\n   Issue 847 — is the AVX2 arm REACHED on this build?");
+    println!(
+        "   arch = {}, cfg!(target_feature=\"avx2\") = {}",
+        std::env::consts::ARCH,
+        cfg!(target_feature = "avx2")
+    );
+    if cfg!(target_arch = "x86_64") && !cfg!(target_feature = "avx2") {
+        println!(
+            "   ⇒ every `cfg(all(x86_64, target_feature=\"avx2\"))` arm compiled to NOTHING \
+             here. A ratio of ~1.00 below means the dispatcher IS its scalar fallback."
+        );
+    }
+    println!(
+        "   {:>8}  {:>26}  {:>14}  {:>14}  {:>11}",
+        "n", "kernel", "dispatch ns", "scalar ns", "scalar/disp"
+    );
+}
+
+/// Print one row and assert instrument health. `ratio` is scalar/dispatcher, so
+/// `> 1` means the dispatcher is faster, i.e. the vector arm is live.
+fn row(n: usize, label: &str, disp_ns: f64, scalar_ns: f64, ratio: f64, survived: (usize, usize)) {
+    println!("   {n:>8}  {label:>26}  {disp_ns:>14.0}  {scalar_ns:>14.0}  {ratio:>11.2}");
+    // A grep-able row so the two builds can be diffed mechanically rather than
+    // by eye — the cross-build delta IS the measurement (see the module doc).
+    println!("   ROW847 {label} n={n} disp_ns={disp_ns:.0} scalar_ns={scalar_ns:.0} avx2_cfg={}",
+             cfg!(target_feature = "avx2"));
+    assert!(
+        ratio.is_finite() && ratio > 0.0,
+        "instrument FAIL for {label} at n={n}: ratio {ratio} is not a measurement"
+    );
+    assert_eq!(
+        survived.0, survived.1,
+        "instrument FAIL for {label} at n={n}: {} of {} rounds survived",
+        survived.0, survived.1
+    );
+}
+
+#[test]
+fn avx2_arms_reachability_and_price() {
+    banner();
+    let mut live = Vec::new();
+
+    for &(n, iters) in &NS {
+        let mut rng = Lcg::new(0x0846_0000 + n as u64);
+        let codes: Vec<u8> = (0..n).map(|_| rng.next_u8()).collect();
+        let lut = UInt4Lut::build(0.5, 8.0);
+        // NOT `.to_vec()`: `as_f32_slice()` coerces a `[f32; 16]`, so LLVM knows
+        // the length is 16 and folds the scalar kernel's bounds checks. A heap
+        // `Vec` hides that, and the scalar arm then measures 1.5x slower for a
+        // reason that has nothing to do with AVX2 — which is exactly what the
+        // first run of this target reported, and what its own fail-safe branch
+        // caught. Same provenance on both arms or the comparison is not one.
+        let lut_slice = lut.as_f32_slice();
+        let x: Vec<f32> = (0..n).map(|_| rng.next_f32()).collect();
+        let bits: Vec<u16> = (0..n).map(|_| ((rng.next_u8() as u16) << 8) | 0x3f).collect();
+
+        // ── dequant_via_lut ────────────────────────────────────────────────
+        let mut out_d = vec![0.0f32; n];
+        let mut out_s = vec![0.0f32; n];
+        dequant_via_lut(&codes, &lut, 0, 0x0F, &mut out_d);
+        dequant_via_lut_scalar(&codes, lut_slice, 0, 0x0F, &mut out_s);
+        assert_eq!(
+            out_d, out_s,
+            "dequant_via_lut and its scalar reference must agree BIT-EXACTLY (n={n}) — \
+             a LUT lookup is a table read, not an arithmetic reassociation"
+        );
+        let r = ab_median_ratio(
+            11,
+            iters,
+            iters / 2,
+            |_| {
+                dequant_via_lut(black_box(&codes), black_box(&lut), 0, 0x0F, &mut out_d);
+                black_box(out_d[0]);
+            },
+            |_| {
+                dequant_via_lut_scalar(
+                    black_box(&codes),
+                    black_box(lut_slice),
+                    0,
+                    0x0F,
+                    &mut out_s,
+                );
+                black_box(out_s[0]);
+            },
+        );
+        row(
+            n,
+            "dequant_via_lut",
+            r.a_ns_per_iter(),
+            r.b_ns_per_iter(),
+            r.median,
+            (r.ratios.len(), r.rounds),
+        );
+        live.push(("dequant_via_lut", n, r.median));
+
+        // ── dequant_dot_via_lut (the fused one) ───────────────────────────
+        let d_disp = dequant_dot_via_lut(&codes, &lut, &x, 0, 0x0F);
+        let d_scal = dequant_dot_via_lut_scalar(&codes, lut_slice, &x, 0, 0x0F);
+        let scale = d_scal.abs().max(1.0);
+        assert!(
+            (d_disp - d_scal).abs() / scale <= 1e-5,
+            "dequant_dot_via_lut disagrees with its scalar reference at n={n}: \
+             {d_disp} vs {d_scal} (a fused dot DOES reassociate, hence a tolerance)"
+        );
+        let r = ab_median_ratio(
+            11,
+            iters,
+            iters / 2,
+            |_| {
+                black_box(dequant_dot_via_lut(
+                    black_box(&codes),
+                    black_box(&lut),
+                    black_box(&x),
+                    0,
+                    0x0F,
+                ));
+            },
+            |_| {
+                black_box(dequant_dot_via_lut_scalar(
+                    black_box(&codes),
+                    black_box(lut_slice),
+                    black_box(&x),
+                    0,
+                    0x0F,
+                ));
+            },
+        );
+        row(
+            n,
+            "dequant_dot_via_lut",
+            r.a_ns_per_iter(),
+            r.b_ns_per_iter(),
+            r.median,
+            (r.ratios.len(), r.rounds),
+        );
+        live.push(("dequant_dot_via_lut", n, r.median));
+
+        // ── bf16_bits_to_f32_into ─────────────────────────────────────────
+        let mut bf_d = vec![0.0f32; n];
+        let mut bf_s = vec![0.0f32; n];
+        bf16_bits_to_f32_into(&bits, &mut bf_d);
+        bf16_bits_to_f32_scalar_into(&bits, &mut bf_s);
+        assert_eq!(
+            bf_d, bf_s,
+            "bf16 widening is LOSSLESS (u16 -> u32 << 16 -> f32), so the arms must be \
+             bit-identical at n={n}"
+        );
+        let r = ab_median_ratio(
+            11,
+            iters,
+            iters / 2,
+            |_| {
+                bf16_bits_to_f32_into(black_box(&bits), &mut bf_d);
+                black_box(bf_d[0]);
+            },
+            |_| {
+                bf16_bits_to_f32_scalar_into(black_box(&bits), &mut bf_s);
+                black_box(bf_s[0]);
+            },
+        );
+        row(
+            n,
+            "bf16_bits_to_f32_into",
+            r.a_ns_per_iter(),
+            r.b_ns_per_iter(),
+            r.median,
+            (r.ratios.len(), r.rounds),
+        );
+        live.push(("bf16_bits_to_f32_into", n, r.median));
+    }
+
+    // ── the verdict ───────────────────────────────────────────────────────
+    //
+    // NOT read off the ratio column in general (see the module doc: both arms
+    // move between builds). The ONE row whose two arms are the same code, and
+    // which measured 1.00 while broken, is the one that can carry a wall.
+    println!();
+    let barred: Vec<&(&str, usize, f64)> = live
+        .iter()
+        .filter(|(label, n, _)| *label == "dequant_dot_via_lut" && *n >= 4096)
+        .collect();
+    assert!(
+        barred.len() >= 2,
+        "instrument FAIL: the barred row is missing from the sweep — {} of an          expected 2+ (did NS or the label change?)",
+        barred.len()
+    );
+    for (label, n, ratio) in &barred {
+        if cfg!(target_arch = "x86_64") {
+            assert!(
+                *ratio >= 1.5,
+                "GATE FAIL: {label} at n={n} measures only {ratio:.2}x its own \
+                 scalar reference on x86_64. It measured 1.00-1.01x while its \
+                 AVX2 arm was gated on a COMPILE-time `target_feature` and \
+                 5.0x after Issue 847 replaced that with a runtime \
+                 `simd_level()` probe — so a value this low means the vector \
+                 arm is UNREACHABLE again on an ordinary build."
+            );
+        }
+    }
+    if cfg!(target_arch = "x86_64") {
+        println!(
+            "   PASS: the vector arms are REACHED on this build — \
+             dequant_dot_via_lut at {:.2}x / {:.2}x its scalar reference \
+             (bar 1.5x). Before Issue 847 this read 1.01x on a default build.",
+            barred[0].2, barred[1].2
+        );
+    } else {
+        println!(
+            "   x86_64 bar NOT APPLICABLE on {} — the aarch64 arm was never \
+             compile-feature-gated (NEON is implied by the arch), so this \
+             class does not exist here and the rows above are reported, not \
+             barred.",
+            std::env::consts::ARCH
+        );
+    }
+    println!(
+        "   ⚠ bf16_bits_to_f32_into is UNREPAIRED and unbarred (Issue 847 T2): \
+         its arm is still compile-gated, and under +avx2 its intrinsics LOSE \
+         to the autovectorised scalar loop — a different question from \
+         reachability.
+"
+    );
+}

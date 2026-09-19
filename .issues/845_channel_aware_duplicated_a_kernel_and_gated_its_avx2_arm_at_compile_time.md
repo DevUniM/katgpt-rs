@@ -153,7 +153,17 @@ equality is not pedantry here; it is the only form that fires.
       suite (159 = 159) and clippy.
 - [x] **T3 — Convert the bench into a regression gate** and verify the canary
       fires on a planted private kernel.
-- [ ] **T4 — Sweep for the SHIPPED-PATH `target_feature` shape workspace-wide.**
+- [x] **T4 — DONE, and it found a live defect in a DEFAULT-ON feature:
+      [Issue 847](847_a_compile_time_target_feature_on_a_shipped_path_costs_latency_every_call.md).**
+      Census: 13 x86_64 runtime-detectable `target_feature` cfg sites over 1,459
+      tracked `src/**/*.rs`, in exactly two files — `simd_lut_dequant.rs` (6,
+      repaired: a default build was giving up **4.4–5.6×** on the fused
+      `dequant_dot_via_lut`) and `bf16_convert.rs` (6, a DIFFERENT finding: its
+      intrinsics lose to LLVM's autovectorised scalar). The remaining 64 of 77
+      sites are wasm32/`simd128` (compile-time by nature), aarch64/NEON (implied
+      by the arch), or the runtime probe's own body — which is why the
+      gate-or-sweep question is 847 T3 and not answered here. Original text:
+      Sweep for the SHIPPED-PATH `target_feature` shape workspace-wide.
       This one was found by reading a census bucket for a different issue. The
       class — a compile-time `target_feature` cfg selecting between a fast arm
       and a fallback in `src/`, rather than in a test or a gate — is mechanically

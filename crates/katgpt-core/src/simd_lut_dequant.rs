@@ -240,15 +240,19 @@ pub fn dequant_via_lut<L: QuantLut>(codes: &[u8], lut: &L, shift: u32, mask: u8,
         unsafe { dequant_via_lut_neon(codes, lut_slice, shift, mask, out) }
         return;
     }
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    // Issue 847: a RUNTIME probe, not a compile-time cfg. `simd_level()` is a
+    // cached CPUID read that returns `Avx2` only for AVX2+FMA, which is exactly
+    // this kernel's requirement.
+    #[cfg(target_arch = "x86_64")]
     {
-        unsafe { dequant_via_lut_avx2(codes, lut_slice, shift, mask, out) }
+        if crate::simd::simd_level() == crate::simd::SimdLevel::Avx2 {
+            unsafe { dequant_via_lut_avx2(codes, lut_slice, shift, mask, out) }
+        } else {
+            dequant_via_lut_scalar(codes, lut_slice, shift, mask, out);
+        }
         return;
     }
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         dequant_via_lut_scalar(codes, lut_slice, shift, mask, out);
     }
@@ -364,7 +368,11 @@ unsafe fn dequant_via_lut_neon(
 // gather 8× f32 from LUT → store. The shift+mask on i32 (not byte) avoids the
 // byte-level shift complication (AVX2 `_mm_srli_epi32` operates on 32-bit lanes).
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+// Issue 847: gated on the ARCH only. `#[target_feature(enable = ..)]` is what
+// makes this body compile on a default build; the old `target_feature = "avx2"`
+// cfg made it compile to NOTHING there, so the dispatcher fell through to
+// scalar on every ordinary build.
+#[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn dequant_via_lut_avx2(
@@ -462,14 +470,15 @@ pub fn dequant_dot_via_lut<L: QuantLut>(
     {
         return unsafe { dequant_dot_via_lut_neon(codes, lut_slice, x, shift, mask) };
     }
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    // Issue 847: runtime probe — see `dequant_via_lut`.
+    #[cfg(target_arch = "x86_64")]
     {
-        return unsafe { dequant_dot_via_lut_avx2(codes, lut_slice, x, shift, mask) };
+        if crate::simd::simd_level() == crate::simd::SimdLevel::Avx2 {
+            return unsafe { dequant_dot_via_lut_avx2(codes, lut_slice, x, shift, mask) };
+        }
+        return dequant_dot_via_lut_scalar(codes, lut_slice, x, shift, mask);
     }
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         dequant_dot_via_lut_scalar(codes, lut_slice, x, shift, mask)
     }
@@ -626,7 +635,8 @@ unsafe fn dequant_dot_via_lut_neon(
 
 // ── AVX2 fused dequant+dot ─────────────────────────────────────────────
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+// Issue 847: ARCH-only cfg — see the note on `dequant_via_lut_avx2`.
+#[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2", enable = "fma")]
 unsafe fn dequant_dot_via_lut_avx2(
@@ -773,14 +783,15 @@ pub fn dequant_dot_via_lut_multi_stage_slice(
     {
         return unsafe { dequant_dot_via_lut_multi_stage_neon(codes_per_stage, lut_slices, x) };
     }
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    // Issue 847: runtime probe — see `dequant_via_lut`.
+    #[cfg(target_arch = "x86_64")]
     {
-        return unsafe { dequant_dot_via_lut_multi_stage_avx2(codes_per_stage, lut_slices, x) };
+        if crate::simd::simd_level() == crate::simd::SimdLevel::Avx2 {
+            return unsafe { dequant_dot_via_lut_multi_stage_avx2(codes_per_stage, lut_slices, x) };
+        }
+        return dequant_dot_via_lut_multi_stage_scalar(codes_per_stage, lut_slices, x);
     }
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         dequant_dot_via_lut_multi_stage_scalar(codes_per_stage, lut_slices, x)
     }
@@ -986,7 +997,8 @@ unsafe fn dequant_dot_via_lut_multi_stage_neon(
 
 // ── AVX2 fused multi-stage dequant+dot ──────────────────────────────────
 
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+// Issue 847: ARCH-only cfg — see the note on `dequant_via_lut_avx2`.
+#[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2", enable = "fma")]
 unsafe fn dequant_dot_via_lut_multi_stage_avx2(
