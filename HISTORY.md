@@ -13,7 +13,7 @@ paragraph's drift history · the resolved issue log.
 
 ## 2026-09-20 — Issue 859 CLOSED: Jev structured reads — POC GOAT + 4090 reference + T5 policy arm measured; promotion declined on layer posture (evidence-banked)
 
-**Status: CLOSED (RESOLVED) 2026-09-20, all tasks T0–T6 done; code + records in `d1075311`; full issue text: git history.**
+**Status: CLOSED (RESOLVED) 2026-09-20, all tasks T0–T6 done; code + records in `72718f81` (cited post-rebase — the pre-rebase landing commit was `d1075311`, superseded when a sibling doc-sync push forced a rebase); full issue text: git history.**
 
 The arc, end to end: Research 574 distilled vLLM PR #57250's read-only structured-decision
 contract → Issue 859 (owner-routed to the 4090) → substrate mapping written BEFORE implementing
