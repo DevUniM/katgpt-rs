@@ -77,6 +77,17 @@ ARM_NAMES = {
     "canary",
     "gate_selftest",
     "prove_fires",
+    # ⛔ Added by MEASUREMENT, not by preference: `arm_reach_audit` carries
+    # the same set and its self-test asserts the two AGREE, because they are
+    # one vocabulary read by two instruments — there it decides which bodies
+    # are never mutated, here which calls count as an arm, and a name in one
+    # only is a body that is exempt from mutation while crediting nobody, or
+    # the reverse. `prove_counter` was added there with Issue 850 T4 and not
+    # here, and the disagreement REFUSED the audit outright: 33 modules'
+    # worth of reach went unmeasured on a vocabulary typo. It qualifies by
+    # the same test `prove_fires` does — a known-answer validation invoked
+    # unconditionally from `selftest()`.
+    "prove_counter",
 }
 
 # Floors. Both are blindness detectors and neither is redundant:
