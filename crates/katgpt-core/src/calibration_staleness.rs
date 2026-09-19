@@ -117,6 +117,32 @@ impl Default for SnapshotId {
     }
 }
 
+/// A frozen snapshot that can NAME its own identity.
+///
+/// The supply side of the freeze/thaw seam, and it has to exist before any
+/// consumer can be wired: [`SnapshotBound`] refuses by default
+/// ([`SnapshotId::UNVERSIONED`] is never fresh), so a caller with no way to
+/// obtain a real [`SnapshotId`] gets `None` on every call and reads the guard
+/// as a no-op rather than as a rule.
+///
+/// ⛔ **Implement this from the snapshot's GENERATION ordinal, never from a
+/// format version.** `SWTF_VERSION` / `SDBF_VERSION` are `1` for every
+/// snapshot ever written, so an identity built from one holds `version`
+/// constant and the guard degrades **silently** to the commitment check
+/// alone — the failure this module's `t14` arm exists to pin. The shipped
+/// generation counters are `FuncAttnWeightsSnapshot::version` and
+/// `MicroRecurrentKernelSnapshot::version`, both of which are deliberately
+/// NOT part of their own hash input, which is exactly what makes them
+/// ordinals rather than content.
+///
+/// ⚠ Implementing this says the type knows WHICH weights it is. It does not
+/// say a calibration bound to it is fresh — see the module docs on what
+/// `Some` does and does not claim.
+pub trait SnapshotIdentity {
+    /// The identity a calibration fitted against this snapshot must carry.
+    fn snapshot_id(&self) -> SnapshotId;
+}
+
 /// Why a [`SnapshotBound`] refused — or did not.
 ///
 /// The three refusal arms are never pooled: `VersionMoved` is an ordinary

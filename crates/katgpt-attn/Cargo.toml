@@ -88,6 +88,16 @@ gdn_tree_verify = ["gdn2_attention", "katgpt-core/gdn_tree_verify"]
 gdn_hola_tree_verify = ["gdn_tree_verify", "hippocampal_cache", "katgpt-core/gdn_hola_tree_verify"]
 # FuncAttn composition layer (Plan 286 Phase 5).
 funcattn_freeze_thaw = ["dep:blake3", "dep:serde"]
+# calibration_staleness (Issue 841 §B-3 follow-up, seam 1 of 4 — the SUPPLY
+# side). `FuncAttnWeightsSnapshot` already carries a caller-managed generation
+# ordinal (`version`, deliberately NOT part of its own hash input) beside a
+# BLAKE3 commitment that `swap` verifies before installing, which makes it the
+# one seam in the workspace that can hand a calibration a REAL `SnapshotId`
+# today. Implements `katgpt_core::calibration_staleness::SnapshotIdentity`;
+# adds no field, changes no shipped signature, and compiles to nothing when
+# off. Consumers (StaticCalTable, CalibratedVerifier, and last because it is
+# default-on, ConformalIntervalCalibrator) are separate rows.
+calibration_staleness = ["funcattn_freeze_thaw", "katgpt-core/calibration_staleness"]
 funcattn_spectral_pre_rotate = ["dep:katgpt-spectral"]
 funcattn_chiar_blend = ["chiaroscuro"]
 # sparse_mlp: gates the `#[cfg(feature = "sparse_mlp")]` MLP path in
