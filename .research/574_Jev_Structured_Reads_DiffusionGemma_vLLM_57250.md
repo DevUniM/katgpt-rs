@@ -1,6 +1,6 @@
 # Research 574: Jev Structured Reads on DiffusionGemma — the vLLM Open Reference (PR #57250)
 
-> **Source:** vllm-project/vllm PR #57250 "[Core] structured generation mode for DiffusionGemma model (Jev-like)" — mmastrac (Matt Mastracci), 2026-09-16..19, **UNMERGED** (`ready` label, open) — head `58aacf2` (page-derived; re-verify at consume time), Apache-2.0. Model: `nvidia/diffusiongemma-26B-A4B-it-NVFP4`. Ecosystem same-week: `mmastrac/diffgemma#21` (subclass overlay, merged), `razorback16/openjev` (hosted-endpoint inference), `pst2154/Nemotron_Jev` (dense variant), `madeye/pi-jev#7` (`TYPESAFE_BASE_URL` self-host), `rcarmo/go-pherence#2/#12` (Go-native + RTX-3060 scorer training).
+> **Source:** vllm-project/vllm PR #57250 "[Core] structured generation mode for DiffusionGemma model (Jev-like)" — mmastrac (Matt Mastracci), 2026-09-16..19, **UNMERGED** (`ready` label, open) — head `ceb8eebf` (API-read 2026-09-20; was `58aacf2` at first read — the branch moves daily, re-pin at clone; §7), Apache-2.0. Model: `nvidia/diffusiongemma-26B-A4B-it-NVFP4`. Ecosystem same-week: `mmastrac/diffgemma#21` (subclass overlay, merged), `razorback16/openjev` (hosted-endpoint inference), `pst2154/Nemotron_Jev` (dense variant), `madeye/pi-jev#7` (`TYPESAFE_BASE_URL` self-host), `rcarmo/go-pherence#2/#12` (Go-native + RTX-3060 scorer training).
 > **Date:** 2026-09-20
 > **Status:** Active — Gain verdict (GOAT-tier composition on shipped substrate), POC filed as Issue 859; corpus side MARGINAL (riir-clippy queue line, no batch)
 > **Related Research:** 562 (Typesafe SystemOne/Jev — the product distill; this PR is its open replication), 573 (CUA-S1 open Jev recipe — the AR specialist arm), 277 (DiffusionGemma transparency — routed nothing then), 419 (PackInfer — the width-tiling gap this PR instantiates), 322 (Report-the-Floor UQ rule — binds any probability claim below)
@@ -88,3 +88,51 @@ MOAT gate: katgpt-rs in-scope (serving-stack primitive, no game semantics). Rout
 - **T5 partial**: `sample_label_index` (temperature > 0) landed as the stochastic re-read enabler — the deterministic forward re-reads bit-identically, so the reference's agreement-bars policy is only meaningful through it; the measurement rides T1.
 
 **Remaining:** T1 (4090 reference validation — re-run when the sibling tap cross-check drains; re-pin the PR sha at clone) + the T5 measurement + the promotion decision.
+
+## 7. T1 unblock intel (2026-09-20, idle-queue item 9 — online unblock search; zero box contention)
+
+The T1 blocker is GPU occupancy, not knowledge — this section removes the knowledge half so T1 is a
+one-command run when the 4090 drains.
+
+**PR state (GitHub API, 2026-09-20):** OPEN, `ready` label, unmerged, 14 commits (+2909/−132, 18
+files), 29 comments, head **`ceb8eebf3eedddb964a50180f33838a9a6b13ee2`** (pushed 2026-09-19 21:45Z —
+the branch moves daily; re-pin at clone). The 5 split-out prerequisite PRs are now numbered:
+#57414 (logprob-stash bugfix) · #57416 (prefill-only logit rows) · #57417 (`logprob_token_ids` on
+the converging step) · #57462 (dynamo-eager cast) · #57589 (multimodal fix).
+
+**The production consumer ships the recipe** — `razorback16/openjev` (Apache-2.0, a Jev-wire-compatible
+decision server over this exact PR; `engine.py` adapted from the PR's `structured_server.py`):
+
+- **Docker prebuilt (the 4090-box natural path)** — vLLM has no native Windows support, and the box
+  runs Docker Desktop: `docker run -d --gpus all --ipc=host -p 127.0.0.1:8080:8080 -v
+  ~/.cache/huggingface:/root/.cache/huggingface razorback16/openjev:0.1.0` (image pins the fork @
+  `d2c2b54`, CUDA 13 — driver must support it; weights ~18 GB download on first start). T1's
+  corpora then run against `http://127.0.0.1:8080/v1` through the PR's own example server shape.
+- **pip, no source build**: `git clone https://github.com/mmastrac/vllm -b structured-reads-main &&
+  git checkout d2c2b5422d && VLLM_USE_PRECOMPILED=1
+  VLLM_PRECOMPILED_WHEEL_COMMIT=2c88fb131c7ae0be01907cd8c276911db5e7aad4 pip install -e .`
+- **Serve flags** (their validated line, canvas 64 — T1 spec wants 32, settable via
+  `OPENJEV_CANVAS`/`--diffusion-config`): `--max-logprobs 32 --enable-prefix-caching
+  --async-scheduling --attention-backend TRITON_ATTN` (+ `--max-num-seqs 32` in the PR's own test
+  plan). TRITON_ATTN is fine inside the Linux container; not on native Windows.
+- `vllm_xargs` confirmed **provisional** upstream (openjev pins the fork for exactly this reason) —
+  our issue's re-pin rule stands.
+
+**SM89 (4090) risk profile, refined:** openjev tests only on RTX PRO 6000 Blackwell (sm_120),
+"≥24 GB VRAM" for the NVFP4 checkpoint. On Ada, NVFP4 has no native path → Marlin W4A16 fallback
+(SM ≥7.5 — legal) with the known bf16 garble ⇒ `--dtype float16` (§4's workaround stands).
+VRAM: weights ~14–18 GB (§4 estimate vs HF download size) — fits the 4090's 24,564 MiB ONLY with
+the GPU otherwise free (the exclusivity rule already demands this); tune
+`--gpu-memory-utilization`/`--max-model-len` conservatively at canvas 32.
+
+**Zero-GPU accuracy fallback (new option, ranked BELOW our-box serving):** openjev is hosted free
+on Codiv (`https://api.codiv.ai/v1/systemone`, 100M input tokens, no card) — if our-box serving
+proves infeasible, the programming-language + unit-comparison corpora can run there for the
+ACCURACY axis, recorded as hosted-reference intel (never our-box perf; synthetic non-sensitive
+fixtures only — they leave the box).
+
+**T5-relevant divergences already visible:** upstream H1 = entropy over top-20 logprobs; ours is
+entropy over the normalized LABEL SUBSET (§5, the reviewer's-nit correction). Their auto policy
+re-reads ×4 at H1 > 0.1 — the exact threshold family T5 meant to measure; their sample outputs
+(`urgent=0.88±0.04`, reads=1 vs 4) are the comparison shape. Their `logprob_token_ids` cap is 128
+ids — our MAX_LABELS=64 sits inside the reference envelope.
