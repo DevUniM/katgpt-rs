@@ -1,7 +1,9 @@
 # Issue 831: `bench_171_thinking_prune_goat` P3 asserts `>0%` while its own comment predicts 30–60% — it fails 20% of runs on an idle x86_64 box, and the result depends on how the harness is invoked
 
-**Status:** OPEN — measurement recorded, repair NOT applied (the bar encodes a
-promotion claim; see §What must not be done)
+**Status:** T1–T4 RESOLVED (T2/T3 `03d729fdf` + T4 `2bf9bdcc8` 2026-09-18;
+T1 aarch64 distribution measured 2026-09-19 — 20/20 captured + 20/20 nocapture
+at 63.1–63.8%, matching x86_64's repaired ~63%: NOT an arch difference, no pin
+owed). **Only T5 (owner-gated promotion) remains open.**
 **Found by:** `scripts/x86_64_execution_matrix.sh`, 2026-09-18, cell 8
 (`katgpt-rs --tests --release`, `+avx2`). The matrix's wall fired:
 `✗ UNPINNED failing test(s): test_bench_171_thinking_prune_goat`.
@@ -96,22 +98,36 @@ there is a reason with a number in it.
 
 ## Tasks
 
-- [ ] **T1 — Measure the aarch64 arm**, both capture modes, ≥20 runs each,
+- [x] **T1 — Measure the aarch64 arm**, both capture modes, ≥20 runs each,
   recorded as a distribution and not a single number. Three outcomes, three
   different repairs: 30–60% there ⇒ genuine arch difference, pin
   arch-conditionally *and* correct the fixture note; ~0% there too ⇒ the claim
   is wrong everywhere and P3 has been passing on luck since it landed; wide
   spread there ⇒ the harness defect alone.
-- [ ] **T2 — Repair the harness regardless of T1.** Best-of-N over repeated
+  **MEASURED 2026-09-19 (M3 Max, worktree build of `f9d9fab23` — committed
+  HEAD, no sibling WIP in the measurement; isolated `CARGO_TARGET_DIR`,
+  release, `--exact`): captured mode 20/20 PASS; `--nocapture` 20/20 PASS with
+  speedup 63.1–63.8%** — a 0.7pp band across 20 runs, the tightest distribution
+  of any arm in this issue. Matches the x86_64 repaired-fixture ~63%: **NOT an
+  arch difference — the arch-conditional pin is NOT owed** (the matrix's
+  expected set stays empty; the next x86_64 matrix run confirms the cell
+  green). T1's original premise (a genuine 30–60% arch gap) was already
+  dissolved by the T2/T3 fixture repair; this measurement closes the question
+  as recorded.
+- [x] **T2 — Repair the harness regardless of T1.** Best-of-N over repeated
   trials, the Issue-723 `best_of_us` shape AGENTS.md already prescribes for
   `t09_throughput_inv_sqrt_16x16` (whose `bench_us(3, 20)` oscillated 2.1× for
   the same reason). Correct under every T1 outcome, and it is what makes T1's
   own numbers trustworthy. **Print the measured value on the PASS path too** —
   a captured-mode green currently records nothing.
-- [ ] **T3 — Make P1 non-vacuous.** `>=` passing on exact equality is how "both
+  **DONE 2026-09-18 (`03d729fdf`) — as `ab_median_ratio`, not `best_of_us`;
+  full record in the resolved section below.**
+- [x] **T3 — Make P1 non-vacuous.** `>=` passing on exact equality is how "both
   schedules build the same tree" stayed invisible. Either assert strict
   inequality against a fixture that produces it, or assert the equality
   deliberately and move the node-count claim to where it is actually tested.
+  **DONE 2026-09-18 (`03d729fdf`) — P1 was VACUOUS and is now strict; full
+  record in the resolved section below.**
 - [x] **T4 — Re-adjudicate the fixture. DONE 2026-09-18, and the narrowed
   reading was the wrong reason.** If the screener never prunes, decide
   whether `work_per_call` should rise until the mechanism is expressible, or
@@ -218,6 +234,11 @@ measured budget coupling at the knob: making every depth partial puts all 10
 seeds at the 12288-node cap with 10/10 ties, because depth 2's hard reject is
 what keeps this fixture small enough for P1 to mean anything.
 
-⚠ **T1 is still owed for aarch64** as a measurement, but its premise has
-changed: any pre-2026-09-18 aarch64 number was taken against a deleted screener
-and means nothing.
+✅ **T1 CLOSED 2026-09-19** — measured as owed (≥20 runs, both modes, as a
+distribution): aarch64 63.1–63.8% nocapture 20/20, captured 20/20. The
+premise-change caveat above is why this measurement is the FIRST valid
+aarch64 number: it ran against the repaired fixture at committed HEAD
+`f9d9fab23` (worktree-isolated, release, `--exact`). Both arches at ~63%
+under the repaired harness ⇒ the arch-conditional pin is not owed and the
+x86_64 matrix's expected set stays empty — the next matrix run should show
+cell 8 green.
