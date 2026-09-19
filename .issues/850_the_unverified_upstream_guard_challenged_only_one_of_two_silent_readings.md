@@ -104,6 +104,27 @@ Proven two-sided: with `elif beh == (0, 0)` planted back, the arm reds with
 ## Tasks
 
 - [x] **T1 — Challenge both silent readings, arm it, prove the arm reds.**
+- [x] **T4 — `dual_allocation_gate` gained the COUNTER axis, because the
+      renumber that produced this issue was a collision it could not see.**
+      Both existing verdicts compare DOCUMENTS (`git log --diff-filter=A`),
+      and a number allocated and CLOSED in one commit never has a file in any
+      tree — the record goes to HISTORY.md. That is what a sibling did with
+      849 while this checkout held `.issues/849_*.md`, and the gate printed
+      `0 independent colliding number(s)`.
+
+      The counter IS the missing document: both sides bumping `.highwater`
+      past the merge-base value means both SPENT the overlapping range,
+      `(base, min(mine, theirs)]`, file or no file. A one-sided bump — the
+      ordinary case on every push — stays green by construction, and a
+      MISSING base counter yields nothing rather than being read as 0, which
+      would make every number in the other side's range look contested.
+
+      Armed in BOTH halves: the arithmetic on every push with the git reader
+      INJECTED (the extraction is the repair — without it the range logic is
+      reachable only through a real fixture, i.e. only under the opt-in
+      flag), and a real two-repo fixture under `--prove-fires` that builds
+      the no-document shape and requires the row, with the one-sided bump as
+      its negative side.
 - [ ] **T2 — Should a sweep FETCH?** It deliberately does not: a sweep is a
       read-only verdict and fetching 17 siblings is a network round trip per
       run, on a box where other sessions own those checkouts. But the advisory

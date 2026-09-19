@@ -94,6 +94,52 @@ def adding_commits(repo: Path, rng: str, want: set[int]) -> list[str]:
     return rows[:6]
 
 
+def highwater_at(repo: Path, rev: str, d: str) -> int | None:
+    """`<d>/.highwater` as of `rev`, or None when absent/unreadable.
+
+    None is NOT zero: a directory with no counter has allocated nothing this
+    predicate can reason about, and reading it as 0 would make every number
+    in the other side's range look contested.
+    """
+    out = git(repo, "show", f"{rev}:{d}/.highwater")
+    txt = out.strip()
+    return int(txt) if txt.isdigit() else None
+
+
+def counter_collisions(repo: Path, mb: str, head: str, tip: str,
+                       explained: set[int], read=None) -> list[dict]:
+    """Numbers BOTH sides spent according to the counters alone.
+
+    ⛔ The document comparison above cannot see a number that was allocated
+    and CLOSED in one commit — the file never exists in any tree, so
+    `--diff-filter=A` has nothing to report, and the record lives in
+    HISTORY.md. Measured: a sibling did that with 849 while this checkout
+    carried `.issues/849_*.md`, and this gate printed a confident zero.
+
+    `explained` are the numbers the document pass already reported, so one
+    collision is never counted twice.
+    """
+    # `read` is injected so this function's ARITHMETIC is reachable from a
+    # per-push arm. Without it the range logic and the one-sided
+    # short-circuit are testable only through a real git fixture, i.e. only
+    # under the opt-in `--prove-fires` — the pattern AGENTS.md records for
+    # the three weakest modules in the CHECKS population.
+    read = read or (lambda rev, d: highwater_at(repo, rev, d))
+    rows: list[dict] = []
+    for d in NUMBERED_DIRS:
+        base = read(mb, d)
+        mine = read(head, d)
+        theirs = read(tip, d)
+        if base is None or mine is None or theirs is None:
+            continue
+        if mine <= base or theirs <= base:
+            continue            # one-sided: green BY CONSTRUCTION
+        for n in range(base + 1, min(mine, theirs) + 1):
+            if n not in explained:
+                rows.append({"number": n, "dir": d, "base": base,
+                             "mine": mine, "theirs": theirs})
+    return rows
+
 def classify(repo: Path) -> tuple[list[dict], str]:
     """(rows, skip_reason). Each row: one colliding number, classified."""
     up = upstream_of_head(repo)
@@ -120,7 +166,16 @@ def classify(repo: Path) -> tuple[list[dict], str]:
             adding_commits(repo, f"{mb}..{head}", {n}),
             "right_commits": [] if twin else
             adding_commits(repo, f"{mb}..{remote_tip}", {n}),
+            "counter": False,
         })
+    # The COUNTER axis, for a number nobody left a file for.
+    for c in counter_collisions(repo, mb, head, remote_tip,
+                                {r["number"] for r in rows}):
+        rows.append({"number": c["number"], "twin": False, "counter": True,
+                     "dir": c["dir"], "base": c["base"], "mine": c["mine"],
+                     "theirs": c["theirs"],
+                     "left_stems": [], "right_stems": [],
+                     "left_commits": [], "right_commits": []})
     return rows, ""
 
 
@@ -169,6 +224,102 @@ def build_fixture(base: Path) -> Path:
     sp.run(["git", "-C", str(a), "fetch", "-q", "origin"], check=True,
            capture_output=True)
     return root
+
+
+def counter_fixture(base: Path) -> Path:
+    """A collision where ONE side left no document at all.
+
+    B allocates 950 by bumping `.highwater` and writing its record into
+    HISTORY.md — the file is never committed, which is the Issue-754 shape and
+    what a close-in-the-same-commit looks like from git's side. A then
+    allocates 950 locally WITH a file. The document comparison sees one side
+    only; the counters see both.
+    """
+    import subprocess as sp
+
+    def run(repo: Path, *args: str) -> None:
+        r = sp.run(["git", "-C", str(repo), *args], capture_output=True,
+                   encoding="utf-8")
+        if r.returncode != 0:
+            raise RuntimeError(f"git {args}: {r.stderr}")
+
+    root = base / "counter_fixture"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir()
+    shared = root / "shared.git"
+    a, b = root / "a", root / "b"
+    run(root, "init", "-q", "-b", "main", "--bare", str(shared))
+    sp.run(["git", "clone", "-q", str(shared), str(a)], check=True,
+           capture_output=True)
+    (a / ".issues").mkdir()
+    (a / ".issues" / ".highwater").write_text("949\n", encoding="utf-8",
+                                              newline="")
+    (a / "HISTORY.md").write_text("# history\n", encoding="utf-8", newline="")
+    run(a, "config", "user.email", "f@f")
+    run(a, "config", "user.name", "fixture")
+    run(a, "add", "-A")
+    run(a, "commit", "-qm", "base at 949")
+    sp.run(["git", "-C", str(a), "push", "-q", "-u", "origin", "main"],
+           check=True, capture_output=True)
+
+    sp.run(["git", "clone", "-q", str(shared), str(b)], check=True,
+           capture_output=True)
+    run(b, "config", "user.email", "f@f")
+    run(b, "config", "user.name", "fixture")
+    # B: allocate 950 and CLOSE it in the same commit — no file, ever.
+    (b / ".issues" / ".highwater").write_text("950\n", encoding="utf-8",
+                                              newline="")
+    (b / "HISTORY.md").write_text("# history\n\n## Issue 950 — closed\n",
+                                  encoding="utf-8", newline="")
+    run(b, "add", "-A")
+    run(b, "commit", "-qm", "B allocates and closes 950")
+    sp.run(["git", "-C", str(b), "push", "-q", "origin", "main"], check=True,
+           capture_output=True)
+
+    # A: allocate the same number, WITH a document.
+    (a / ".issues" / "950_a_side.md").write_text("a\n", encoding="utf-8",
+                                                 newline="")
+    (a / ".issues" / ".highwater").write_text("950\n", encoding="utf-8",
+                                              newline="")
+    run(a, "add", "-A")
+    run(a, "commit", "-qm", "A allocates 950 independently")
+    sp.run(["git", "-C", str(a), "fetch", "-q", "origin"], check=True,
+           capture_output=True)
+    return root
+
+
+def prove_counter() -> list[str]:
+    """The COUNTER axis must RED where the document axis is blind, and must
+    NOT fire on a one-sided bump."""
+    import tempfile
+    import subprocess as sp
+    fails: list[str] = []
+
+    with tempfile.TemporaryDirectory() as td:
+        root = counter_fixture(Path(td))
+        a = root / "a"
+        rows, skip = classify(a)
+        if skip:
+            return [f"counter fixture skipped: {skip}"]
+        docs = [r for r in rows if not r.get("counter")]
+        ctrs = [r for r in rows if r.get("counter")]
+        if docs:
+            fails.append(f"the DOCUMENT axis saw a row it cannot see — the "
+                         f"fixture is not the intended shape: {docs}")
+        if len(ctrs) != 1 or ctrs[0]["number"] != 950:
+            fails.append(f"the COUNTER axis did not report exactly 950: "
+                         f"{ctrs}")
+        # ⚠ The negative side, without which the axis could fire always and
+        # still pass: a ONE-SIDED bump is green by construction, and it is the
+        # ordinary case on every push.
+        b = root / "b"
+        sp.run(["git", "-C", str(b), "fetch", "-q", "origin"], check=True,
+               capture_output=True)
+        rows_b, skip_b = classify(b)
+        if not skip_b and [r for r in rows_b if r.get("counter")]:
+            fails.append(f"a ONE-SIDED counter bump fired: {rows_b}")
+    return fails
 
 
 def prove_fires() -> list[str]:
@@ -271,6 +422,45 @@ def selftest() -> list[str]:
     fails = probe_selftest() + prove_fires()
     if not callable(numbers_added):
         fails.append("probe import: numbers_added missing")
+
+    # ── the COUNTER axis's ARITHMETIC, with the git reader injected ────────
+    # The fixture arm for this lives under `--prove-fires`; this is the half
+    # `docs_gate.sh` runs on every push, and it costs nothing.
+    def _fake(table):
+        return lambda rev, d: table.get((rev, d))
+
+    both = counter_collisions(Path("."), "mb", "head", "tip", set(),
+                              read=_fake({("mb", ".issues"): 848,
+                                          ("head", ".issues"): 850,
+                                          ("tip", ".issues"): 849}))
+    nums = sorted(r["number"] for r in both if r["dir"] == ".issues")
+    if nums != [849]:
+        fails.append(f"the contested range is (base, min(mine, theirs)] — "
+                     f"want [849] from 848/850/849, got {nums}")
+
+    one_sided = counter_collisions(Path("."), "mb", "head", "tip", set(),
+                                   read=_fake({("mb", ".issues"): 848,
+                                               ("head", ".issues"): 848,
+                                               ("tip", ".issues"): 860}))
+    if [r for r in one_sided if r["dir"] == ".issues"]:
+        fails.append("a ONE-SIDED bump fired — that is the ordinary case on "
+                     "every push and firing on it is the cries-wolf outcome")
+
+    absent = counter_collisions(Path("."), "mb", "head", "tip", set(),
+                                read=_fake({("head", ".issues"): 5,
+                                            ("tip", ".issues"): 5}))
+    if [r for r in absent if r["dir"] == ".issues"]:
+        fails.append("a MISSING base counter was read as 0 — every number in "
+                     "the other side's range would look contested")
+
+    explained_out = counter_collisions(Path("."), "mb", "head", "tip", {849},
+                                       read=_fake({("mb", ".issues"): 848,
+                                                   ("head", ".issues"): 849,
+                                                   ("tip", ".issues"): 849}))
+    if [r for r in explained_out if r["dir"] == ".issues"]:
+        fails.append("a number the DOCUMENT axis already reported was counted "
+                     "twice")
+
     return fails
 
 
@@ -282,14 +472,16 @@ def main() -> int:
             pass
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if "--prove-fires" in sys.argv:
-        fails = prove_fires()
+        fails = prove_fires() + prove_counter()
         if fails:
             print("✗ prove-fires FAILED — the gate cannot see its own class:")
             for f in fails:
                 print(f"    {f}")
             return 2
         print("✓ prove-fires PASS — constructed collision REDs with adding "
-              "commits named; twin shape classifies exit-neutral")
+              "commits named; twin shape classifies exit-neutral; and the "
+              "COUNTER axis REDs on a number NO document records while "
+              "staying silent on a one-sided bump")
         return 0
     if "--self-test" in sys.argv:
         fails = selftest()
@@ -318,9 +510,18 @@ def main() -> int:
               "Not a green zero — the gate could not see.")
         return 2
     twins = [r for r in rows if r["twin"]]
-    indep = [r for r in rows if not r["twin"]]
+    counters = [r for r in rows if r.get("counter")]
+    indep = [r for r in rows if not r["twin"] and not r.get("counter")]
     print(f"dual_allocation_gate {repo.name}: {len(twins)} twin, "
-          f"{len(indep)} independent colliding number(s)")
+          f"{len(indep)} independent, {len(counters)} counter-only "
+          f"colliding number(s)")
+    for r in counters:
+        print(f"  ⛔ COUNTER {r['number']} — both lines bumped "
+              f"{r['dir']}/.highwater past {r['base']} (mine {r['mine']}, "
+              f"upstream {r['theirs']}) and NO document explains it on at "
+              f"least one side. That is a number allocated and CLOSED in one "
+              f"commit — the file never exists in a tree, so the document "
+              f"comparison is blind to it and the record is in HISTORY.md")
     for r in twins:
         print(f"  TWIN {r['number']} — same document on both lines "
               f"(rebased own work; a fetch resolves): "
@@ -335,7 +536,7 @@ def main() -> int:
             print(f"      [local ] {c}")
         for c in r["right_commits"]:
             print(f"      [remote] {c}")
-    if indep:
+    if indep or counters:
         print("Renumber ONE side before pushing — Issue 791 T2's protocol, "
               "caught at allocation time instead of merge time.")
         return 1
