@@ -2243,9 +2243,28 @@ count is what the bucket note above forbids.
     watchdog path survives only as a PARTIAL explanation and the arithmetic
     says so: its deadline is `max(10x baseline, 30 s)` and a 0 s baseline
     floors it at 30 s, so even an every-mutant-times-out run is 13 x 30 s =
-    **390 s — 3.5x short of the observed 1367 s.** ⚠ What remains unmeasured is
-    *where inside the harness* the time goes; the next probe is the harness's
-    own per-mutant path, not the modules, and not another whole-run attempt. Write the **CHECKS count beside the number**, exactly as the docs-gate
+    **390 s — 3.5x short of the observed 1367 s.** ✅ **LOCATED, and it is not the per-mutant
+    path at all — it is `arm_reach_audit.selftest()`, which `main()` runs
+    UNCONDITIONALLY before it filters anything.** Measured end to end:
+
+    | what | cost |
+    |---|---|
+    | `audit_module()` on a real module (13 mutants) | **0.03 s** |
+    | each of those 13 mutants through `run_arm`, externally capped | completes, none hangs |
+    | `arm_reach_audit.selftest()` alone | **>40 min — hit a 2400 s cap without finishing** |
+
+    So the auditing work is MILLISECONDS and the fixed entry cost is unbounded,
+    paid on every invocation — including `arm_reach_audit.py <one-module>`,
+    where the substring filter is applied *after* the self-test has already
+    run. That single fact explains every observation above: why "2 of 2 sampled
+    modules exceeded 300 s" (each paid the self-test), why one module read
+    22m47s, and why three whole runs produced zero verdicts.
+    ⚠ WHY the self-test does not terminate is still unmeasured — it is 27 arms
+    including real `git worktree` fixtures, and one of them is the suspect, not
+    all of them. But the repair is now a bounded question about ONE function
+    rather than about the gate, and the cheap mitigation is available today:
+    `audit_module()` is importable and costs 0.03 s per module, so a caller
+    that needs reach numbers can have them without `main()`. Write the **CHECKS count beside the number**, exactly as the docs-gate
   CPU paragraph requires: the population is the CHECKS set plus this file, and
   the CHECKS set has grown from ~21 to 33 since that measurement.
   - ⛔ **At that duration the gate cannot be run in a tree somebody is
