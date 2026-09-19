@@ -3291,3 +3291,10 @@ static TEST_GLOBAL_ALLOC: alloc::TrackingAllocator = alloc::TrackingAllocator;
 /// for decision/confidence scalars. Opt-in (`sigmoid_calibration`).
 #[cfg(feature = "sigmoid_calibration")]
 pub mod sigmoid_calibration;
+
+/// Calibration staleness at the freeze/thaw seam (Issue 841 §B-3) — a
+/// snapshot swap invalidates every attached calibration head; `SnapshotBound`
+/// returns `None` + one loud warning instead of a stale plausible score.
+/// Opt-in (`calibration_staleness`).
+#[cfg(feature = "calibration_staleness")]
+pub mod calibration_staleness;
