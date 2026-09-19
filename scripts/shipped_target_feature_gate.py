@@ -34,7 +34,8 @@ the cries-wolf instrument AGENTS.md warns gets ignored:
 
 - **wasm32 / `simd128`** — that target has no runtime feature detection in
   this workspace, so a compile-time gate is the ONLY option and `full_gate.sh`
-  layer 2b already builds both arms. 87 sites, every one correct.
+  layer 2b already builds both arms. Every site correct by construction;
+  the count is on the PASS line, never typed here.
 - **aarch64 / NEON** — implied by the arch; there is nothing to detect.
 - **the runtime probe's own body** — `#[cfg(target_feature = "avx2")] { true }`
   inside `is_avx2_fma_available()` **is** the correct pattern (a build that
@@ -43,15 +44,17 @@ the cries-wolf instrument AGENTS.md warns gets ignored:
   job.
 - **`#[target_feature(enable = ..)]`** is the RIGHT attribute and is never this
   class — it makes a body compile on any build, which is what pairs with a
-  runtime probe. 67 sites here.
+  runtime probe. Counted on the PASS line, never typed here.
 
 ## Population: this repo. Measured, not inherited.
 
 `check_validation_gate` T4 declined a sweep on a population of ONE and was
 right; `console_encoding_gate` INHERITED that answer and was wrong by seven
 repos. So it was counted, over the 17 contract repos on the workstation:
-**166 `target_feature` cfg attributes in `src/`, ALL 166 in katgpt-rs**, and
-zero in every sibling. Re-derive it rather than trusting this paragraph —
+every `target_feature` cfg attribute in `src/` was in katgpt-rs and zero in
+every sibling (measured 2026-09-19: 166 of 166 — a dated record, and the
+only figure kept here because it is the MEASUREMENT the no-sweep decision
+rests on). Re-derive it rather than trusting this paragraph:
 `--workspace` prints the table.
 
 Exemptions are pinned by MEMBERSHIP with a REASON per row

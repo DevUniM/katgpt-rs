@@ -14,7 +14,9 @@ coverage: import each module once, report which ones die.
 
 ## Affordable — measured, and the measurement found its own blocker
 
-Over the 86 tracked top-level modules, one interpreter, each imported in turn:
+Measured 2026-09-19 over the then-86 tracked top-level modules, one
+interpreter, each imported in turn — a dated RECORD, not a standing
+figure; the live counts are on the PASS line:
 
     total 6.34s
       6.238s  list_unresolved_percentile_sites

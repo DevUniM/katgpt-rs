@@ -30,8 +30,11 @@ The general instrument already exists and already executes every module:
 `arm_reach_gate.py` reports `BASELINE-CRASH` on a module that will not import.
 It is kept OUT of the CHECKS set for a measured reason — **157.6s** against the
 docs gate's ~13s CPU budget. This pass is static, reads each file once, and
-costs ~0.2s over 90 files, so the cheap half of that coverage can ride the
-per-push lane while the expensive half stays a workstation verdict.
+costs a fraction of a second over the tracked `scripts/` tree, so the
+cheap half of that coverage can ride the per-push lane while the
+expensive half stays a workstation verdict. ⚠ The walk size and the
+resolved-reference count are printed on the PASS line every run; no
+figure is typed here, because both move whenever anybody adds a script.
 
 ## Two-sided known answer, which is what makes it shippable
 
