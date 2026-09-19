@@ -2,7 +2,7 @@
 
 **Status:** **RESOLVED** for `simd_lut_dequant` (measured, repaired, gated,
 canary-verified) and for `bf16_convert`'s RNE narrowing (T2: 2.4-2.5x on a
-default build). **T5, T6, T4 open** — the losing trunc kernel, the widen
+default build). **T6, T4 open** — the widen
 crossover and the aarch64 re-measure; T3's gate is landed and the class
 is WALLED (`scripts/shipped_target_feature_gate.py`). ⛔ T2's finding is that the reflex repair
 was right for ONE of three kernels, a REGRESSION for the second, and
@@ -232,14 +232,55 @@ Bench 847 is a **gate** now, not a report, and it bars exactly **one** row:
       fixture widens to NaN — so the first run failed on two byte-identical
       256-element vectors. A value comparison could not have expressed the
       bit-exactness claim even on the runs where it passed.
-- [ ] **T5 — Delete `f32_to_bf16_trunc_avx2`?** It is measured SLOWER than
-      the scalar body it replaces (1.3x at n >= 4096, both the intrinsics and
-      the autovec arm), it is unreachable on every ordinary build, and an
-      unreachable kernel is an untested one — the x86_64 execution matrix
-      found 15 latent AVX2-transcription defects the first two times it ran.
-      Issue 844 rule 3 applies. ⚠ Measure the aarch64 sibling before
-      deleting: NEON is implied by the arch, so `f32_to_bf16_trunc_neon` IS
-      reached and may well win where the AVX2 one does not.
+- [x] **T5 — DONE. DELETED, and the re-measurement sharpened the finding:
+      the loss is not the TRANSCRIPTION, it is the `+avx2` BUILD.**
+
+      Re-measured three times over two build configurations, box state
+      recorded per §Feature Flag Discipline G2 (shikuwa, 22.3 GB free
+      physical, commit 28.3 / 62.8 GB limit, no heavy sibling job in the
+      top-5 by commit):
+
+      | trunc n | default build | `+avx2` build |
+      |---|---|---|
+      | 256 | 11–14 | 12 |
+      | 4096 | 153–184 | 197–205 |
+      | 32768 | **1138–1255** | 1578–1594 |
+
+      ⛔ **The decisive cell is what the `_autovec` arm does, and it refutes
+      the transcription hypothesis the T2 write-up left standing.** That arm
+      is the SAME scalar body carrying `#[target_feature(enable = "avx2")]`,
+      and it measures **1556–1591 in BOTH builds** — it lands on the
+      intrinsics, never on the scalar. After the deletion, a `+avx2` build's
+      dispatcher (now the plain scalar body) measures **1594** and the ratio
+      against autovec is **exactly 1.00**, because they are the same code.
+
+      So nothing was wrong with the AVX2 transcription of `bits >> 16`. What
+      is measured is that **LLVM's default-target vectorisation of this loop
+      beats its own AVX2 vectorisation by ~1.3–1.4x**, however the loop is
+      spelled — the 256-bit `_mm256_srli_epi32` → `vextracti128` →
+      `_mm_packus_epi32` sequence pays a lane-crossing shuffle that the
+      128-bit default codegen does not. A hand-written kernel could not have
+      won; it was competing with a better compiler output, not a worse one.
+
+      **The deletion costs nothing on either build and removes an untested
+      kernel** (default build 1138 → 1255, run noise on a path that never
+      reached the kernel; `+avx2` 1578 → 1594). It removes three rows from
+      `shipped_target_feature_expected.txt` — 162 attributes / 5 pins / 0
+      stale — and the block is kept there as a comment so a reader arriving
+      from this write-up finds the resolution where the rows were.
+
+      ⚠ **No aarch64 measurement was needed to do it, and the task's warning
+      was about the FAMILY rather than this arm.** NEON is implied by the
+      arch, so `f32_to_bf16_trunc_neon` is reached, has always been reached,
+      is exercised by `g1_trunc_neon_matches_scalar`, and is untouched — the
+      per-ISA rule Issue 844 T4 established after its own expectation was
+      refuted. Generalising "the trunc SIMD arm loses" across ISAs is exactly
+      what that rule forbids; this deletion does not.
+
+      The 9 `bf16_convert` tests pass in both builds.
+      `t2_bf16_autovec_vs_intrinsics` keeps measuring the absence every run,
+      so a future re-transcription has to argue with a number.
+
 - [ ] **T6 — The widen crossover, on a QUIET box.** Three arms with three
       different winners across 256 / 4096 / 32768, and a 78% run-to-run swing
       in one cell here. Record free RAM, commit-vs-limit and concurrent heavy

@@ -21,19 +21,20 @@
 crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#1 = the probe's own short-circuit: a build with AVX2 already on skips CPUID. Issue 847 Non-goals.
 crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#2 = the probe's own `not(...)` arm, the CPUID read itself. Issue 847 Non-goals.
 
-# ── bf16 TRUNC narrowing — the intrinsics are measured SLOWER (847 T5) ─────
-# ns/call, shikuwa i7-13700K, release: the AVX2 arm runs 197 at n=4096 and
-# 1550 at n=32768 against the scalar path's 145 and 1179, and the autovec arm
-# (the same scalar body compiled WITH avx2) loses by the same margin — which
-# is the corroboration rather than a second guess. A bare `>> 16` truncation
-# is already whatever LLVM wants it to be. Runtime-probing these in would cost
-# ~1.3x on a shipped path in the name of fixing a defect, so the compile-time
-# gate is accidentally doing the right thing. The honest follow-up is 847 T5
-# (delete the losing kernel, after measuring its NEON sibling, which IS
-# reached), not a probe.
-crates/katgpt-core/src/bf16_convert.rs::f32_to_bf16_trunc_into#1 = 847 T5: the AVX2 arm is MEASURED slower than the scalar it would replace (197 vs 145 ns at n=4096). Probing it in is a regression.
-crates/katgpt-core/src/bf16_convert.rs::f32_to_bf16_trunc_into#2 = 847 T5: the `not(any(..))` complement of the row above; same construct, same adjudication.
-crates/katgpt-core/src/bf16_convert.rs::f32_to_bf16_trunc_avx2#1 = 847 T5: the kernel the two rows above dispatch to. Deleting it is the open question; arming it is measured wrong.
+# ── bf16 TRUNC narrowing — RESOLVED by DELETION, no rows (847 T5) ─────
+# This block held three rows and now holds none. `f32_to_bf16_trunc_avx2` was
+# deleted rather than pinned or probed: it is measured SLOWER than the scalar
+# body it replaced — 1578 vs 1138 ns at n=32768 (1.39x), stable over THREE
+# runs and TWO build configurations — and the `_autovec` arm (that same scalar
+# body under `+avx2` codegen) lands on the intrinsics at 1556-1565 rather than
+# on the scalar, which is what makes it AVX2 CODEGEN for a bare `>> 16` and
+# not a transcription defect. Deleting the x86_64 arm needed no aarch64
+# measurement: NEON is implied by the arch, so `f32_to_bf16_trunc_neon` is
+# REACHED, has always been reached, and is untouched — the per-ISA rule
+# Issue 844 T4 established. `t2_bf16_autovec_vs_intrinsics` keeps measuring
+# the absence every run, so a future re-transcription has to argue with a
+# number. The block is kept as a comment because a reader arriving from the
+# 847 write-up needs to find the resolution where the rows were.
 
 # ── bf16 WIDENING — UNDECIDED on this box, and the instrument says so ──────
 # The best arm changes with n: intrinsics at 256 (6 vs 13 ns), autovec around

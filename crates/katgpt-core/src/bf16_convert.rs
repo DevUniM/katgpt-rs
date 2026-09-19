@@ -218,14 +218,17 @@ pub fn f32_to_bf16_trunc_into(src: &[f32], dst: &mut [u16]) {
     {
         unsafe { f32_to_bf16_trunc_neon(src, dst) }
     }
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    {
-        unsafe { f32_to_bf16_trunc_avx2(src, dst) }
-    }
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
+    // No x86_64 arm, and that is a MEASUREMENT (Issue 847 T5) rather than an
+    // omission: an AVX2 transcription of this kernel shipped here and was
+    // deleted for losing to the scalar body it replaced — 1578 vs 1138 ns at
+    // n=32768, 1.39x, stable over three runs and two build configurations,
+    // with the `_autovec` arm (the SAME scalar body under `+avx2` codegen)
+    // landing on the intrinsics at 1556-1565 rather than on the scalar. So it
+    // is AVX2 CODEGEN for a bare `>> 16`, not a transcription defect: at the
+    // default target LLVM already vectorises this loop into something the
+    // 256-bit shift + cross-lane `packus` sequence cannot beat.
+    // `t2_bf16_autovec_vs_intrinsics` keeps measuring it every run.
+    #[cfg(not(target_arch = "aarch64"))]
     {
         f32_to_bf16_trunc_scalar_into(src, dst);
     }
@@ -543,37 +546,6 @@ unsafe fn f32_to_bf16_rne_avx2(src: &[f32], dst: &mut [u16]) {
         }
         while i < n {
             *dp.add(i) = rne_one((*sp.add(i)).to_bits());
-            i += 1;
-        }
-    }
-}
-
-/// SAFETY: as [`bf16_bits_to_f32_avx2`].
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-#[inline]
-#[target_feature(enable = "avx2")]
-unsafe fn f32_to_bf16_trunc_avx2(src: &[f32], dst: &mut [u16]) {
-    use core::arch::x86_64::{
-        __m128i, _mm_packus_epi32, _mm_storeu_si128, _mm256_castps_si256,
-        _mm256_castsi256_si128, _mm256_extracti128_si256, _mm256_loadu_ps, _mm256_srli_epi32,
-    };
-
-    unsafe {
-        let n = src.len().min(dst.len());
-        let sp = src.as_ptr();
-        let dp = dst.as_mut_ptr();
-        let mut i = 0;
-        while i + 8 <= n {
-            let x = _mm256_castps_si256(_mm256_loadu_ps(sp.add(i)));
-            let shifted = _mm256_srli_epi32(x, 16);
-            let lo = _mm256_castsi256_si128(shifted);
-            let hi = _mm256_extracti128_si256::<1>(shifted);
-            let packed = _mm_packus_epi32(lo, hi);
-            _mm_storeu_si128(dp.add(i) as *mut __m128i, packed);
-            i += 8;
-        }
-        while i < n {
-            *dp.add(i) = trunc_one((*sp.add(i)).to_bits());
             i += 1;
         }
     }
