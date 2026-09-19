@@ -440,6 +440,23 @@ def gate_selftest() -> list[str]:
     # ⛔ `tree_drift`, the Issue-854 T6 disclosure. It is PURE over two
     # snapshots on purpose, so the decision is armable without a
     # seventeen-minute run and without a second git tree.
+    # `in_population`, the half that was welded to git until it was
+    # extracted. Pure over two collections, so these need no fixture repo.
+    pop = [Path("/w/scripts/a.py"), Path("/w/scripts/b.py")]
+    if in_population({"scripts/a.py"}, pop) != frozenset({"a.py"}):
+        f.append("a dirty file INSIDE the population was not reported")
+    if in_population({"scripts/zz.py"}, pop) != frozenset():
+        f.append("a dirty file OUTSIDE the population was reported — the "
+                 "disclosure would fire on every unrelated edit and become "
+                 "the banner nobody reads")
+    if in_population({"docs/a.py"}, pop) != frozenset({"a.py"}):
+        f.append("the comparison is not by BASENAME: `dirty_files` yields "
+                 "repo-relative paths and the population is absolute, so a "
+                 "path comparison matches NOTHING and reports a STABLE tree "
+                 "over a moving one")
+    if in_population(set(), pop) != frozenset():
+        f.append("a clean tree did not yield the empty set")
+
     A0 = ("a" * 40, frozenset({"x.py"}))
     if "STABLE" not in tree_drift(A0, A0):
         f.append("an UNCHANGED tree did not say so — silence cannot be told "
@@ -800,9 +817,26 @@ def tree_state(paths) -> tuple[str, frozenset]:
         dirty = set(worktree_state.dirty_files(HERE.parent))
     except OSError:
         dirty = set()
+    return head, in_population(dirty, paths)
+
+
+def in_population(dirty, paths) -> frozenset:
+    """The dirty paths that are part of THIS run's population, by basename.
+
+    ⛔ Extracted from `tree_state` for the reason this repo records three
+    times over: the decision was welded to a `git rev-parse` and a
+    `dirty_files` call, so no arm could reach it without a fixture repo, and
+    `arm_reach_gate` reported it as an unpinned survivor on its first run.
+    *The extraction IS the repair.* What is left in `tree_state` is genuine
+    unreachable I/O and is pinned as such; this half is pure.
+
+    ⚠ BASENAME, not the full path, and deliberately: `dirty_files` yields
+    repo-relative paths while the population is absolute, so comparing them
+    directly matches nothing and the disclosure would report a STABLE tree
+    over a moving one — the silent direction.
+    """
     want = {Path(x).name for x in paths}
-    return head, frozenset(n for n in (Path(d).name for d in dirty)
-                           if n in want)
+    return frozenset(n for n in (Path(d).name for d in dirty) if n in want)
 
 
 def tree_drift(before: tuple[str, frozenset],
