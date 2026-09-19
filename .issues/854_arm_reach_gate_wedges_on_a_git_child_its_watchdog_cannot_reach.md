@@ -10,8 +10,10 @@ designed it — at allocation time rather than merge time. Adjudicated by
 Issue 724 T2 on the same ground Issue 850 used: the other side is pushed, this
 one was not.
 
-**Status:** OPEN. Observed twice on 2026-09-19 (shikuwa), both times on the
-plain `scripts/arm_reach_gate.py` run over the CHECKS population.
+**Status:** OPEN — and INTERMITTENT: observed twice on 2026-09-19 (shikuwa)
+on the plain `scripts/arm_reach_gate.py` run over the CHECKS population, with a
+third run of the same population completing clean in 1068.9s. T2 is answered
+(census taken, the proposed gate refuted); T1/T3/T4/T5/T6 open.
 
 Found while doing something else — the run was started to pin survivors after
 Issue 847/848 landed, and never returned.
@@ -114,6 +116,26 @@ bodies are never mutated, here which calls count as an arm), so
 `arm_reach_audit.py <module>` exited 2 with no reach measured at all.
 Reconciled. ⚠ The GATE did not refuse on the same disagreement, which is a
 separate question and is T5.
+
+## A clean re-run PASSES — so the wedge is INTERMITTENT, which raises the cost
+
+Re-run on the quiet, committed tree after the `ARM_NAMES` reconciliation:
+**33 modules · 999 mutants · 683 killed · 65 live survivors, all pinned with a
+reason · 0 UNREACHED · 0 NO-ARM · 0 BASELINE · rc = 0 · 1068.9s**, and **no
+wedge at all**. Three runs: two stalled, one did not.
+
+⚠ **Read that as the worse news.** A deterministic hang is diagnosable on
+demand; an intermittent one means the next stall arrives without warning, in a
+run somebody is waiting on, and T1's stderr progress line is the only thing
+that will say where. It also means a repair cannot be validated by "it did not
+hang this time" — whatever lands under T3/T4 needs an argument, not a green
+run.
+
+⚠ **4 mutants TIMEOUT on every run and are PINNED.** They are counted
+separately and never as arm reach (the gate's own rule), but they are also
+~4 deadlines' worth of the 1069s, and a standing TIMEOUT is a decision line
+the harness has never been able to read. Not this issue's subject; recorded
+here because the next person to look at the runtime will find them first.
 
 ## What is NOT known
 
