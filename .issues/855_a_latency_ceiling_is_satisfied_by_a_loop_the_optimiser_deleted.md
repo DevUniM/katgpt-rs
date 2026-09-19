@@ -1,6 +1,6 @@
 # Issue 855: a latency ceiling is satisfied by a loop the optimiser DELETED — `0 ns/op` over 100 000 iterations, asserted `< 10 000 ns`, PASS
 
-**Status:** OPEN — T1 filed with the measurement; T2–T5 open.
+**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged); T3–T5 open.
 **Found by:** Issue 833 T2's per-target read, 2026-09-19. Not by a census, and
 not by anything failing — by **reading the printed values next to the bars**,
 which is the one thing 833 T2 refuses to skip.
@@ -92,18 +92,51 @@ read by a human as a result. It is a division by a deleted loop.
 
 - [x] **T1 — file the measurement.** 3 of 21 targets, 5 arms, each with its
       printed value and its assertion. Done above.
-- [ ] **T2 — repair the five arms.** Consume each arm's result through
-      `black_box` and make the input vary with the iteration index where the
-      callee could hoist it. For the two A/B-shaped ones (`bench_239` G5,
-      `bench_bfcf_tree` B1) migrate to `ab_median_ratio`, which makes a future
-      vanished arm a **named instrument failure** instead of a pass; for the
-      two absolute ceilings in `bench_regime_transition` the right harness is
-      `best_of_us`, which carries the same loud-zero assertion for the one-arm
-      case. ⚠ Keep every bar exactly where it is — a repair that moves a bar
-      cannot be distinguished from a repair that broke one.
-      - ⚑ `bench_239` G5 is **already migrated** in the working tree (a =
-        bare, b = posterior, 21 × 10 000, `black_box` on inputs and results,
-        bar unchanged at `< 1000 ns`). Compile + run before trusting it.
+- [x] **T2 — repair the five arms.** Done 2026-09-19. Every arm now measures
+      something; **every bar is byte-identical to what it was**, which is the
+      constraint that makes the repair readable as a repair.
+
+      | target :: test | arm | before | after |
+      |---|---|---|---|
+      | `bench_regime_transition` :: `bench_collapse_classification_throughput` | `classify` | `100000 iterations in 42ns` — **0.0 ns/op** | `10 samples × 10000 iterations, best 124.2µs` — **12.4 ns/op** |
+      | `bench_regime_transition` :: `bench_gate_evaluation_throughput` | `evaluate` | `100000 iterations in 0ns` — **0.0 ns/op** | `10 samples × 10000 iterations, best 7.0µs` — **0.7 ns/op** |
+      | `bench_239_posterior_evolution_goat` :: `g5_hot_path_overhead` | bare baseline | `relevance (bare): 0.0 ns/call`, overhead `11.8 ns (inf%)` | **0.4 ns/iter**, overhead **7.7 ns (+1912.5%)**, 21 of 21 rounds survived |
+      | `bench_bfcf_tree` :: B1 `bench_region_pruning_vs_token_pruning` | region pruning | **0.0 µs/iter** → `Speedup: 3799.6×` | **6.1 ns/iter** vs token 24.6 µs/iter → `Speedup: 4060.9×`, 11 of 11 rounds survived |
+      | `bench_bfcf_tree` :: B3 `bench_bfcf_throughput_gain` | WITHOUT BFCF | **0.0 µs/iter** → `Throughput change: -169873680.5%` | **79.2 µs/iter** vs 391.4 µs/iter → `Throughput change: -394.3%`, 11 of 11 rounds survived |
+
+      - ⚑ **The measurement is proved to EXIST, not merely to be non-zero.**
+        A 4× chunk probe on the two `best_of_us` sites scaled **3.99×** and
+        **4.05×** (7.0 → 27.9 µs, 124.2 → 503.0 µs) with the per-op figures
+        flat at 0.7 and 12.6 ns. A deleted loop does not scale with its bound.
+      - ⚠ `evaluate`'s **0.7 ns/op is a real reading, not a residual zero**:
+        the body is two `Vec::len()` loads through an opaque pointer, three
+        flops and a compare (`regime_transition.rs:171`). The 4× probe is what
+        separates that from the class this issue is about.
+      - ⛔ **The issue's own table mislabelled one row.** Both `bench_bfcf_tree`
+        rows were filed as `B1`; the `WITHOUT BFCF` / `WITH BFCF` strings are
+        printed by **B3** (`bench_bfcf_throughput_gain`). Corrected above. The
+        arm count is unchanged at five.
+      - Harnesses, per the treatment rule: `best_of_us` for the two ONE-ARM
+        absolute ceilings in `bench_regime_transition`; `ab_median_ratio` for
+        the three A/B-shaped arms. `bench_239` G5 was **already migrated at
+        HEAD** — verified by compiling and running it, not by reading it.
+        `bench_bfcf_tree` B1 and B3 are new adopters (`ROUNDS = 11 ×
+        ITERS_PER_ROUND = 20` = 220, against the 200 the sequential loops did).
+      - ⚠ **One DISPLAY change, deliberate and not a bar.** B1's region arm is
+        genuinely ~6 ns/iter, and `{:.1} µs` renders that as the literal `0.0`
+        this issue was filed for — a live measurement must not print like a
+        dead one. That line prints ns now; the `region_per_iter <
+        token_per_iter` bar is untouched and still reads the same two
+        quantities, now sourced from `ab.a_ns_per_iter()` / `ab.b_ns_per_iter()`.
+      - ⚠ B3's baseline arm gained one `screened += (rel >= 0.7) as usize;` —
+        the minimum consumption that keeps a pure callee alive, and the same
+        shape B1's token arm already had. B3 carries no wall-clock bar
+        (`eval_reduction > 10.0` is static arithmetic), so nothing moved.
+      - Verified: `CARGO_TARGET_DIR=/tmp/i855 cargo test --release` per target
+        at its own features (`regime_transition`; `bfcf_tree`;
+        `posterior_evolution,mux_latent_context`) — never `--all-features`.
+        `cargo clippy --release` clean on all three targets; both touched files
+        were rustfmt-clean at HEAD and still are.
 - [ ] **T3 — the RUNTIME detector is exact and nearly free, and it is the one
       worth having.** A timed region that measures **0 ns over n ≥ 1000
       iterations** is an instrument failure with no false-positive story on any

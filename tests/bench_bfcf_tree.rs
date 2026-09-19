@@ -8,7 +8,11 @@
 //!
 //! Run: `cargo test --features "bfcf_tree" --test bench_bfcf_tree -- --nocapture`
 
+use std::hint::black_box;
 use std::time::Instant;
+
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
 
 use katgpt_rs::pruners::{
     bfcf_types::RegionLabel,
@@ -26,8 +30,18 @@ const VOCAB_SIZE: usize = 50_257;
 /// Number of BFCP regions (typical after partitioning).
 const N_REGIONS: usize = 50;
 
-/// Iterations for throughput benchmarks.
-const ITERS: usize = 200;
+/// Interleaved A/B rounds for the wall-clock benchmarks (Issue 855).
+///
+/// `ROUNDS × ITERS_PER_ROUND` = 220 keeps the total work at the 200 the
+/// sequential loops did; the split is what buys the per-round ratios
+/// `ab_median_ratio` takes a median over.
+const ROUNDS: usize = 11;
+
+/// Iterations per arm per round.
+const ITERS_PER_ROUND: usize = 20;
+
+/// Warmup iterations per arm, excluded from every timed round.
+const WARMUP: usize = 3;
 
 /// Bandit simulation rounds.
 const BANDIT_ROUNDS: usize = 10_000;
@@ -128,67 +142,86 @@ fn bench_region_pruning_vs_token_pruning() {
         vocab_size: VOCAB_SIZE,
     };
 
-    // --- Token-by-token screening: O(vocab_size) ---
-    let start = Instant::now();
-    let mut total_accept_tokens = 0usize;
-    let mut total_reject_tokens = 0usize;
-    let mut total_maybe_tokens = 0usize;
-
-    for _ in 0..ITERS {
-        total_accept_tokens = 0;
-        total_reject_tokens = 0;
-        total_maybe_tokens = 0;
-
-        for token_idx in 0..VOCAB_SIZE {
-            let rel = pruner.relevance(0, token_idx, &[]);
-            if rel >= 0.7 {
-                total_accept_tokens += 1;
-            } else if rel <= 0.3 {
-                total_reject_tokens += 1;
-            } else {
-                total_maybe_tokens += 1;
-            }
-        }
-    }
-    let token_duration = start.elapsed();
-    let token_per_iter = token_duration.as_nanos() as f64 / ITERS as f64;
-
-    println!(
-        "  Token-by-token: {} iters, {:.1} µs/iter, accept={} reject={} maybe={}",
-        ITERS,
-        token_per_iter / 1000.0,
-        total_accept_tokens,
-        total_reject_tokens,
-        total_maybe_tokens,
-    );
-
     // --- Region pruning: O(regions) ---
     // Build the partition once (one-time cost), then iterate regions.
     let logits = vec![0.5f32; VOCAB_SIZE];
     let bfcp_pruner = BFCPPruner::from_logits(&pruner, &logits, VOCAB_SIZE);
     let partition = bfcp_pruner.partition();
 
-    let start = Instant::now();
+    // ⛔ Issue 855: the region arm below used to be its own sequential
+    // `for _ in 0..ITERS` loop assigning three loop-INVARIANT counts, so the
+    // optimiser hoisted the whole thing out and the release run printed
+    // `Region pruning: 0.0 µs/iter` — which divided into the token arm as
+    // `Speedup: 3799.6×`. A number like that in a benchmark log is read by a
+    // human as a result; it was a division by a deleted loop, and the
+    // `region_per_iter < token_per_iter` bar below was satisfied by nothing.
+    //
+    // `ab_median_ratio` is the treatment: it interleaves the two arms (a load
+    // excursion cancels in the ratio instead of landing on whichever arm ran
+    // second) and, decisively here, an all-zero arm is a NAMED instrument
+    // failure instead of a pass. Both arms consume their results through
+    // `black_box`, and the region arm re-reads its partition through
+    // `black_box` so it cannot be hoisted again. a = token-by-token
+    // (baseline), b = region pruning (candidate). The bar is unchanged.
+    let mut total_accept_tokens = 0usize;
+    let mut total_reject_tokens = 0usize;
+    let mut total_maybe_tokens = 0usize;
     let mut region_accept = 0usize;
     let mut region_reject = 0usize;
     let mut region_maybe = 0usize;
 
-    for _ in 0..ITERS {
-        region_accept = partition.accept_token_count();
-        region_reject = partition.reject_token_count();
-        region_maybe = partition.maybe_token_count();
-    }
-    let region_duration = start.elapsed();
-    let region_per_iter = region_duration.as_nanos() as f64 / ITERS as f64;
+    let ab = ab_timing::ab_median_ratio(
+        ROUNDS,
+        ITERS_PER_ROUND,
+        WARMUP,
+        |_i| {
+            let mut accept = 0usize;
+            let mut reject = 0usize;
+            let mut maybe = 0usize;
+            for token_idx in 0..VOCAB_SIZE {
+                let rel = pruner.relevance(0, black_box(token_idx), black_box(&[]));
+                if rel >= 0.7 {
+                    accept += 1;
+                } else if rel <= 0.3 {
+                    reject += 1;
+                } else {
+                    maybe += 1;
+                }
+            }
+            total_accept_tokens = black_box(accept);
+            total_reject_tokens = black_box(reject);
+            total_maybe_tokens = black_box(maybe);
+        },
+        |_i| {
+            region_accept = black_box(black_box(partition).accept_token_count());
+            region_reject = black_box(black_box(partition).reject_token_count());
+            region_maybe = black_box(black_box(partition).maybe_token_count());
+        },
+    );
+
+    let token_per_iter = ab.a_ns_per_iter();
+    let region_per_iter = ab.b_ns_per_iter();
 
     println!(
-        "  Region pruning:  {} iters, {:.1} µs/iter, accept={} reject={} maybe={}",
-        ITERS,
-        region_per_iter / 1000.0,
+        "  Token-by-token: {} iters, {:.1} µs/iter, accept={} reject={} maybe={}",
+        ROUNDS * ITERS_PER_ROUND,
+        token_per_iter / 1000.0,
+        total_accept_tokens,
+        total_reject_tokens,
+        total_maybe_tokens,
+    );
+    // ns, not µs: the region arm is genuinely ~5 ns/iter (three sums over
+    // three regions), and `{:.1} µs` renders that as the literal `0.0` this
+    // test was filed for. A live measurement must not print like a dead one.
+    println!(
+        "  Region pruning:  {} iters, {:.1} ns/iter, accept={} reject={} maybe={}",
+        ROUNDS * ITERS_PER_ROUND,
+        region_per_iter,
         region_accept,
         region_reject,
         region_maybe,
     );
+    ab.report("  region/token");
 
     // Verify correctness: both approaches yield same counts
     assert_eq!(
@@ -304,47 +337,64 @@ fn bench_bfcf_throughput_gain() {
         vocab_size: VOCAB_SIZE,
     };
 
-    // --- Simulate a full decode step WITHOUT BFCF tree ---
-    // Must screen every token individually: O(vocab_size)
     let speculative_steps = 5;
-    let start = Instant::now();
-    for _ in 0..ITERS {
-        for _step in 0..speculative_steps {
-            for token_idx in 0..VOCAB_SIZE {
-                let _rel = pruner.relevance(0, token_idx, &[]);
-            }
-        }
-    }
-    let without_duration = start.elapsed();
-    let without_per_iter = without_duration.as_nanos() as f64 / ITERS as f64;
     let without_evals = VOCAB_SIZE * speculative_steps;
 
-    // --- Simulate a full decode step WITH BFCF tree ---
-    // Build partition once per step, then iterate O(regions) per step
-    let start = Instant::now();
-    for _ in 0..ITERS {
-        for _step in 0..speculative_steps {
-            // Build partition (one-time per step)
-            let logits = vec![0.5f32; VOCAB_SIZE];
-            let bfcp = BFCPPruner::from_logits(&pruner, &logits, VOCAB_SIZE);
-            let partition = bfcp.partition();
+    // ⛔ Issue 855: the WITHOUT-BFCF arm was a sequential loop over
+    // `let _rel = pruner.relevance(0, token_idx, &[])` with the result
+    // discarded, and `SimulatedScreeningPruner::relevance` is a pure function
+    // of its argument — so under `-C lto=fat` the entire baseline was deleted.
+    // The release run printed `WITHOUT BFCF: ... 0.0 µs/iter` and, from it,
+    // `Throughput change: -169873680.5%`. The second number is the first one
+    // divided by nothing.
+    //
+    // Same treatment as B1 above: `ab_median_ratio` interleaves the arms and
+    // FAILS loudly on an all-zero arm instead of reporting a ratio against it.
+    // a = WITHOUT BFCF (baseline), b = WITH BFCF (candidate). No bar in this
+    // test is a wall-clock one — `eval_reduction` below is static arithmetic
+    // and is untouched.
+    let ab = ab_timing::ab_median_ratio(
+        ROUNDS,
+        ITERS_PER_ROUND,
+        WARMUP,
+        |_i| {
+            // Simulate a full decode step WITHOUT BFCF tree: must screen every
+            // token individually, O(vocab_size).
+            for _step in 0..speculative_steps {
+                let mut screened = 0usize;
+                for token_idx in 0..VOCAB_SIZE {
+                    let rel = pruner.relevance(0, black_box(token_idx), black_box(&[]));
+                    screened += (rel >= 0.7) as usize;
+                }
+                black_box(screened);
+            }
+        },
+        |_i| {
+            // Simulate a full decode step WITH BFCF tree: build the partition
+            // once per step, then iterate O(regions) per step.
+            for _step in 0..speculative_steps {
+                let logits = vec![0.5f32; VOCAB_SIZE];
+                let bfcp = BFCPPruner::from_logits(&pruner, black_box(&logits), VOCAB_SIZE);
+                let partition = bfcp.partition();
 
-            // Screen by regions: skip reject, sample accept, refine maybe
-            let mut _screened = 0usize;
-            for region in &partition.regions {
-                match region.label {
-                    RegionLabel::Accept | RegionLabel::Maybe => {
-                        _screened += region.token_count;
-                    }
-                    RegionLabel::Reject => {
-                        // Skip entire region — no per-token work
+                // Screen by regions: skip reject, sample accept, refine maybe
+                let mut screened = 0usize;
+                for region in &black_box(partition).regions {
+                    match region.label {
+                        RegionLabel::Accept | RegionLabel::Maybe => {
+                            screened += region.token_count;
+                        }
+                        RegionLabel::Reject => {
+                            // Skip entire region — no per-token work
+                        }
                     }
                 }
+                black_box(screened);
             }
-        }
-    }
-    let with_duration = start.elapsed();
-    let with_per_iter = with_duration.as_nanos() as f64 / ITERS as f64;
+        },
+    );
+    let without_per_iter = ab.a_ns_per_iter();
+    let with_per_iter = ab.b_ns_per_iter();
 
     // Compute effective evaluations saved
     let logits = vec![0.5f32; VOCAB_SIZE];
@@ -356,18 +406,19 @@ fn bench_bfcf_throughput_gain() {
 
     println!(
         "  WITHOUT BFCF: {} iters × {} steps, {:.1} µs/iter, {} evals/step",
-        ITERS,
+        ROUNDS * ITERS_PER_ROUND,
         speculative_steps,
         without_per_iter / 1000.0,
         without_evals / speculative_steps,
     );
     println!(
         "  WITH BFCF:    {} iters × {} steps, {:.1} µs/iter, ~{} evals/step (after region skip)",
-        ITERS,
+        ROUNDS * ITERS_PER_ROUND,
         speculative_steps,
         with_per_iter / 1000.0,
         with_evals / speculative_steps,
     );
+    ab.report("  with/without BFCF");
 
     let throughput_gain = (without_per_iter - with_per_iter) / without_per_iter * 100.0;
     println!(
