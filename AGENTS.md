@@ -470,6 +470,16 @@ and the 33-check number is the one to compare against. ⚠ Neither is a
 quiet-box figure in the strict sense (this workstation always carries other
 sessions); read the pair as a **range**, which is all the wall clock ever
 was.
+⚑ **A fourth reading at 33 checks under the heaviest load yet recorded
+there: 50.22s CPU / 54.1s wall** (2026-09-20, M3, loadavg **11.2** — a
+riir-train training measurement plus a sibling cargo test running
+throughout). It matches the near-quiet 50.11s within **0.2%**, so the
+17-check inflation class (the ⛔ paragraph below) did not reproduce at
+this CHECKS count even at load 11 — but the load SHAPE differs from that
+case (one sustained measurement + one test build, not multi-tenant
+compile churn), so read it as bounding the 71.67s outlier further, not as
+refuting the LIMIT. The 33-check figure to compare against remains the
+**46.74–50.22s range**.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
