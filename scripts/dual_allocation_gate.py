@@ -310,6 +310,15 @@ def prove_counter() -> list[str]:
         if len(ctrs) != 1 or ctrs[0]["number"] != 950:
             fails.append(f"the COUNTER axis did not report exactly 950: "
                          f"{ctrs}")
+        elif ctrs[0]["twin"]:
+            # A TWIN is "the same document on both lines, a fetch resolves
+            # it" and is EXIT-NEUTRAL. A counter-only collision has no
+            # document at all, so it can never be one — and labelled TWIN it
+            # would stop exiting non-zero while every count above stayed
+            # right.
+            fails.append("the COUNTER row is labelled TWIN — a twin is "
+                         "exit-neutral, so this would green the very "
+                         "collision the axis exists to catch")
         # ⚠ The negative side, without which the axis could fire always and
         # still pass: a ONE-SIDED bump is green by construction, and it is the
         # ordinary case on every push.
@@ -342,6 +351,17 @@ def prove_fires() -> list[str]:
         if skip:
             return [f"fixture skipped: {skip}"]
         indep = [r for r in rows if not r["twin"]]
+        # ⛔ The BUCKET LABEL, asserted rather than filtered on. Every other
+        # check here selects by `twin`/`counter` and so agrees with itself
+        # whichever way the literal points; only this notices a DOCUMENT
+        # collision wearing the COUNTER label, which would print the wrong
+        # remedy ("both lines bumped .highwater") for a row that has two
+        # documents naming both adding commits.
+        mislabelled = [r["number"] for r in rows if r.get("counter")]
+        if mislabelled:
+            fails.append(f"fixture: document collisions labelled COUNTER: "
+                         f"{mislabelled} — the counter axis is for numbers NO "
+                         f"document records")
         if len(indep) != 1 or indep[0]["number"] != 900:
             fails.append(f"fixture: expected exactly RED 900, got {rows}")
         elif not (indep[0]["left_commits"] and indep[0]["right_commits"]):
