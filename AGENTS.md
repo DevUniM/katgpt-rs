@@ -2213,10 +2213,12 @@ count is what the bucket note above forbids.
   count beside the number, exactly as the docs-gate CPU paragraph requires:
   the population is the CHECKS set plus this file, and that set has grown from
   ~21 to 33 since 157.6s was taken.
-  - **The measurement that stands is a RANGE, not a budget: one run completed
-    in 868 s (14.5 min); a later run on the same commit did NOT complete
-    within 1800 s.** Both are real and the spread is unexplained — so 868 s is
-    a lower bound on a good run, never a figure to plan against. What IS stable
+  - **The measurement that stands is a RANGE, not a budget: ONE run in SIX
+    completed, in 868 s (14.5 min); the other five were capped or killed at
+    1800 s, 3000 s, 77 min, 77 min and 121 min.** All are real and the spread
+    is unexplained — so 868 s is a lower bound on a good run, never a figure to
+    plan against, and a green verdict from this gate is something you may not
+    get at all. What IS stable
     across every re-measurement is the decomposition: the cost is the SUM of
     per-module costs, which
     span three orders of magnitude. Measured per module: `bench_doc_audit`
