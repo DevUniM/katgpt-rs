@@ -69,21 +69,43 @@ import importlib.util
 import os
 import sys
 
-spec = importlib.util.spec_from_file_location(
-    "pia", os.path.join(os.path.dirname(__file__), "percentile_index_audit.py"))
-pia = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(pia)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-target = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else root
-name = os.path.basename(target)
+import console_safe  # noqa: E402
 
-rows = []
-for f in pia.walk_rs(target):
-    rows += pia.audit_file(f, os.path.relpath(f, target))
+console_safe.apply()
 
-unres = [r for r in rows if r["verdict"] == pia.UNRESOLVED]
-print(f"{name}: {len(unres)} UNRESOLVED site(s)")
-for r in sorted(unres, key=lambda r: (r["file"], r["line"])):
-    asserted = "ASSERTED" if r["asserted"] else "print-only"
-    print(f"  {r['file']}:{r['line']}  [{asserted}]  {r['text']}")
+
+def main(argv: list[str]) -> int:
+    """⛔ A `main()` and a `__main__` guard, because this body used to be
+    top-level: IMPORTING the module ran the whole workspace `.rs` walk and
+    printed to stdout. Measured 2026-09-19 over the 86 tracked top-level
+    `scripts/*.py`, one interpreter, each imported in turn — **6.238s of
+    6.34s, 98% of the lane, in this one module**, and `arm_reach_gate` pays
+    that per mutant. An import-only health lane (Issue 848 T3) is 0.10s for
+    the other 85 and was unaffordable purely because of this file.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "pia", os.path.join(os.path.dirname(__file__),
+                            "percentile_index_audit.py"))
+    pia = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pia)
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    target = os.path.abspath(argv[1]) if len(argv) > 1 else root
+    name = os.path.basename(target)
+
+    rows = []
+    for f in pia.walk_rs(target):
+        rows += pia.audit_file(f, os.path.relpath(f, target))
+
+    unres = [r for r in rows if r["verdict"] == pia.UNRESOLVED]
+    print(f"{name}: {len(unres)} UNRESOLVED site(s)")
+    for r in sorted(unres, key=lambda r: (r["file"], r["line"])):
+        asserted = "ASSERTED" if r["asserted"] else "print-only"
+        print(f"  {r['file']}:{r['line']}  [{asserted}]  {r['text']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

@@ -2,7 +2,7 @@
 
 **Status:** **RESOLVED** — both breakages repaired and the class WALLED
 (`scripts/cross_module_attr_gate.py`, docs-gate CHECK, 30/30 green).
-**T3–T4 open** — the runtime half, and the cross-repo count.
+**T4 open** — the cross-repo count.
 
 Broken at `6c6ca2ee` (2026-09-19 01:11:24 +0700), found 2026-09-19 07:51
 +0700 — **6h40m**, ended by a hand run of `scripts/docs_gate.sh` on a
@@ -128,16 +128,71 @@ exactly where nobody looks.
       the conservative direction for a gate whose false positive is a demand
       to "fix" working code. A silent version of that rule would report
       coverage it does not have.
-- [ ] **T3 — The LANE, and it is the more general finding.** T2's gate would
-      have caught these two. It would NOT have caught a `TypeError` from a
-      changed signature, a moved constant, or any other runtime break — and
-      the general instrument for that already exists and already executes
-      every module: `arm_reach_gate.py` dies at `BASELINE-CRASH` on an
-      unimportable module. It is kept out of the CHECKS set for a measured
-      reason (157.6 s against a ~13 s budget). The question is whether a
-      **cheap import-only** pass belongs in the docs gate — `python -c "import
-      m"` over 91 modules, which is the part of `arm_reach_gate`'s baseline
-      that costs almost nothing. Measure it before answering.
+- [x] **T3 — DONE. The LANE is shipped: `scripts/import_health_gate.py`**,
+      and the affordability question was MEASURED rather than argued.
+
+      T2's gate is static and catches name resolution. It cannot reach a
+      circular import, a missing third-party dependency, or a `raise` in
+      top-level code — those need an EXECUTION. The instrument that already
+      executes every module is `arm_reach_gate`'s `BASELINE-CRASH` bucket,
+      and it is out of the CHECKS set for a measured reason (157.6s against
+      a ~13s CPU budget). The question was whether the IMPORT half alone fits.
+
+      Measured over the 86 tracked top-level modules, one interpreter, each
+      imported in turn:
+
+      | | wall |
+      |---|---|
+      | total | **6.34s** |
+      | `list_unresolved_percentile_sites` | **6.238s** |
+      | the other 85, all of them | **0.10s** |
+
+      ⛔ **98% of the lane was ONE module**, whose entire body was top-level —
+      no `main()`, no `__main__` guard — so importing it ran a workspace-wide
+      `.rs` walk and printed to stdout. Guarded in the same change; its import
+      went **6.238s → 0.0077s**, and `arm_reach_gate` had been paying that
+      6.2s once per mutant. So the answer to "is an import lane affordable"
+      was NO for one measurement and YES for every other, and the difference
+      was a defect rather than a budget.
+
+      ⛔ **A per-module subprocess was measured too and is not worth 3x**:
+      10.28s against 7.52s for one child importing all 86, with the
+      **identical** single verdict. So the gate runs one child, and the cost
+      of that choice is STATED on the verdict line rather than hidden — a
+      module already imported as somebody's dependency is cached, and a
+      failure caused by a previous import's side effects would be attributed
+      to the wrong module.
+
+      ⛔ **MISSING-DEP is its own bucket and is NEVER flagged**, and getting
+      that wrong would have been worse than not shipping the gate. The one
+      real failure here is `generate_npc_brain_model` (a macOS CoreML
+      generator needing `numpy`/`coremltools`). A pinned row for it is
+      correct on THIS box and STALE on any box that has numpy — so a green
+      run would depend on not having installed something. A missing tracked
+      SIBLING is a different statement and stays a finding, which is the
+      class this whole issue is about. The split is EXTRACTED into
+      `split_failures()` so an arm can reach it — the pattern AGENTS.md
+      records three times: *the extraction IS the repair*, because verdict
+      arithmetic inline in `main()` beside its own error messages is
+      unreachable by construction.
+      ⚠ STATED cost: a typo'd stdlib import (`import jsonn`) lands in
+      MISSING-DEP too. The alternative is a stdlib allow-list, which goes
+      stale every release and fails in the direction that INVENTS findings.
+
+      Live: 86 of 87 import, **0.11s in one child**, docs gate **31/31**.
+      Known-answer probe: a `raise` planted in a tracked module reds it, and
+      the revert greens it.
+
+      ⚑ **Landing it found two more live defects, both in the gates that
+      already existed**, which is the argument for a small check over a big
+      one: `subprocess_encoding_gate` red on a `PYTHONIOENCODING` env dict
+      bound to a LOCAL rather than written at the call site, and
+      `console_encoding_gate` red on `list_unresolved_percentile_sites` —
+      which entered that gate's population for the first time because adding
+      a `__main__` guard is what makes a module an INSTRUMENT by its
+      predicate. A repair that grows a population is a repair that owes the
+      other gates a run.
+
 - [ ] **T4 — Does the class generalise?** `console_encoding_drift_sweep`
       measured seven sibling repos carrying `scripts/*.py`; riir-train alone
       has 61. **Count before deciding**, on `check_validation_gate` 789 T4's
