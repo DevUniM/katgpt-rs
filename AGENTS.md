@@ -1587,6 +1587,37 @@ scripts/sequential_ab_timing_audit.py -v         # every row, not just findings
       expression**, so `timing_locals` sees nothing. That is the proxy going
       blind, not evidence of bar-lessness — this bucket's own rule, applied to
       the instrument measuring it.
+    - ⛔ **`~52` and `~27` are both STATIC proxies for a quantity that is
+      decidable by EXECUTION, and when it was executed the answer was 3**
+      (Issue 833 T2, 2026-09-19). Every root-`tests/` row the audit flags
+      `SEQUENTIAL [GATES]` — 38 files, 36 cargo targets — was RUN in release at
+      its own `required-features`, and its printed value read next to its bar.
+      **3 are candidates**; every other row was rejected on measured SLACK,
+      most of them by an order of magnitude (`channel_simd_goat` G5 measures
+      **84.3%** against a 5% bar, `bench_turboquant` large_kv **0.244** against
+      1.05). A `gates=True` count is a count of *targets with a verdict*, and
+      the backlog is the count of *verdicts the box can flip* — a strictly
+      smaller thing that no static pass can reach.
+      - The threshold is this file's own two numbers, neither previously used
+        as one: **±21.7%** (Issue 723 T5, two sequential arms of identical work
+        on a loaded box) and **±6%** (833's idle per-round spread). `< 6` pts
+        flakes idle · `6–22` flakes under the load the matrix runs at · `≥ 22`
+        is out of reach.
+      - ⚠ **Bar points alone are insufficient for an OVERHEAD bar** — what
+        matters is whether the measured SIGNAL stands above the envelope.
+        `bench_176` is a candidate at 13.3 points (a 0.07 µs overhead on a
+        1.09 µs baseline) and `bench_249` is not at 34%.
+      - ⛔ The run also found **two classes it was not looking for**, both
+        filed apart so the counts stay unpooled: **Issue 855** (a latency
+        ceiling satisfied by a loop the optimiser DELETED — `0.0 ns/op` over
+        100 000 iterations asserted `< 10 000`, which *cannot* flip and needs
+        the opposite repair) and **Issue 856** (`#[cfg(feature)] mod tests {}`
+        zeroing a target invisibly to `cfg_gated_target_audit`). Two targets
+        carry 833's class AND 855's.
+      - **Take the backlog from a RUN, never from a proxy in this file** — the
+        figure in this bullet has now been wrong twice in the same direction,
+        and both times the correction came from measuring rather than from a
+        better predicate.
   - ⚠ A **lower bound**, deliberately: a target can also fail by returning
     `Err`, by `process::exit`, or through a helper this pass cannot follow. So
     `report` ORDERS a read rather than deciding it — it must not be read as
