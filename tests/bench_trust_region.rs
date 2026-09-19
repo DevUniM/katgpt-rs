@@ -5,6 +5,12 @@
 //! 2. Binary search for β: 10 iterations over KL computation
 //! 3. Overall trust region state overhead
 
+// Issue 855: the load-invariant timing treatment. `best_of_us` panics on an
+// all-zero reading instead of letting a ceiling be satisfied by a loop the
+// optimiser deleted.
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 mod benches {
     use katgpt_rs::speculative::{
         TrustArm, TrustRegionConfig, TrustRegionState, TrustTracker, adaptive_window, blend_sample,
@@ -88,15 +94,31 @@ mod benches {
     fn bench_adaptive_window_trivial() {
         let config = TrustRegionConfig::default();
 
-        let start = Instant::now();
-        for i in 0..1_000_000 {
-            let trust = (i as f32 % 100.0) / 100.0;
-            let _ = adaptive_window(trust, 5, &config);
-        }
-        let elapsed = start.elapsed();
-        let per_call_ns = elapsed.as_nanos() as f64 / 1_000_000.0;
+        // Issue 855: the previous loop was `let _ = adaptive_window(..)` over
+        // 1_000_000 iterations with the result discarded. rustc deleted it,
+        // `per_call_ns` read **0.0**, and the < 100 ns ceiling passed with
+        // maximum margin on work that never ran. `best_of_us` FAILS loudly on
+        // an all-zero reading; the window is accumulated into a sink consumed
+        // through `black_box`. The bar below is unchanged.
+        const ROUNDS: usize = 10;
+        const ITERS: usize = 100_000;
 
-        eprintln!("adaptive_window: {per_call_ns:.1} ns/call");
+        let best_us = crate::ab_timing::best_of_us(2, ROUNDS, || {
+            let mut sink = 0usize;
+            let t0 = Instant::now();
+            for i in 0..ITERS {
+                let trust = (i as f32 % 100.0) / 100.0;
+                sink += adaptive_window(trust, 5, &config);
+            }
+            let e = t0.elapsed();
+            std::hint::black_box(sink);
+            e
+        });
+        let per_call_ns = best_us * 1000.0 / ITERS as f64;
+
+        eprintln!(
+            "adaptive_window: {ROUNDS} samples × {ITERS} iters, best {best_us:.1} µs — {per_call_ns:.1} ns/call"
+        );
         assert!(
             per_call_ns < 100.0,
             "adaptive_window too slow: {per_call_ns:.1} ns/call"

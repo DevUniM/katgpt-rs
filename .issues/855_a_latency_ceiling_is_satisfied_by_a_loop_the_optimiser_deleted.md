@@ -1,6 +1,6 @@
 # Issue 855: a latency ceiling is satisfied by a loop the optimiser DELETED — `0 ns/op` over 100 000 iterations, asserted `< 10 000 ns`, PASS
 
-**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged); T3–T5 open.
+**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 counted and the ten static candidates MEASURED** (3 VANISHED, 7 SURVIVED, 0 UNMEASURED; the 3 repaired and re-run, every bar unchanged); T4–T5 open.
 **Found by:** Issue 833 T2's per-target read, 2026-09-19. Not by a census, and
 not by anything failing — by **reading the printed values next to the bars**,
 which is the one thing 833 T2 refuses to skip.
@@ -137,7 +137,7 @@ read by a human as a result. It is a division by a deleted loop.
         `posterior_evolution,mux_latent_context`) — never `--all-features`.
         `cargo clippy --release` clean on all three targets; both touched files
         were rustfmt-clean at HEAD and still are.
-- [ ] **T3 — the RUNTIME detector is exact and nearly free, and it is the one
+- [x] **T3 — the RUNTIME detector is exact and nearly free, and it is the one
       worth having.** A timed region that measures **0 ns over n ≥ 1000
       iterations** is an instrument failure with no false-positive story on any
       box this workspace runs: the timer's own resolution cannot produce a
@@ -146,6 +146,122 @@ read by a human as a result. It is a division by a deleted loop.
       **measurement, not by symmetry**: how many hand-rolled timed regions in
       tracked `tests/` + `benches/` carry NO such assertion? Count before
       proposing anything.
+
+      ### T3 answer — the count, then the ten it ordered
+
+      Counted over tracked `tests/` + `benches/`, 2026-09-19:
+      **609 hand-rolled timed regions · 41 guarded · 568 UNGUARDED.** Of the
+      568, **60 loop ≥ 1000 iterations** (below that a 0 ns reading is not
+      yet evidence — the premise this task rests on), **34 of those 60
+      ASSERT something**, and **10 of the 34** carry `let _ =` with no
+      `black_box`, i.e. Issue 855's exact measured spelling.
+
+      So the answer to the question as asked is **568**, and the answer to
+      the question worth acting on — *unguarded, asserting, and at a bound
+      where a zero means something* — is **34**.
+
+      ### The ten candidates, RUN (release, per-target `required-features`, never `--all-features`)
+
+      ⛔ **The spelling is a candidate, never a finding** — the T1 note on
+      `bench_252` already measured that. **7 of the 10 SURVIVED**, which is a
+      70% false-positive rate for the static spelling and is the whole
+      argument against reading T4's grep as a verdict.
+
+      | # | target :: fn | bound | printed | asserted | verdict |
+      |---|---|---|---|---|---|
+      | 1 | `bench_164_gepa_reflective_goat` :: `..._proof` | 1000 | `1000 inserts in 30.708µs`, `0.030 µs` avg; Proof 1 `3.3 ns/call (10000 calls in 33.167µs)` | `avg ≤ 1µs`, `overhead_pct ≤ 10.0` | **SURVIVED** |
+      | 2 | `bench_250_breakeven_goat` :: `t1_overhead_per_forward` | 1000 (warmup) / 10 000 (timed) | `81.542µs total`, `8.2 ns/call` | `ns_per_call < 100.0` | **SURVIVED** |
+      | 3 | `bench_272_progressive_mcgs_goat` :: `g4b_latency_pick_mode_under_1us` | 100 000 | **`0.0 ns`** | `per_call_ns < 1000.0` | ⛔ **VANISHED** |
+      | 4 | `bench_274_cgsp_goat` :: `g4_per_cycle_overhead` | 100 000 | `71.588166ms total`, `715.9 ns/cycle` | `ns_per_cycle ≤ 1000.0` | **SURVIVED** |
+      | 5 | `bench_trust_region` :: `bench_adaptive_window_trivial` | 1 000 000 | **`0.0 ns/call`** | `per_call_ns < 100.0` | ⛔ **VANISHED** |
+      | 6 | `bench_trust_region` :: `bench_trust_arm_roundtrip` | 100 000 | `17.0 ns/call` | `per_call_ns < 500.0` | **SURVIVED** |
+      | 7 | `bench_trust_region` :: `goat_trust_region_overhead_acceptable` | 1000 | `0.20 μs/token` | `per_token_us < 100.0` | **SURVIVED** |
+      | 8 | `goat_234_manifold_pruner` :: `g9_kernel_score_simd_vs_scalar_benchmark` | 100 000 | `Scalar 11.791167ms`, `SIMD 2.084584ms`, `Ratio 5.66x` | `(s - si).abs() < 1e-4` (not a timing bar) | **SURVIVED** |
+      | 9 | `pipeline_pruner_goat` :: `test_pipeline_latency_no_regression` | 100 000 | `43ns per query` | `ns < 10_000.0` | **SURVIVED** |
+      | 10 | `test_wealth_bandit` :: `test_goat_g1_relevance_overhead` | 100 000 | `WealthPruner **42ns**` (for 100 000 iters) vs `BanditPruner 690.458µs` → `overhead = 0.00x` | `overhead < 3.0` | ⛔ **VANISHED** |
+
+      - ⚑ **Row 10 is the `bench_239` shape again, and it is the worst of the
+        three**: only the NUMERATOR vanished, so the gate printed a
+        well-formed `0.00x` rather than a zero, and `0.00 < 3.0` passed with
+        maximum margin. Nothing in that line reads as broken.
+      - ⚠ **Row 8's `let _ =` is in the WARMUP only** — both timed loops
+        accumulate into `scalar_result` / `simd_result`, which an assertion
+        consumes. A static pass that does not distinguish the warmup from the
+        timed region reports it; it was never a candidate.
+      - Row 1's two relevance arms print an equal `3.3 ns/call` and `+0.3%`.
+        That is Issues 833/834's class (a SEQUENTIAL A/B), **not** this one,
+        and is deliberately not folded in.
+
+      ### The 4× scaling probe — the only thing that separates *fast* from *partly deleted*
+
+      Four SURVIVED rows printed small figures, so each had its loop bound
+      multiplied by 4 and its WALL time read. A deleted loop does not scale
+      with its bound. Every source file was restored byte-identically
+      afterwards (`git diff --quiet`, verified).
+
+      | row | 1× | 4× | scaling |
+      |---|---|---|---|
+      | 1 `bench_164` Proof 1 (reflective) | `33.167µs` | `184.208µs` | **5.55×** |
+      | 1 `bench_164` Proof 1 (baseline) | `33.083µs` | `145.042µs` | **4.38×** |
+      | 2 `bench_250` | `81.542µs` | `328.75µs` | **4.03×** |
+      | 9 `pipeline_pruner_goat` | `43 ns/query` | `173 ns/query` (divisor held) | **4.02×** |
+      | 6 `bench_trust_region` roundtrip | `17.0 ns/call` | `64.7 ns/call` (divisor held) | **3.81×** |
+
+      Over-scaling on row 1 is the box, not the instrument — see the box
+      state below. All five scale; none is partly eliminated.
+
+      ### The three repairs — every bar byte-identical
+
+      | target :: test | before | after | 4× probe |
+      |---|---|---|---|
+      | `bench_272` :: `g4b_latency_pick_mode_under_1us` | `0.0 ns` over 100 000 iters | `best_of_us`, `10 × 10 000`, best **7.2 µs** — **0.7 ns/call** | `7.2 → 31.5 µs` = **4.38×** |
+      | `bench_trust_region` :: `bench_adaptive_window_trivial` | `0.0 ns/call` over 1 000 000 iters | `best_of_us`, `10 × 100 000`, best **954.5 µs** — **9.5 ns/call** | `954.5 → 4489.7 µs` = **4.70×** |
+      | `test_wealth_bandit` :: `test_goat_g1_relevance_overhead` | wealth arm `42ns`/100 000 iters → `overhead 0.00x` | `ab_median_ratio`, `11 × 10 000`, a **7.8**, b **0.8 ns/iter**, **11 of 11 rounds survived** → `overhead 0.11x` | per-iter FLAT at 7.7 / 0.8 across 4× |
+
+      - Harness per the T2 treatment rule: `best_of_us` for the two ONE-ARM
+        absolute ceilings, `ab_median_ratio` for the one A/B ratio (with
+        `a` = BanditPruner denominator and `b` = WealthPruner numerator, so
+        `median` IS the `wp/bp` quantity the bar has always read).
+      - Every sink is consumed through `std::hint::black_box`. Bars
+        `per_call_ns < 1000.0`, `per_call_ns < 100.0` and `overhead < 3.0`
+        are **unchanged**; the message strings are unchanged.
+      - Total timed iterations preserved or raised (100 000 → 100 000;
+        1 000 000 → 1 000 000; 100 000 → 110 000 per arm).
+      - Verified: `CARGO_TARGET_DIR=/tmp/i855t3 cargo test --release` per
+        target at its own features (`progressive_mcgs`; default;
+        `wealth_pruner`) — never `--all-features`. Full-target counts
+        unchanged: **7 / 6 / 11 passed**. `cargo clippy --release` adds no
+        finding (`bench_272`'s `assert_alloc_tracking_live` dead-code warning
+        is present at HEAD too). `bench_trust_region` and `test_wealth_bandit`
+        were rustfmt-clean at HEAD and still are; `bench_272`'s rustfmt
+        complaint count is unchanged.
+
+      ### ⛔ Two green zeros, found on the way and not folded in
+
+      - `cargo test --test bench_250_breakeven_goat -- --exact
+        t1_overhead_per_forward` reports **`running 0 tests`, exit 0** — the
+        whole file is `#[cfg(test)] #[cfg(feature = "breakeven_routing")] mod
+        tests`, so the test's real name is `tests::t1_overhead_per_forward`.
+        That is **Issue 856's** class (a `#[cfg] mod` the audit cannot see),
+        met live. It is why the row-2 measurement above was taken twice.
+      - Row 8 asserts a CORRECTNESS equality and no timing bar at all, so it
+        can never fail on the box — 833 T3's "SEQUENTIAL, asserts nothing
+        about time" bucket. Not a defect; not a candidate.
+
+      ### Box state (§Feature Flag Discipline)
+
+      - **Screening runs (rows 1–10, first pass):** M3 Max, 68.7 GB physical,
+        load averages **43.05 / 36.47 / 28.04**, a sibling session's `rustc`
+        at 99% CPU, ~1.46 GB free. A **screening** class — adequate for a
+        ZERO, which no load can manufacture, and NOT adequate for
+        adjudicating slack on any of the SURVIVED bars.
+      - **Repairs + 4× probes:** load averages **6.04 / 12.22 / 18.55**,
+        2.38 GB free + 25.97 GB inactive, swap 8.70 of 10.24 GB used, no
+        concurrent cargo. Still not a quiet box; the 5.55× and 4.70×
+        readings are that, and they are reported as ranges rather than
+        constants for exactly that reason.
+      - Dedicated `CARGO_TARGET_DIR=/tmp/i855t3` throughout, so no shared
+        target-dir contention with sibling sessions.
 - [ ] **T4 — the STATIC detector is tempting and is the weaker instrument;
       decide deliberately.** `let _ = f(…)` inside a timed region with no
       `black_box` is greppable, and `bench_252` above is the measured
