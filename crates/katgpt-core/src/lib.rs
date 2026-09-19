@@ -3305,3 +3305,9 @@ pub mod calibration_staleness;
 /// justifies skipping. Opt-in (`legal_token_set`).
 #[cfg(feature = "legal_token_set")]
 pub mod legal_token_set;
+
+/// Permanent attention sinks + a bounded KV window (Issue 841) — a
+/// deterministic RAM ceiling for decode. Composes with `kv_eviction`'s
+/// selector rather than replacing it. Opt-in (`kv_sink_window`).
+#[cfg(feature = "kv_sink_window")]
+pub mod kv_sink_window;
