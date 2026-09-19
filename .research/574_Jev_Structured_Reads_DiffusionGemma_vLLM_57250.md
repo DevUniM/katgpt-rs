@@ -136,3 +136,48 @@ entropy over the normalized LABEL SUBSET (§5, the reviewer's-nit correction). T
 re-reads ×4 at H1 > 0.1 — the exact threshold family T5 meant to measure; their sample outputs
 (`urgent=0.88±0.04`, reads=1 vs 4) are the comparison shape. Their `logprob_token_ids` cap is 128
 ids — our MAX_LABELS=64 sits inside the reference envelope.
+
+---
+
+## 8. T1 EXECUTED: the 4090 reference cell (2026-09-20, the yielded-to session)
+
+Build path: python-only overlay of the PR head `ceb8eebf` onto `vllm/vllm-openai:nightly` (image
+`sr859-overlay:ceb8eebf`, built from a tarball clone — fresher than §7's openjev pin `d2c2b54`;
+the PR is 100% Python, 18 files, no C++/CUDA, so overlaying the fork's `vllm/` tree over the
+image's site-packages keeps the nightly's compiled kernels and skips every build path in §7).
+Serving: canvas 32, TRITON_ATTN, `--max-num-seqs 16 --max-model-len 2048 --max-num-batched-tokens
+512 --gpu-memory-utilization 0.92 --enforce-eager --limit-mm-per-prompt '{"image":0,"video":0}'`,
+sync scheduler, **bf16**. The interposer: the PR's own `structured_server.py` in-container.
+Corpora client + results.json: `E:/vllm-859/` (restorable stack: overlay image + hf-cache + fork).
+
+**Two empirical corrections to §7's risk profile:**
+1. **The SM89 marlin bf16 garble did NOT fire** — clean outputs across all 32 corpus items + the
+   smoke cell (bf16 kept; no float16 fallback needed).
+2. **The quant fits a 24 GB WDDM card WITH a resident GUI** once the mm **video profiler is
+   zeroed**: that profiler ("1 video items of the maximum feature size", `encoder_runner.py:131`)
+   reserves ~4.4 GiB — with it live, KV = **−0.49 GiB at every knob combination tried** (util
+   0.90→0.95, eager, seqs 32→8, batched 2048→512, async on/off moved the deficit only −0.62→−0.49);
+   with `video=0`+`image=0` the model serves. Weights 18.15 GiB; the free ceiling beside a
+   resident GUI is 22.45/23.99 GiB, capping usable utilization at ~0.92.
+
+**Intel cells (NOT league evidence — different model class + silicon + degraded config; the
+config deltas vs the PR's DGX run: eager, sync scheduler, seqs 16 — all forced by the above):**
+
+| Cell (ours, 4090) | Result | PR's DGX Spark |
+|---|---|---|
+| smoke (the PR's outage ticket, same prompt) | urgent=yes **0.881±0.042** · bucket=outage **0.9986** · tone=**furious 3.00** · reads=4 | 0.88±0.04 · 1.00 · furious 3.00 · reads=4 |
+| programming-language | **10/10** | 10/10 |
+| human-language | **10/10** (own items, same protocol) | 9/10 |
+| unit-comparison | 7/12 raw → **9/12 corrected** (2 "misses" were this author's mislabeled items — 130 min > 2 h, 5 km > 3 mi, the model right both times; the 3 true misses: 1 lb vs 500 g, 5000 MB vs 4 GB, 1 yd vs 1 m, all p(want) ≤ 0.44) | 10/12 |
+| throughput 1-way | **5.2 req/s @ 193 ms** | 8.7 req/s @ 0.12 s |
+| throughput 8/16-way | **14.3 @ 70 ms / 20.8 @ 48 ms** | 54.0 @ 0.58 s (32-way) |
+
+Protocol conclusions that transfer: the auto re-read policy fires reads=4 exactly where H1 > 0.1
+(temperature-1 logprobs, p(want) ± stderr + agreement as first-class outputs); the weak class is
+**unit conversion** in both runs — their 2 misses and our 3 are the same class. The corpus items
+are self-authored mirrors (same protocol/shape as the PR's, different items — no strict parity
+claim; the smoke cell is the same-prompt anchor and it matches within noise).
+
+**T5 unblock:** the accuracy axis now exists on our silicon — §6's `sample_label_index` has both
+a reference protocol to mirror (the auto policy above) and the corpora ground truth to measure
+against; the trained-fixture path (`micro_dllm_text`) remains the in-crate alternative.
