@@ -12,10 +12,9 @@ one was not.
 
 **Status:** OPEN — and INTERMITTENT: observed twice on 2026-09-19 (shikuwa)
 on the plain `scripts/arm_reach_gate.py` run over the CHECKS population, with a
-third run of the same population completing clean in 1068.9s. T1, T2 and T5 are answered
-(T1 gave it a progress channel that survives the fd suppression; the census
-refuted T2's proposed gate; T5 wired the classifier self-test in);
-T3, T4, T6 open.
+third run of the same population completing clean in 1068.9s. T1, T2, T4 and T5 are answered — and THREE of the four resolved by
+refuting the task's own proposal, which is what a measurement is for.
+T3 (blocked on T1 OBSERVING a stall, not on T1 existing) and T6 are open.
 
 Found while doing something else — the run was started to pin survivors after
 Issue 847/848 landed, and never returned.
@@ -139,6 +138,35 @@ separately and never as arm reach (the gate's own rule), but they are also
 the harness has never been able to read. Not this issue's subject; recorded
 here because the next person to look at the runtime will find them first.
 
+## Telling SLOW from WEDGED — the recipe, because the progress line alone cannot
+
+T1's per-module line says WHERE the run is. It does not say whether the run
+is stuck, and the first use of it made that obvious: `dual_allocation_gate`
+held the line for several minutes at **6% of one core**, which looks exactly
+like the 3% of a real stall. It was not stuck — that module's arms build
+two-repo git fixtures (clone × 2, push, fetch) once per mutant, so the parent
+is legitimately idle waiting on children that complete.
+
+⛔ **The discriminator is whether the git CHILD PID changes**, not the CPU
+figure:
+
+```bash
+tail -1 <progress-file>                     # WHICH module
+Get-Process -Id <py> | Select CPU            # sample twice, ~20s apart
+Get-CimInstance Win32_Process -Filter "Name='git.exe'"   # sample twice
+```
+
+- child pid **changes** + CPU creeping → SLOW. Wait.
+- child pid **identical** across samples + CPU flat → WEDGED. Kill the CHILD
+  (measured: the parent resumes) and RESTART the run rather than nursing it,
+  because a straddling run's report describes no single tree (T6).
+
+⚠ This is the `PASSED-ALONE` lesson from AGENTS.md's x86_64 matrix, one
+instrument over: a label that asserts a CAUSE the instrument cannot observe
+gets it wrong, and the fix is to name the OBSERVATION and print the
+disambiguating check where the reader decides. Both states produce "a module
+line that has not moved".
+
 ## What is NOT known
 
 - **WHICH git call.** The module is `dual_allocation_gate` and the function is
@@ -247,14 +275,43 @@ here because the next person to look at the runtime will find them first.
       sites, so the mutant's ENVIRONMENT is the only layer that governs every
       git child at once.
 
-- [ ] **T4 — Does the gate need a WALL bound of its own?** The audit bounds a
-      MUTANT (derived from the module's own baseline, 10x floored at 30s). The
-      gate has no bound on the whole run, so an unbounded child is unbounded
-      end to end. ⚠ Answer with the same discipline Issue 850 T2 used: the
-      honest alternative may be that a workstation verdict does not need a wall
-      bound at all, because a human is watching it — in which case the repair
-      is the stderr progress line (T1) and nothing else. **Do not add a
-      timeout by symmetry.**
+- [x] **T4 — ANSWERED: NO in-process wall bound. It would have the
+      watchdog's defect BY CONSTRUCTION, which is the one thing this issue
+      already knows.**
+
+      The task warned against adding a timeout by symmetry and offered the
+      honest alternative that a workstation verdict a human starts may need
+      no bound at all. The argument that settles it is stronger than either:
+
+      ⛔ **A wall bound implemented in-process is the SAME mechanism that
+      already fails here.** Python has no portable way to interrupt a thread
+      blocked in a C call; `_deadline` is a `threading.Timer` plus
+      `_thread.interrupt_main()` precisely because `SIGALRM` is POSIX-only
+      and this workstation is Windows, and its own docstring states it
+      "reaches a pure-Python loop and does NOT reach a blocking C call". A
+      module-level or run-level timer is that same construction one scope up.
+      It would fire reliably on every case that is **not** this bug and stay
+      undeliverable on the one that is.
+
+      So the proposal cannot fix what it aims at. The only bound that WOULD
+      is **external** — a real process with a real kill — and that already
+      exists as documented practice: AGENTS.md's *"run it MODULE BY MODULE
+      with a wall timeout, not as one invocation"*, priced at ~2400
+      interpreter starts for `--include-all` and measured at 10.28s vs 7.52s
+      for the per-module subprocess variant. Nothing new is owed.
+
+      ⚠ **And a bound would be arbitrary even if it worked.** The legitimate
+      duration is **1069s** and moves with the CHECKS population, which grew
+      from 22 modules to 33 in a fortnight. A number chosen today reds on a
+      population that has merely grown — the cries-wolf instrument this repo
+      names, on the one gate that already costs seventeen minutes to run.
+
+      **T1 is the repair.** What was missing was not a bound but the ability
+      to SEE where the run is, and a stalled run is now one `tail` away from
+      naming its module — after which a human kills the git child (measured:
+      that resumes the run) or re-runs that module alone. ⚠ Read the honesty
+      of this: it makes the failure cheap to diagnose, and does not prevent
+      it. T3 is the candidate that might.
 
 - [x] **T5 — DONE. The gate did not run its classifier's self-test at all,
       and three sibling gates already do.**
