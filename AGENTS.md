@@ -2207,6 +2207,30 @@ count is what the bucket note above forbids.
   workstation verdict, the same standing as the eleven drift sweeps. There is also deliberately **no `--prove-fires`** — the
   known-answer validation would be a full mutation run over a `git archive`d
   tree to re-derive a fact the issue already records.
+- ⛔ **That 157.6s is STALE by more than an order of magnitude, and the
+  consequence is operational rather than cosmetic** (measured 2026-09-19, at
+  **33** CHECKS). Two runs were started in the working tree and each passed
+  **77 minutes of CPU without finishing** — ≥29x the figure above, on a box at
+  loadavg 4 with the process at 100% the whole time, so this is cost and not a
+  wedge. Write the **CHECKS count beside the number**, exactly as the docs-gate
+  CPU paragraph requires: the population is the CHECKS set plus this file, and
+  the CHECKS set has grown from ~21 to 33 since that measurement.
+  - ⛔ **At that duration the gate cannot be run in a tree somebody is
+    working in, and this was learned by breaking it TWICE in one session.**
+    Its population is `scripts/*.py`; it re-reads each module per mutant; so
+    an edit to any CHECK while it runs means it may have read a half-written
+    file and its verdict is void. Both runs were killed rather than trusted —
+    the second after a commit that touched `timed_region_guard_gate.py`, i.e.
+    the same mistake with the lesson already in hand. **A 77-minute read-only
+    pass over the directory a session is editing is not compatible with that
+    session**, and no amount of care fixes it: the window is longer than any
+    realistic quiet period.
+  - ✅ **Run it in a DETACHED worktree** — `git worktree add --detach /tmp/x
+    <sha>` — so live edits provably cannot race it and the verdict names a
+    commit. ⚠ Use `--detach`, never `worktree add -f <branch>`: that shares
+    the ref, and a commit in either worktree then moves the other's HEAD.
+  - ⚠ Kill it by **PID**, never by pattern: `pkill -f arm_reach_gate` reaches
+    a sibling session's run on this box.
 - ⚠ **Unlike Issue 789's, this class DOES generalise and a sweep half is
   owed.** 789 measured its population at ONE (katgpt-rs is the only repo with
   a CHECKS array) and declined a sweep on that measurement. Re-measured here
