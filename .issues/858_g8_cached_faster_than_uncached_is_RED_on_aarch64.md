@@ -1,10 +1,14 @@
 # Issue 858 — `g8_cached_faster_than_uncached` is RED on `develop`, reproducibly, and nothing automatic looks
 
-**Status:** OPEN — measured 2026-09-19. **5 of 5 runs ALONE fail** on this box
-with a tight spread; every PASSED-ALONE class is excluded. Not a flake.
-**Found by:** Issue 855 T6's SILENT bucket, sideways — adding a `println!` to
-two *neighbouring* arms in `tests/belief_drafter_goat.rs` meant running the
-whole target, and the target was already red.
+**Status:** OPEN on T3 only (owner call about lanes) — **T1+T2 RESOLVED 2026-09-19
+on the 4090/x86_64 box**: the x86_64 reading CONFIRMS the arch hypothesis
+(both x86_64 configs hold the 0.5 bar; aarch64's 0.68–0.71 is a genuine ISA
+gap, ~6× the run spread on both boxes) and the bar is now an arch-conditional
+dual pin (aarch64 0.75 / everything else 0.5), each arch's measured value
+named at the line. Not a cache regression. **Found by:** Issue 855 T6's
+SILENT bucket, sideways — adding a `println!` to two *neighbouring* arms in
+`tests/belief_drafter_goat.rs` meant running the whole target, and the target
+was already red.
 
 ## The measurement
 
@@ -82,17 +86,65 @@ exactly what this workspace's instrument map predicts will go unnoticed.
 
 ## Tasks
 
-- [ ] **T1 — take an x86_64 reading** of the same five runs. That decides
+- [x] **T1 — take an x86_64 reading** of the same five runs. That decides
       between arch-conditional calibration and a real cache regression, and no
       amount of re-running on aarch64 can.
-- [ ] **T2 — resolve by the arch-conditional dual-pin precedent** (Bench 806
+      **DONE 2026-09-19, 4090 box (i7-13700K, Windows, sibling riir-ai build+
+test running concurrently — recorded per the box-state rule). BOTH x86_64
+configurations measured, default features, `--release`, `--exact`:**
+
+| config | run | median | per-round range | a = MLP fwd | b = cache get |
+|---|---|---|---|---|---|
+| +avx2 (matrix-lane cfg) | 1 | 0.4566 | 0.3695..0.5648 | 337.7 | 155.2 |
+| +avx2 | 2 | 0.4697 | 0.4366..0.5796 | 325.0 | 153.3 |
+| +avx2 | 3 | 0.4523 | 0.3766..0.5376 | 346.5 | 154.2 |
+| +avx2 | 4 | 0.4575 | 0.3972..0.4891 | 329.0 | 149.3 |
+| +avx2 | 5 | 0.4574 | 0.4145..0.6647 | 327.4 | 154.9 |
+| +avx2 (post-T2-edit reruns) | 6–7 | 0.4579 / 0.4712 | .. | 340.5 / 321.8 | 153.7 / 151.6 |
+| plain (no RUSTFLAGS) | 1 | 0.3973 | 0.3439..0.4408 | 369.5 | 145.3 |
+| plain | 2 | 0.3896 | 0.3579..0.4533 | 348.2 | 136.7 |
+| plain | 3 | 0.3923 | 0.3483..0.5827 | 357.7 | 141.2 |
+| plain | 4 | 0.3955 | 0.3298..0.4859 | 355.2 | 140.9 |
+| plain | 5 | 0.3959 | 0.3671..0.4203 | 361.6 | 141.9 |
+| plain (post-T2-edit rerun) | 6 | 0.3947 | 0.3633..0.4870 | 359.6 | 145.7 |
+
+**Verdict: 13/13 x86_64 runs PASS.** +avx2 median band 0.4523–0.4712 (4.2%
+spread — same spread class as the M3's 3.9%); plain band 0.3896–0.3973.
+The arch gap (x86_64 ~0.39–0.47 vs aarch64 0.68–0.71) is ~0.23 — ~6× the
+run-to-run spread on both boxes. **Arch hypothesis CONFIRMED; cache
+regression REFUTED** (b ≈ 137–155 ns across all x86_64 runs, consistent
+with the `dd8dadbba` b=141.7).
+
+⚠ Two honest observations for the record: (1) the `dd8dadbba` calibration
+band (0.3975–0.4086, a=360.3, b=141.7) matches today's **plain** build
+almost exactly, while today's **+avx2** build reads ~0.06 higher with a
+~10% faster / b ~8% slower — i.e. the flag's codegen shifts the arms'
+absolute costs and the ratio; both configs hold the bar, so the claim
+stands either way, but the calibration's attribution to "cell 8
+(release + avx2)" may actually describe a plain-build reading. (2) The
++avx2 config's headroom under sibling-build load is 2.9–4.8 points — a
+future red there is a BOX-CONDITIONS question first (re-run alone per the
+Bench 806 T7 discipline) before any regression reading.
+- [x] **T2 — resolve by the arch-conditional dual-pin precedent** (Bench 806
       Addendum II) if T1 confirms, naming each arch's measured value at the
       line. If T1 refutes it, the finding is a **cache-lookup regression** and
       the bar is right.
+      **DONE 2026-09-19**: `tests/belief_drafter_goat.rs` g8 now pins
+      `G8_BAR` — aarch64 0.75 (the M3's worst median 0.7111 + ~5% headroom,
+      mirroring the x86_64 bar's own headroom over 0.4712); every other arch
+      keeps the strict 0.5 claim (an unmeasured arch must meet the stated
+      claim or red loudly — that red is information, exactly how this issue
+      was found — never silently inherit the relaxed bar). Both x86_64
+configs re-run green post-edit (12/12 target tests, clippy clean).
+      The claim itself did NOT move on x86_64 — this is the sanctioned
+dual-pin form, not the forbidden silent global 0.75.
 - [ ] **T3 — the gap itself is the standing finding.** A target whose repair
       was calibrated on the arch that no *executing* lane covers, in a repo
       whose only executing lane is suspended, is unknown rather than green.
-      That is an owner call about lanes, not a code fix.
+      That is an owner call about lanes, not a code fix. (T1 sharpened it:
+      the M3 red existed for one day and was found by accident; the
+      suspended `test_gate.sh` schedule is the only executing lane either
+      arch has.)
 
 ## What is NOT the finding
 
