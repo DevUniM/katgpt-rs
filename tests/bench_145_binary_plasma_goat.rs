@@ -11,6 +11,9 @@
 //! G5 (modelless): quantization is PTQ (no training) — structural, verified
 //!     by reading BinaryWeights::quantize_from_f32 (deterministic, no gradient).
 
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 use katgpt_core::{
     BinaryWeights, TernaryWeights, binary_matvec_scalar, simd_binary_matvec, simd_ternary_matvec,
 };
@@ -137,30 +140,43 @@ fn g2_latency_binary_vs_ternary_1024() {
     let bw = BinaryWeights::from_ternary_no_zeros(&tw).expect("no zeros");
     let x = make_random_f32(cols, 99);
 
-    let mut y = vec![0.0f32; rows];
+    // ⛔ This was two SEQUENTIAL 500-iteration arms compared at `>= 1.2`, and
+    // the measured value is 1.22× — **1.7% of relative slack on a GATE A
+    // PROMOTION DECISION** ("if this fails, binary does NOT become the new
+    // plasma tier; ternary stays"). Issue 723 T5 measured +5.2% and +21.7%
+    // between two sequential arms of the SAME work thirty seconds apart, so
+    // the noise envelope here was an order of magnitude wider than the margin:
+    // this gate's verdict was the BOX's to decide, not the primitive's.
+    //
+    // `ab_median_ratio` interleaves — adjacent chunks share a load window, so
+    // a drift that moves both arms cancels in the ratio instead of landing
+    // entirely on whichever arm happened to run second — takes the median
+    // across pairs rather than one sample, and fails LOUDLY on a vanished arm.
+    //
+    // a = binary (the candidate tier), b = ternary (the incumbent), so
+    // `ratio = b/a = ternary/binary` IS the speedup this gate already asserts.
+    // The 1.2× bar is carried over UNCHANGED: the bar was never what was wrong
+    // (Issue 833's own rule — the instrument was).
+    //
+    // Separate output buffers per arm so neither can be blamed for the other's
+    // cache state; `simd_*_matvec` writes all of `y`, so the sink is consumed
+    // by construction and no `black_box` is needed to keep the work alive.
+    let mut y_bin = vec![0.0f32; rows];
+    let mut y_ter = vec![0.0f32; rows];
 
-    // Warmup
-    for _ in 0..50 {
-        simd_ternary_matvec(&tw, &x, &mut y);
-        simd_binary_matvec(&bw, &x, &mut y);
-    }
+    let ab = ab_timing::ab_median_ratio(
+        21,
+        500,
+        50,
+        |_| simd_binary_matvec(&bw, &x, &mut y_bin),
+        |_| simd_ternary_matvec(&tw, &x, &mut y_ter),
+    );
 
-    // Ternary timing
-    let iters = 500;
-    let t0 = std::time::Instant::now();
-    for _ in 0..iters {
-        simd_ternary_matvec(&tw, &x, &mut y);
-    }
-    let ternary_ns = t0.elapsed().as_nanos() as f64 / iters as f64;
+    let binary_ns = ab.a_ns_per_iter();
+    let ternary_ns = ab.b_ns_per_iter();
+    let speedup = ab.median;
 
-    // Binary timing
-    let t1 = std::time::Instant::now();
-    for _ in 0..iters {
-        simd_binary_matvec(&bw, &x, &mut y);
-    }
-    let binary_ns = t1.elapsed().as_nanos() as f64 / iters as f64;
-
-    let speedup = ternary_ns / binary_ns;
+    ab.report("G2 ternary/binary");
     println!(
         "G2 latency 1024×1024: ternary={ternary_ns:.0}ns binary={binary_ns:.0}ns speedup={speedup:.2}×"
     );

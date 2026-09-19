@@ -17,7 +17,11 @@
 
 #![cfg(feature = "posterior_evolution")]
 
+use std::hint::black_box;
 use std::time::Instant;
+
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
 
 use katgpt_core::traits::{NoScreeningPruner, ScreeningPruner};
 use katgpt_rs::pruners::bandit::{BanditPruner, BanditStrategy};
@@ -220,37 +224,50 @@ fn g5_hot_path_overhead() {
     let evidence_elapsed = start.elapsed();
     let evidence_ns = evidence_elapsed.as_nanos() as f64 / n_iters as f64;
 
-    // Benchmark: relevance (ScreeningPruner) overhead vs bare NoScreeningPruner
+    // Benchmark: relevance (ScreeningPruner) overhead vs bare NoScreeningPruner.
+    //
+    // ⛔ This arm pair used to be two SEQUENTIAL `let _ = f()` loops and the
+    // baseline one did not exist. `NoScreeningPruner::relevance` returns the
+    // constant `1.0` and ignores every argument, so under `-C lto=fat` the
+    // whole 10_000-iteration loop was dead code: the release run measured
+    // `relevance (bare): 0.0 ns/call` and printed `overhead ... (inf%)`, while
+    // `overhead_ns = posterior - 0.0` made this gate assert the posterior
+    // path's ABSOLUTE cost under the name "overhead". It passed, because
+    // 11.8 < 1000. That is Issue 723's Class A2 (`let _ = f()` reads ~0 for
+    // work a direct consuming call measures at 16.6 µs) reached by a gate
+    // whose whole subject is the difference between two arms.
+    //
+    // `ab_median_ratio` is the treatment on both counts: it CONSUMES each
+    // arm's result through `black_box`, it interleaves so a load excursion
+    // cancels in the ratio instead of landing on whichever arm ran second,
+    // and an all-zero arm is a named instrument FAILURE rather than a verdict.
+    // a = bare (baseline), b = posterior (candidate), so `ratio = b/a`.
     let bare = NoScreeningPruner;
-    let n_rel = 10_000;
+    let empty: &[usize] = &[];
+    let ab = ab_timing::ab_median_ratio(
+        21,
+        10_000,
+        1_000,
+        |i| {
+            black_box(bare.relevance(0, black_box(i) % 256, black_box(empty)));
+        },
+        |i| {
+            black_box(pruner.relevance(0, black_box(i) % 256, black_box(empty)));
+        },
+    );
 
-    // Warmup
-    for i in 0..1000 {
-        let _ = pruner.relevance(0, i % 256, &[]);
-        let _ = bare.relevance(0, i % 256, &[]);
-    }
-
-    let start = Instant::now();
-    for i in 0..n_rel {
-        let _ = pruner.relevance(0, (i % 256) as usize, &[]);
-    }
-    let posterior_rel_ns = { start.elapsed().as_nanos() as f64 / n_rel as f64 };
-
-    let start = Instant::now();
-    for i in 0..n_rel {
-        let _ = bare.relevance(0, (i % 256) as usize, &[]);
-    }
-    let bare_rel_ns = start.elapsed().as_nanos() as f64 / n_rel as f64;
-
+    let bare_rel_ns = ab.a_ns_per_iter();
+    let posterior_rel_ns = ab.b_ns_per_iter();
     let overhead_ns = posterior_rel_ns - bare_rel_ns;
 
     println!("🐐 G5 PASS: hot-path overhead measurements");
     println!("   record_evidence: {evidence_ns:.1} ns/call");
+    ab.report("   relevance posterior/bare");
     println!("   relevance (posterior): {posterior_rel_ns:.1} ns/call");
     println!("   relevance (bare):     {bare_rel_ns:.1} ns/call");
     println!(
-        "   relevance overhead:    {overhead_ns:.1} ns ({:.1}%)",
-        overhead_ns / bare_rel_ns * 100.0
+        "   relevance overhead:    {overhead_ns:.1} ns ({:+.1}%)",
+        ab.overhead_pct()
     );
 
     // Target: < 1μs (1000ns) overhead per call for both operations
