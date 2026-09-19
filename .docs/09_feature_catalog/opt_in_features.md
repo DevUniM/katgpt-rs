@@ -2296,6 +2296,7 @@ These are additional standalone features with their own plans that were not cove
 | `federation` | 085 | Deep Manifold federated boundary alignment — KL coupling (Research 51) |
 | `federation_composer` | 231 | Explicit Model→Agent→Tool pipeline with residual checking (GOAT 7/7, **DEFAULT-ON**) |
 | `lodestar` | 207 | Lodestar Completion-Distance Pruning — shortest-accepting-distance powers budget-aware masking |
+| `legal_token_set` | Issue 841 | Legal-token-set enumeration + restricted vocabulary projection — a structural pruner NAMES its legal set in O(deg) instead of being asked about 32 768 tokens one at a time (GOAT 5/5, bit-identical, **DEFAULT-ON**) |
 | `nexus_elo` | 143 | Nexus Elo — Plackett-Luce + P-UCB + goal cache for DDtree/SR²AM (Research 104) |
 | `ppot` | 026 | PPoT logit-parameterized CPU resampling. Forwards to `katgpt-speculative`. |
 | `thinking_cot` | 194 | Adaptive CoT thinking — self-learning when to think |

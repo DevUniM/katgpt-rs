@@ -134,6 +134,15 @@ egcs = []
 # this feature) uses BanditStats — without this, `lodestar` alone breaks the
 # bandit feature combo (the merkle_root / can_freeze class of bug).
 lodestar = ["katgpt-speculative/lodestar", "bandit"]
+
+# legal_token_set (Issue 841): give LodestarPruner the legal-set enumeration
+# hooks, so a consumer asks "which tokens are legal here" in O(deg) instead of
+# scanning the vocabulary with is_valid. Builds a CsrLegalSet alongside the
+# dense transition table at automaton-build time. The budget filter is applied
+# during enumeration through one shared predicate — a degree read off the raw
+# transition row would be a superset of what is_valid admits, and the contract
+# forbids the caller re-filtering.
+legal_token_set = ["lodestar", "katgpt-core/legal_token_set"]
 bt_rank = []
 rosetta_pruner = ["papaya"]  # Universal cross-domain meta-pruner (Plan 201); root forwards via katgpt-pruners/rosetta_pruner
 future_probe = []

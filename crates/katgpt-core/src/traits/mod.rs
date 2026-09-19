@@ -128,6 +128,66 @@ pub trait ConstraintPruner: Send + Sync {
             results[i] = self.reject_confidence(depth, candidates[i], parent_tokens);
         }
     }
+
+    // ── Legal-set enumeration (Issue 841 §grammar-skip) ─────────────────
+    //
+    // Every consumer in this repo asks validity the same way: iterate the
+    // whole vocabulary and call `is_valid` per token. That is the only
+    // question the trait could answer — and it is the wrong direction for a
+    // STRUCTURAL pruner, which knows its legal set without being asked about
+    // 32 767 tokens that are not in it. These two hooks invert it.
+
+    /// How many tokens pass [`is_valid`](Self::is_valid) at this position —
+    /// answered WITHOUT scanning the vocabulary, or `None` when the
+    /// implementor cannot answer cheaply.
+    ///
+    /// `None` is the default and means *ask me one token at a time*: every
+    /// existing implementor keeps working unchanged and pays nothing. A
+    /// semantic pruner whose validity depends on a hidden state it has not
+    /// been handed SHOULD keep returning `None` — a wrong `Some` is worse
+    /// than no answer at all, because the caller then skips the scan.
+    ///
+    /// # Contract
+    ///
+    /// `Some(n)` asserts all three, and
+    /// [`for_each_legal`](Self::for_each_legal) is the witness:
+    ///
+    /// 1. **Exactness** — `{t : for_each_legal yields t}` is exactly
+    ///    `{t < vocab_size : is_valid(depth, t, parent_tokens)}`. Not a
+    ///    superset (the caller does not re-filter) and not a subset (the
+    ///    caller would silently lose branches).
+    /// 2. **Cardinality** — `for_each_legal` calls its closure exactly `n`
+    ///    times.
+    /// 3. **Ascending order** — strictly increasing token ids. This is what
+    ///    makes an enumerating consumer BIT-IDENTICAL to the ascending
+    ///    vocabulary scan it replaces, rather than merely equivalent: a
+    ///    tie-broken heap, an `argmax` keeping its first maximum, and a
+    ///    `f32` accumulation all depend on visit order.
+    ///
+    /// Callers verify 2 under `debug_assertions` (counting is free next to
+    /// the work being saved); 1 and 3 are the implementor's to hold.
+    #[inline]
+    fn legal_degree(&self, _depth: usize, _parent_tokens: &[usize]) -> Option<usize> {
+        None
+    }
+
+    /// Yield every token that passes [`is_valid`](Self::is_valid) at this
+    /// position, in strictly ascending id order.
+    ///
+    /// ⛔ **Only meaningful when [`legal_degree`](Self::legal_degree) returned
+    /// `Some`.** The default body yields NOTHING, and for a pruner that
+    /// cannot enumerate, "nothing" is not the empty legal set — it is *no
+    /// answer*. A caller that reads the default as "no token is legal" prunes
+    /// the whole tree and reports it as a clean result, which is the silent
+    /// direction. Gate every call on `legal_degree(..).is_some()`.
+    #[inline]
+    fn for_each_legal(
+        &self,
+        _depth: usize,
+        _parent_tokens: &[usize],
+        _f: &mut dyn FnMut(usize),
+    ) {
+    }
 }
 
 /// No-op pruner: allows all tokens (original DDTree behavior).

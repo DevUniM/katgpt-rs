@@ -525,7 +525,7 @@ pub mod cluster_head;
 pub use forward::forward_coda;
 pub use cluster_head::{
     ClusterCost, ClusterHeadView, ClusterScratch, ClusterStop, PackedHeadView,
-    clustered_lm_head_bounded, clustered_lm_head_packed,
+    clustered_lm_head_bounded, clustered_lm_head_packed, restricted_lm_head,
 };
 pub use forward::{
     CPU_FORWARD_USES_DEVICE_BASE_PATH, ClusterInit, ClusterLayout, LayoutRefusal, TiedPolicy,
