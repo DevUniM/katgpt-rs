@@ -1,8 +1,11 @@
 # Issue 848: `develop` was RED for 6h40m — one commit privatised a delegation target and deleted a shared fixture, and both of that module's EXTERNAL callers are docs-gate CHECKS
 
-**Status:** **RESOLVED** — both breakages repaired and the class WALLED
-(`scripts/cross_module_attr_gate.py`, docs-gate CHECK, 30/30 green).
-**T4 open** — the cross-repo count.
+**Status:** **RESOLVED** — both breakages repaired and the class walled in
+BOTH halves: `scripts/cross_module_attr_gate.py` (static, T2) and
+`scripts/import_health_gate.py` (execution, T3), each a docs-gate CHECK. All
+four tasks CLOSED. ⚠ No check COUNT is written here on purpose: this line
+said `29/29` and was stale within the hour, twice — take it from
+`docs_gate_checks_sync`'s own PASS line, which derives it.
 
 Broken at `6c6ca2ee` (2026-09-19 01:11:24 +0700), found 2026-09-19 07:51
 +0700 — **6h40m**, ended by a hand run of `scripts/docs_gate.sh` on a
@@ -84,7 +87,8 @@ exactly where nobody looks.
   the definition recording why it is public, so the next rework reads the
   contract at the line rather than in a docstring it is deleting.
 - `scripts/worktree_state.py` self-test: **144 assertions**, clean.
-- `scripts/docs_gate.sh`: **29/29**.
+- `scripts/docs_gate.sh`: green, every check (the count is the
+  gate's to print, not this file's).
 
 ## Tasks
 
@@ -179,7 +183,7 @@ exactly where nobody looks.
       MISSING-DEP too. The alternative is a stdlib allow-list, which goes
       stale every release and fails in the direction that INVENTS findings.
 
-      Live: 86 of 87 import, **0.11s in one child**, docs gate **31/31**.
+      Live: 86 of 87 import, **0.11s in one child**, docs gate green.
       Known-answer probe: a `raise` planted in a tracked module reds it, and
       the revert greens it.
 
@@ -193,12 +197,39 @@ exactly where nobody looks.
       predicate. A repair that grows a population is a repair that owes the
       other gates a run.
 
-- [ ] **T4 — Does the class generalise?** `console_encoding_drift_sweep`
-      measured seven sibling repos carrying `scripts/*.py`; riir-train alone
-      has 61. **Count before deciding**, on `check_validation_gate` 789 T4's
-      own correction: that issue declined a sweep on a population of one, and
-      `console_encoding_gate` inherited the answer and was wrong by seven
-      repos.
+- [x] **T4 — DONE. Counted, and the two ways of counting DISAGREE by an
+      order of magnitude — which is the finding.** `check_validation_gate`
+      T4 declined a sweep on a population of ONE and was right;
+      `console_encoding_gate` INHERITED that answer and was wrong by seven
+      repos. So this was measured, not inherited — and measured twice, on
+      purpose:
+
+      | quantity | says |
+      |---|---|
+      | tracked `scripts/*.py` | 10 of 17 contract repos carry them, **196** files — *ship a sweep* |
+      | RESOLVED sibling references | **713 of 749 are in this repo** — *there is no surface there* |
+
+      Only the second is this class's population: a finding can only come out
+      of a resolved reference, and riir-train resolves **32** across its 63
+      scripts, riir-ai **2**, mmorpg-remake **2**, and every other repo
+      **0** — their `scripts/` are standalone one-offs that import nothing of
+      each other's. `instrument_reachability_drift_sweep` measured the same
+      shape from the other side (riir-train 61 of 61 unreachable, where its
+      predicate over-captures for exactly this reason).
+
+      **Verdict: no sweep.** A `max_findings = 0` row over 36 resolvable
+      references in nine repos is a wall nobody can fail, which is the
+      cries-wolf instrument AGENTS.md warns gets ignored — and Issue 785's
+      rule forbids the ratchet alternative, since an unread bucket is a
+      backlog.
+
+      ⛔ **But the number is not recorded in prose, because that is how every
+      cross-repo figure in this workspace has gone stale.**
+      `scripts/cross_module_attr_gate.py --workspace` is the census, a REPORT
+      at exit 0, alias-aware (`repo_alias.disk()`), printing both columns
+      every run. **What would flip the answer is a sibling's RESOLVED count
+      growing, not its file count** — take the figures from a run, never from
+      this table.
 
 ## What this is NOT
 

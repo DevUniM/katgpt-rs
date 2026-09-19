@@ -72,6 +72,7 @@ default for a real dangling reference is to fix it or to make the name public,
 not to add a row.
 
     scripts/cross_module_attr_gate.py                  # the verdict, per push
+    scripts/cross_module_attr_gate.py --workspace      # the T4 census, exit 0
     scripts/cross_module_attr_gate.py --prove-fires 6c6ca2ee
 
 The arms run UNCONDITIONALLY, behind no flag: `docs_gate.sh` invokes each check
@@ -458,6 +459,63 @@ def prove_fires(sha: str) -> int:
     return 0
 
 
+def workspace_census() -> int:
+    """A REPORT (exit 0) — the Issue 848 T4 population, re-derived per run.
+
+    ⛔ **No sweep half, and the measurement is the argument rather than a
+    preference.** `check_validation_gate` declined a sweep on a population of
+    ONE and was right; `console_encoding_gate` INHERITED that answer and was
+    wrong by seven repos. So this was counted, and counting it two ways gives
+    two different answers:
+
+    - by FILES, the class looks workspace-wide — 10 of 17 contract repos
+      carry tracked `scripts/*.py`, 196 of them.
+    - by RESOLVED REFERENCES — the quantity this gate's finding can actually
+      come out of — **711 of 747 are in this repo**. riir-train, with 63
+      scripts, resolves 32; riir-ai 2; every other repo 0, because their
+      `scripts/` are standalone one-offs that import nothing of each other's
+      (`instrument_reachability_drift_sweep` measured the same shape from the
+      other side: riir-train 61 of 61 unreachable, where the predicate
+      over-captures for exactly this reason).
+
+    A sweep would therefore ratchet a bucket that is structurally near-empty,
+    and `max_findings = 0` over a population of 36 references in 9 repos is a
+    wall nobody can fail. **What would flip the answer is a sibling's
+    RESOLVED count growing**, not its file count — which is why this prints
+    both, every run, rather than recording either in prose.
+    """
+    import repo_alias
+    from skill_repo_set_gate import derive_repos
+
+    ws = REPO_ROOT.parent
+    names = sorted(derive_repos(ws))
+    tot_s = tot_r = tot_f = tot_u = 0
+    print(f"{'repo':<28}{'scripts':>9}{'resolved':>10}{'findings':>10}"
+          f"{'unparsed':>10}")
+    for n in names:
+        try:
+            findings, unparsed, n_s, res, _g, _o = scan(ws / repo_alias.disk(n))
+        except OSError as e:
+            print(f"{n:<28}{'UNREADABLE':>9}  {e}")
+            continue
+        tot_s += n_s
+        tot_r += res
+        tot_f += len(findings)
+        tot_u += len(unparsed)
+        print(f"{n:<28}{n_s:>9}{res:>10}{len(findings):>10}{len(unparsed):>10}")
+        for k in findings:
+            print(f"    X {n}: {k}")
+    print(f"\n{len(names)} contract repo(s) on this box · {tot_s} script(s) · "
+          f"{tot_r} resolved reference(s) · {tot_f} finding(s) · "
+          f"{tot_u} unparsed")
+    print(f"⚠ Read the RESOLVED column, not the script count: the two "
+          f"disagree by an order of magnitude and only the first is this "
+          f"class's population. A repo that carries tracked scripts/*.py "
+          f"and resolves 0 references cannot produce a finding, so a sweep "
+          f"row over it would be a wall nobody can fail (Issue 848 T4)")
+    return 0
+
+
 def main() -> int:
     bad = selftest()
     for f in bad:
@@ -516,6 +574,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     argv = sys.argv[1:]
+    if "--workspace" in argv:
+        raise SystemExit(workspace_census())
     if "--prove-fires" in argv:
         i = argv.index("--prove-fires")
         sha = argv[i + 1] if i + 1 < len(argv) else PROVE_SHA
