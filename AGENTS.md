@@ -2232,7 +2232,20 @@ count is what the bucket note above forbids.
     compounding on non-terminating mutants, or mutant-count growth — and
     naming one without measuring it is what this file refuses everywhere else.
     Whoever picks this up should start from the per-module decomposition
-    rather than from another whole-run attempt. Write the **CHECKS count beside the number**, exactly as the docs-gate
+    rather than from another whole-run attempt.
+  - ⛔ **MEASURED one level down, and all three candidates are refuted: the
+    cost is in the HARNESS, not in the modules.** For the same
+    `agents_repo_set_gate`: **13 mutants**, module import **0.001 s**, baseline
+    arm **0.000 s**. Thirteen mutants whose every per-mutant ingredient is at
+    the millisecond floor cannot produce 22m47s — that is ~105 s per mutant
+    against ~1 ms of measurable work. So **per-mutant import cost is out**
+    (0.001 s) and **mutant-count growth is out** (13, not hundreds). The
+    watchdog path survives only as a PARTIAL explanation and the arithmetic
+    says so: its deadline is `max(10x baseline, 30 s)` and a 0 s baseline
+    floors it at 30 s, so even an every-mutant-times-out run is 13 x 30 s =
+    **390 s — 3.5x short of the observed 1367 s.** ⚠ What remains unmeasured is
+    *where inside the harness* the time goes; the next probe is the harness's
+    own per-mutant path, not the modules, and not another whole-run attempt. Write the **CHECKS count beside the number**, exactly as the docs-gate
   CPU paragraph requires: the population is the CHECKS set plus this file, and
   the CHECKS set has grown from ~21 to 33 since that measurement.
   - ⛔ **At that duration the gate cannot be run in a tree somebody is
