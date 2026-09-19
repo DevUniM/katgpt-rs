@@ -2217,7 +2217,22 @@ count is what the bucket note above forbids.
   not a wedge, and the honest standing is stronger than *slow*: at 33 CHECKS
   this gate has **no measured completion time on this box**. Do not quote
   157.6s as its cost, and do not plan a session around getting a verdict out of
-  it without first establishing that one is obtainable. Write the **CHECKS count beside the number**, exactly as the docs-gate
+  it without first establishing that one is obtainable.
+  - ⛔ **Measured per MODULE, and the obvious explanation is REFUTED.** The
+    audit's substring argument really does select one module, so the cost is
+    decomposable: **2 of 2 sampled modules each exceeded 300s alone**, and
+    `agents_repo_set_gate` — whose `selftest()` is pure over TEXT, with no
+    git, no subprocess and no workspace walk — was killed at **22 min 47 s of
+    CPU** without finishing. That is 8.7x the documented WHOLE-RUN figure, for
+    **1 of 33** modules. So the cost is not a single straggler and not
+    heavyweight arms doing real I/O; a plain text classifier shows it too, and
+    33 such modules is many hours. ⚠ The MECHANISM is **undiagnosed** — the
+    candidates are per-mutant import cost (Issue 848 measured one module at
+    6.238s of a 6.34s import pass), the watchdog's 10x-baseline deadline
+    compounding on non-terminating mutants, or mutant-count growth — and
+    naming one without measuring it is what this file refuses everywhere else.
+    Whoever picks this up should start from the per-module decomposition
+    rather than from another whole-run attempt. Write the **CHECKS count beside the number**, exactly as the docs-gate
   CPU paragraph requires: the population is the CHECKS set plus this file, and
   the CHECKS set has grown from ~21 to 33 since that measurement.
   - ⛔ **At that duration the gate cannot be run in a tree somebody is
