@@ -320,6 +320,42 @@ def mutants(src: str, arms: set[str]):
         yield desc, owner.get(ln, "<module>"), ln, code
 
 
+# ⛔ A progress channel that SURVIVES `_silence()` (Issue 854 T1). The
+# suppression below redirects fd 1 AND fd 2 to devnull, so `print(...,
+# file=sys.stderr)` inside a mutant is swallowed exactly like the child output
+# it exists to swallow. A duplicate of the ORIGINAL stderr, taken once at
+# import, is the only handle that still reaches a terminal or a log from
+# inside a mutant.
+#
+# It exists because this harness has WEDGED: two runs stalled ~20 minutes on a
+# `git` child, at 3% CPU, having produced **zero bytes of output** — so the
+# module could not be named without waiting for a report that never came, and
+# the eventual localisation was INFERRED rather than observed. The wedge is
+# intermittent, so this cannot be validated by reproducing it; it is
+# diagnostic equipment for the next occurrence.
+try:
+    _PROGRESS_FD = os.dup(2)
+except OSError:                      # a context with no stderr at all
+    _PROGRESS_FD = None
+
+#: Per-MUTANT progress is opt-in (`ARM_REACH_PROGRESS=mutant`): ~1000 lines on
+#: a full run is right when somebody is hunting a stall and noise otherwise.
+#: Per-MODULE is always on — 33 lines, and naming the module is what T1 asked
+#: for, since `arm_reach_audit.py <module>` then reproduces in minutes.
+_PROGRESS_MUTANTS = os.environ.get("ARM_REACH_PROGRESS") == "mutant"
+
+
+def _progress(msg: str) -> None:
+    """One line to the PRESERVED stderr. Never raises: a diagnostic aid that
+    can fail the run it is diagnosing is worse than no aid."""
+    if _PROGRESS_FD is None:
+        return
+    try:
+        os.write(_PROGRESS_FD, (msg + chr(10)).encode("utf-8", "backslashreplace"))
+    except OSError:
+        pass
+
+
 @contextlib.contextmanager
 def _silence():
     """Suppress output at the FILE DESCRIPTOR level, not just `sys.stdout`.
@@ -515,6 +551,11 @@ def has_runnable_arm(row: dict) -> bool:
 
 
 def audit_module(path: Path) -> dict:
+    # ⛔ Here, not in a caller's loop: `arm_reach_gate` has its OWN `measure()`
+    # and the first draft of this instrumented the audit's `main()` only —
+    # reaching precisely the caller that was not the one wedging. One seam,
+    # both callers (Issue 854 T1).
+    _progress(f"[arm-reach] enter {path.name}")
     src = path.read_text(encoding="utf-8")
     try:
         tree = ast.parse(src)
@@ -556,6 +597,9 @@ def audit_module(path: Path) -> dict:
         return row
     for desc, func, ln, code in mutants(src, arms):
         row["total"] += 1
+        if _PROGRESS_MUTANTS:
+            _progress(f"[arm-reach]     {path.name} #{row['total']} "
+                      f"{func}:{ln} {desc}")
         try:
             verdict = run_arm(code, path, arms, timeout=deadline)
             if verdict == TIMEOUT:
@@ -622,6 +666,48 @@ def selftest() -> list[str]:
     import tempfile
 
     fails: list[str] = []
+
+    def _progress_arms(out: list[str]) -> None:
+        """The progress channel, and the ONE property that matters about it.
+
+        ⛔ It is not "does it print" — it is "does it still print from INSIDE
+        `_silence()`". That context redirects fd 1 and fd 2 to devnull, which
+        is exactly what makes an ordinary `print(file=sys.stderr)` useless
+        here, and a channel that quietly stops working inside the suppression
+        is a diagnostic aid that is absent precisely when the harness wedges
+        (Issue 854 T1). Asserted against a REAL pipe rather than a stub,
+        because the failure would be at the fd layer.
+        """
+        r, w = os.pipe()
+        global _PROGRESS_FD
+        saved = _PROGRESS_FD
+        _PROGRESS_FD = w
+        try:
+            _progress("outside")
+            with _silence():
+                _progress("INSIDE")
+            os.close(w)
+            got = os.read(r, 4096).decode("utf-8", "replace")
+        finally:
+            _PROGRESS_FD = saved
+            os.close(r)
+        if "INSIDE" not in got:
+            out.append("the progress channel does NOT survive _silence() — it "
+                       "is absent exactly when the harness wedges, which is "
+                       "the only time it is read")
+        if "outside" not in got:
+            out.append(f"the progress channel wrote nothing at all: {got!r}")
+        # A diagnostic that can kill the run it is diagnosing is worse than
+        # none: a closed fd must be swallowed, not raised.
+        _PROGRESS_FD = -1
+        try:
+            _progress("into a closed fd")
+        except OSError:
+            out.append("_progress raised on a bad fd instead of swallowing it")
+        finally:
+            _PROGRESS_FD = saved
+
+    _progress_arms(fails)
 
     def eq(label, got, want):
         if got != want:

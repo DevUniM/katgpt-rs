@@ -12,9 +12,10 @@ one was not.
 
 **Status:** OPEN — and INTERMITTENT: observed twice on 2026-09-19 (shikuwa)
 on the plain `scripts/arm_reach_gate.py` run over the CHECKS population, with a
-third run of the same population completing clean in 1068.9s. T2 and T5 are answered
-(the census refuted T2's proposed gate; T5 wired the classifier self-test in);
-T1, T3, T4, T6 open.
+third run of the same population completing clean in 1068.9s. T1, T2 and T5 are answered
+(T1 gave it a progress channel that survives the fd suppression; the census
+refuted T2's proposed gate; T5 wired the classifier self-test in);
+T3, T4, T6 open.
 
 Found while doing something else — the run was started to pin survivors after
 Issue 847/848 landed, and never returned.
@@ -157,15 +158,46 @@ here because the next person to look at the runtime will find them first.
 
 ## Tasks
 
-- [ ] **T1 — NARROWED to `counter_fixture`'s git calls; finish it.** Give the audit a
-      per-mutant progress line on **stderr** (unbuffered, one line per module
-      entered) so the next stall names its module without waiting for the
-      report. The run currently suppresses child output at the **file
-      descriptor** level for a measured reason (436 `git archive` calls
-      littering the report), so the progress line has to live outside that
-      redirect rather than inside it. ⚠ Confirm the stall reproduces at the
-      identified module and is not a box-wide git condition — this box runs
-      five-plus concurrent sessions against shared worktrees.
+- [x] **T1 — DONE: a progress channel that SURVIVES the fd-level
+      suppression.** The next stall names its module instead of producing
+      zero bytes for twenty minutes.
+
+      ⛔ **The obvious implementation does not work, and that is the whole
+      content of this task.** `_silence()` redirects fd **1 and 2** to devnull
+      — deliberately, because a subprocess inherits fd 1 and writes straight
+      past `contextlib.redirect_stdout` — so `print(..., file=sys.stderr)`
+      from inside a mutant is swallowed by exactly the mechanism that
+      swallows the child output it was added for. The channel is a
+      **duplicate of the original stderr taken once at import**
+      (`os.dup(2)`), which is the only handle that still reaches a terminal
+      or a log from inside the suppression.
+
+      - Per-MODULE (`[arm-reach] enter <name>`) is **always on**: 33 lines,
+        and naming the module is what this task asked for, because
+        `arm_reach_audit.py <module>` then reproduces in minutes.
+      - Per-MUTANT is opt-in (`ARM_REACH_PROGRESS=mutant`): ~1000 lines is
+        right when somebody is hunting a stall and noise otherwise.
+      - `_progress` never raises. A diagnostic aid that can kill the run it
+        is diagnosing is worse than no aid, and an arm pins that.
+
+      ⚠ **It went in at the WRONG SEAM first, and the mistake is instructive:**
+      the first draft instrumented the audit's own `main()` loop — but
+      `arm_reach_gate` has its OWN `measure()`, so the instrumentation reached
+      precisely the caller that was *not* the one wedging. Caught by running
+      the gate and reading an empty progress file. It lives at the top of
+      `audit_module()` now, the one seam both callers share.
+
+      **The arm asserts the property that matters, which is not "does it
+      print".** It writes through a REAL pipe from inside `_silence()` and
+      requires the bytes to arrive. Two-sided: replaced with the naive
+      `print(msg, file=sys.stderr)`, the arm reports *"the progress channel
+      does NOT survive `_silence()`"* — and the mutant's own output leaks to
+      the console while doing so, which is the failure made visible.
+
+      ⚠ **It cannot be validated by reproducing the wedge** — that is
+      intermittent (two stalls, one clean 1069s run). This is diagnostic
+      equipment for the next occurrence, and the honest claim is that it
+      makes the next stall readable, not that it prevents one.
 
 - [x] **T2 — CENSUS TAKEN, and it REFUTES the task's own proposal.** The task
       said the bound belongs at the spawn and the population is the whole of
