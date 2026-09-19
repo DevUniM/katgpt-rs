@@ -94,6 +94,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -164,6 +165,25 @@ def loop_bounds(body: str, file_scope: dict[str, int]) -> list[int]:
             out.append(binds[tok])
     return out
 
+# ⛔ Issue 855 T5's two statically-decidable buckets, found by RUNNING the 33
+# sibling rows rather than by reasoning about them. Neither is gated — both are
+# REPORTED, the `print_only` standing — because each is a state ORTHOGONAL to
+# "is there a loud-zero defence", which is the only thing this gate decides.
+#
+# `#[ignore]`: `cargo test --exact <fn>` on an ignored test prints
+# `ok. 0 passed; 1 ignored` and exits 0 — byte-for-byte this family's own
+# green-zero shape. The region is then neither guarded NOR satisfied by absent
+# work; it is UNEXECUTED, a third state no axis here could see. Measured: 4 of
+# the 33 sibling rows, all riir-chain, and T5's own runner nearly recorded them
+# as results.
+IGNORED_ATTR = re.compile(r"#\s*\[\s*ignore")
+# A region whose quantity reaches no stream: it lives only inside an `assert!`
+# message, i.e. it is visible ONLY on failure. Measured as the highest-yield
+# slice by a factor of four — 1 VANISHED of 4 (25%) against a population rate
+# of 6.3% — and the mechanism is plain: nobody can have read a number nobody
+# prints.
+PRINTS = re.compile(r"\b(?:e?println!|print!|eprint!|write(?:ln)?!)\s*\(")
+
 FN = re.compile(r"\bfn\s+(\w+)\s*(?:<[^>{]*>)?\s*\(")
 
 
@@ -180,8 +200,42 @@ def tracked(root: Path) -> list[str]:
     return sorted(set(p for p in out.stdout.split() if p.endswith(".rs")))
 
 
-def fn_bodies(masked: str):
-    """(name, body) for every fn, by brace counting over MASKED text."""
+def attr_run(masked: str, fn_start: int) -> str:
+    """The CONTIGUOUS attribute/comment run immediately above a fn.
+
+    Not a fixed look-back window: an `#[ignore]` twenty lines up belongs to a
+    different item, and crediting it would attribute one test's state to its
+    neighbour. Walks back over attribute and comment lines only and stops at
+    the first line that is neither — which is also why a blank line ends it,
+    the shape `orphaned_attr_gate.py` exists to catch one axis over.
+    """
+    head = masked[:fn_start].rsplit("\n", 1)[0] if "\n" in masked[:fn_start] else ""
+    out: list[str] = []
+    for line in reversed(head.split("\n")):
+        t = line.strip()
+        if t.startswith("#[") or t.startswith("#![") or t.startswith("//"):
+            out.append(t)
+            continue
+        break
+    return "\n".join(out)
+
+
+def fn_bodies(masked: str, raw: str | None = None):
+    """(name, body, attrs) for every fn, by brace counting over MASKED text.
+
+    ⛔ The BODY comes from the masked text and the ATTRIBUTES come from the
+    RAW text, and the split is not a nicety — `mask_file` blanks `#[...]`
+    lines, so an attribute run read off the masked source is always empty and
+    the `#[ignore]` bucket would report a confident ZERO. Measured the first
+    time this ran. It is the same rule `sequential_ab_timing_audit` records
+    for `#[path = "…"]`, reached from the other direction.
+
+    Safe because the masker is LENGTH-PRESERVING: it substitutes equal-length
+    blanks, so one offset indexes both strings. `offsets_align()` asserts that
+    premise rather than assuming it — if the masker ever stops preserving
+    length, this silently reads the wrong lines.
+    """
+    src = masked if raw is None else raw
     for m in FN.finditer(masked):
         i = masked.find("{", m.end())
         if i < 0:
@@ -193,15 +247,33 @@ def fn_bodies(masked: str):
             elif masked[j] == "}":
                 depth -= 1
                 if depth == 0:
-                    yield m.group(1), masked[i:j]
+                    yield m.group(1), masked[i:j], attr_run(src, m.start())
                     break
 
 
-def classify(text: str):
-    """(regions, unguarded_in_scope, print_only_in_scope) for one file.
+class FileScan(NamedTuple):
+    """One file's verdict.
 
-    `unguarded_in_scope` are fn names; `print_only_in_scope` is a COUNT of
-    regions that loop big and carry no assertion — reported, never gated.
+    A NamedTuple rather than a widening tuple: this grew from three fields to
+    six and the callers unpack positionally, which is exactly how a sweep and
+    its gate drift into disagreeing about which column is which.
+    """
+
+    regions: int
+    unguarded: list[str]      # READ tier — literal bound, gated by MEMBERSHIP
+    print_only: int           # asserts nothing — reported, never gated
+    resolved_only: list[str]  # UNREAD tier — bound needed a hop, ratcheted
+    ignored: list[str]        # `#[ignore]`d — UNEXECUTED, reported
+    silent: list[str]         # prints nothing — unreadable on a pass, reported
+
+
+def classify(text: str) -> FileScan:
+    """One file, classified. See `FileScan` for the columns.
+
+    ⚠ `ignored` and `silent` are computed over the WHOLE in-scope asserting
+    population — both tiers — because that is the population Issue 855 T5
+    measured, and scoping them to the gated tier would make the reported
+    numbers answer a different question from the one that produced them.
     """
     # Issue 856's masker, IMPORTED and never re-written: three sibling
     # instruments have each reported a finding inside their own fixture
@@ -210,7 +282,7 @@ def classify(text: str):
 
     masked, _ = mask_file(text)
     if not NOW.search(masked):
-        return 0, [], 0, []
+        return FileScan(0, [], 0, [], [], [])
     # File-scope `const N: usize = 100_000;` — resolved once, shadowed by any
     # same-named binding inside the body.
     file_scope = {
@@ -220,8 +292,10 @@ def classify(text: str):
     regions = 0
     unguarded: list[str] = []
     resolved_only: list[str] = []
+    ignored: list[str] = []
+    silent: list[str] = []
     print_only = 0
-    for name, body in fn_bodies(masked):
+    for name, body, attrs in fn_bodies(masked, text):
         if not (NOW.search(body) and ELAPSED.search(body)):
             continue
         regions += 1
@@ -246,26 +320,50 @@ def classify(text: str):
             unguarded.append(name)
         else:
             resolved_only.append(name)
-    return regions, unguarded, print_only, resolved_only
+        # Both are ORTHOGONAL to the tier and to the guard: an ignored region
+        # can be guarded, a silent one can be in either tier. Recorded on the
+        # whole in-scope asserting population, never folded into a verdict.
+        if IGNORED_ATTR.search(attrs):
+            ignored.append(name)
+        if not PRINTS.search(body):
+            silent.append(name)
+    return FileScan(regions, unguarded, print_only, resolved_only, ignored, silent)
 
 
-def scan(root: Path):
+class RepoScan(NamedTuple):
+    """One repo's verdict — `scan`'s return. Named for `FileScan`'s reason."""
+
+    files: int
+    regions: int
+    unguarded: list[str]
+    print_only: int
+    unread: list[str]
+    ignored: list[str]
+    silent: list[str]
+
+
+def scan(root: Path) -> RepoScan:
     files = tracked(root)
     regions = 0
     found: list[str] = []
     unread: list[str] = []
     print_only = 0
+    ignored: list[str] = []
+    silent: list[str] = []
     for rel in files:
         try:
             text = (root / rel).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        r, u, p, ro = classify(text)
-        regions += r
-        print_only += p
-        found.extend(f"{rel}::{n}" for n in u)
-        unread.extend(f"{rel}::{n}" for n in ro)
-    return len(files), regions, sorted(found), print_only, sorted(unread)
+        fs = classify(text)
+        regions += fs.regions
+        print_only += fs.print_only
+        found.extend(f"{rel}::{n}" for n in fs.unguarded)
+        unread.extend(f"{rel}::{n}" for n in fs.resolved_only)
+        ignored.extend(f"{rel}::{n}" for n in fs.ignored)
+        silent.extend(f"{rel}::{n}" for n in fs.silent)
+    return RepoScan(len(files), regions, sorted(found), print_only,
+                    sorted(unread), sorted(ignored), sorted(silent))
 
 
 def read_pins(path: Path) -> dict[str, str]:
@@ -299,7 +397,7 @@ def selftest() -> None:
         "  let r = best_of_us(3, 10000, || work());\n"
         "  assert!(r < 10.0, \"{d:?}\"); }\n"
     )
-    _, u, _, _ = classify(guarded_harness)
+    u = classify(guarded_harness).unguarded
     assert u == [], f"the shared harness did not count as a defence: {u}"
 
     own_guard = (
@@ -309,7 +407,7 @@ def selftest() -> None:
         "  assert!(ns > 0, \"instrument failure\");\n"
         "  assert!(ns < 10_000_000); }\n"
     )
-    _, u, _, _ = classify(own_guard)
+    u = classify(own_guard).unguarded
     assert u == [], f"a hand-rolled non-zero assertion did not count: {u}"
 
     bare = (
@@ -318,7 +416,7 @@ def selftest() -> None:
         "  let ns = t.elapsed().as_nanos() as f64 / 100000.0;\n"
         "  assert!(ns < 10_000.0); }\n"
     )
-    _, u, _, _ = classify(bare)
+    u = classify(bare).unguarded
     assert u == ["g"], f"Issue 855's own shape was not flagged: {u}"
 
     # ⛔ The n >= 1000 bound is the thing that makes a zero EXACT. Below it a 0
@@ -326,10 +424,10 @@ def selftest() -> None:
     # outcome this report exists to avoid. Pinned from BOTH sides so the
     # boundary cannot drift silently.
     small = bare.replace("0..100000", "0..100").replace("100000.0", "100.0")
-    _, u, _, _ = classify(small)
+    u = classify(small).unguarded
     assert u == [], f"a small-n region was flagged — a 0 there proves nothing: {u}"
     edge = bare.replace("0..100000", "0..1000").replace("100000.0", "1000.0")
-    _, u, _, _ = classify(edge)
+    u = classify(edge).unguarded
     assert u == ["g"], f"the n == {MIN_ITERS} boundary is exclusive: {u}"
 
     # A region with no assertion has no verdict a deleted loop can satisfy. It
@@ -339,7 +437,8 @@ def selftest() -> None:
         "  for _ in 0..100000 { let _ = f(&x); }\n"
         '  println!("{:?}", t.elapsed()); }\n'
     )
-    _, u, p, _ = classify(printer)
+    _fs = classify(printer)
+    u, p = _fs.unguarded, _fs.print_only
     assert u == [] and p == 1, f"print-only should report, not gate: {u} {p}"
 
     # ⛔ THE TIER SPLIT, and it is what separates a wall from a ratchet.
@@ -354,29 +453,33 @@ def selftest() -> None:
         "  let ns = t.elapsed().as_nanos() as f64 / n as f64;\n"
         "  assert!(ns < 10_000.0); }\n"
     )
-    _, u, _, ro = classify(hop)
+    _fs = classify(hop)
+    u, ro = _fs.unguarded, _fs.resolved_only
     assert u == [] and ro == ["g"], f"one-hop bound mis-tiered: {u} {ro}"
     # File scope resolves too, and a body binding SHADOWS it.
-    _, u, _, ro = classify("const N: usize = 50_000;\n" + hop.replace("let n = 100_000;\n", "").replace("0..n", "0..N").replace("/ n as", "/ N as"))
+    _fs = classify("const N: usize = 50_000;\n" + hop.replace("let n = 100_000;\n", "").replace("0..n", "0..N").replace("/ n as", "/ N as"))
+    u, ro = _fs.unguarded, _fs.resolved_only
     assert ro == ["g"], f"file-scope const not resolved: {ro}"
     # Two hops is deliberately OUT — resolving it needs a value model.
     two = hop.replace("let n = 100_000;", "let base = 100_000; let n = base;")
-    _, u, _, ro = classify(two)
+    _fs = classify(two)
+    u, ro = _fs.unguarded, _fs.resolved_only
     assert u == [] and ro == [], f"a two-hop bound was resolved: {u} {ro}"
     # A literal bound stays in the READ tier even beside a resolved one.
     both = hop.replace("for _ in 0..n {", "for _ in 0..2000 { g(); }\n  for _ in 0..n {")
-    _, u, _, ro = classify(both)
+    _fs = classify(both)
+    u, ro = _fs.unguarded, _fs.resolved_only
     assert u == ["g"] and ro == [], f"a literal bound was demoted to the unread tier: {u} {ro}"
 
     # A fn that never times anything is not a region, however many loops it has.
-    _, u, _, _ = classify("fn g() { for _ in 0..100000 { work(); } assert!(true); }\n")
+    u = classify("fn g() { for _ in 0..100000 { work(); } assert!(true); }\n").unguarded
     assert u == [], f"an untimed fn entered the population: {u}"
 
     # The MASKER is why a fixture string is not source — this file is itself
     # full of Rust in string literals, and three sibling instruments have each
     # reported a finding inside their own test data.
     fixture = 'fn h() -> &\'static str { r#"\n' + bare + '"# }\n'
-    _, u, _, _ = classify(fixture)
+    u = classify(fixture).unguarded
     assert u == [], f"a timed region inside a raw string read as source: {u}"
 
     # The pin READER, both refusals. A reasonless row must not be silently
@@ -399,6 +502,64 @@ def selftest() -> None:
     # The floors are FLOORS. A classifier that goes blind must RED, not report
     # a clean zero — the failure mode this whole class is about, one level up.
     assert MIN_FILES > 0 and MIN_REGIONS > 0, "a floor of 0 cannot detect blindness"
+
+    # ⛔ The PREMISE that lets attributes be read off the raw text at a masked
+    # offset: `mask_file` is LENGTH-PRESERVING. Asserted, not assumed — if it
+    # ever stops being true, `attr_run` reads the wrong lines and the
+    # `#[ignore]` bucket reports a confident number that is simply wrong,
+    # which is the silent direction.
+    from platform_dead_code_audit import mask_file as _mf
+
+    for probe in (bare, printer, fixture):
+        _masked, _ = _mf(probe)
+        assert len(_masked) == len(probe), (
+            "mask_file is no longer length-preserving — `fn_bodies` indexes the "
+            "raw text at a MASKED offset and now reads the wrong lines")
+
+    # ── Issue 855 T5's two reported buckets ────────────────────────────────
+    # Each is asserted in BOTH directions. An arm that only shows the bucket
+    # filling is satisfied by a predicate that fires on everything.
+    ign = (
+        "#[test]\n"
+        "#[ignore = \"timing test\"]\n"
+        "fn g() { let t = Instant::now();\n"
+        "  for _ in 0..100000 { let _ = f(&x); }\n"
+        "  let ns = t.elapsed().as_nanos() as f64 / 100000.0;\n"
+        "  assert!(ns < 10_000.0); }\n"
+    )
+    fs = classify(ign)
+    assert fs.ignored == ["g"], f"an #[ignore]d in-scope region was not seen: {fs.ignored}"
+    assert fs.unguarded == ["g"], (
+        "#[ignore] must not change the GUARD verdict — the two axes are "
+        f"orthogonal: {fs.unguarded}")
+    fs = classify(ign.replace("#[ignore = \"timing test\"]\n", ""))
+    assert fs.ignored == [], f"a non-ignored region was reported ignored: {fs.ignored}"
+
+    # ⛔ The attribute must belong to THIS fn. An `#[ignore]` on the PREVIOUS
+    # item is the false positive a fixed look-back window would produce, and it
+    # would attribute one test's state to its neighbour.
+    neighbour = (
+        "#[test]\n#[ignore]\nfn other() { let _ = 1; }\n\n"
+        "#[test]\n"
+        "fn g() { let t = Instant::now();\n"
+        "  for _ in 0..100000 { let _ = f(&x); }\n"
+        "  let ns = t.elapsed().as_nanos() as f64 / 100000.0;\n"
+        "  assert!(ns < 10_000.0); }\n"
+    )
+    fs = classify(neighbour)
+    assert fs.ignored == [], (
+        f"an #[ignore] on the PREVIOUS item was credited to this one: {fs.ignored}")
+
+    # SILENT: the quantity reaches no stream, so it is visible only on failure.
+    fs = classify(bare)
+    assert fs.silent == ["g"], f"a region printing nothing was not seen: {fs.silent}"
+    loud = bare.replace("assert!(ns < 10_000.0);",
+                        'println!("{ns} ns"); assert!(ns < 10_000.0);')
+    fs = classify(loud)
+    assert fs.silent == [], f"a region that DOES print was reported silent: {fs.silent}"
+    assert fs.unguarded == ["g"], (
+        "printing is not a loud-zero defence and must not change the guard "
+        f"verdict: {fs.unguarded}")
 
 
 def prove_fires(sha: str) -> int:
@@ -431,7 +592,8 @@ def prove_fires(sha: str) -> int:
                 text = (root / rel).read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            r, u, _, _ = classify(text)
+            _fs = classify(text)
+            r, u = _fs.regions, _fs.unguarded
             regions += r
             found.extend(f"{rel}::{n}" for n in u)
         pins = read_pins(PINS)
@@ -454,7 +616,9 @@ def main(argv: list[str]) -> int:
         i = argv.index("--prove-fires")
         return prove_fires(argv[i + 1] if i + 1 < len(argv) else "HEAD~1")
 
-    n_files, n_regions, found, print_only, unread = scan(REPO)
+    sc = scan(REPO)
+    n_files, n_regions, found = sc.files, sc.regions, sc.unguarded
+    print_only, unread = sc.print_only, sc.unread
     pins = read_pins(PINS)
     ratchet_key = "__max_unread_resolved"
     if ratchet_key not in pins:
@@ -484,7 +648,9 @@ def main(argv: list[str]) -> int:
         f"{n_regions} timed region(s); READ tier (literal bound >= {MIN_ITERS}, "
         f"asserting, unguarded): {len(found)} against {len(pins)} pinned; "
         f"UNREAD tier (bound needed a hop): {len(unread)} against a ratchet of "
-        f"{ratchet}; {print_only} print-only in-scope (reported, never gated)"
+        f"{ratchet}; {print_only} print-only in-scope (reported, never gated); "
+        f"{len(sc.ignored)} #[ignore]d, {len(sc.silent)} print NO number "
+        "(both REPORTED — orthogonal to the guard, Issue 855 T5)"
     )
     if len(unread) > ratchet:
         print(
@@ -523,7 +689,14 @@ def main(argv: list[str]) -> int:
         "(result, ARGUMENTS, RECEIVER) and two arms vanished carrying one. STATED "
         "blind spots: a loop bound needing more than ONE hop of resolution, a "
         "region split across two fns, and the print-only residue counted above "
-        "(Issue 855 T4)"
+        "(Issue 855 T4). ⛔ Two MORE states it reports and cannot gate, each "
+        "found by EXECUTING the population rather than reasoning about it: an "
+        "`#[ignore]`d region is UNEXECUTED — `ok. 0 passed; 1 ignored`, exit 0, "
+        "this family's own green-zero shape one axis over — and a region that "
+        "prints NO number is unreadable in the configuration that passes, which "
+        "measured 4x the population's VANISHED rate. A third, UNBUILDABLE, is "
+        "not statically decidable at all and is out of scope by construction: "
+        "it is a manifest-RESOLUTION property (riir-chain Issue 157)"
     )
     return 0
 

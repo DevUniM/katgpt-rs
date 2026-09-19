@@ -1,0 +1,62 @@
+# Pins for scripts/timed_region_drift_sweep.py — EVERY contract repo.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_files> <min_regions> <max_unguarded>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── max_unguarded is a RATCHET, and the ratchet is EARNED ───────────────────
+# katgpt-rs's own READ tier is pinned by MEMBERSHIP with a reason per row in
+# scripts/timed_region_survivors_expected.txt — the per-push gate, over the
+# population Issue 855 T3 executed end to end (34 regions RUN).
+#
+# That standard cannot be exported. T5 DID execute all 33 sibling rows
+# (2026-09-19): 1 UNBUILDABLE, 32 run, 2 VANISHED = 6.3%, against this repo's
+# own 7 of 34 = 20.6%. That is enough to constrain the DERIVATIVE — the commit
+# that adds ANOTHER unguarded region reds — and NOT enough for a membership
+# wall: 30 of the 32 are single readings on a loaded box without T3's 4x
+# scaling probe, so `fast` and `partly eliminated` are not separated for them.
+#
+# ⚠ Issue 785's rule is respected, not skirted: it forbids ratcheting a bucket
+# meaning *unanswered*. This bucket means *no loud-zero defence*, every row has
+# an owner, and the population behind the number has been RUN.
+#
+# ── the TOTALS row is RESERVED and is not a repo ────────────────────────────
+# 8 of 21 repos have 0 timed regions and 3 have 0 tracked test/bench files, so
+# BOTH per-repo floors are vacuous there (Issue 783's population shape). TOTALS
+# floors the population globally — the wasm32_surface_drift_sweep answer to the
+# same problem. A repo genuinely named TOTALS would collide; the sweep's own
+# arm asserts none exists.
+#
+# ── measured 2026-09-19 (Issue 855 T6), M3, tracked walk ────────────────────
+# katgpt-rs's min_files / min_regions are the GATE's constants, asserted equal
+# by the sweep's self-test — change both or it reds.
+#
+# repo                     min_files  min_regions  max_unguarded
+katgpt-rs                        400          300             27
+katgpt-web                         0            0              0
+mmorpg-editor                     15            0              0
+mmorpg-remake                     25            0              0
+mmorpg-remaster                   12            0              0
+riir-ai                          600          400             16
+riir-auth                          0            0              0
+riir-chain                       120           30              6
+riir-clippy                       70           15              2
+riir-dao                           0            0              0
+riir-dapps                        35            5              0
+riir-deployer                      0            0              0
+riir-esp32                         0            0              0
+riir-game-sdk                     50           20              1
+riir-kat                           0            0              0
+riir-llm                           0            0              0
+riir-mmorpg-examples              25           10              0
+riir-neuron-db                    65           40              3
+riir-shader                        0            0              1
+riir-train                       220           90              2
+riir-viewbridge                    0            0              0
+# The global population floor. Both halves break separately: a `git ls-files`
+# regression takes files to ~0 with the classifier intact, a masker or regex
+# regression takes regions to 0 over an unchanged walk.
+TOTALS                          1800         1000              0

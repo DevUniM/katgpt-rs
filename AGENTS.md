@@ -703,6 +703,30 @@ ceiling is a **RATCHET on the derivative**, not a demand for 71 repairs in
 seven trees this repo does not own. Three floors, and the WALK and the
 PREDICATE are separate because they break separately: an `ast.parse` regression
 takes the population to 0 over an unchanged walk),
+`timed_region_drift_sweep.py` (every contract repo, on demand — the Issue 855
+T6 verdict half of `timed_region_guard_gate.py`, and the one sweep in the family
+whose ratchet is **EARNED by execution rather than argued for**. T5 RAN all 33
+sibling READ-tier rows: 1 UNBUILDABLE, 32 executed, **2 VANISHED = 6.3%**
+against this repo's own 7 of 34 = 20.6%. That is enough to constrain the
+DERIVATIVE in somebody else's tree and NOT enough for a membership wall — 30 of
+the 32 are single readings on a loaded box without T3's 4x scaling probe, so
+*fast* and *partly eliminated* are not separated for them, and laundering that
+residue into a pin is the shape Issue 785 forbids. ⛔ It REPORTS two states it
+cannot gate, both invisible to the counting half and both found by RUNNING:
+`#[ignore]`d (the region is UNEXECUTED — `cargo test --exact` prints
+`ok. 0 passed; 1 ignored`, exit 0, this family's own green-zero shape one axis
+over; 16 workspace-wide, 11 of them riir-chain) and **prints NO number** (the
+quantity lives only inside an `assert!` message, i.e. visible ONLY on failure,
+so the method that found every other row cannot see it — measured as the
+highest-yield slice by 4x, 1 VANISHED of 4). A third, UNBUILDABLE, is NOT
+reported because it is not statically decidable at all: it is a manifest-
+RESOLUTION property, filed as riir-chain `.issues/157`. Two floors that break
+separately plus a reserved `TOTALS` row, because 8 of 21 repos have 0 timed
+regions and 3 have 0 tracked test/bench files, so BOTH per-repo floors are
+vacuous there — Issue 783's population shape, and the
+`wasm32_surface_drift_sweep` answer to it. ⚠ It may use `head_delta`'s per-file
+shortcut where `instrument_reachability` and `len_derived` may not, because its
+classifier IS per-file; that premise is stated at the call site),
 `shared_temp_path_drift_sweep.py` (every contract repo, on demand — the
 Issue 832 T3 verdict half of `shared_temp_path_gate.py`, landed because its
 gate's own docstring named this axis UNMEASURED and told the next reader to
