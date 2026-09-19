@@ -170,10 +170,12 @@ that any loaded box can trip. It is repaired, not excused.
 
 - [x] **T1 — migrate `bench_105` GOAT 2** to `ab_median_ratio`, size the chunk off the
   measured per-round range, and record the distribution rather than one green run.
-- [ ] **T2 — the 57 DECIDED targets.** Per target, not mechanically: each needs its `a`/`b`
-  orientation decided (which arm is the baseline the claim is *stated against*), its chunk
-  sized off its own printed range, and its arms `black_box`ed at input and output — the
-  `let _ = f()` elimination shape is orthogonal to interleaving and survives it.
+- [~] **T2 — the 57 DECIDED targets. PARTIAL 2026-09-19: the root-`tests/` half is
+  MEASURED and the backlog is 3, not 38.** Per target, not mechanically: each needs its
+  `a`/`b` orientation decided (which arm is the baseline the claim is *stated against*),
+  its chunk sized off its own printed range, and its arms `black_box`ed at input and
+  output — the `let _ = f()` elimination shape is orthogonal to interleaving and survives
+  it. See §T2 measurement below for what was run, what it found, and what is left.
 - [~] **T3 — read the UNRESOLVED. PARTIAL 2026-09-18: two whole resolution classes were
   mechanised and measured; the residue is genuinely a per-target read.** Each row resolves
   to DECIDED, to a legitimate count-denominated rate, or to a timing that feeds no
@@ -879,3 +881,110 @@ and deciding whether an assertion is a *performance bar* rather than an
 instrument-health check is the same judgement one step down — which is precisely
 why this is a proxy with a hand-verified sample and a stated UNDECIDED bucket,
 not a seventh resolver.
+
+## 2026-09-19 — §T2: the measurement, and why the backlog is 3 rather than 38
+
+T2 reads as "migrate the 57". **The first target measured refuted that framing in one
+run**, and the framing is the thing worth correcting: `channel_simd_goat` G5 asserts
+`improvement >= 0.05` and measures **84.3%** — 79 points of slack, which no box state
+can cross. Migrating it would be work with no verdict attached to it.
+
+So the prior question is not "which targets are in the class" (the census answered that)
+but **"which of them can the box actually flip"** — and AGENTS.md already says so, in the
+bullet this issue's own T3 widening produced: *a bar's exposure is its SLACK, not its
+size, and reading the bar alone is the mistake this instrument cannot help you avoid.*
+That bullet ends by saying the question is not statically decidable. It is trivially
+decidable by EXECUTION, which nobody had done.
+
+### What was run
+
+Every root-package `tests/` target the audit flags `SEQUENTIAL [GATES]` — **38 files,
+36 cargo targets** — in **release**, each with **exactly its own `required-features`**
+(never `--all-features`, which AGENTS.md records as an unsupported TEST configuration
+here). One cargo invocation per distinct feature set; **36 of 36 exited 0**.
+
+- logs `/f/ab_slack/*.log`, summary `/f/ab_slack_summary.txt`, bar inventory
+  `/f/ab_bars.txt`
+- ⚠ **BOX STATE, per §Feature Flag Discipline:** 20.6 GB free of 31.8, commit 36.0 GB
+  avail of a 62.8 GB limit, ~13% CPU, with the 21 drift sweeps running concurrently.
+  That is a **SCREENING** class. It is adequate to reject a 79-point slack and to
+  observe a zero (no load manufactures one); it is **not** adequate to adjudicate a
+  9-point one, and every candidate below was re-measured on a quiet box before being
+  acted on.
+
+### The decision rule, taken from this repo's own measurements
+
+Two numbers already exist here and neither had been used as a threshold:
+
+- **±21.7%** — the excursion Issue 723 T5 measured between two sequential arms of the
+  *same* work, thirty seconds apart, on a loaded box.
+- **±6%** — the per-round spread `katgpt-rs-c5` measured on an **idle** box
+  (0.9020 .. 1.0607).
+
+So: slack **< 6 points** flakes even idle; **6–22 points** flakes under the load the
+x86_64 matrix actually runs at; **≥ 22 points** is out of reach. ⛔ And slack in *bar
+points* is not sufficient on its own — for an OVERHEAD bar what matters is whether the
+measured **signal** stands above the envelope, which is why `bench_176` is a candidate
+at 13.3 points and `bench_249` is not at 34%.
+
+### Result — 3 candidates of 38, and 2 defects of a different class
+
+| target | bar | measured | slack | verdict |
+|---|---|---|---|---|
+| **`bench_145` G2 (Gate A)** | speedup ≥ 1.2× | **1.22×** | **1.7% rel** | ⛔ **MIGRATED** |
+| **`bench_176` forward_cpu** | overhead < 20% | 6.7% | 13.3 pts | ⛔ candidate — signal is 0.07 µs on a 1.09 µs baseline |
+| **`bench_176` forward_batch** | overhead < 15% | 5.3% | 9.7 pts | ⛔ candidate — same shape |
+| **`bench_164` P1** | overhead ≤ 10% | +0.5% | 9.5 pts | ⛔ candidate — **~21 µs** total per timed region |
+| `bench_008` P2 | ratio ≤ 1.20 | 1.00× | 19.7 pts | ⚠ MARGINAL — see below |
+| `bench_249` T2 | ratio < 2.0 | 1.32× | 34% rel | not reachable |
+| `bench_152` T3.3 | ratio < 1.5 | 0.993 | 50.7 pts | no |
+| `bench_215` | overhead < 50% | 0.4% | 49.6 pts | no |
+| `bench_217` B1 | < 5× mtp | 2.9× | 42% rel | no |
+| `bench_238` G1 | ≥ 2.0× | 10.21× | — | no |
+| `bench_turboquant` large_kv | zero ≤ alloc×1.05 | **0.244** | 80.6 pts | no |
+| `channel_simd_goat` G5 | improvement ≥ 5% | 84.3% | 79 pts | no |
+| `bench_128` arena | overhead < 10% | −100% | ~110 pts | no |
+| `pipeline_pruner_goat` G3 | improvement ≥ 20% | 97.6% | 77.6 pts | no (confirms AGENTS.md) |
+| `bench_168` P4 | overhead ≤ 5000% | +12.4% | ~4988 pts | no |
+| `bench_231` G4 · `bench_239` G5 | absolute budgets | — | — | not the class (one-arm) |
+| `bench_simd` · `latent_steering_t3` · `bench_252` T27b | — | — | — | print their reading, gate nothing |
+
+⚠ **`bench_008` P2 is the one honest MARGINAL row and it should not be silently
+promoted or dropped.** 19.7 points of slack sits just inside the 21.7-point envelope,
+and its bar's own comment reads *"Allow 20% slack for measurement noise"* — i.e. the bar
+**is** the noise term, which is exactly what interleaving removes. ⛔ Its module doc also
+says *"P2: Pruned path with k = d/4 mask runs ≥ 1.05× faster than unmasked"* while the
+code asserts `ratio <= 1.20` — **a speedup claim documented over a non-regression
+assertion**, the same doc-vs-assert divergence this issue records for `bench_105`.
+Resolve the divergence first; the migration decision follows from which claim is meant.
+
+### ⛔ What the read found that it was not looking for
+
+Reading the printed values turned up **two classes this issue is not about**, both filed
+separately so the counts stay unpooled:
+
+- **katgpt-rs Issue 855** — a latency ceiling satisfied by a loop the optimiser DELETED.
+  `100000 iterations in 0ns (0.0 ns/op)` asserted `< 10_000.0`, PASS. 3 of the first 21
+  targets, 5 arms. That class **cannot** flip — the opposite failure mode from this one,
+  needing the opposite repair (consume the result, not interleave). `bench_239` G5 and
+  `bench_bfcf_tree` B1 carry **both**, which is why pooling would hide which repair each
+  arm needs.
+- **katgpt-rs Issue 856** — `#[cfg(feature)] mod tests {}` zeroes a target exactly like
+  `#![cfg]`, and `cfg_gated_target_audit` reports a confident `SILENT-NOW 0` over 15 of
+  them. Found because `test_122_toast_goat` printed `ok. 0 passed` in the middle of this
+  run.
+
+**None of the three classes was found by a census**, which is this issue's own standing
+finding (§834 T3) reached a fourth time — and this time the discovery method was cheap
+and repeatable: *run the targets and read what they print next to their bars.*
+
+### What is still open in T2
+
+- The **3 candidates** above (`bench_176` ×2, `bench_164`), each a per-target read on
+  the four axes T4 names — orientation, claim direction, chunk size, `black_box`.
+- `bench_008` P2, after its doc-vs-assert divergence is resolved.
+- The **non-root** half of the class: `crates/*/tests/` and `crates/*/benches/` carry
+  more `SEQUENTIAL [GATES]` rows, and `#[path = "common/ab_timing.rs"]` does not resolve
+  from a crate target. Whether that half is migrated by a relative `#[path]` or by making
+  `ab_timing` a shared crate is **834 T3's owner call**, and it should be answered before
+  the work, not during it.
