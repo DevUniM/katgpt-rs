@@ -1,6 +1,6 @@
 # Issue 855: a latency ceiling is satisfied by a loop the optimiser DELETED — `0 ns/op` over 100 000 iterations, asserted `< 10 000 ns`, PASS
 
-**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); **T4 CLOSED** — the proposed `let _ =` predicate is REFUTED by the execution run (20.0% vs a 21.1% base rate) and `scripts/timed_region_guard_gate.py` shipped in its place as a docs-gate CHECK (membership wall over the READ tier, ratchet over the unread one); T5 open.
+**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); **T4 CLOSED** — the proposed `let _ =` predicate is REFUTED by the execution run (20.0% vs a 21.1% base rate) and `scripts/timed_region_guard_gate.py` shipped in its place as a docs-gate CHECK (membership wall over the READ tier, ratchet over the unread one); **T5's cross-repo axis COUNTED** (60 strictly-decidable unguarded regions workspace-wide, 33 of them outside this repo across 7 siblings) — running them, and a ratchet-only sweep half, remain open.
 **Found by:** Issue 833 T2's per-target read, 2026-09-19. Not by a census, and
 not by anything failing — by **reading the printed values next to the bars**,
 which is the one thing 833 T2 refuses to skip.
@@ -522,6 +522,44 @@ read by a human as a result. It is a division by a deleted loop.
         assumed that answer carried and was wrong by seven repos. **Count the
         sibling timed regions first**; the count this repo produced (608
         regions, 120 unguarded in scope) is not evidence about theirs.
+      - ⚑ **COUNTED 2026-09-19, and the axis is no longer unmeasured.** The
+        shipped classifier was run over all 21 contract repos (it already takes
+        a root), which is the cheap half of T5 — a static census of *regions
+        lacking a defence*, NOT of defects:
+
+        | | files | timed regions | READ-tier unguarded | UNREAD tier | print-only |
+        |---|---|---|---|---|---|
+        | katgpt-rs | 753 | 608 | 27 | 93 | 147 |
+        | riir-ai | 854 | 552 | **18** | 58 | 53 |
+        | riir-chain | 161 | 47 | **6** | 11 | 6 |
+        | riir-neuron-db | 91 | 61 | **3** | 12 | 15 |
+        | riir-clippy | 98 | 23 | **2** | 3 | 1 |
+        | riir-train | 311 | 131 | **2** | 28 | 4 |
+        | riir-game-sdk | 69 | 32 | **1** | 3 | 1 |
+        | riir-shader | 6 | 1 | **1** | 0 | 0 |
+        | 13 others | 198 | 37 | 0 | 5 | 0 |
+        | **TOTAL** | **2541** | **1492** | **60** | **213** | **227** |
+
+        ⛔ **The class generalises: 33 of the 60 strictly-decidable regions are
+        OUTSIDE this repo, across 7 siblings.** T5's premise — *"`let _ = f()`
+        in a timed loop is not a katgpt-rs idiom"* — was a guess about the
+        wrong quantity; the population is not the idiom, it is the missing
+        defence, and it is everywhere.
+        ⚠ **33 is not 33 defects and must never be read as one.** The only
+        measured conversion rate is this repo's: **7 of 34 (20.6%)** of the
+        in-scope regions that were RUN were satisfied by absent work. Applied
+        to 33 that is a *magnitude* — expect a handful — and AGENTS.md's own
+        rule is that a static count over an unread bucket is a candidate
+        ordering, not a finding.
+      - **What is left, and the shape it must take.** The honest next step is
+        still T5's original one: run those 33 at their own `required-features`
+        and read the printed numbers. Until somebody does, a cross-repo
+        verdict half must be **RATCHET-ONLY** — the shipped gate's membership
+        WALL rests on a per-row MEASURED number, and 27 such rows cost two
+        agent sessions of release builds in this repo alone; a wall in a
+        sibling would be a wall over an unread bucket, which is exactly what
+        T4 refused. And a cross-repo repair is not landed until it is
+        COMMITTED in the sibling with a cited SHA (Issue 798).
 
 ## Records
 
