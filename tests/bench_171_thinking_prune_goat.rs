@@ -5,9 +5,13 @@
 //!     (structural dominance — a tie is a failure, see Issue 831 T3)
 //! P2: FrozenBaseGuard produces identical output to Uniform when screening is cheap
 //!     (NoScreeningPruner — confirms correctness of the delegation)
-//! P3: Wall-clock timing — FrozenBaseGuard with an expensive screener is >= 30%
-//!     faster than Uniform at intermediate hops (the actual performance claim),
-//!     measured as an INTERLEAVED median of ratios (Issue 831 T2)
+//! P3: Instrument health + mechanism (Issue 831 T5 owner call, 2026-09-19):
+//!     the timed section asserts the INSTRUMENT (both arms measurably real,
+//!     median finite — the Issue-723 eliminated-arm class) and the MECHANISM
+//!     (FrozenBaseGuard makes exactly 1/3 of Uniform's screener calls over 3
+//!     hops, counted not timed). The wall-clock speedup is PRINTED as the
+//!     diagnostic record (measured ~63-64% on both arches, Issue 831 T2/T3)
+//!     and gates nothing — thinking_prune's status does not rest on this row.
 //! P4: Single-hop edge case — FrozenBaseGuard applies full screening when hop is final
 
 #[path = "common/ab_timing.rs"]
@@ -350,12 +354,22 @@ fn proof_p2_identical_with_noop_screener() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// P3: Wall-Clock Timing — FrozenBaseGuard is faster at intermediate hops
+// P3: Instrument health + mechanism (Issue 831 T5 owner call, 2026-09-19)
+//
+// Reclassified from a perf bar by the owner call: the ≥30% latency assert is
+// GONE. "P3 is a coin flip" was the PRE-repair state (the screener's work was
+// deleted — Issue 831 T2/T3); the repaired fixture measured 63-64% on both
+// arches, and that number stays the recorded evidence. What this row still
+// gates: (a) instrument health — both arms measurably real; (b) the mechanism
+// as an exact CALL COUNT — `should_screen_full` is `hop >= total_hops - 1`
+// for FrozenBaseGuard, so over 3 hops it must make exactly 1/3 of Uniform's
+// screener calls. Load-immune, arch-independent, and the thing the latency
+// claim was always a proxy for.
 // ══════════════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "thinking_prune")]
-fn proof_p3_wall_clock_timing() {
-    println!("\n── P3: Wall-clock timing with expensive screener ───────────\n");
+fn proof_p3_instrument_and_mechanism() {
+    println!("\n── P3: Instrument health + mechanism (call count) ──────────\n");
 
     let config = make_config();
     let depths = 4;
@@ -451,48 +465,79 @@ fn proof_p3_wall_clock_timing() {
     // `ratio = b / a`, so FrozenBaseGuard being faster means a ratio BELOW 1.
     let speedup_pct = (1.0 - ab.median) * 100.0;
 
-    // Printed on the PASS path as well as the FAIL path (Issue 831 T2), and
-    // `report` prints the per-round RANGE beside the median on purpose: a
-    // median inside a 0.9..1.1 band and one inside a 0.3..3.0 band are not the
-    // same claim even when they are the same number. ⚠ `cargo test` still
-    // swallows this without `--nocapture` — that is cargo's capture, not the
-    // test's, which is why the assertion message below carries the numbers too.
+    // Printed, never gated (Issue 831 T5 owner call, 2026-09-19). The
+    // measured record — 64.2% release / 63.1% debug x86_64 (T2/T3), 63.1-63.8%
+    // aarch64 (T1) — lives in the issue/HISTORY; `report` prints the per-round
+    // RANGE beside the median on purpose: a median inside a 0.9..1.1 band and
+    // one inside a 0.3..3.0 band are not the same claim even when they are the
+    // same number.
     ab.report("P3 uniform-vs-frozen");
-    println!("  Speedup (median of {rounds} interleaved rounds): {speedup_pct:.1}%");
+    println!("  Speedup (median of {rounds} interleaved rounds): {speedup_pct:.1}% (recorded, not gated)");
 
-    // Assert: FrozenBaseGuard skips the expensive screener on the intermediate
-    // hops (2 of 3), so the expected saving is ~2/3.
-    //
-    // ⛔ The bar is 30%, not `faster at all`, and that is a REPAIR rather than
-    // a tightening-for-its-own-sake. `ns_frozen < ns_uniform` was the widest
-    // bar expressible, and it still failed 4 runs in 20 — because with the
-    // screener's work deleted (see `ExpensiveScreener::relevance`) both arms
-    // did the same near-nothing and the sign of the difference was noise. With
-    // the work restored the measurement is 64.2% release / 63.1% debug, in a
-    // per-round band 2.6% wide, which is the 30-60% this fixture's own comment
-    // has predicted since it landed and which no run had ever produced.
-    //
-    // 30% is chosen as HALF the measured effect, the house slack convention
-    // (`x86_64_matrix_floors.txt` uses ~60% of measured for the same reason):
-    // it holds in both profiles with a wide margin, so an unrelated commit on
-    // a loaded box does not red it, while a regression that stops skipping the
-    // intermediate hops takes the speedup to ~0 and cannot pass.
-    let min_speedup_pct = 30.0;
+    // ── Gated half #1: instrument health ─────────────────────────────────
+    // Both arms must be measurably real. An arm the optimiser deleted reads
+    // ~0 ns/iter and the ratio collapses — the Issue-723 Class A2 shape this
+    // harness exists to catch. This is the instrument-health claim, NOT a
+    // perf claim: nothing here compares the two arms' times.
     assert!(
-        speedup_pct >= min_speedup_pct,
-        "FrozenBaseGuard should be >= {min_speedup_pct:.0}% faster than Uniform with an \
-         expensive screener, got {speedup_pct:.1}% \
-         (median ratio b/a {:.4} over {rounds} rounds, range {:.4}..{:.4}; \
-          a {:.0} ns/iter, b {:.0} ns/iter). \
-         A result near 0% usually means the screener's work was optimised away \
-         — check that ExpensiveScreener::relevance still black_boxes its accumulator.",
-        ab.median,
-        ab.min(),
-        ab.max(),
+        ab.median.is_finite() && ab.a_ns_per_iter() > 0.0 && ab.b_ns_per_iter() > 0.0,
+        "P3 instrument health: both arms must do measurable real work \
+         (a {:.0} ns/iter, b {:.0} ns/iter, median {:.4}) — an eliminated arm is \
+         an instrument failure (Issue 723 Class A2), never a verdict about \
+         the schedule; check that ExpensiveScreener::relevance still \
+         black_boxes its accumulator",
         ab.a_ns_per_iter(),
         ab.b_ns_per_iter(),
+        ab.median,
     );
-    println!("  ✅ P3 PASS: FrozenBaseGuard is {speedup_pct:.1}% faster with expensive screener");
+    println!("  ✅ P3 PASS (instrument): both arms real (a {:.0} ns/iter, b {:.0} ns/iter)",
+        ab.a_ns_per_iter(),
+        ab.b_ns_per_iter());
+
+    // ── Gated half #2: the mechanism as an exact CALL COUNT ──────────────
+    // `should_screen_full` is `hop >= total_hops - 1` for FrozenBaseGuard,
+    // so over `total_hops = 3` Uniform screens 3/3 hops and FrozenBaseGuard
+    // 1/3 — every skipped hop is a screener call that cannot happen, counted
+    // instead of timed. Exact, arch-independent, load-immune: this is the
+    // thing the wall-clock number was always a proxy for (the fixture's own
+    // "~2/3 of hops skip the work" claim, tested where it lives).
+    struct CountingScreener<'a> {
+        inner: &'a ExpensiveScreener,
+        calls: &'a std::sync::atomic::AtomicU64,
+    }
+    impl ScreeningPruner for CountingScreener<'_> {
+        fn relevance(&self, depth: usize, token_idx: usize, parent_tokens: &[usize]) -> f32 {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.inner.relevance(depth, token_idx, parent_tokens)
+        }
+    }
+    let count_screener_calls = |schedule: PrunerSchedule| -> u64 {
+        let calls = std::sync::atomic::AtomicU64::new(0);
+        let counting = CountingScreener { inner: &expensive, calls: &calls };
+        for hop in 0..total_hops {
+            let tree = build_dd_tree_screened_with_schedule(
+                std::hint::black_box(&refs),
+                &config,
+                &counting,
+                true,
+                schedule,
+                hop,
+                total_hops,
+            );
+            std::hint::black_box(tree);
+        }
+        calls.load(std::sync::atomic::Ordering::Relaxed)
+    };
+    let uniform_calls = count_screener_calls(PrunerSchedule::Uniform);
+    let frozen_calls = count_screener_calls(PrunerSchedule::FrozenBaseGuard);
+    assert!(
+        frozen_calls > 0 && frozen_calls * 3 == uniform_calls,
+        "P3 mechanism: FrozenBaseGuard must make exactly 1/3 of Uniform's screener \
+         calls over {total_hops} hops (frozen {frozen_calls}, uniform {uniform_calls}) \
+         — anything else means the intermediate-hop skip is gone, doubled, or \
+         the fixture stopped building identical trees per hop",
+    );
+    println!("  ✅ P3 PASS (mechanism): screener calls frozen {frozen_calls} = uniform {uniform_calls} / 3");
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -601,7 +646,7 @@ fn test_bench_171_thinking_prune_goat() {
     {
         proof_p1_structural_dominance();
         proof_p2_identical_with_noop_screener();
-        proof_p3_wall_clock_timing();
+        proof_p3_instrument_and_mechanism();
         proof_p4_single_hop_is_final();
         proof_p5_final_hop_quality_identical();
 

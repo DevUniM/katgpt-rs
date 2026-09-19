@@ -11,6 +11,37 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 831 — CLOSED: bench_171 P3 reclassified as instrument-health + mechanism by owner call (2026-09-19)
+
+**Status: CLOSED 2026-09-19, T1–T5 all resolved.** The coin flip that filed
+this issue was repaired 2026-09-18 (T2/T3 `03d729fdf`: the screener's work
+was deleted by `let _ = acc` — the Issue-723 elimination shape; with one
+`black_box` the effect measured 64.2% release / 63.1% debug x86_64, and T1
+closed 2026-09-19 with aarch64 at 63.1–63.8% across 20+20 runs). What
+remained was T5, the owner-gated promotion question.
+
+**T5 resolved by owner call (gate D2, 2026-09-19): P3 is instrument-health,
+not a perf bar — `thinking_prune`'s status does not rest on this row.**
+`tests/bench_171_thinking_prune_goat.rs` P3 (renamed
+`proof_p3_instrument_and_mechanism`) now gates exactly two load-immune
+claims and PRINTS the wall-clock number as the diagnostic record
+(measured 63.5% at the reclassification commit, matching the recorded
+63–64% band on both arches):
+
+- **Instrument health** — both arms measurably real (`a_ns_per_iter() > 0`,
+  `b_ns_per_iter() > 0`, median finite): the eliminated-arm class this
+  harness exists to catch, with no comparison of the two arms' times.
+- **The mechanism as an exact CALL COUNT** — `should_screen_full` is
+  `hop >= total_hops - 1` for FrozenBaseGuard, so over 3 hops the schedule
+  must make exactly 1/3 of Uniform's screener calls (measured 13,824 vs
+  41,472 — exact). Arch-independent, load-immune, and the thing the
+  wall-clock number was always a proxy for; a regression that stops
+  skipping intermediate hops breaks it to 1:1, not to ~0% speedup.
+
+The ≥30% latency assert is GONE by this call — removed, not lowered; the
+30% bar was itself the T2/T3 repair and its measured basis stands in this
+record. Issue file removed per the noise-reduction rule.
+
 ## Issue 847 — CLOSED: `simd_lut_dequant`'s AVX2 kernels compiled to NOTHING on every ordinary x86_64 build — and the bf16 sweep that followed was right for one kernel of three (2026-09-19)
 
 **Status: CLOSED 2026-09-19, all seven tasks (T1, T2, T2a, T3, T4, T5, T6).**
