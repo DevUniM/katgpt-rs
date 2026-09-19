@@ -295,7 +295,14 @@ instead of re-deriving them:
   T2 becomes, it cannot be a codemod.
 
 - [ ] **T3 — the cross-repo question, MEASURED and left open deliberately.**
-  The class is 71 targets outside this repo and the treatment is 0. Do **not**
+  The class is 71 targets outside this repo and the **shared MODULE** reaches 0
+  of them. ⚠ "the treatment is 0" is the older wording and it is too strong by
+  6: the shape-based verdict measures **9 HAND-ROLLED, 6 of them outside this
+  repo** (riir-ai 3, riir-neuron-db 2, riir-train 1), each interleaving with a
+  per-pair ratio and a median — TREATED, not a migration candidate. So the
+  treatment generalised and the module did not, which makes the residue a DRY
+  finding rather than a coverage gap (↔ Issue 833 T5, where the same
+  measurement is written up from the other side). Do **not**
   conclude "therefore a drift sweep" — `check_validation_gate` declined one on
   a measured population of one, `console_encoding_gate` assumed that answer
   carried and was wrong by seven repos, and the honest reading here is a

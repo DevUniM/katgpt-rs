@@ -180,9 +180,29 @@ that any loaded box can trip. It is repaired, not excused.
   assertion. Until then the 57 is a floor on the class, not its size. See §T3 below.
 - [ ] **T4 — re-measure whether a verdict half is warranted** once T3 lands and the
   classifier has a calibrated population. Not before.
-- [ ] **T5 — the cross-repo question is UNMEASURED.** `ab_timing.rs` is a katgpt-rs test
-  module; whether the siblings carry the same shape has not been looked at, and the
-  measurement comes before the answer.
+- [x] **T5 — MEASURED (2026-09-19), and the sentence above had gone stale in the direction
+  that invites re-doing work.** "Has not been looked at" stopped being true when Issue 834
+  T3 ran the census and `sequential_ab_timing_audit` grew its shape-based verdict: the class
+  is **71 targets outside this repo** and the cross-repo picture is a THREE-way split, not
+  the binary this task assumed.
+  - **ADOPTED (uses the shared `common/ab_timing.rs`) is 0 outside katgpt-rs.** That is the
+    clause 834 T3 records as "the treatment is 0", and read alone it is what makes a sweep
+    look owed.
+  - **HAND-ROLLED is 9, and 6 of the 9 are OUTSIDE this repo** — riir-ai 3, riir-neuron-db
+    2, riir-train 1. Those targets interleave, take a per-pair ratio and reduce by median;
+    `bench_657_clustered_lm_head_bound.rs` is stricter than the shared harness. They are
+    **TREATED**, and folding them into ADOPTED or into the migration backlog are opposite
+    errors — the audit keeps HAND-ROLLED as its own verdict for exactly that reason.
+  - So the measurement's answer is: **the treatment generalised; the shared MODULE did
+    not.** What is left is a DRY finding — one harness independently re-written six times —
+    and not a coverage gap, which is a different question with a different owner.
+  - The decision that consumes it (should `ab_timing.rs` become a shared crate rather than a
+    `#[path]`-included module copied per repo?) is an **owner/boundary call**, recorded as
+    834 T3's prior question. This task was the measurement, and the measurement is done.
+  - ⚠ Take the live figures from a run of `scripts/sequential_ab_timing_audit.py`, never
+    from this bullet: the ADOPTED column was an UNDER-COUNT by 5 until 2026-09-19 (a target
+    became invisible by being fully MIGRATED — `classify` short-circuited `n == 0 → UNTIMED`
+    ahead of the ADOPTED test), which is why the numbers here carry a date.
 
 ## Records
 
