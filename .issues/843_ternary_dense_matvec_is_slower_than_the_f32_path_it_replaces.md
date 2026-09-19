@@ -1,6 +1,6 @@
 # Issue 843: the `plasma_path` ternary dense matvec is slower than the f32 matvec it replaces BELOW the L3 boundary — and only wins above it (x86_64/AVX2)
 
-**Status:** OPEN — **T1 + T2 DONE** (T2: on x86_64/AVX2 the crossover lands on the L3 boundary — §T2; T1: on aarch64/NEON there is NO crossover anywhere in 32..=16384, and the served shape 768×3072 reads 2.10× — §T1; the two arches AGREE that every shape this workspace serves is in the losing regime). T3/T4 open. Measured observation, owner-routed. Found incidentally while
+**Status:** OPEN — **T1 + T2 + T3 DONE** (T3, 2026-09-19 later session §T3: read-only from the M3 — the stall is the FORMULATION, extraction:arithmetic ≈ 8:1 on both arms; NEON throughput-bound (op count closes 8.5 GMAC/s exactly), AVX2 ~2× below its op-count ceiling → `vcvtdq2ps` chain-latency suspect; fix ladder named with projections, bit-identity contract cost named, x86_64 discriminating experiment queued — profile-first held, no rewrite from a read). T2: on x86_64/AVX2 the crossover lands on the L3 boundary — §T2; T1: on aarch64/NEON there is NO crossover anywhere in 32..=16384, and the served shape 768×3072 reads 2.10× — §T1; the two arches AGREE that every shape this workspace serves is in the losing regime). **T4 remains — the owner flag call, now on the complete technical picture.** Measured observation, owner-routed. Found incidentally while
 benchmarking Issue 839 (Bench 839 arm G2c); it is not a `kron_tile` finding and
 is deliberately not folded into that GOAT's verdicts.
 
@@ -89,8 +89,14 @@ implementation is not a speedup over the implementation you replaced.
       should appear where the f32 operand does not — measure 2K, 4K, 8K square,
       and report the crossover size or its absence. A single-size verdict on a
       memory-argument kernel is the shape this repo files issues about.
-- [ ] **T3 — Read `avx2_ternary_matvec` for a sign-extraction stall.** 8.5
-      GMAC/s from a popcount path that should beat an FMA path suggests the
+- [x] **T3 — DONE (2026-09-19 later session, §T3 below): the read confirms and SPLITS the
+      stall** — extraction outnumbers arithmetic ~8:1 on both arms (exact op counts in §T3);
+      NEON is throughput-bound (T1's 16 uops × 4 pipes closes 8.5 GMAC/s exactly), AVX2 is
+      ~2× below its op-count ceiling → chain-latency suspect `vcvtdq2ps` (~7-cyc, single
+      port) with 4-acc ILP; the batched path inherits the same wall (same inner kernel);
+      fix ladder (masked-add / pre-expanded i8 / the fork's digit-index-hoisting reference)
+      + the x86_64 discriminating experiment queued — profile-first discipline held, no
+      rewrite from a read.** 8.5 GMAC/s from a popcount path that should beat an FMA path suggests the
       per-block `pos_bits`/`neg_bits` → f32 accumulate is the bottleneck rather
       than the multiply-free arithmetic. Profile before rewriting; the arm is
       4.32× its scalar, so it is not simply unvectorised.
@@ -281,3 +287,90 @@ the weight read across a batch — the shape a real decode step uses. T3's read
 should start there, on BOTH arches now. One thread throughout; the two arms'
 summation orders are not bit-identical, but neither gate here depends on
 bit-equality across arms.
+
+## T3 — read (2026-09-19, later session, M3): the stall is real, and it is the FORMULATION — extraction outnumbers arithmetic ~8:1 on both arms; AVX2 additionally carries `vcvtdq2ps` on the critical chain
+
+Read-only from the M3 (no profiler run — the mechanism claims below are
+read-derived op accounting + uarch port models, labelled as such; the
+discriminating experiment is queued for the x86_64 box that measured the
+8.5 GMAC/s figure). Subject: `avx2_ternary_matvec` + `fma_byte8_avx2`
+(`katgpt-types/src/simd/ternary.rs` L218-346), cross-checked against the NEON
+arm `fmla_nibble8` and the batched `simd_ternary_matmul_batch` entry.
+
+**Op accounting (exact, from source).** `fma_byte8_avx2` spends, per 8
+elements: 2 scalar byte-extracts (`shr`+`and` per plane), 2 `vpbroadcastd`,
+2 `vpand`, 2 `vpcmpgtd`, 1 `vpsubd`, 1 `vcvtdq2ps`, 1 `vmovups` (x), 1
+`vfmadd` — **8 vector uops of sign extraction feeding ONE 8-lane FMA**
+(extraction:arithmetic = 8:1, the same ratio T1 counted on NEON). The
+"multiplication-free" premise removes 1 multiply per element and pays back
+~10 integer/conversion uops per 8 elements to reconstruct the ±1 operand the
+multiply needed.
+
+**Why ~8.5 GMAC/s is a formulation ceiling, not a port quirk.** Two ISAs at
+different clocks (M3 ~4 GHz NEON vs 13700K ~5 GHz AVX2) sit at the SAME
+~8.5 GMAC/s (T1 §T1 closes NEON to three digits). On NEON the mechanism is
+throughput: T1's 16 uops/8 elems over 4 FP pipes = 4 cyc/8 elems ≈ 8 GMAC/s
+at ~4 GHz — exact. On AVX2 the op count alone does NOT close the number: a
+3-integer-vector-port model (Golden Cove class) yields ~2.3 cyc/8 elems ≈
+17-18 GMAC/s — measured is ~2× below, so the read's leading suspect is the
+per-chunk DEPENDENCY CHAIN (extract→broadcast→and→cmp→sub→**`vcvtdq2ps`
+(~7-cyc latency class, single port)**→FMA ≈ 15-16 cyc) against only
+4-accumulator ILP — i.e. **AVX2 latency-bound where NEON is throughput-bound,
+same ~8.5 number by coincidence of two extraction mechanisms**. The
+4-accumulator ILP itself is working (4.32× scalar, the issue's own refutation
+of "unvectorised") — the wall is not the unroll depth either.
+
+**The batched path (T1's open note) inherits the same wall.**
+`simd_ternary_matmul_batch` (ternary.rs L555-581) dispatches the SAME
+single-vector kernel per batch row (serial < 4, `par_chunks_mut` ≥ 4): the
+weight BYTES amortize through cache across the batch, but the sign EXTRACTION
+is re-derived per (batch, row, chunk) — x differs per batch row, so no
+cross-batch register reuse exists. The per-element extraction cost is the
+batched path's too; no separate ceiling.
+
+**The rewrite constraint any fix must clear:** the doc'd contract "All paths
+produce bit-identical results to `ternary_matvec_scalar()`" (ternary.rs:529,
+restated by binary.rs:587's subset test). Reassociation (lane grouping or
+accumulation order) breaks it — the `similarity.rs::dot_8` precedent
+(deliberately naive "so recos stays bit-deterministic across platforms") is
+the house style for exactly this trade.
+
+**Fix sketches, projected — NOT for blind rewrite (profile-first discipline):**
+
+- **(a) Two-accumulator masked-add** — drop `vpsubd`+`vcvtdq2ps`+`vfma`, add
+  2×`and_ps` (x AND the integer all-ones mask, bitwise-exact on f32) +
+  2×`add_ps`; row-end becomes `hsum(acc_pos) - hsum(acc_neg)`. Op-count
+  NEUTRAL (~10 uops) but removes the ~7-cyc conversion from the critical
+  chain → projected win ONLY under the latency-bound reading. **Breaks the
+  bit-identity contract** (different association) — needs renegotiation or an
+  order-preserving variant.
+- **(b) Formulation-crossing: pre-expanded i8 sign rows** — `vpmovsxbd`+
+  `vcvtdq2ps`+FMA ≈ 5 uops/chunk, projected ~1.7-2×, at 8× the bitplane
+  footprint (still ~5.3× smaller than f32). The footprint-vs-latency dial is
+  T4's owner call, taken on these numbers.
+- **(c) The opponent's reference implementations** — the PrismML fork's own
+  trit-extraction family, already on the league watch
+  (`.benchmarks/rematch/2026-09-19_watch.md`, riir-ai): `7113f6462` "metal:
+  PTQ1_0 exact-float trit extraction (+30-38% decode)" (#157), `ecd0addc3`
+  exact-float mat-mul dequant with digit-index hoisting (#158), `b984d5f2f`
+  PQ2_0/Q2_0 exact-float mat-vec (+5-7% decode) (#159). Their **digit-index
+  hoisting** is the same lever as (a) (hoist per-call what the loop re-derives
+  per chunk) — the mining reference for this exact problem class.
+
+**The discriminating experiment (x86_64 lane, queued — the 13700K is
+sibling-held):** one A/B spike in a throwaway worktree — variant (a) vs
+current on `tests/bench_843_ternary_size_sweep.rs` at 1024² (the committed
+interleaved harness): masked-add ≈ unchanged ⇒ throughput-bound (only (b)
+moves the wall); ~1.5× ⇒ latency/`vcvtdq2ps`-bound ((a) is the cheap fix).
+`perf stat -e cycles,uops_executed.port0,port1,port5` on the current kernel
+reads the port pressure directly and settles the model. **Not run from the
+M3**: the NEON arm is op-count-bound (16→14 uops under (a) — no signal), so
+this box cannot discriminate the AVX2 mechanism.
+
+**T3 closes as a READ.** The hypothesis is confirmed and split into two
+mechanisms (NEON throughput / AVX2 chain-latency-with-cvt-suspect); the fix
+ladder is named with projections; the contract cost is named; the profile
+plan is attached for the x86_64 box. **T4 (the flag call) now has the complete
+technical picture**: at every served shape, `plasma_path` trades ~1.9-3.0×
+latency for the 21× footprint (or ~1.7-2× latency back via (b) at 5.3×
+footprint) — an owner decision on numbers, per the issue's own framing.
