@@ -2259,9 +2259,21 @@ count is what the bucket note above forbids.
     run. That single fact explains every observation above: why "2 of 2 sampled
     modules exceeded 300 s" (each paid the self-test), why one module read
     22m47s, and why three whole runs produced zero verdicts.
-    ⚠ WHY the self-test does not terminate is still unmeasured — it is 27 arms
-    including real `git worktree` fixtures, and one of them is the suspect, not
-    all of them. But the repair is now a bounded question about ONE function
+    ⛔ **LOCALISED to one point, and it is STATE-DEPENDENT — no single arm
+    reproduces it.** The harness's own progress channel (built for exactly this
+    in Issue 854, and the reason it survives `_silence()`) names the spot:
+    **5 of 5 runs print the same 10 fixture lines and stop after
+    `base_crash.py`**, with `healthy.py` — the next `audit_module` fixture —
+    never appearing. But every piece of that region completes standalone:
+    `audit_module(base_crash)` in **0.00 s**, and the entire block between the
+    two (the four `spin.py` watchdog assertions plus `healthy`) in **~1 s**,
+    with the non-terminating mutant correctly returning `TIMEOUT` in 1.01 s.
+    So the watchdog works, the fixtures work, and the wedge depends on state
+    ACCUMULATED across the self-test rather than on any arm in isolation —
+    the suspects being the watchdog threads and the fd-level `_silence()` /
+    `_PROGRESS_FD` handling that earlier arms install and restore. That is
+    where the next probe goes, and it needs instrumenting the function rather
+    than calling its pieces, which is why this stops here. But the repair is now a bounded question about ONE function
     rather than about the gate, and the cheap mitigation is available today:
     `audit_module()` is importable and costs 0.03 s per module, so a caller
     that needs reach numbers can have them without `main()`. Write the **CHECKS count beside the number**, exactly as the docs-gate
