@@ -11,6 +11,212 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-19 — the open-issue backlog is cleared by owner call (12 files removed; triggers recorded here)
+
+Every open issue in `.issues/` was adjudicated in one owner session: resolved
+work got its closure record below, genuinely-open work got an explicit PARKED /
+PULL-GATED / DECLINED verdict with a reopen trigger, and the files were removed
+per the noise-reduction rule (full text: git history; `number_collisions_expected.txt`
+rows deliberately untouched — closing a holder is when a pin becomes the only
+record). No number is reused.
+
+## Issue 780 — CLOSED as PARKED: OnlineLinearReadout waits on a consumer that measured itself absent (2026-09-19)
+
+**Status: CLOSED (PARKED) 2026-09-19, owner call.** The primitive argument
+(the third half of the linear-probe lineage — frozen offline / indicator bank /
+online fit) stands, but the live consumer closed NEGATIVE first (riir-clippy
+Issue 107, `5dfa1daff` 2026-09-15: horizon 1 < 2 on every corpus — the strategy
+prior is a sufficient statistic; T3–T6 closed UNBUILT), and T5's promotion bar
+requires a live consumer by construction. Building now would be a
+synthetic-fixture GOAT pass that speaks to nothing measured. Blocker corrected
+2026-09-17 (`15386365`). **Reopen triggers** (any one — inherited from
+riir-clippy 107's own): (1) an ORGANIC fixseq ring with ≥2-revert runs AND the
+span-embed column populated (it accumulates from that capture and is the lane's
+only revival path); (2) riir-train densifying the store per R135 / Bench 047;
+(3) any post-keep-fix corpus where resolved rate moves between orderings at all.
+Type sketch + mutation-class justification preserved in git history
+(`780_online_linear_readout_primitive.md`).
+
+## Issue 827 — CLOSED: T4 decided by owner call — known-extra repos ARE legitimate oracles; the freshness guards T2/T5 landed are the correct limit (2026-09-19)
+
+**Status: CLOSED 2026-09-19.** T1/T2/T3/T5 landed (`6d084c38`, `7464fc6e`,
+`3948f0e2`): the ORACLE-STALE bucket (never clean, never counted, never
+ratcheted — suppression at the QUALIFICATION step, not the tag), per-row oracle
+disclosure, two-sided fixture arms, and the fetch-age `⚠ UNVERIFIED UPSTREAM`
+advisory so `(0, 0)` no longer means "not measured". **T4 (the owner-gated
+second axis): STATUS QUO — a known-extra repo remains a legitimate oracle.**
+Rationale: the four motivating citations (riir-shader → seal-game-editor) are
+genuinely followable to a real repo with real numbering; refusing adjudication
+would move correct rows to UNDECIDED and lose information, while the measured
+hazard was never the oracle's AUTHORITY, only its FRESHNESS — and that is now
+guarded twice (T2's behind-origin suppression + T5's fetch-age line).
+`DOCS_GATE_KNOWN_EXTRA` keeps the box-level acknowledgement loud for everything
+else. Reopen if a known-extra repo is ever REMOVED from a box while citations
+still name it — the one shape the freshness guard cannot see.
+
+## Issue 833 — CLOSED: the class is measured, the executed backlog is 3 of 38, and the residue is routed (2026-09-19)
+
+**Status: CLOSED 2026-09-19.** T1 (`bench_105` GOAT 2 migrated) and the second
+firing (`g8`) hold in-cell; T3's resolver set (provenance-bound, REL-DIFF,
+comparison-shape, `n == 0` ordering fix — `381f01f7`, `e56e6773`, `1b7756c3`,
+`71d97908`) closed every STATED blind spot it could; T2 EXECUTED all 38
+root-`tests/` GATES rows in release at their own required-features
+(`1f519578`, `c55a3238`, `b0736d8c`) — **3 candidates** (bench_176 ×2,
+bench_164), plus two defects of OTHER classes found by the read and filed
+separately (Issues 855, 856 — both closed). **T4 stands as written: no verdict
+half, deliberately** — migration is a four-axis per-target read (orientation,
+claim direction, chunk size, `black_box`), never a codemod; a ceiling over it
+would be a backlog wearing a pin. Residue routed: the 3 candidates + bench_008's
+doc-vs-assert divergence convert when the x86_64 matrix next fires them
+(PASSED-ALONE is the discovery instrument — Issue 834's sampling finding); the
+non-root half (`crates/*/tests|benches`) is answered by Issue 834 T3's owner
+call below (no shared crate). Full record: git history
+(`833_sequential_ab_timing_ratio_is_a_box_measurement.md`).
+
+## Issue 834 — CLOSED: census shipped, the count reframed as a sampling population, and the shared-crate question is decided NO (2026-09-19)
+
+**Status: CLOSED 2026-09-19.** T1 shipped `scripts/sequential_ab_timing_audit.py`
+(`8045fae9`, phantom-repo correction `e1a572f2`); T2's measured reframe stands:
+the DECIDED count is a population every matrix run SAMPLES FROM (two firings,
+one pre-committed clean run 3 — `60264768`), the record-the-NAME discriminator
+is adopted, and the matrix now discloses box state on its verdict line
+(`d8bfa9b8`). **T3 owner call: `ab_timing.rs` STAYS a `#[path]`-included
+module — NO shared crate.** Rationale: katgpt-rs is the upstream public funnel
+and a test-harness crate would add a public, versioned surface for a test-only
+concern; the measured DRY residue is 9 hand-rolled twins across three siblings
+against 12 adopted sites here — real, but below the maintenance cost of a
+published crate, and per Issue 833 T4 each hand-rolled twin is often the better
+instrument for its own claim direction anyway. Siblings keep copying the module
+per repo (the existing `#[path]` convention, already documented). **Reopen
+threshold: a fourth sibling hand-rolls a twin** — that is the DRY line. **T4
+stands as written** (no verdict half; re-measure after the residue converts).
+
+## Issue 835 — CLOSED: T4 decided by owner call — the path dep is the workspace convention; publishing is contrary to Research 003 (2026-09-19)
+
+**Status: CLOSED 2026-09-19.** T1 (docs-gate CHECK 28, `cross_repo_path_dep_gate.py`,
+`5b09c3f4` + the unexercised-buckets disclosure `aba3827f`), T2 and T3 done
+2026-09-18 — both open questions measured and DECLINED an instrument on the
+measurement; riir-llm cloned and registered, gate green over 311 deps / 183
+manifests. **T4: riir-llm keeps its path dep and is not published.** Rationale:
+every sibling consumes via path deps against the `/git/` layout — that IS the
+workspace contract — and Research 003 ("anything `riir-*` is internal, no
+exceptions") forbids a public registry surface; a git dep would work but adds
+version-sync overhead the path layout already solves, and no consumer has asked
+to escape the layout. The gate keeps the box readable, which is the issue's own
+stated limit. Reopen if a consumer outside the `/git/` layout ever needs
+riir-llm.
+
+## Issue 839 — CLOSED: kron_tile 4/4 GOAT; T7 DECLINED on measurement (2026-09-19)
+
+**Status: CLOSED 2026-09-19.** T1–T6 + T8 done (`a623d7d4`, Bench 839 — all four
+gates PASS, stays opt-in per the no-default-consumer rule; T2's bit-parity ask
+was correctly replaced by a measured 4.3e-7 tolerance pin plus the `W² = I` /
+factor-orthogonality anchors bit-parity structurally cannot provide). **T7
+(ternary-factor fusion) DECLINED**: Bench 843's width sweep measured ternary/f32
+at **1.56× slower at w=32, 2.24× at w=64, peaking 3.70× at m=512** (`5a1da65d`)
+— the register-file intuition pointed the wrong way (a 32×32 f32 factor is
+already L1-resident at 4 KiB), add/sub-accumulate loses to FMA on this box at
+every width the tile would use, so the latency premise is refuted; the quality
+axis was never modelless-decidable here (riir-train's lane). Reopen only if a
+future ternary kernel generation beats f32 FMA at these widths on measured
+evidence.
+
+## Issue 841 — CLOSED as lead-backlog dissolved: 7 rows landed, the remaining leads stay at their research-note homes (2026-09-19)
+
+**Status: CLOSED 2026-09-19, owner call.** Landed from this tracker:
+`.kpt` archive POC (opt-in `kpt_archive`, Bench 841, 17 bad-injection arms,
+owner gate D3); fix_verify refusal-vs-truncation audit (repaired in riir-clippy
+`651728c0`); riir-rag embedder identity (verified; wiring filed as riir-ai
+`.issues/983`); grammar-forced vocab-projection skip (`legal_token_set` — the
+one PROMOTED default-on, 20.6–22.5× tree build); KV permanent sinks + bounded
+window (`kv_sink_window`, 5/5 GOAT, opt-in, promotion blocked on the corpus —
+routed to Issue 857); calibration staleness + all four seams (`2057ac3b`,
+`9badceb2`, `4af13a60`, `4483b84e`). **The remaining OPEN leads are not lost —
+they stay recorded at their provenance**: CQ-W2A8 GEMV, CLAWS
+activation-sparse decode, HiDRA-v2, TurboQuant-H riir-rag lane,
+functional_embed (PETE), SAN league cell, engram-delta fine-tune, SAN
+npc_brain v2 → Research 568/570/571 rows (re-file one issue per lead when a
+session picks it up — the pre-existing convention this tracker itself was
+built from); the `VocabChannelPruner` hook follow-up rides the
+`legal_token_set` module docs; the sealed long-context corpus is Issue 857's
+pull-gated chain. Deferred rows keep their reasons in git history.
+
+## Issue 852 — CLOSED as PARKED: the τ(t) P_e-LUT POC waits on a D2F model consumer (2026-09-19)
+
+**Status: CLOSED (PARKED) 2026-09-19, owner call — filed and parked the same
+day.** Off Research 572 row 1. The modelless half (a
+`ScheduleKind::DecodingErrorLut` LUT + monotone-regression builder + τ↔t
+inversion) is landable, but its GOAT G2 requires a **measured P_e curve at
+matched step budget** and no D2F model harness exists in-repo to measure P_e
+against — landing the primitive now would be exactly the synthetic-fixture
+GOAT pass Issue 780 was closed for refusing, and the issue's own honest-scope
+clause already anticipates a negative at toy vocab. **Reopen triggers**: (1) a
+D2F lane with a real model artifact wants a data-adaptive schedule; (2)
+riir-train fires the RecFM |V|≥32k invert-CDF t-sampling twin (its Issue 563) —
+the effect is in-regime there and the measurement transfers. Lead preserved:
+Research 572 rows + git history (`852_fmlm_tau_lut_schedule.md`).
+
+## Issue 853 — CLOSED as PARKED: the autoguidance POC waits on its measurement arms (2026-09-19)
+
+**Status: CLOSED (PARKED) 2026-09-19, owner call — filed and parked the same
+day.** Off Research 572 row 2. Arm A needs a DDTree acceptance harness over a
+served model; Arm B is explicitly riir-train Issue 563's free-rider. The bare
+kernel (η=1 identity, zero-alloc) is trivial, but without either arm it is a
+primitive with no consumer and no measured claim — the no-default-consumer rule
+and the GOAT discipline both refuse. **Reopen triggers**: (1) riir-train 563's
+Arm B fires (a dual-dropout RecFM LoRA exists to A/B against — ~0 training
+GPU-hours); (2) a DDTree acceptance-rate bench lands in riir-ai's serving lane.
+Prior-art honesty preserved in Research 572 (logit-space arm = contrastive-
+decoding ADOPTION, Li et al. 2022; dual-dropout latent arm = the fusion
+candidate) + git history (`853_autoguidance_residual_extrapolation.md`).
+
+## Issue 854 — CLOSED: the wedge is diagnosed, the repair scoped, and T3 stays trigger-gated by design (2026-09-19)
+
+**Status: CLOSED 2026-09-19.** T1 (SLOW-vs-WEDGED recipe + the verdict line now
+says whether the tree held still), T2 (census: the exposure is in mutation
+runs, not the 131 git call sites — no gate, no convention, no sweep, and the
+census is preserved as the starting point), T4 (NO in-process wall bound — it
+would have the watchdog's defect BY CONSTRUCTION; the external per-module
+timeout is the documented practice), T5, T6 landed (`dded36d8`, `65bf2944`,
+`d8b55a34`, `c83f0f84`). **T3 (non-interactive git env) stays UNLANDED by its
+own rule** — "do not land this as the fix; its relevance is unmeasured until T1
+names the call" — and no stall has been observed since T1 made runs observable.
+**Reopen trigger**: a stall observed on a NON-mutation run voids T2's scoping
+answer and T3 lands with it; a stall inside a mutation run is handled by the T1
+recipe (tail the log, kill the git child — measured to resume the run).
+
+## Issue 855 — CLOSED: every task resolved; the guard gate + ratchet sweep both shipped (2026-09-19)
+
+**Status: CLOSED 2026-09-19 — every task closed.** T1 filed with the measurement
+(`dd502fe6`); T2 repaired 5-of-5 arms (`black_box` both ends; every bar
+unchanged); T3 ran all 34 asserting timed regions at n ≥ 1000 — **7 VANISHED,
+27 SURVIVED**, all 7 repaired, bars and pass counts unchanged; T4: the proposed
+static `let _ =` detector REFUTED by the execution run (20.0% vs a 21.1% base
+rate), `timed_region_guard_gate.py` shipped instead as a docs-gate CHECK gating
+the DEFENCE, not the symptom (`196a4cda`); T5 ran all 33 sibling rows — 2
+VANISHED = 6.3% against this repo's 20.6%, repaired at riir-ai `3712d51b6`,
+unbuildable one filed as riir-chain `.issues/157` (`c7e84919`, `88e5d37f`);
+T6 `timed_region_drift_sweep.py` — 21 repos, a ratchet EARNED by execution
+(`72ee0f5b`). Full record: git history + the commit trail; AGENTS.md's
+`timed_region_guard_gate.py` row stands.
+
+## Issue 857 — CLOSED as PULL-GATED: the corpus builds when riir-ai 882's consumer fires, not before (2026-09-19)
+
+**Status: CLOSED (PULL-GATED) 2026-09-19, owner call.** The boundary question is
+answered (`51291548`): corpus + harness = riir-train (`kimi_k3_long_context`
+packer), canary wiring = riir-ai `.issues/882` T2, scoring instrument = here
+(already shipped). The remaining tracker value was a trigger that is someone
+else's — **riir-ai 882's T-Pull-1 is the pull-gate and is already owned there**;
+keeping a second copy of the condition here would be the drifting duplicate
+Issue 857 itself warned against (its "no sibling issue on purpose" rule,
+applied to itself). The honest ordering and the lossless-window escape hatch
+(`window ≥ d_max` ⇒ bit-identity, no corpus needed) are recorded in git history
+and Bench 841. **Fire condition**: riir-ai 882 T-Pull-1 lands a bounded decode
+KV budget → file the riir-train corpus issue citing it, size to THAT consumer's
+window (never `kv_sink_window`'s default 260), pin `r_max`/`p_cap_max` against a
+no-policy baseline, run `UNBOUNDED` as the lr=0 control, then re-gate
+`kv_sink_window` and promote or refuse.
+
 ## Issue 843 — CLOSED: the plasma_path ternary dense matvec loses below L3 on every served shape; T4 resolved as per-shape dispatch (2026-09-19)
 
 **Status: CLOSED 2026-09-19, T1–T4 all resolved (T4 by owner call, gate D1).**
