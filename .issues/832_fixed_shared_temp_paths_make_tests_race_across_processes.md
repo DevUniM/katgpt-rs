@@ -257,6 +257,7 @@ this repo's own most-repeated shape.
   | riir-train | — | — | 12 | dry run: **0 non-demo sites**; all 12 are `examples/`+`src/bin/` |
   | riir-neuron-db | — | — | 3 | all `examples/` |
   | riir-clippy | `f5ada0ec` | 7 | 17 | 9 of the 16 offered are PRODUCTION; +1 CRLF refused |
+  | riir-clippy (production adjudication) | `83f4cd89` | 0 | 17 | the 9 PRODUCTION sites ADJUDICATED 2026-09-19 — see below; CRLF blocker already gone |
 
   **riir-clippy is DONE for the test class (2026-09-18, `f5ada0ec`, pushed and
   origin-reachable), and it was not "the whole of the work".** The contention
@@ -312,6 +313,51 @@ this repo's own most-repeated shape.
   tool REFUSES rather than rewriting line endings, which is correct: a scripted
   edit that flips them turns a 7-site repair into an unreviewable diff. It
   needs a deliberate normalisation first, and that is its own commit.
+
+  **✅ riir-clippy PRODUCTION sites ADJUDICATED (2026-09-19, riir-clippy
+  `83f4cd89`, pushed).** All 9 read one by one; the verdict is NOT "fix with
+  a pid suffix" — it is DELIBERATE-BY-DESIGN for the root, plus one REAL
+  behavior fix found underneath:
+
+  - **Safe by construction.** Every scratch root holds BLAKE3
+    content-addressed crate dirs, each with its own `target/` (explicit
+    `CARGO_TARGET_DIR=crate_dir/target`, or the oracle drops the inherited
+    env so the crate's own `target/` is used), keyed package/bin names (the
+    Issue-110 lesson), and cargo's per-target build lock serializes any
+    same-dir race. Different code → different dirs; same code → same bytes.
+    A pid suffix would kill the cross-run cargo cache, which is the design's
+    point — exactly the behavior change the f5ada0ec note feared.
+  - **The real gap was mtime churn, not safety:** `draft/clippy_oracle.rs`
+    and `rust_perf/bench.rs` wrote scaffolds UNCONDITIONALLY, so every
+    repeat call bumped mtimes and defeated the documented cargo cache
+    ("repeat calls reuse cargo's build cache") — the exact lesson
+    `clippy_lints/verify.rs` already solved with the read-before-write
+    `probe_witness::write_probe_source`, never ported. Ported at `83f4cd89`
+    (oracle `prepare_crate` + `prepare_batch_crate_in`; bench `Cargo.toml`
+    + `main.rs`); the scaffolds are pure functions of the dir key, so the
+    guard changes nothing but the churn. Regression tests pin it:
+    `prepare_repeats_do_not_touch_scaffold_mtimes` (oracle, batch lane
+    included) + `prepare_crate_repeats_do_not_touch_scaffold_mtimes`
+    (bench).
+  - **Marked, not ratcheted:** every site now carries a `[documented-fixed-root]`
+    marker (canonical argument on `ClippyVerifier::work_root`), greppable
+    for a future fix-tool/gate membership rule — the config-audit
+    documented-write-only vocabulary, one domain over.
+  - **The CRLF blocker is MOOT:** `draft/clippy_oracle.rs` carries 0 CRLF
+    at HEAD (normalized by the fmt sweep lane, `78532d8b`), and the fix
+    landed there in the same commit.
+  - ⚠ **The feature-aware-validation trap, hit live:** all three edited
+    files are triple-gated (`draft::clippy_oracle` needs
+    `latent_retrieval`+`clippy_verify`; `rust_perf::bench` needs
+    `rust_perf_bench`; `rust_perf::verify` needs `rust_perf_verify`) — the
+    default AND `latent_retrieval`-only lanes compile ALL of them to
+    NOTHING, so the first two "clean" clippy+test passes validated nothing.
+    Validation that counts: `--features
+    clippy_verify,rust_perf_verify,rust_perf_bench,latent_retrieval` —
+    clippy `-D warnings` clean, lib 2271 passed / 0 failed incl. the
+    real-cargo `compiles_batch` e2e. The T5 "98 *reads*, not 98 mechanical
+    edits" rule applies to the TOOL too: its offers mean nothing until the
+    reading session checks which feature lane actually compiles the site.
 
   ⚠ The riir-train row is the one worth reading twice: this issue's own T5
   triage table says *"riir-train 3 test"*, and the repair tool measures **0**.
