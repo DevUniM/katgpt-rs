@@ -51,6 +51,11 @@ decode_specialize = []
 
 # Bit-plane ternary SIMD matvec loader (Plan 148, Research 110).
 # Gates: load_ternary_bits function in contiguous.rs.
+# ⚠ MEASURED (Issue 843, 2026-09-19): the ternary dense matvec is 1.9–3.0×
+# slower than the f32 matvec at every served shape (L3-resident operands);
+# the win is the 21× weight footprint. T4 owner call: per-shape dispatch
+# (katgpt-types::simd::plasma_dispatch — f32 below the L3 boundary, ternary
+# above) for callers holding both representations.
 plasma_path = []
 
 # Binary plasma loader (Issue 145, Bonsai 27B). Gates: load_binary_bits in contiguous.rs.

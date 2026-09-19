@@ -70,7 +70,11 @@ wall_attention = []
 # Sparse MLP matmul kernel (Plan 022).
 sparse_mlp = []
 
-# Bit-plane ternary weights for multiplication-free inference (Plan 148).
+# Bit-plane ternary weights (Plan 148). ⚠ MEASURED (Issue 843, 2026-09-19):
+# the ternary dense matvec is 1.9–3.0× slower than the f32 matvec at every
+# served shape (L3-resident operands); the win is the 21× footprint. T4
+# owner call: per-shape dispatch lives in simd::plasma_dispatch (f32 below
+# the L3 boundary, ternary above).
 plasma_path = []
 
 # Binary {−1,+1} plasma tier — single bit-plane, group-wise FP16 scale (Issue 145).

@@ -11,6 +11,45 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 843 — CLOSED: the plasma_path ternary dense matvec loses below L3 on every served shape; T4 resolved as per-shape dispatch (2026-09-19)
+
+**Status: CLOSED 2026-09-19, T1–T4 all resolved (T4 by owner call, gate D1).**
+
+**The finding.** The default-on `plasma_path` ternary dense matvec is
+**1.9–3.0× slower** than the f32 `simd_matvec` it replaces at every shape
+whose f32 operand fits L3 — which includes every shape this workspace
+serves (768×3072 → 9 MiB reads 2.10× on NEON; 1024² reads 1.94–2.26× on
+AVX2). The kernel is not wrong, it is size-conditional: the x86_64
+crossover lands exactly on the L3 boundary (§T2: m=4096, 64 MiB operand,
+13700K/30 MB L3); on NEON the ratio narrows monotonically 3.04→1.83 and
+never crosses, all the way to a 1 GiB operand (§T1) — the crossover is
+box-local bandwidth, not a kernel property. T3's read: the stall is the
+FORMULATION — sign extraction outnumbers the multiplication-free
+arithmetic ~8:1 on both arms (NEON throughput-bound at ~8.5 GMAC/s, AVX2
+chain-latency-bound with `vcvtdq2ps` the suspect).
+
+**T4 — the owner call (gate D1, 2026-09-19): per-shape dispatch.** f32
+below the L3 boundary, ternary above, landed as
+`simd_matvec_plasma_dispatch` (+ `l3_cache_bytes()` cached probe:
+`KATGPT_PLASMA_L3_BYTES` override → macOS sysctl → Linux sysfs → 32 MiB
+fallback biased toward f32) in `katgpt-types::simd::plasma_dispatch`, for
+callers holding BOTH representations (the quantize-from-dense seam).
+Option (b) (pre-expanded i8 sign rows, ~1.7–2× back at 5.3× footprint) NOT
+taken — the bitplane footprint is not the product at served shapes.
+GOAT G1+G2 GREEN ([Bench 843-dispatch](../.benchmarks/843_plasma_dispatch_goat.md)):
+bit-identical to the selected kernel both sides of a forced boundary; 2.11×
+vs pure ternary at 1024² (bar 1.5×, the house slack convention); −1.6% vs
+pure dense (≤10% bar). `plasma_path` STAYS DEFAULT-ON — the 21× footprint
+is its real product — and the manifest comments in all five manifests now
+state the measured trade instead of implying a latency win. The kernels
+are untouched; every existing consumer keeps byte-identical behavior.
+Downstream wiring (riir-ai's npc_brain quantize seam is the natural first
+caller) is a consumer-side opt-in, deliberately not done here.
+
+The size-sweep instrument (`tests/bench_843_ternary_size_sweep.rs`) and its
+measurements are preserved unchanged; the historical issue text is in git
+history (`.issues/843_*` removed per the noise-reduction rule).
+
 ## Issue 831 — CLOSED: bench_171 P3 reclassified as instrument-health + mechanism by owner call (2026-09-19)
 
 **Status: CLOSED 2026-09-19, T1–T5 all resolved.** The coin flip that filed

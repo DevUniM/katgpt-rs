@@ -308,7 +308,11 @@ flashar_anchor = []
 # the import always resolve for direct consumers too.
 flashar_consensus = ["tri_mode"]
 
-# Bit-plane ternary SIMD matvec — multiplication-free CPU inference (Plan 148).
+# Bit-plane ternary SIMD matvec — CPU inference with a 21× smaller weight
+# footprint (Plan 148). ⚠ MEASURED (Issue 843, 2026-09-19): 1.9–3.0× slower
+# than the f32 matvec at every served shape (L3-resident operands); the
+# footprint is the win. T4 owner call: per-shape dispatch
+# (katgpt-types::simd::plasma_dispatch) for dual-representation callers.
 # Plan 400: forwarded to katgpt-forward so the moved flashar_consensus.rs's
 # `#[cfg(feature = "plasma_path")]` block (which uses
 # `katgpt_core::{TernaryWeights, simd_ternary_matvec}`) compiles when the root

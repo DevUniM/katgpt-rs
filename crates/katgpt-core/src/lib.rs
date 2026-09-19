@@ -812,7 +812,11 @@ pub use questbench::{
 pub use types::{CacheStrategy, IterationMode, SubStepStrategy, TrainingFreeLoopConfig};
 
 #[cfg(feature = "plasma_path")]
-pub use simd::{simd_ternary_matmul_batch, simd_ternary_matvec, ternary_matvec_scalar};
+pub use simd::{
+    l3_cache_bytes, plasma_prefers_ternary, plasma_prefers_ternary_with_l3,
+    simd_matvec_plasma_dispatch, simd_matvec_plasma_dispatch_with_l3, simd_ternary_matmul_batch,
+    simd_ternary_matvec, ternary_matvec_scalar, DEFAULT_L3_BYTES,
+};
 #[cfg(feature = "plasma_path")]
 pub use types::TernaryWeights;
 
