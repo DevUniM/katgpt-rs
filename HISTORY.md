@@ -7351,3 +7351,52 @@ repair contract (delegation changes summation order, max |Δ| ~3e-6 @64;
 adjacent gates re-run on repair; determinism-contract sites out of scope).
 The kron_tile consumer note is now ISA-conditional too (its n∈{8,16} cost is
 x86-only; on NEON those widths WIN 1.8×/1.7×).
+
+## Issue 849 (2026-09-19) — the 844 per-site dot read, katgpt-rs-own sites: four delegations landed + the full repair record-back: CLOSED
+
+The 844 disposition's katgpt-rs-own sites are repaired, and every
+sibling-repo repair verdict is recorded here per the disposition's contract
+(this section IS the T5/T3 record-back for riir-ai 982, riir-train 562, and
+riir-neuron-db 621).
+
+**Internal repairs (this commit):**
+
+- `katgpt-core/cgsp/types.rs` — `dot_f32_fma4` (4-acc FMA chunk) renamed
+  `dot_f32` and delegated to `crate::simd::simd_dot_f32` (HLA width,
+  default 64: 3.13× x86_64 / 5.2× NEON). The BLAKE3 snapshot commitment
+  hashes serialized bytes — verify re-hashes data, never re-derives scores —
+  so the "Deterministic" contract holds per binary/arch. Gate:
+  `--features cgsp` 44/44.
+- `katgpt-kv/still_kv/perceiver.rs dot_chunk4` → delegates (runtime
+  `head_dim`, wired >=32; fn name kept — the private test references it).
+  Gate: `--features still_kv` 18/18.
+- `katgpt-attn-match/score_matrix_simd.rs dot_8wide` → delegates to
+  `katgpt_core::simd::simd_dot_f32`. katgpt-core made NON-optional in that
+  manifest: score_matrix_simd is default-compiled while the dep was
+  optional-only, and the alternative was a cfg-dual kernel — the exact
+  Issue-845 anti-pattern; `publish = false`, so the posture change carries
+  no crates.io weight. Gates: default `cargo check` + `--features maxsim`
+  12/12 + `--all-features` check.
+- `katgpt-sparse/specialist_projection.rs dot_truncated` → delegates at
+  `a.len().min(b.len())` (truncation semantics preserved; d_hidden >=32).
+  Gate: `--features specialist_projection` 39/39. Clippy clean on all four
+  crates.
+
+**Deferred (owner call, the katgpt-dec zero-dep posture):**
+`katgpt-dec/simd.rs:50` carries its own local `simd_dot_f32` in a
+zero-dep-by-design crate published to crates.io — adding the katgpt-types
+dep (or accepting the duplication) is an owner decision, not a heal.
+
+**Sibling repairs recorded back (the disposition's transfer contract):**
+
+| repo | issue | commit | scope | gates |
+|---|---|---|---|---|
+| riir-train | 562 | `3cf49ebb` | `dot8` (dims recorded: mixed 12–32, tiny cfg only) + `dot_product_chunked` (single-kernel property preserved) | engine 11/11 incl. gradient checks; gpu edge_lora 197/197 |
+| riir-neuron-db | 621 | `5d86dd3` | `transition_error_taxonomy::dot` (64) + `hebbian_bridge::phi_dot` (64, truncating) | lib 54/54 |
+| riir-ai | 982 | `dbc5639d4` | F1 cross_game_prefix / F2 motivation math (arch-split → delegate) / F3 lora_still_forward (mixed-arch → delegate) / C1 cce signal (64) / C2 log_salience_dot (32) / C3 kg_hyperedge (sibling pattern) | engine 159+1ign / civ 329 / gpu 15 |
+| riir-ai (deferred) | 982 T4 | — | riir-poc C4–C6 (32/64/64) — `[-]`, next poc-touching pass | — |
+
+All sites verified no bit-determinism contract before delegation; the
+summation-order change (max |Δ| ~3e-6 @64, measured) passed every adjacent
+gate. The kron_tile consumer note stays ISA-conditional (844 disposition).
+Issue file removed per the noise-reduction rule.
