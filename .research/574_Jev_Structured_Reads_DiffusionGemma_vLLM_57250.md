@@ -2,7 +2,7 @@
 
 > **Source:** vllm-project/vllm PR #57250 "[Core] structured generation mode for DiffusionGemma model (Jev-like)" — mmastrac (Matt Mastracci), 2026-09-16..19, **UNMERGED** (`ready` label, open) — head `ceb8eebf` (API-read 2026-09-20; was `58aacf2` at first read — the branch moves daily, re-pin at clone; §7), Apache-2.0. Model: `nvidia/diffusiongemma-26B-A4B-it-NVFP4`. Ecosystem same-week: `mmastrac/diffgemma#21` (subclass overlay, merged), `razorback16/openjev` (hosted-endpoint inference), `pst2154/Nemotron_Jev` (dense variant), `madeye/pi-jev#7` (`TYPESAFE_BASE_URL` self-host), `rcarmo/go-pherence#2/#12` (Go-native + RTX-3060 scorer training).
 > **Date:** 2026-09-20
-> **Status:** Active — Gain verdict (GOAT-tier composition on shipped substrate), POC filed as Issue 859; corpus side MARGINAL (riir-clippy queue line, no batch)
+> **Status:** CLOSED (Issue 859 resolved 2026-09-20) — Gain verdict (GOAT-tier composition on shipped substrate), POC landed + T1 4090 reference executed + T5 policy arm measured (Bench 817) + promotion decision recorded (§9: stays opt-in, evidence-banked); corpus side MARGINAL (riir-clippy queue line, no batch)
 > **Related Research:** 562 (Typesafe SystemOne/Jev — the product distill; this PR is its open replication), 573 (CUA-S1 open Jev recipe — the AR specialist arm), 277 (DiffusionGemma transparency — routed nothing then), 419 (PackInfer — the width-tiling gap this PR instantiates), 322 (Report-the-Floor UQ rule — binds any probability claim below)
 > **Related Plans:** none yet (POC first, per Issue 859)
 > **Cross-ref (riir-clippy):** Issue 125 (option-scorer PoC — addendum landed: this PR is its self-hostable decision-contract oracle)
@@ -87,7 +87,7 @@ MOAT gate: katgpt-rs in-scope (serving-stack primitive, no game semantics). Rout
 - Competitor arm (informational): step-1 read vs full-loop-then-parse 4/4 after 1 commit round at threshold 0.3; mean label entropy 0.4123 nats. Random-init weights carry no ground truth — recorded as mechanism agreement, not accuracy.
 - **T5 partial**: `sample_label_index` (temperature > 0) landed as the stochastic re-read enabler — the deterministic forward re-reads bit-identically, so the reference's agreement-bars policy is only meaningful through it; the measurement rides T1.
 
-**Remaining:** T1 (4090 reference validation — re-run when the sibling tap cross-check drains; re-pin the PR sha at clone) + the T5 measurement + the promotion decision.
+**Remaining:** none for Issue 859 — T1 executed (§8), T5 measured + the promotion decision (§9). The optional follow-up is the reference-side proxy re-run (§8's data-spec note), not promotion-blocking.
 
 ## 7. T1 unblock intel (2026-09-20, idle-queue item 9 — online unblock search; zero box contention)
 
@@ -181,3 +181,42 @@ claim; the smoke cell is the same-prompt anchor and it matches within noise).
 **T5 unblock:** the accuracy axis now exists on our silicon — §6's `sample_label_index` has both
 a reference protocol to mirror (the auto policy above) and the corpora ground truth to measure
 against; the trained-fixture path (`micro_dllm_text`) remains the in-crate alternative.
+
+## 9. T5 MEASURED + the promotion decision (2026-09-20, Bench 817 — Issue 859 closed)
+
+The policy arm, measured in-crate on the trained fixture (`micro_dllm_text`, bench-601's exact
+recipe, corpus honesty asserted: masked NLL 2.4867 < unigram 2.8884): 2 label arms × 2 canvas
+shapes × 9216 items, reference protocol numbers (N=4 re-reads, temperature 1).
+
+**Headline: agreement bars do NOT beat single-read analytic confidence — CI-decisive in both
+arms and every gate subset.** AUROC for predicting argmax correctness:
+
+| Arm | −H1 | maxprob | agreement(4 reads) | Δ(agree−(−H1)) 95% CI |
+|---|---|---|---|---|
+| A option-set (4–12 opts, acc 50.3%) | **0.7807** | 0.7728 | 0.7004 | [−0.0893, −0.0714] |
+| B full-alphabet (31 opts, acc 26.4%) | 0.6724 | **0.6930** | 0.6298 | [−0.0555, −0.0298] |
+
+The pre-registered prediction held exactly: on a deterministic forward, correctness is a
+function of the readout and re-read samples are conditionally independent of it given the
+readout — the M3 gate (H1 > τ → 4 reads) buys error BARS, never discrimination, and on this
+fixture it fires 88–100% of the time (mean reads 3.6–4.0) for a strictly worse ranking signal.
+The control-arm logic extends to the reference by the same argument UNLESS its per-read
+forwards carry genuine stochasticity (diffusion noise per step) — the reference-side proxy
+re-run (persisting per-item answers + first-read H1 + agreement; data-spec in §8's note)
+remains the optional follow-up and is not promotion-blocking.
+
+**The genuinely open sub-question resolved by width:** maxprob BEATS entropy on wide option
+sets (arm B: Δ CI [+0.0151, +0.0262] — tail mass over many near-zero options dilutes entropy);
+entropy is marginally better on narrow sets (arm A: Δ CI [−0.0119, −0.0040]). Deployable
+guidance: `label_entropy` for narrow option sets, `argmax_label_prob` for wide ones. Sampled(t=1)
+deployment costs 8.8–11.3pp accuracy vs argmax.
+
+**Promotion decision (T6): `structured_reads` STAYS OPT-IN — evidence-banked.** The discipline
+conditions are met (GOAT G1–G4, Bench 816; modelless gain: 0.46× full-loop latency, exact
+full-marginal readouts, alloc-free; accuracy axis measured here), but `katgpt-forward`'s
+`default = []` is deliberately minimal and the feature would drag the dllm stack into every
+default build with zero production consumers today — the flashar_anchor precedent (GOAT green,
+feature opt-in, blessed defaults inside the seam). A root feature forward
+(`structured_reads = ["dllm", "katgpt-forward/structured_reads"]`) landed with Bench 817 so
+the lane is consumable without flag archaeology; promotion is one line when a consumer appears
+(re-arm trigger).
