@@ -821,6 +821,16 @@ def worktree_advisory(scope_counts: dict[str, int],
             "is what the sweep read, so confirm against origin before "
             "repairing (Issue 798)")
     if unver:
+        # ⛔ The remedy names an INSTRUMENT, not `git fetch <repo>`, and that
+        # is the Issue-842 codec showing up in the one place it cannot be
+        # papered over. These labels are CONTRACT spellings by rule — alias
+        # content must never reach stdout, because run logs get pasted into
+        # tracked docs — and on an aliased box the contract spelling is a
+        # directory that DOES NOT EXIST: measured here, the old text told the
+        # reader to fetch `mmorpg-editor` while the checkout is
+        # `seal-game-editor`. Both rules are right and the remedy was still
+        # unusable, so it points at the one command that resolves the codec
+        # itself (Issue 850 T2).
         def _row(k, v):
             age, behind = v
             when = "never fetched" if age is None else f"{age:.0f}h"
@@ -839,8 +849,8 @@ def worktree_advisory(scope_counts: dict[str, int],
             "measurement of the remote; both are what this box last HEARD, so "
             "neither can support a verdict: a finding there may already be "
             "fixed upstream, and a CLEAN row there may be a false green. "
-            "`git fetch` in the named repo before trusting it "
-            "(Issue 827 T5, 850 T3)")
+            "Run `scripts/fetch_contract_repos.py` (~20-50s for the whole "
+            "workspace) before trusting it (Issue 827 T5, 850 T2/T3)")
     if uncommitted_rows:
         out.append(
             f"⚠ UNCOMMITTED: {uncommitted_rows} row(s) sit on a file that "

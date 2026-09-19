@@ -14,7 +14,8 @@ is pushed and carries an inbound HISTORY record, this one was uncommitted.
 armed, and the arm is proven to red against the original code. T3 then observed
 the line end to end and found the guard PRINTING a false statement about the
 bucket T1 added; repaired, 9 new arms, 7 of them proven to red against it.
-**T2 open** — should a sweep fetch?
+T2 answered NO on a measurement (250.2s serial / 50.2s at 8-way against a
+0.04-40s sweep) and shipped `scripts/fetch_contract_repos.py` instead.
 
 Found while chasing a red `shared_temp_path_drift_sweep`, by walking into the
 exact failure Issue 798 and Issue 827 exist to prevent.
@@ -128,14 +129,72 @@ Proven two-sided: with `elif beh == (0, 0)` planted back, the arm reds with
       flag), and a real two-repo fixture under `--prove-fires` that builds
       the no-document shape and requires the row, with the one-sided bump as
       its negative side.
-- [ ] **T2 — Should a sweep FETCH?** It deliberately does not: a sweep is a
-      read-only verdict and fetching 17 siblings is a network round trip per
-      run, on a box where other sessions own those checkouts. But the advisory
-      is only as good as the last fetch, and this incident is the second
-      recorded time a stale ref produced a false red (Issue 827 was the
-      first). ⚠ **Do not answer by reflex** — an `--fetch` flag nobody passes
-      is not a repair, and an automatic fetch changes a sweep from an observer
-      into a writer of other repos' refs.
+- [x] **T2 — ANSWERED: NO, and it is a MEASUREMENT, not a preference.**
+
+      The task forbids answering by reflex, so the cost was measured over the
+      17 contract repos on this box: **250.2s serial, 50.2s at 8-way
+      parallelism, 0 failures** cold; **21.5s wall / 119.2s of work** warm.
+      Against that, a sweep in this family costs **0.04–40s** and the whole
+      32-check docs gate costs **~164s wall**. A per-sweep fetch is therefore
+      **5–30x the cost of the thing it precedes**, paid ~19 times over a
+      family run. That is decisive on its own and needed no design argument.
+
+      The design half points the same way and is worth recording because it
+      is the half that would still hold if the network were free:
+
+      - A fetch **WRITES** remote-tracking refs in repos other sessions own.
+        It cannot break a build (`refs/remotes` is neither HEAD nor the
+        worktree — asserted, not assumed, by the new instrument's own arm),
+        but it can move a concurrently-running sweep's verdict mid-run. That
+        is Issue 797's class with the sweep as the **perpetrator**.
+      - It makes a verdict depend on the network. This box has a recorded
+        ssh-transport failure mode; a sweep that cannot answer offline is a
+        sweep that stops being run.
+      - A `--fetch` flag is not the repair either, exactly as the task warns:
+        a flag nobody passes is not a repair.
+
+      **Freshness is a property of the BOX at a moment, not of any one
+      sweep.** So it is fetched ONCE per session and the sweeps stay
+      observers that DISCLOSE — which, after T1 and T3, they now do
+      correctly.
+
+      ⛔ **And measuring it surfaced a defect in the REMEDY TEXT that is
+      worth more than the cost answer.** The advisory said *"`git fetch` in
+      the named repo before trusting it"* and named repos by their CONTRACT
+      spelling — correctly, because `repo_alias`'s rule is that machine-local
+      alias content must never reach stdout (run logs get pasted into tracked
+      docs). On an aliased box those are directories that **DO NOT EXIST**:
+      measured here, the advisory told the reader to fetch `mmorpg-editor`
+      while the checkout is `seal-game-editor`. Both rules right, remedy
+      unusable — so it now names the one command that resolves the codec
+      itself.
+
+      **Landed: `scripts/fetch_contract_repos.py`** (workstation, documented
+      in AGENTS.md § worktree_state, reachability-gated).
+
+      - `origin` **NAMED**, never a bare `git fetch`: riir-chain carries a
+        second remote that is stale by design.
+      - Population **delegated** to `skill_repo_set_gate.derive_repos`,
+        opened through `repo_alias.disk()`. An eleventh private
+        contract-repo walk is what `population_sync_gate` exists to catch.
+      - Exit 1 only on a fetch FAILURE, never on "nothing moved", and the
+        failure line says the honest thing: those repos' upstream readings
+        still rest on an unrefreshed ref, so a red finding there is **not
+        confirmed**.
+      - A repo with no upstream is **reported, never guessed at** —
+        `behind_origin`'s own rule; five workspace repos have none.
+      - Arms assert the safety claim rather than stating it: after a fetch
+        that provably advanced `refs/remotes`, **HEAD is unmoved and the
+        upstream's new file is not in the worktree**.
+      - ⚠ The per-repo `--timeout` is not garnish. While this task was being
+        measured, `arm_reach_gate` **wedged on this box for twenty minutes**
+        against a `git` child that never returned, at 3% CPU with the child
+        visible in the process table; killing the child resumed the run.
+        AGENTS.md already states that gate's watchdog *"reaches a pure-Python
+        loop and NOT a blocking C call"* — this is that 10%, observed.
+        Anything here that spawns git in a loop needs the bound at the SPAWN,
+        because that is the only layer that has one. Filed separately.
+
 - [x] **T3 — DONE, and the observation found a SECOND defect: the line the
       guard prints makes a FALSE statement about the bucket T1 added.**
 

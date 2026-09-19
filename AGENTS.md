@@ -2487,7 +2487,43 @@ investigated as unfixed.
 
 ```bash
 scripts/worktree_state.py            # the arms (exit 1 on failure)
+scripts/fetch_contract_repos.py      # refresh every contract repo's refs, ONCE
+scripts/fetch_contract_repos.py --selftest
 ```
+
+⛔ **A sweep does NOT fetch, and Issue 850 T2 answers that with a
+measurement rather than a preference.** Every staleness verdict in the family
+rests on a LOCAL remote-tracking ref, so the disclosure above is only as good
+as the last fetch — but a fetch across the contract repos measured **250.2s
+serial / 50.2s at 8-way** (21.5s warm) against a sweep that costs 0.04–40s and
+a 32-check docs gate that costs ~164s wall. A per-sweep fetch is **5–30x the
+cost of the thing it precedes**, paid ~19 times over a family run. A
+`--fetch` flag is not the repair either — *a flag nobody passes is not a
+repair* — and an automatic fetch turns an observer into a writer of refs
+other sessions own, which is Issue 797's class with the sweep as the
+perpetrator. **Freshness is a property of the BOX at a moment, not of a
+sweep**: fetch ONCE per session, and let the sweeps DISCLOSE.
+- ⛔ The remedy line names the INSTRUMENT and not `git fetch <repo>`, and
+  that is the alias codec showing up where it cannot be papered over. The
+  advisory's labels are CONTRACT spellings **by rule** (alias content must
+  never reach stdout — run logs get pasted into tracked docs), and on an
+  aliased box a contract spelling is a directory that **does not exist**:
+  measured, the old text told the reader to fetch `mmorpg-editor` while the
+  checkout is `seal-game-editor`. Both rules were right and the remedy was
+  still unusable.
+- `origin` is NAMED, never a bare `git fetch`: riir-chain carries a second
+  remote that is stale by design.
+- Population **delegated** to `skill_repo_set_gate.derive_repos` and opened
+  through `repo_alias.disk()` — an eleventh private contract-repo walk is
+  exactly what `population_sync_gate` exists to catch.
+- Exit 1 only on a fetch FAILURE (actionable), never on "nothing moved". The
+  failure line says the honest thing: those repos' upstream readings still
+  rest on an unrefreshed ref, so a red finding there is **not confirmed**.
+- The per-repo `--timeout` is not garnish. `arm_reach_gate` wedged on this box
+  for twenty minutes against a `git` child that never returned, and its own
+  watchdog provably could not reach it — a thread plus `interrupt_main`
+  reaches a pure-Python loop, never a blocking C call. Anything here that
+  spawns git in a loop needs the bound at the SPAWN.
 
 ⚠ **The arm count is DERIVED, not typed** (`n_assertions()`, Issue 798 T3).
 The line used to read `36 assertion(s)`; counted by AST at the parent commit,
