@@ -349,10 +349,13 @@ fn avx2_arms_reachability_and_price() {
 /// no box state can invalidate.
 #[test]
 fn t2_bf16_autovec_vs_intrinsics() {
-    if !cfg!(target_arch = "x86_64") {
-        println!("   Issue 847 T2 is an x86_64 question — SKIPPED on this arch");
-        return;
-    }
+    // Two arms of ONE cfg, not a runtime test plus an early return: the
+    // `#[cfg]` block below compiles to NOTHING off x86_64, which made the
+    // `return` the function's last statement there and the whole arm a
+    // `needless_return` visible only on aarch64 — this file's own subject,
+    // one level up.
+    #[cfg(not(target_arch = "x86_64"))]
+    println!("   Issue 847 T2 is an x86_64 question — SKIPPED on this arch");
     #[cfg(target_arch = "x86_64")]
     {
         use katgpt_core::bf16_convert::{
@@ -681,10 +684,13 @@ fn t4_neon_vs_scalar_aarch64() {
 /// table rather than a verdict.
 #[test]
 fn t6_widen_bimodality_vs_buffer_alignment() {
-    if !cfg!(target_arch = "x86_64") {
-        println!("   Issue 847 T6 is an x86_64 question — SKIPPED on this arch");
-        return;
-    }
+    // Two arms of ONE cfg, not a runtime test plus an early return: the
+    // `#[cfg]` block below compiles to NOTHING off x86_64, which made the
+    // `return` the function's last statement there and the whole arm a
+    // `needless_return` visible only on aarch64 — this file's own subject,
+    // one level up.
+    #[cfg(not(target_arch = "x86_64"))]
+    println!("   Issue 847 T6 is an x86_64 question — SKIPPED on this arch");
     #[cfg(target_arch = "x86_64")]
     {
         use katgpt_core::bf16_convert::{bf16_bits_to_f32_autovec, bf16_bits_to_f32_into};

@@ -484,14 +484,15 @@ if printf '%s\n' "$X86_FILES" | grep -q '^src/'; then
 fi
 
 # pkg|selector|name|path — the non-`src/` x86_64 surface, named. Unlike 2b's
-# residue (empty by construction) this one is FOUR real test targets, and
+# residue (empty by construction) this one is FIVE real test targets, and
 # `--all-targets` is not the way to reach them: it would pull every other
 # target in the workspace into a per-arch lane whose subject is 28 files.
 # The `path` field is what makes the pin below non-redundant with this table.
 X86_EXTRA_TARGETS="$ROOT_PKG|--test|bench_256_simd_topk|tests/bench_256_simd_topk.rs
 $ROOT_PKG|--test|issue_698_t5_kv_mean|tests/issue_698_t5_kv_mean.rs
 $ROOT_PKG|--test|latent_steering_t3_simd_vs_scalar|tests/latent_steering_t3_simd_vs_scalar.rs
-katgpt-types|--test|bench_578_avx2_goat|crates/katgpt-types/tests/bench_578_avx2_goat.rs"
+katgpt-types|--test|bench_578_avx2_goat|crates/katgpt-types/tests/bench_578_avx2_goat.rs
+katgpt-core|--test|bench_847_avx2_arm_reachability|crates/katgpt-core/tests/bench_847_avx2_arm_reachability.rs"
 
 # The pin is the residue MINUS whatever a named row above covers, and it is
 # expected EMPTY — pinning the four paths themselves would just restate the
@@ -576,7 +577,7 @@ else
         done <<X86EOF
 $X86_EXTRA_TARGETS
 X86EOF
-        echo "✓ x86_64 clean (avx2 $x86arm, $X86_TRIPLE): $(printf '%s' "$X86_PKGS" | tr '\n' ' ')+ 4 named targets"
+        echo "✓ x86_64 clean (avx2 $x86arm, $X86_TRIPLE): $(printf '%s' "$X86_PKGS" | tr '\n' ' ')+ 5 named targets"
     done
 fi
 
