@@ -11,6 +11,68 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 847 — CLOSED: `simd_lut_dequant`'s AVX2 kernels compiled to NOTHING on every ordinary x86_64 build — and the bf16 sweep that followed was right for one kernel of three (2026-09-19)
+
+**Status: CLOSED 2026-09-19, all seven tasks (T1, T2, T2a, T3, T4, T5, T6).**
+Filed as 846, renumbered to 847 — `dual_allocation_gate` caught it at
+allocation time, which is the case Issue 791 T2's protocol used to reach only
+at merge time.
+
+- **T1/T2a — the class.** `#[cfg(all(target_arch = "x86_64", target_feature =
+  "avx2"))]` on a SHIPPED path compiles the fast arm to **nothing** on every
+  ordinary build, because `target_feature = "avx2"` is OFF by default — so a
+  **default-on** feature silently ran its scalar fallback. Repaired with the
+  runtime `simd_level()` probe: **1.7x** on `dequant_via_lut`, **4.4–5.6x** on
+  `dequant_dot_via_lut`.
+- **T2 — the reflex repair was right for ONE kernel of three**, and that is
+  the finding worth keeping. RNE narrowing: **2.4–2.5x**, probed in. Trunc
+  narrowing: a **REGRESSION** — the intrinsics are measured SLOWER than the
+  scalar body. Widen: reported undecidable.
+- **T3 — the class is WALLED.** `scripts/shipped_target_feature_gate.py`, a
+  docs-gate CHECK, population counted rather than inherited (166 of 166
+  `target_feature` cfg attributes in `src/` were in this repo, zero in every
+  sibling — so a gate and no sweep). Three exclusions counted on the verdict
+  line; the runtime probe's own body could not be a predicate and is PINNED.
+- **T4 — aarch64, measured on the M3.** RNE NEON wins 1.23x everywhere; widen
+  and trunc NEON both LOSE to LLVM's own autovectorised loop. Bit-identity
+  asserted per family.
+- **T5 — the trunc AVX2 kernel DELETED, and the transcription hypothesis
+  REFUTED.** Re-measured three times over two builds: the `_autovec` arm (the
+  SAME scalar body carrying `#[target_feature(enable = "avx2")]`) measures
+  1556–1591 in BOTH builds — it lands on the intrinsics, never on the scalar
+  — and after the deletion a `+avx2` build's dispatcher measures 1594 against
+  autovec's 1591, ratio exactly 1.00, because they are the same code. So
+  nothing was wrong with the transcription: **LLVM's default-target
+  vectorisation of `bits >> 16` beats its own AVX2 vectorisation by ~1.3–1.4x
+  however the loop is spelled.** The kernel was competing with a better
+  compiler output, not a worse one. No aarch64 measurement was needed — the
+  warning was about the FAMILY, and NEON is implied by the arch (Issue 844
+  T4's per-ISA rule).
+- **T6 — there is no crossover; the widen arm is BIMODAL on BUFFER
+  ALIGNMENT.** T6 was filed as *"measure it on a QUIET box"*. The quiet box
+  refuted the framing: the scalar arm is stable to **under 1%** (1692–1704 ns
+  at n=32768 over five runs) while every AVX2-bearing arm beside it sits in
+  **two clusters** — ~98 or ~170 at n=4096, a 1.75x gap with nothing between,
+  picked per process AND per arm. A loaded box produces a spread; two clusters
+  next to a stable arm is a property of the RUN. The axis is
+  `src.as_ptr() % 32`, tested directly by
+  `t6_widen_bimodality_vs_buffer_alignment` (one oversized allocation sliced at
+  controlled offsets, residue printed beside the time): each arm has a single
+  fast residue and is 1.6–2.2x slower at every other, and `vec![]` makes
+  32-byte alignment a coin flip. With the residue controlled the intrinsics win
+  **2.2x at n=256** and **1.57x at n=4096** and TIE elsewhere, so they are
+  probed in; n=32768 is memory-bound and a wash, STATED in the dispatcher
+  rather than hidden. ⚠ The arm's first draft compared VALUES and failed on two
+  byte-identical vectors (`Vec<f32>` is `PartialEq`, `NaN != NaN`) — the exact
+  trap T2's entry already recorded one arm over.
+
+⛔ **The through-line across T2, T5 and T6: three different wrong answers,
+each produced by a sound-looking measurement.** T2 read a regression as
+undecidable; T5's write-up blamed a transcription that was innocent; T6's task
+blamed a busy box for a deterministic alignment effect. In every case the
+instrument had to be changed before the kernel could be judged. File removed
+this commit; full record: git history `.issues/847_*`.
+
 ## Issue 850 — CLOSED: the UNVERIFIED-upstream guard challenged only ONE of `behind_origin`'s two silent readings — and then PRINTED a false statement about the one it gained (2026-09-19)
 
 **Status: CLOSED 2026-09-19, all four tasks.** Filed as 849, renumbered to
