@@ -346,6 +346,15 @@ pub mod mcts_state_action_cache;
 // katgpt-pruners ↔ katgpt-speculative cycle. Pure stdlib (Path + fs + mem).
 // Re-exported by katgpt-pruners::freeze for backwards compatibility.
 pub mod freeze;
+// .kpt single-file weight-archive POC (Issue 841 / Research 568 fusion 2):
+// .cact-style nameless positional layer-major file × BLAKE3/Merkle integrity
+// × atomic file-replacement hot-swap (write temp + fsync + rename). POC
+// grade per the 2026-09-19 owner call: example + tests prove the concept,
+// the perf envelope and the fail-closed security posture; NOT promoted, no
+// production consumer — the format+engine lift stays parked until a
+// NeuronShard-Merkle consumer wants single-file mmap hot-swap.
+#[cfg(feature = "kpt_archive")]
+pub mod kpt_archive;
 // Proof goal deduplication cache core types (GoalHash, GoalResult,
 // GoalVerifier, ProofGoalCache). Extracted from `katgpt-pruners::proof::goal_cache`
 // (Plan 388 Phase 2) to break the katgpt-pruners ↔ katgpt-speculative cycle.

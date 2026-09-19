@@ -2,7 +2,7 @@
 
 > ⚠ **Renumbered 840 → 841** (2026-09-18): dual allocation — a concurrent session holds `.issues/840` upstream, itself a record of this same session's 569 research dual-allocation (`cf6eb54f0`…`a2ff2a6f5`); the upstream holder keeps 840, this note lands as 841.
 
-**Status:** OPEN — leads consolidated from Research 568/569/570/571 (22-source Cactus Compute sweep, 2026-09-18). One checkbox per lead; `- [-]` = deliberately deferred with reason. Cross-repo training leads live in `../riir-train/.issues/561_cactus_training_leads.md`.
+**Status:** OPEN — leads consolidated from Research 568/569/570/571 (22-source Cactus Compute sweep, 2026-09-18). One checkbox per lead; `- [-]` = deliberately deferred with reason. Cross-repo training leads live in `../riir-train/.issues/561_cactus_training_leads.md`. **2026-09-19 owner call (gate D3): the `.kpt` row is DONE as a POC** — example + tests (poc/perf/sec bad-injection) landed behind opt-in `kpt_archive` ([Bench 841](../.benchmarks/841_kpt_archive_poc.md)); the format+engine lift itself stays parked until a NeuronShard-Merkle consumer wants single-file mmap hot-swap.
 
 ## Primitive / league lane (katgpt-rs + riir-gpu consumers)
 
@@ -17,7 +17,7 @@
 
 ## Fusion ideas, novelty-TBD (issue-first per the gate — do NOT promote without §4 searches)
 
-- [ ] **`.kpt` archive** (Research 568 fusion 2): .cact-style nameless positional layer-major single-file mmap × NeuronShard Pod × **BLAKE3/Merkle integrity .cact lacks**; atomic weight hot-swap = file replacement. Format+engine lift; owner call before any plan.
+- [x] **`.kpt` archive** (Research 568 fusion 2): .cact-style nameless positional layer-major single-file mmap × NeuronShard Pod × **BLAKE3/Merkle integrity .cact lacks**; atomic weight hot-swap = file replacement. **DONE AS POC 2026-09-19 (owner gate D3: build the POC + perf + sec evidence instead of deferring): `katgpt-core::kpt_archive` (opt-in `kpt_archive`) + `examples/kpt_archive_poc.rs` + `tests/kpt_archive_sec_injection.rs` (17 bad-injection arms, all green). Measured: 4.52 MiB / 8 layers @768×3072, full verify 1006 MiB/s, atomic hot-swap 21 ms, bit-identical round-trip, byte-deterministic build — [Bench 841](../.benchmarks/841_kpt_archive_poc.md). The production format+engine lift (mmap + a NeuronShard Pod consumer) stays PARKED on the original trigger: a consumer that wants single-file mmap hot-swap.**
 - [ ] **Engram-delta as the modelless fine-tune** (Research 571 §B-8 fusion 1): write product tool-vocabulary into `StagingEngramTable` → commit → `EngramHotSwap` → freeze envelope → chain-commit. GOAT gate vs LoRA fine-tune (accuracy/latency/training-cost=0). Prior-art class: kNN-LM/RETRO/product-key memories — pin the claim to *zero-training specialization + committed deltas* before any tier claim.
 - [ ] **SAN npc_brain v2** (Research 571 §C-12 fusion 1): trained tiny attention-only brain (SAN recipe: QK-norm + sandwich norm + Muon) on trace-dense corpora; knowledge stays context-side per the query-deficit finding. Blocked on a multi-layer brain consumer.
 

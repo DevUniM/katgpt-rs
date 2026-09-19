@@ -543,6 +543,15 @@ ignition_schedule = []
 # Consumed by riir-neuron-db to measure ShardIndex / ItemEmbedIndex / Bm25Index.
 limit_fixture = []
 
+# .kpt single-file weight-archive POC (Issue 841 / Research 568 fusion 2, owner
+# call 2026-09-19): nameless positional layer-major archive over packed
+# ternary layers + BLAKE3/Merkle integrity + atomic file-replacement hot-swap.
+# POC grade — example + tests only (poc/perf/sec bad-injection); zero new deps
+# (blake3 + bytemuck already non-optional). STAYS OPT-IN: no production
+# consumer; the format+engine lift waits for a NeuronShard-Merkle consumer
+# that wants single-file mmap hot-swap.
+kpt_archive = []
+
 # switch_cost (Issue 663, 2026-08-17): SwitchCostTable — directed pairwise
 # switch-difficulty table, the modelless skill-entropy distillation
 # (Research 484 / arXiv:2608.05139). Opt-in per the issue's GOAT-gate
