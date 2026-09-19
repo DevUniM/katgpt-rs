@@ -1,8 +1,11 @@
 # Issue 847: `simd_lut_dequant`'s AVX2 kernels compiled to NOTHING on every ordinary x86_64 build — a default-on feature running its scalar fallback
 
 **Status:** **RESOLVED** for `simd_lut_dequant` (measured, repaired, gated,
-canary-verified). **T2 open** for `bf16_convert`, whose finding is a different
-one and must not be repaired by the same reflex.
+canary-verified) and for `bf16_convert`'s RNE narrowing (T2: 2.4-2.5x on a
+default build). **T3, T5, T6 open** — the gate question, the losing trunc
+kernel, and the widen crossover. ⛔ T2's finding is that the reflex repair
+was right for ONE of three kernels, a REGRESSION for the second, and
+undecidable on this box for the third.
 
 ⚠ **Filed as 846, renumbered to 847 before pushing.** A concurrent session
 allocated 846 for `citation_drift_first_real_alias_read` and pushed it first
@@ -164,19 +167,83 @@ Bench 847 is a **gate** now, not a report, and it bars exactly **one** row:
 - [x] **T1 — Census the class**, narrowed to x86_64 runtime-detectable features
       so the wasm32 and aarch64 sites (correct by construction) are not counted.
 - [x] **T2a — Measure both builds, repair `simd_lut_dequant`, gate it, canary.**
-- [ ] **T2 — `bf16_convert` is a DIFFERENT finding and must not get this
-      repair by reflex.** Its 6 sites have the same shape, and the measurement
-      says something else: under `+avx2` the hand-written intrinsic arm runs
-      **169 ns** at n=4096 while the plain scalar loop, compiled with AVX2
-      available, runs **97 ns** — *LLVM beats the intrinsics at their own
-      job*. A runtime probe would still be a ~1.2× win on a default build
-      (198 → ~169), so it is not nothing; but the better question is whether
-      the intrinsic arm should exist at all, which is
-      [Issue 844](844_the_dot_delegation_crossover_is_length_24_not_a_backlog.md)
-      rule 3 one operation over. bf16 widening is `u16 → u32 << 16 → f32`,
-      lossless and bit-identical between arms, so this is a pure perf decision
-      with no correctness axis — measure a third arm (scalar + `+avx2`,
-      runtime-probed) before writing any code.
+- [x] **T2 — DONE, and it split THREE ways, which is why the issue refused
+      to apply the reflex repair.** The third arm the task demanded is the
+      scalar body compiled WITH AVX2 available
+      (`#[target_feature(enable = "avx2", enable = "fma")]` on a wrapper —
+      the attribute exists precisely to compile a body for an ISA the build
+      does not target), so a runtime probe can reach LLVM's autovectoriser on
+      an ordinary build. Measured on all three dispatchers x three sizes x
+      both builds, twice each.
+
+      **ns/call, shikuwa i7-13700K, release, ranges over two runs:**
+
+      | kernel | n | default (SCALAR) | +avx2 (INTRINSICS) | AUTOVEC |
+      |---|---|---|---|---|
+      | widen | 256 | 13–17 | **6–7** | 10–14 |
+      | widen | 4096 | 172–183 | 97–173 | 99–168 |
+      | widen | 32768 | **1668–1670** | 1837–2432 | 1684–2077 |
+      | rne | 256 | 66–67 | **29–30** | 39–43 |
+      | rne | 4096 | 1037–1061 | **430–465** | 617–663 |
+      | rne | 32768 | 8582–8732 | **3495–3699** | 4937–5368 |
+      | trunc | 256 | 13 | 13 | 12–13 |
+      | trunc | 4096 | **145** | 197 | 194 |
+      | trunc | 32768 | **1179** | 1550 | 1557 |
+
+      **`f32_to_bf16_rne_into` REPAIRED — the intrinsics win decisively and
+      consistently, 6 of 6 cells.** Runtime-probed; a default build now
+      measures **28 / 440 / 3397** against the scalar path's 66 / 1037 /
+      8582, i.e. **2.4x / 2.4x / 2.5x**, and those figures land on the +avx2
+      build's 29 / 430 / 3495 — the same "the default build now measures what
+      only `+avx2` measured before" signature T2a established. The nine
+      `bf16_convert` tests pass, including the G1 bit-exact oracles against
+      `half::bf16::from_f32`, which have **never before executed the AVX2 RNE
+      kernel on a default build**.
+
+      ⛔ **`f32_to_bf16_trunc_into` is NOT repaired, and the reflex repair
+      would have been a REGRESSION.** Its intrinsics LOSE to the scalar path
+      at every size that matters — 197 vs 145 at n=4096, 1550 vs 1179 at
+      32768 — and the autovec arm loses by the same margin, which is the
+      corroboration: a bare `>> 16` truncation is already whatever LLVM wants
+      it to be, and the wrapper only adds a call. Probing it in would have
+      cost 1.3x on a shipped path in the name of fixing a defect. **The
+      compile-time gate is accidentally doing the right thing here**, and the
+      honest follow-up is T5 (delete the losing kernel), not a probe.
+
+      ⚠ **`bf16_bits_to_f32_into` is UNDECIDED and the instrument says so.**
+      The best arm changes with n — intrinsics at 256 (6 vs 13), autovec
+      around 4096, plain scalar at 32768 (1670 vs 1837–2432) — and the same
+      binary measured **97 and 173 ns** for one cell on two runs, a 78% swing
+      on a box carrying peer agent sessions. That is AGENTS.md's own *"a
+      latency number without its BOX STATE is not a measurement"*, and it is
+      the reason no widen repair is in this change: the crossover is real
+      (Issue 844's shape one operation over) and needs a quiet box, which is
+      T6.
+
+      Instrument: `crates/katgpt-core/tests/bench_847_avx2_arm_reachability.rs`
+      `t2_bf16_autovec_vs_intrinsics`, a REPORT with grep-able `ROW847T2`
+      lines. It bars nothing — a bar written before the sweep would be a bar
+      written from a hypothesis, and this hypothesis was wrong for two of
+      three kernels. What it DOES assert is bit-identity between the
+      dispatcher and the autovec arm, which no box state can invalidate.
+      ⛔ That assertion had to compare **BITS, not values**: `assert_eq!` on
+      `Vec<f32>` is `PartialEq`, under which `NaN != NaN`, and a random `u16`
+      fixture widens to NaN — so the first run failed on two byte-identical
+      256-element vectors. A value comparison could not have expressed the
+      bit-exactness claim even on the runs where it passed.
+- [ ] **T5 — Delete `f32_to_bf16_trunc_avx2`?** It is measured SLOWER than
+      the scalar body it replaces (1.3x at n >= 4096, both the intrinsics and
+      the autovec arm), it is unreachable on every ordinary build, and an
+      unreachable kernel is an untested one — the x86_64 execution matrix
+      found 15 latent AVX2-transcription defects the first two times it ran.
+      Issue 844 rule 3 applies. ⚠ Measure the aarch64 sibling before
+      deleting: NEON is implied by the arch, so `f32_to_bf16_trunc_neon` IS
+      reached and may well win where the AVX2 one does not.
+- [ ] **T6 — The widen crossover, on a QUIET box.** Three arms with three
+      different winners across 256 / 4096 / 32768, and a 78% run-to-run swing
+      in one cell here. Record free RAM, commit-vs-limit and concurrent heavy
+      jobs beside the figures (§Feature Flag Discipline G2), or the answer is
+      a measurement of the box.
 - [ ] **T3 — Decide whether this class needs a per-push GATE.** The census is
       13 sites in 3 files and the correct form is one call, so a mechanical
       check is cheap and — unlike 844's length rule — has **no legitimate

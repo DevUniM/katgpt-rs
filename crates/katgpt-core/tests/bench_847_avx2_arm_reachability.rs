@@ -281,7 +281,8 @@ fn avx2_arms_reachability_and_price() {
         .collect();
     assert!(
         barred.len() >= 2,
-        "instrument FAIL: the barred row is missing from the sweep — {} of an          expected 2+ (did NS or the label change?)",
+        "instrument FAIL: the barred row is missing from the sweep — {} of \
+         an expected 2+ (did NS or the label change?)",
         barred.len()
     );
     for (label, n, ratio) in &barred {
@@ -320,4 +321,166 @@ fn avx2_arms_reachability_and_price() {
          reachability.
 "
     );
+}
+
+/// Issue 847 T2 — the THREE-arm question the issue refuses to answer by
+/// reflex: is the hand-written AVX2 arm worth keeping at all?
+///
+/// The repair 847 applied to `simd_lut_dequant` was "runtime-probe the
+/// intrinsics", and applying it here by reflex would be a ~1.2x win
+/// (198 -> 169 ns at n=4096). But under `+avx2` the PLAIN SCALAR loop
+/// measured **97 ns** against the intrinsics' 169 — LLVM beating the
+/// intrinsics at their own job — and that arm is reachable on a DEFAULT
+/// build through `#[target_feature(enable = ..)]`, whose whole purpose is to
+/// compile a body for an ISA the build does not target. Three arms:
+///
+///   A  the shipped dispatcher        (compile-time cfg == the scalar path
+///                                     on a default build)
+///   B  the hand-written intrinsics   (visible only under +avx2, where the
+///                                     dispatcher column BECOMES them)
+///   C  the scalar body compiled WITH avx2 (`*_autovec`)
+///
+/// A REPORT: it bars nothing. A bar written before the sweep would be a bar
+/// written from a hypothesis, which is `bench_843_ternary_size_sweep`'s
+/// recorded rule — and the hypothesis here is exactly what is in doubt.
+///
+/// What it DOES assert is bit-identity: A and C are the same body with
+/// different codegen, so they must agree exactly, and that is an assertion
+/// no box state can invalidate.
+#[test]
+fn t2_bf16_autovec_vs_intrinsics() {
+    if !cfg!(target_arch = "x86_64") {
+        println!("   Issue 847 T2 is an x86_64 question — SKIPPED on this arch");
+        return;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        use katgpt_core::bf16_convert::{
+            bf16_bits_to_f32_autovec, f32_to_bf16_rne_autovec, f32_to_bf16_rne_into,
+            f32_to_bf16_trunc_autovec, f32_to_bf16_trunc_into,
+        };
+        println!("\n   Issue 847 T2 — is the hand-written AVX2 arm worth keeping?");
+        println!("   arch = x86_64, cfg!(target_feature=\"avx2\") = {}",
+                 cfg!(target_feature = "avx2"));
+        println!("   {:>8}  {:>20}  {:>14}  {:>14}  {:>11}",
+                 "n", "kernel", "dispatch ns", "autovec ns", "disp/auto");
+
+        for &(n, iters) in &NS {
+            let mut rng = Lcg::new(0x0847_1111 + n as u64);
+
+            // widen
+            let bits: Vec<u16> =
+                (0..n).map(|_| u16::from(rng.next_u8()) << 8 | u16::from(rng.next_u8())).collect();
+            let mut d = vec![0.0f32; n];
+            let mut a = vec![0.0f32; n];
+            bf16_bits_to_f32_into(&bits, &mut d);
+            unsafe { bf16_bits_to_f32_autovec(&bits, &mut a) };
+            // ⛔ BITS, not values. `assert_eq!` on `Vec<f32>` is `PartialEq`,
+            // under which NaN != NaN — and a random u16 fixture widens to NaN
+            // bit patterns, so a value comparison FAILS on two byte-identical
+            // outputs. Measured here: two 256-element vectors that printed
+            // identically, differing only at one `NaN`. The claim is
+            // bit-exactness, which a value comparison could not express even
+            // on the runs where it passed.
+            let db: Vec<u32> = d.iter().map(|x| x.to_bits()).collect();
+            let ab: Vec<u32> = a.iter().map(|x| x.to_bits()).collect();
+            assert_eq!(
+                db, ab,
+                "the autovec arm is the scalar body with other codegen — \
+                 bit-identical or the experiment is meaningless (n={n})"
+            );
+            let r = ab_median_ratio(
+                11,
+                iters,
+                iters / 2,
+                |_| {
+                    bf16_bits_to_f32_into(black_box(&bits), &mut d);
+                    black_box(d[0]);
+                },
+                |_| {
+                    unsafe { bf16_bits_to_f32_autovec(black_box(&bits), &mut a) };
+                    black_box(a[0]);
+                },
+            );
+            println!("   {n:>8}  {:>20}  {:>14.0}  {:>14.0}  {:>11.2}",
+                     "bf16_bits_to_f32", r.a_ns_per_iter(), r.b_ns_per_iter(),
+                     r.median);
+            println!("   ROW847T2 widen n={n} disp_ns={:.0} autovec_ns={:.0} ratio={:.2} avx2_cfg={}",
+                     r.a_ns_per_iter(), r.b_ns_per_iter(), r.median,
+                     cfg!(target_feature = "avx2"));
+            assert_eq!(r.ratios.len(), r.rounds,
+                       "instrument FAIL: {} of {} rounds survived (widen, n={n})",
+                       r.ratios.len(), r.rounds);
+
+            // narrow (RNE) — the harder kernel, and the one whose scalar body
+            // is a branchy NaN predicate rather than a shift
+            let src: Vec<f32> = (0..n).map(|_| rng.next_f32()).collect();
+            let mut nd = vec![0u16; n];
+            let mut na = vec![0u16; n];
+            f32_to_bf16_rne_into(&src, &mut nd);
+            unsafe { f32_to_bf16_rne_autovec(&src, &mut na) };
+            assert_eq!(nd, na, "RNE narrowing: same body, so bit-identical (n={n})");
+            let r2 = ab_median_ratio(
+                11,
+                iters,
+                iters / 2,
+                |_| {
+                    f32_to_bf16_rne_into(black_box(&src), &mut nd);
+                    black_box(nd[0]);
+                },
+                |_| {
+                    unsafe { f32_to_bf16_rne_autovec(black_box(&src), &mut na) };
+                    black_box(na[0]);
+                },
+            );
+            println!("   {n:>8}  {:>20}  {:>14.0}  {:>14.0}  {:>11.2}",
+                     "f32_to_bf16_rne", r2.a_ns_per_iter(), r2.b_ns_per_iter(),
+                     r2.median);
+            println!("   ROW847T2 rne n={n} disp_ns={:.0} autovec_ns={:.0} ratio={:.2} avx2_cfg={}",
+                     r2.a_ns_per_iter(), r2.b_ns_per_iter(), r2.median,
+                     cfg!(target_feature = "avx2"));
+            assert_eq!(r2.ratios.len(), r2.rounds,
+                       "instrument FAIL: {} of {} rounds survived (rne, n={n})",
+                       r2.ratios.len(), r2.rounds);
+
+            // narrow (TRUNC) — the third dispatcher. Measured rather than
+            // assumed to behave like RNE: its scalar body is a bare shift
+            // where RNE's is a branchy NaN predicate, so the two have no
+            // reason to autovectorise alike.
+            let mut td = vec![0u16; n];
+            let mut ta = vec![0u16; n];
+            f32_to_bf16_trunc_into(&src, &mut td);
+            unsafe { f32_to_bf16_trunc_autovec(&src, &mut ta) };
+            assert_eq!(td, ta, "trunc narrowing: same body, so bit-identical (n={n})");
+            let r3 = ab_median_ratio(
+                11,
+                iters,
+                iters / 2,
+                |_| {
+                    f32_to_bf16_trunc_into(black_box(&src), &mut td);
+                    black_box(td[0]);
+                },
+                |_| {
+                    unsafe { f32_to_bf16_trunc_autovec(black_box(&src), &mut ta) };
+                    black_box(ta[0]);
+                },
+            );
+            println!("   {n:>8}  {:>20}  {:>14.0}  {:>14.0}  {:>11.2}",
+                     "f32_to_bf16_trunc", r3.a_ns_per_iter(), r3.b_ns_per_iter(),
+                     r3.median);
+            println!("   ROW847T2 trunc n={n} disp_ns={:.0} autovec_ns={:.0} ratio={:.2} avx2_cfg={}",
+                     r3.a_ns_per_iter(), r3.b_ns_per_iter(), r3.median,
+                     cfg!(target_feature = "avx2"));
+            assert_eq!(r3.ratios.len(), r3.rounds,
+                       "instrument FAIL: {} of {} rounds survived (trunc, n={n})",
+                       r3.ratios.len(), r3.rounds);
+        }
+        println!(
+            "   ⚠ REPORT, no bar. `disp/auto` > 1 means the AUTOVEC arm wins on \
+             this build. The intrinsics' own number is visible only under \
+             RUSTFLAGS=\"-C target-feature=+avx2\", where the dispatcher column \
+             becomes them — so BOTH builds are needed before 847 T2 can be \
+             answered."
+        );
+    }
 }

@@ -180,14 +180,28 @@ pub fn f32_to_bf16_rne_into(src: &[f32], dst: &mut [u16]) {
     {
         unsafe { f32_to_bf16_rne_neon(src, dst) }
     }
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    // Issue 847 T2: a RUNTIME probe, not a compile-time cfg. `target_feature
+    // = "avx2"` is OFF by default on x86_64, so the arm below used to compile
+    // to nothing on every ordinary build. Measured on this box (release,
+    // ns/call): the intrinsics run 29 / 430 / 3495 at n = 256 / 4096 / 32768
+    // against the scalar path's 66 / 1037 / 8582 — **2.3-2.5x**, stable
+    // across two runs of both builds. `simd_level()` returns `Avx2` only for
+    // AVX2+FMA, which is exactly what the kernel's `#[target_feature]`
+    // requires.
+    #[cfg(target_arch = "x86_64")]
     {
-        unsafe { f32_to_bf16_rne_avx2(src, dst) }
+        // `if/else` and NO `return` — the three cfg blocks are mutually
+        // exclusive, so exactly one compiles and it is already the last
+        // statement. Both `return <call>;` and a trailing bare `return;` are
+        // `clippy::needless_return` here, and this crate's gate carries that
+        // lint at zero residual.
+        if crate::simd::simd_level() == crate::simd::SimdLevel::Avx2 {
+            unsafe { f32_to_bf16_rne_avx2(src, dst) }
+        } else {
+            f32_to_bf16_rne_scalar_into(src, dst);
+        }
     }
-    #[cfg(not(any(
-        target_arch = "aarch64",
-        all(target_arch = "x86_64", target_feature = "avx2")
-    )))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
         f32_to_bf16_rne_scalar_into(src, dst);
     }
@@ -250,6 +264,47 @@ pub fn f32_to_bf16_trunc_scalar_into(src: &[f32], dst: &mut [u16]) {
     for (x, out) in src.iter().zip(dst.iter_mut()) {
         *out = trunc_one(x.to_bits());
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Issue 847 T2 — the AUTOVECTORISED arm: the scalar body, compiled with AVX2
+// available. Measured under `RUSTFLAGS=-C target-feature=+avx2`, the plain
+// scalar loop beat the hand-written intrinsic arm at widening (97 ns vs 169
+// at n=4096), which is a claim about the COMPILER rather than about either
+// arm — and it is only reachable on a default build through
+// `#[target_feature(enable = ..)]`, whose whole purpose is to compile a body
+// for an ISA the build does not target.
+//
+// Gated on the ARCH alone, exactly as the repaired `simd_lut_dequant`
+// kernels are: the attribute, not the cfg, is what makes the body compile.
+// Callers must have checked `simd::simd_level()`.
+// ──────────────────────────────────────────────────────────────────────────
+
+/// SAFETY: requires AVX2. Behaviour is bit-identical to
+/// [`bf16_bits_to_f32_scalar_into`] — same body, different codegen — so this
+/// arm has NO correctness axis of its own. Widening is `u16 -> u32 << 16 ->
+/// f32`, lossless by construction.
+#[cfg(target_arch = "x86_64")]
+#[doc(hidden)]
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn bf16_bits_to_f32_autovec(src: &[u16], dst: &mut [f32]) {
+    bf16_bits_to_f32_scalar_into(src, dst);
+}
+
+/// SAFETY: requires AVX2. Bit-identical to [`f32_to_bf16_rne_scalar_into`].
+#[cfg(target_arch = "x86_64")]
+#[doc(hidden)]
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn f32_to_bf16_rne_autovec(src: &[f32], dst: &mut [u16]) {
+    f32_to_bf16_rne_scalar_into(src, dst);
+}
+
+/// SAFETY: requires AVX2. Bit-identical to [`f32_to_bf16_trunc_scalar_into`].
+#[cfg(target_arch = "x86_64")]
+#[doc(hidden)]
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn f32_to_bf16_trunc_autovec(src: &[f32], dst: &mut [u16]) {
+    f32_to_bf16_trunc_scalar_into(src, dst);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -436,7 +491,10 @@ unsafe fn bf16_bits_to_f32_avx2(src: &[u16], dst: &mut [f32]) {
 }
 
 /// SAFETY: as [`bf16_bits_to_f32_avx2`].
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+// Issue 847 T2: ARCH-only cfg. The `#[target_feature]` attribute, not the
+// cfg, is what makes the intrinsic body compile; gating on the compile-time
+// feature is what made this kernel unreachable on every ordinary build.
+#[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2")]
 unsafe fn f32_to_bf16_rne_avx2(src: &[f32], dst: &mut [u16]) {
