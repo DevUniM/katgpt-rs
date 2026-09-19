@@ -1,0 +1,47 @@
+# Shipped-path compile-time `target_feature` arms this repo keeps ON PURPOSE
+# (Issue 847 T3). Key: `<path>::<enclosing fn>#<ordinal within that fn>` —
+# LINE-FREE, because a line number drifts on every edit above it and a pin
+# file that reds on noise is one people delete (`arm_reach_gate`'s rule). A
+# dispatcher contributes two rows (the positive arm and its `not(any(..))`
+# complement) because both are the same compile-time construct.
+#
+# Format: `<key> = <reason>`. A row without a reason is REFUSED, and a row
+# whose site is gone reds too — so this file cannot only ever loosen.
+#
+# ⛔ The bar for a row is a MEASUREMENT or a structural argument, never "not
+# fixed yet": a row of the latter kind is a backlog wearing a pin, which Issue
+# 785's rule forbids, and the thing behind it is latency on every call.
+
+# ── the runtime probe's OWN body — the correct pattern, not the defect ─────
+# `#[cfg(target_feature = "avx2")] { true }` inside the CPUID probe: a build
+# that already targets AVX2 need not ask the CPU. This is the thing every
+# other dispatcher should CALL, and it is indistinguishable from the defect by
+# any predicate — the same attribute doing the opposite job. Issue 847's own
+# Non-goals section names it.
+crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#1 = the probe's own short-circuit: a build with AVX2 already on skips CPUID. Issue 847 Non-goals.
+crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#2 = the probe's own `not(...)` arm, the CPUID read itself. Issue 847 Non-goals.
+
+# ── bf16 TRUNC narrowing — the intrinsics are measured SLOWER (847 T5) ─────
+# ns/call, shikuwa i7-13700K, release: the AVX2 arm runs 197 at n=4096 and
+# 1550 at n=32768 against the scalar path's 145 and 1179, and the autovec arm
+# (the same scalar body compiled WITH avx2) loses by the same margin — which
+# is the corroboration rather than a second guess. A bare `>> 16` truncation
+# is already whatever LLVM wants it to be. Runtime-probing these in would cost
+# ~1.3x on a shipped path in the name of fixing a defect, so the compile-time
+# gate is accidentally doing the right thing. The honest follow-up is 847 T5
+# (delete the losing kernel, after measuring its NEON sibling, which IS
+# reached), not a probe.
+crates/katgpt-core/src/bf16_convert.rs::f32_to_bf16_trunc_into#1 = 847 T5: the AVX2 arm is MEASURED slower than the scalar it would replace (197 vs 145 ns at n=4096). Probing it in is a regression.
+crates/katgpt-core/src/bf16_convert.rs::f32_to_bf16_trunc_into#2 = 847 T5: the `not(any(..))` complement of the row above; same construct, same adjudication.
+crates/katgpt-core/src/bf16_convert.rs::f32_to_bf16_trunc_avx2#1 = 847 T5: the kernel the two rows above dispatch to. Deleting it is the open question; arming it is measured wrong.
+
+# ── bf16 WIDENING — UNDECIDED on this box, and the instrument says so ──────
+# The best arm changes with n: intrinsics at 256 (6 vs 13 ns), autovec around
+# 4096, plain scalar at 32768 (1670 vs 1837-2432) — and the same binary
+# measured 97 and 173 ns for one cell on two runs, a 78% swing on a box
+# carrying peer agent sessions. That is AGENTS.md's own "a latency number
+# without its BOX STATE is not a measurement". The crossover is real (Issue
+# 844's shape one operation over) and needs a quiet box: 847 T6.
+crates/katgpt-core/src/bf16_convert.rs::bf16_bits_to_f32_into#1 = 847 T6: the best arm changes with n and one cell swung 78% between runs on a loaded box. Undecided, not unexamined.
+crates/katgpt-core/src/bf16_convert.rs::bf16_bits_to_f32_into#2 = 847 T6: the `not(any(..))` complement of the row above; same construct, same adjudication.
+crates/katgpt-core/src/bf16_convert.rs::bf16_bits_to_f32_avx2#1 = 847 T6: the kernel the two rows above dispatch to. It WINS at n=256 and loses at n=32768, which is the crossover T6 must measure quietly.

@@ -2,8 +2,9 @@
 
 **Status:** **RESOLVED** for `simd_lut_dequant` (measured, repaired, gated,
 canary-verified) and for `bf16_convert`'s RNE narrowing (T2: 2.4-2.5x on a
-default build). **T3, T5, T6 open** — the gate question, the losing trunc
-kernel, and the widen crossover. ⛔ T2's finding is that the reflex repair
+default build). **T5, T6, T4 open** — the losing trunc kernel, the widen
+crossover and the aarch64 re-measure; T3's gate is landed and the class
+is WALLED (`scripts/shipped_target_feature_gate.py`). ⛔ T2's finding is that the reflex repair
 was right for ONE of three kernels, a REGRESSION for the second, and
 undecidable on this box for the third.
 
@@ -244,16 +245,57 @@ Bench 847 is a **gate** now, not a report, and it bars exactly **one** row:
       in one cell here. Record free RAM, commit-vs-limit and concurrent heavy
       jobs beside the figures (§Feature Flag Discipline G2), or the answer is
       a measurement of the box.
-- [ ] **T3 — Decide whether this class needs a per-push GATE.** The census is
-      13 sites in 3 files and the correct form is one call, so a mechanical
-      check is cheap and — unlike 844's length rule — has **no legitimate
-      counter-example in `src/`**: if you want the fast arm on a default build
-      you need the runtime probe. ⚠ But the population predicate must exclude
-      wasm32 (`simd128` genuinely is compile-time), aarch64 (implied), and the
-      probe's own body — three exclusions, each of which a naive grep gets
-      wrong, and getting one wrong makes the cries-wolf instrument AGENTS.md
-      warns about. **Count first, and do not inherit another issue's
-      gate-or-sweep answer.**
+- [x] **T3 — DONE. It needed one, and the census is what made it
+      cheap: `scripts/shipped_target_feature_gate.py`** (docs-gate CHECK).
+
+      **Counted first, as the task demanded, and NOT inherited.**
+      `check_validation_gate` T4 declined a sweep on a population of ONE and
+      was right; `console_encoding_gate` inherited that answer and was wrong
+      by seven repos. Measured over the 17 contract repos on this box:
+      **166 `target_feature` cfg attributes in `src/`, ALL 166 in
+      katgpt-rs**, zero in every sibling — so there is a gate and no sweep,
+      and `--workspace` re-derives the table rather than leaving the figure
+      in prose.
+
+      The three exclusions the task warned about are each counted on the
+      verdict line rather than remembered: **67** `#[target_feature(enable =
+      ..)]` (the correct attribute, and the ORDER of the predicate matters —
+      it contains the string `target_feature` too, so testing feature values
+      first would read its enable list as a cfg and flag every correct kernel
+      in the repo), **87** wasm32/`simd128`, **0** NEON.
+
+      ⛔ **The fourth exclusion could not be a predicate and had to be a
+      PIN.** `#[cfg(target_feature = "avx2")] { true }` inside
+      `is_avx2_fma_available()` is the same attribute doing the opposite job
+      — the runtime probe's own short-circuit. Nothing distinguishes it from
+      the defect structurally, so it is two pinned rows with the reason
+      written down.
+
+      **Live: 8 CLASS sites, every one pinned with a MEASUREMENT** — 2 the
+      probe's own body, 3 the trunc family (T5: the intrinsics are measured
+      SLOWER, so the compile-time gate is accidentally right), 3 the widen
+      family (T6: undecided on a loaded box). No row reads "not fixed yet",
+      which Issue 785's rule forbids.
+
+      The key is **LINE-FREE** — `<path>::<enclosing fn>#<ordinal>` —
+      resolved by brace counting over `platform_dead_code_audit.mask_file`'s
+      masked text, so a `#[cfg(..)]` inside a raw-string fixture is test
+      input rather than a site (the class three sibling instruments here have
+      each met). ⚠ The two cases need OPPOSITE lookups and both are armed: an
+      attribute INSIDE a body belongs to its innermost enclosing fn, one ON
+      an item to the NEXT fn declared after it. Line-invariance is armed
+      directly — padding above a site must not move its key.
+
+      `--prove-fires 32056164` is two-sided against an independently known
+      answer: **23 CLASS sites at the parent, 20 after**, naming the three
+      `channel_aware.rs` rows that commit repaired. (That the live count is
+      now **8** rather than 20 is the 847 + 847 T2 repairs, not classifier
+      drift.)
+
+      ⚠ **STATED blind spot**: a dispatcher that reads
+      `cfg!(target_feature = ..)` as a runtime-looking boolean is not seen —
+      it is a compile-time constant wearing an `if`, and it is exactly the
+      shape 847's own canary used to re-introduce the defect.
 - [ ] **T4 — Re-measure on aarch64.** Every figure here is x86_64. The NEON
       arms were never compile-feature-gated, so the *defect* does not exist
       there — but "the vector arm is 5× the scalar" is an x86_64 measurement,
