@@ -208,12 +208,17 @@ manifest lookup across workspaces, which this count did not do. Do not read
       ⚠ The binary-COUNTING floor T3 warns about is a real consequence and it
       lands one instrument over, on a box this one is not:
       `scripts/x86_64_execution_matrix.sh`'s integration cell counts TARGETS,
-      and arming 12 auto-discovered targets removes 12 `ok. 0 passed` lines
-      from a root `cargo test --release`. Its ASSERTION floor is unaffected —
-      those binaries assert nothing, which is the whole point. **Not re-pinned
-      here**, because that gate REFUSES off x86_64 and a floor edited from a
-      box that cannot run it is a floor nobody measured; the next matrix run
-      on the 4090 owes `min_targets` a −12, with this issue as the reason.
+      and arming 12 auto-discovered targets removes 12 `Running` lines from a
+      root `cargo test --release`: **232 → 220**. ⚑ **Checked rather than
+      assumed, and it does NOT red** — `__root_tests_targets` is 139 (the
+      house 60% of 232) and 139 < 220 with room, while `__root_tests_passed`
+      is untouched because every one of the twelve was an EMPTY binary
+      contributing 0 assertions. So **nothing is re-pinned**, which is also
+      the right answer on principle: that gate REFUSES off x86_64 and a floor
+      edited from a box that cannot run it is a floor nobody measured. The
+      expected shift is recorded as a comment in
+      `scripts/x86_64_matrix_floors.txt`, beside the rows, so the next 4090
+      run reads it as an expected shift and not as a shrink.
       `test_gate.sh` is unaffected (it is `--lib`-scoped).
 
 - [x] **T4 — add the 15 `required-features` rows.** DONE, and the number is

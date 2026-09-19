@@ -81,5 +81,15 @@ katgpt-types                 155
 # directory was reused across invocations, so its per-cell artifacts cannot be
 # attributed to that summary with confidence. The clean run is the better
 # basis; 60% of it sits comfortably under both.
+# ⚑ EXPECTED SHIFT, not a shrink (katgpt-rs Issue 856 T3/T4, 2026-09-19):
+# twelve root `tests/` targets that had been AUTO-DISCOVERED gained a
+# `required-features` row, so the next run on this box reports **220**
+# targets, not 232 — cargo SKIPS a target whose features are unmet, and it
+# stops printing the `Running` line. `__root_tests_passed` is UNAFFECTED:
+# every one of the twelve was an EMPTY binary contributing 0 assertions,
+# which is the whole reason the rows were added. 139 sits under 220 with room,
+# so NEITHER floor reds and neither is re-pinned here — a floor edited from a
+# box that cannot run this matrix is a floor nobody measured. Re-pin at the
+# next clean run, from that run.
 __root_tests_targets         139
 __root_tests_passed          914
