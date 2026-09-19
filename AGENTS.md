@@ -2209,10 +2209,15 @@ count is what the bucket note above forbids.
   tree to re-derive a fact the issue already records.
 - ⛔ **That 157.6s is STALE by more than an order of magnitude, and the
   consequence is operational rather than cosmetic** (measured 2026-09-19, at
-  **33** CHECKS). Two runs were started in the working tree and each passed
-  **77 minutes of CPU without finishing** — ≥29x the figure above, on a box at
-  loadavg 4 with the process at 100% the whole time, so this is cost and not a
-  wedge. Write the **CHECKS count beside the number**, exactly as the docs-gate
+  **33** CHECKS). **THREE runs were started and NONE produced a
+  verdict.** Two in the working tree each passed **77 minutes of CPU** before
+  being killed, and a third — in a DETACHED worktree, immune to the live-edit
+  race that voided the first two — was killed at **121 minutes**, ≥46x the
+  figure above and still at 100% CPU on a box at loadavg 4. So this is cost and
+  not a wedge, and the honest standing is stronger than *slow*: at 33 CHECKS
+  this gate has **no measured completion time on this box**. Do not quote
+  157.6s as its cost, and do not plan a session around getting a verdict out of
+  it without first establishing that one is obtainable. Write the **CHECKS count beside the number**, exactly as the docs-gate
   CPU paragraph requires: the population is the CHECKS set plus this file, and
   the CHECKS set has grown from ~21 to 33 since that measurement.
   - ⛔ **At that duration the gate cannot be run in a tree somebody is
