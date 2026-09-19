@@ -759,6 +759,29 @@ def main(argv: list[str]) -> int:
               f"{len(fails)} failure(s)")
         return 2 if fails else 0
 
+    # ⛔ The CLASSIFIER's own self-test, FIRST — Issue 790 T4's rule, which
+    # three sibling gates here already follow (`platform_dead_code_floor_gate`,
+    # `trap_sentinel_gate`, `percentile_floor_gate` each call
+    # `audit.selftest()` before anything else) and this one did not. Measured
+    # consequence (Issue 854): `arm_reach_audit.ARM_NAMES` and
+    # `check_validation_gate.ARM_NAMES` are ONE vocabulary read by two
+    # instruments, the audit's self-test asserts they agree and REFUSES when
+    # they do not — and this gate ran **1002 seconds** and printed a verdict
+    # over 33 modules while that self-test was failing. A classifier that has
+    # declared itself unreadable cannot be read for a verdict.
+    #
+    # It is DELEGATION, not a second copy: 1.1s against a ~1069s run, and the
+    # gate's own `EXPECTED_ARM_NAMES` membership pin covers a DIFFERENT axis
+    # (audit-vs-gate) than the audit's cross-module agreement check, so
+    # neither makes the other redundant.
+    if A.selftest():
+        print("✗ arm-reach gate: the CLASSIFIER's self-test does not pass, so "
+              "no verdict is claimed. A mutation harness that generates no "
+              "mutants, or whose runner always reports KILLED, prints a "
+              "PERFECT score — the same output as perfection. Fix "
+              "`arm_reach_audit` first; its arms printed above (Issue 854 T5)")
+        return 2
+
     fails = gate_selftest()
     if fails:
         print("✗ arm-reach gate SELFTEST FAILED — untrustworthy:")

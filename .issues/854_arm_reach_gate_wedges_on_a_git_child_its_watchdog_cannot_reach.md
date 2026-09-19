@@ -12,8 +12,9 @@ one was not.
 
 **Status:** OPEN — and INTERMITTENT: observed twice on 2026-09-19 (shikuwa)
 on the plain `scripts/arm_reach_gate.py` run over the CHECKS population, with a
-third run of the same population completing clean in 1068.9s. T2 is answered
-(census taken, the proposed gate refuted); T1/T3/T4/T5/T6 open.
+third run of the same population completing clean in 1068.9s. T2 and T5 are answered
+(the census refuted T2's proposed gate; T5 wired the classifier self-test in);
+T1, T3, T4, T6 open.
 
 Found while doing something else — the run was started to pin survivors after
 Issue 847/848 landed, and never returned.
@@ -223,17 +224,37 @@ here because the next person to look at the runtime will find them first.
       is the stderr progress line (T1) and nothing else. **Do not add a
       timeout by symmetry.**
 
-- [ ] **T5 — The GATE did not refuse on a classifier self-test the AUDIT
-      refuses on.** `arm_reach_audit`'s self-test runs on every invocation of
-      the audit and exits 2 — *"a mutation harness whose runner always reports
-      KILLED prints a PERFECT score, which is the same output as
-      perfection"*. `arm_reach_gate.py` ran 1002s and printed a verdict over
-      33 modules with that same self-test failing. ⚠ Check before repairing
-      whether the gate has its own equivalent (it carries three floors of its
-      own, and duplicating the audit's check would be the second copy of a
-      rule this repo gates against). If it does not, the gate is exactly the
-      consumer the classifier's self-test *"cannot reach"* — Issue 775's
-      sentence, which this family already records four times.
+- [x] **T5 — DONE. The gate did not run its classifier's self-test at all,
+      and three sibling gates already do.**
+
+      Checked before repairing, as the task demanded. The gate's own
+      `EXPECTED_ARM_NAMES` membership pin was NOT the gap — it already
+      contained `prove_counter`, so the gate agreed with the audit; the
+      disagreement was audit-vs-`check_validation_gate`, which only the
+      AUDIT's self-test asserts. And `arm_reach_gate.main()` calls
+      `gate_selftest()` and **never** `A.selftest()`.
+
+      ⛔ **It is the one verdict in this family that skipped the Issue 790 T4
+      rule.** `platform_dead_code_floor_gate`, `trap_sentinel_gate` and
+      `percentile_floor_gate` each call their classifier's `selftest()` first
+      and document it. This one did not, which is how it came to run **1002
+      seconds and print a verdict over 33 modules while its classifier was
+      refusing to classify**.
+
+      The task warned that a second copy of the audit's rule is the shape this
+      repo gates against. It is not a copy — it is the same DELEGATION the
+      three siblings use, and the two checks cover different axes: the gate's
+      membership pin is audit-vs-gate, the audit's self-test is
+      audit-vs-`check_validation_gate` plus its own 27 classifier arms.
+      Neither makes the other redundant.
+
+      **Cost measured before wiring: 1.115s**, against a ~1069s run.
+
+      Two-sided, against the live condition rather than a synthetic one: with
+      `check_validation_gate.ARM_NAMES` put back to its pre-repair value the
+      gate prints *"the CLASSIFIER's self-test does not pass, so no verdict is
+      claimed"* and returns **2 after 1.1s** — it refuses instead of spending
+      the seventeen minutes and then claiming something. Canary 0 failures.
 
 - [ ] **T6 — A 1002s run over a shared worktree must DISCLOSE that the tree
       moved.** Measured above: this run straddled another session's commit and
