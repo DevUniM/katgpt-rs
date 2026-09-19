@@ -144,22 +144,41 @@ separate question and is T5.
       identified module and is not a box-wide git condition — this box runs
       five-plus concurrent sessions against shared worktrees.
 
-- [ ] **T2 — The bound belongs at the SPAWN, and the population is the whole
-      of `scripts/`.** A thread-based interrupt provably cannot reach a
-      blocking C call, so no amount of watchdog work fixes this; a `timeout=`
-      on `subprocess.run` does, because the bound is enforced by the same layer
-      that owns the child. `scripts/fetch_contract_repos.py` (Issue 850 T2) was
-      written with it for exactly this reason and says so at the call.
-      **Count the population before choosing between a gate and a convention**
-      — `console_encoding_gate` inherited a no-sweep answer and was wrong by
-      seven repos. A census of timeout-less `subprocess.run(["git", …])` across
-      tracked `scripts/*.py` is the first measurement, and `subprocess_encoding_gate`
-      already walks that exact population with an AST, so the predicate has a
-      home rather than needing a new walk.
-      ⚠ A timeout is only correct where the caller can say what a timeout
-      MEANS. A `git archive` of riir-train is legitimately slow; a bound that
-      turns a big repo into a failure is the cries-wolf instrument this repo
-      warns about. Per-call, with a reason, not one constant.
+- [x] **T2 — CENSUS TAKEN, and it REFUTES the task's own proposal.** The task
+      said the bound belongs at the spawn and the population is the whole of
+      `scripts/`. Counted first, as it demanded, by AST over tracked
+      `scripts/*.py` across the contract repos:
+
+      **206 files · 386 subprocess calls · 138 statically-readable `git`
+      spawns · 7 WITH a `timeout=` · 131 WITHOUT**, over 5 repos — katgpt-rs
+      121, riir-clippy 4, riir-ai 3, riir-dapps 2, riir-train 1. So the
+      population is **not** one repo (do not inherit `check_validation_gate`'s
+      answer) and it is **92% concentrated here**.
+
+      ⛔ **A gate over those 131 is exactly the cries-wolf instrument the task
+      warned about, and the census is what shows it.** Most are `rev-parse`,
+      `ls-files`, `log`, `show` — plumbing where any bound is arbitrary — and
+      a handful are `archive`, `clone`, `fetch`, `push`, where a bound has to
+      be large or absent (`git archive` of riir-train is legitimately slow).
+      131 rows demanding a hand-typed number with a reason is a **backlog
+      wearing a pin**, which Issue 785's rule forbids, and it would be paid in
+      four repos this session does not own.
+
+      ⚠ **And the exposure is not where the count is.** Those 131 calls have
+      run thousands of times across every gate, sweep and audit in this repo
+      without wedging. Both observed stalls were inside a **mutation run**,
+      where ~1000 git children are spawned from bodies whose control flow has
+      been deliberately corrupted — a `check=True` flipped to `False` leaves a
+      half-built fixture, and the NEXT git call against it is the one that can
+      block. The bound therefore belongs in **the harness that creates that
+      condition**, not in 131 call sites that never meet it.
+
+      **Resolution: no gate, no convention, no sweep. The repair is scoped to
+      `arm_reach_audit`** — T3 (a non-interactive git environment for every
+      mutant) and T4 (whether the run needs a wall bound), both of which are
+      one file. ⚠ If a stall is ever observed OUTSIDE a mutation run, this
+      answer is void and the census above is the starting point; it is
+      recorded here so the next reader re-reads it rather than re-deriving it.
 
 - [ ] **T3 — Non-interactive git for any spawned child.** `GIT_TERMINAL_PROMPT=0`
       plus `GCM_INTERACTIVE=never` turn a credential prompt from an infinite
@@ -168,7 +187,10 @@ separate question and is T5.
       **unmeasured** until T1 names the call, and landing it would make the
       stall stop reproducing while leaving the class open. T1 first, and if T1
       shows the child was not prompting, this stays valuable and stays
-      un-credited.
+      un-credited. ⚠ T2's census promoted this from "one of several
+      candidates" to **the leading repair**: the bound cannot go in 131 call
+      sites, so the mutant's ENVIRONMENT is the only layer that governs every
+      git child at once.
 
 - [ ] **T4 — Does the gate need a WALL bound of its own?** The audit bounds a
       MUTANT (derived from the module's own baseline, 10x floored at 30s). The
