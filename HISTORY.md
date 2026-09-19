@@ -7400,3 +7400,72 @@ All sites verified no bit-determinism contract before delegation; the
 summation-order change (max |Δ| ~3e-6 @64, measured) passed every adjacent
 gate. The kron_tile consumer note stays ISA-conditional (844 disposition).
 Issue file removed per the noise-reduction rule.
+
+## Issue 848 (2026-09-19) — a rename privatised a delegation target and a rework deleted a shared fixture; both of that module's EXTERNAL callers are docs-gate CHECKS: CLOSED
+
+`6c6ca2ee` reworked `scripts/worktree_state.py`'s own arms and, beside the
+repair, renamed `is_checkout` → `_is_checkout` (updating the seven in-module
+callers and neither of the two external ones) and deleted `worktree_fixture`
+outright. `console_encoding_gate.py` and `sweep_advisory_membership_gate.py`
+consume both names and are docs-gate CHECKS; both died with an
+`AttributeError`. **`develop` was red for 6h40m** — not a wrong verdict, NO
+verdict, which is Issue 804's class one seam over.
+
+⛔ **Both names carried a written contract NAMING their consumers**, so this
+was not a judgement call that went the other way: AGENTS.md's own line
+(*"`worktree_state.is_checkout` — delegate to it too"*) and the deleted
+fixture's docstring (*"Public, because the three delegating consumers each owe
+an arm … and that arm needs exactly this fixture"*). The document said the
+right thing; nothing read it — `instrument_reachability_gate`'s finding one
+level down.
+
+Nothing caught it because Python has no link step and every lane that could
+EXECUTE those modules was out of reach: `docs_gate.yml` is main-only since
+2026-09-09, `full_gate`/`test_gate`/`x86_64_execution_matrix` are Rust lanes,
+and `arm_reach_gate` — which does execute them and would have reported
+`BASELINE-CRASH` — is a 157.6s workstation verdict, not a CHECK.
+
+### What landed
+
+- **T1** — both names restored; `worktree_fixture` came back verbatim from
+  `6c6ca2ee~1` with a comment at the definition recording why it is public,
+  so the next rework reads the contract at the line rather than in a docstring
+  it is deleting. `worktree_state` selftest 144 assertions, docs gate green.
+- **T2** — `scripts/cross_module_attr_gate.py`, the STATIC wall: every
+  sibling-module attribute and `from X import n` resolved against X's
+  top-level names, re-exports and conditional definitions credited, keys
+  LINE-FREE. Two-sided known answer — **0 findings at `6c6ca2ee~1`, exactly
+  those 4 at `6c6ca2ee`**, 0 in the repaired tree, over 90 files with 0
+  unparsed. STATED and printed: `getattr`, star-import OPAQUE modules,
+  function-local names, and `__all__` (deliberately unread — it constrains
+  `import *`, not attribute access, so reading it would INVENT findings).
+- **T3** — `scripts/import_health_gate.py`, the EXECUTION wall, and its
+  affordability measurement found its own blocker: **6.238s of the 6.34s** an
+  import pass over 86 modules cost was ONE module whose entire body was
+  top-level (`list_unresolved_percentile_sites`, guarded in the same change;
+  `arm_reach_gate` had been paying that per mutant). A per-module subprocess
+  was measured too and is not worth 3x (10.28s vs 7.52s, identical verdicts).
+  **MISSING-DEP is its own bucket and never flagged** — a pin there would make
+  the gate box-dependent in the worst direction, correct on a box without the
+  package and STALE on one with it.
+- **T4** — the cross-repo question, counted and NOT inherited, and the two
+  ways of counting disagree by an order of magnitude: **10 of 17 repos carry
+  tracked `scripts/*.py` (196 files)**, but **713 of 749 resolved references
+  are in this repo**. Only the second is the class's population, so: no sweep,
+  and `cross_module_attr_gate.py --workspace` re-derives the table every run
+  rather than leaving the figure in prose.
+
+⚑ Landing T3 found two more live defects in gates that already existed, which
+is the argument for a small check over a big one: `subprocess_encoding_gate`
+red on a `PYTHONIOENCODING` env dict bound to a LOCAL rather than written at
+the call site, and `console_encoding_gate` red on
+`list_unresolved_percentile_sites` — which entered that gate's population for
+the first time, because adding a `__main__` guard is what makes a module an
+INSTRUMENT by its predicate. **A repair that grows a population owes the other
+gates a run.**
+
+⚠ This is not an argument against the main-only CI call — that is an owner
+decision about Actions spend and it stands. What it records is that the
+resulting `develop` lane is **zero, not reduced**, which `ci_gate_coverage.py`
+already prints for 12 of 16 repos; this is the first time it cost this repo a
+red `develop` in Python rather than in Rust.
