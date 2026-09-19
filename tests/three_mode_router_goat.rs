@@ -267,11 +267,22 @@ fn goat_mode_selection_under_50ns() {
     let iterations = 10_000;
     let start = std::time::Instant::now();
     for _ in 0..iterations {
-        let _ = bandit.select_mode(&features);
+        // ⛔ `black_box` on the ARGUMENT, not only the result: `select_mode`
+        // is pure in `features` and `features` is loop-invariant, so LLVM
+        // hoists the whole call out and a result-only sink is computed ONCE.
+        // Measured: this loop read `0.00 ns/call` before the change.
+        std::hint::black_box(bandit.select_mode(std::hint::black_box(&features)));
     }
     let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_nanos() > 0,
+        "timed loop measured 0 ns over {iterations} iterations — the work was \
+         optimised away and the bar below would pass on nothing"
+    );
 
     let ns_per_call = elapsed.as_nanos() as f64 / iterations as f64;
+    // ⚠ PRINTED, not only asserted (Issue 855 T5/T6) — see the sibling arm below.
+    println!("G mode selection: {ns_per_call:.2} ns/call over {iterations} iters");
     // Generous CI bound: <50μs (real target is <50ns but CI can be slow)
     assert!(
         ns_per_call < 50_000.0,
@@ -294,11 +305,26 @@ fn goat_mixing_weights_under_100ns() {
     let iterations = 10_000;
     let start = std::time::Instant::now();
     for _ in 0..iterations {
-        let _ = bandit.compute_mixing_weights(&features);
+        // ⛔ `black_box` on the ARGUMENT, not only the result: `compute_mixing_weights`
+        // is pure in `features` and `features` is loop-invariant, so LLVM
+        // hoists the whole call out and a result-only sink is computed ONCE.
+        // Measured: this loop read `0.00 ns/call` before the change.
+        std::hint::black_box(bandit.compute_mixing_weights(std::hint::black_box(&features)));
     }
     let elapsed = start.elapsed();
+    assert!(
+        elapsed.as_nanos() > 0,
+        "timed loop measured 0 ns over {iterations} iterations — the work was \
+         optimised away and the bar below would pass on nothing"
+    );
 
     let ns_per_call = elapsed.as_nanos() as f64 / iterations as f64;
+    // ⚠ PRINTED, not only asserted (Issue 855 T5/T6). The quantity used to live
+    // solely inside the `assert!` message — visible only on FAILURE — so the
+    // method that found every instance of the deleted-loop class, *read the
+    // printed value next to the bar*, could not see it. That slice measured 4x
+    // the population's VANISHED rate.
+    println!("G mixing weights: {ns_per_call:.2} ns/call over {iterations} iters");
     assert!(
         ns_per_call < 50_000.0,
         "Mixing weights took {ns_per_call:.1}ns/call (target <100ns, CI bound <50μs)"

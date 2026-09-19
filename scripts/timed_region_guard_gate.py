@@ -181,7 +181,16 @@ IGNORED_ATTR = re.compile(r"#\s*\[\s*ignore")
 # message, i.e. it is visible ONLY on failure. Measured as the highest-yield
 # slice by a factor of four — 1 VANISHED of 4 (25%) against a population rate
 # of 6.3% — and the mechanism is plain: nobody can have read a number nobody
-# prints.
+# prints. Confirmed again the day it shipped: the first two of this repo's own
+# silent arms to be made to print were BOTH dead (`three_mode_router_goat`,
+# `0.00 ns/call` over 10 000 iterations against a `< 50_000` bar).
+#
+# ⚠ STATED FALSE POSITIVE, measured rather than predicted: the unit here is the
+# enclosing fn, so a region whose value is printed by its CALLER reads as
+# silent. Two of this repo's nine are exactly that (`bench_688`'s `time_primal`
+# and `bench_815`'s `run_case` both RETURN a figure their caller prints), which
+# is a ~22% false-positive rate on a 9-row sample. That is why the bucket is
+# REPORTED and never gated — it orders a read, it does not decide one.
 PRINTS = re.compile(r"\b(?:e?println!|print!|eprint!|write(?:ln)?!)\s*\(")
 
 FN = re.compile(r"\bfn\s+(\w+)\s*(?:<[^>{]*>)?\s*\(")

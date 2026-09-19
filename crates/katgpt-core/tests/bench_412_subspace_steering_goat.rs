@@ -256,6 +256,15 @@ fn g4_structural_size_and_latency_smoke() {
     // 100k applies at K=4, D=8. Target per Plan 412: K=4 < 400ns.
     // Total should be < 40ms. We allow 10× headroom (400ms) for the smoke check
     // — the precise gate is the criterion bench.
+    // ⚠ PRINTED, not only asserted (Issue 855 T5/T6). This arm's quantity lived
+    // solely inside the `assert!` message — visible only on FAILURE — and
+    // Issue 855 T3 had to plant a temporary `eprintln!` probe to read it at
+    // all. That slice measured 4x the population's VANISHED rate, and two of
+    // this repo's own arms were dead the first time they were made to print.
+    println!(
+        "G4 latency smoke: {:.2} ns/call over 100k applies (total {elapsed:?})",
+        elapsed.as_nanos() as f64 / 100_000.0
+    );
     assert!(
         elapsed.as_millis() < 400,
         "G4 latency smoke: 100k K=4 applies took {elapsed:?} (target < 400ms = 4µs/call headroom)",

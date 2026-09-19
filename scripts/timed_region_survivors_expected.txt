@@ -53,7 +53,7 @@
 # unguarded timed region reds; the existing 93 stay somebody's afternoon with a
 # terminal. Lowering it is free and the gate asks for the tightening; raising
 # it requires the number you MEASURED as the reason.
-__max_unread_resolved  |  93 — measured 2026-09-19 on the same walk that produced the 27 rows above; unread because Issue 855 T3's execution pass scoped itself to literal bounds
+__max_unread_resolved  |  91 — TIGHTENED 2026-09-19 from 93 in the commit that lowered it, per this gate's own instruction. The two rows that left are `three_mode_router_goat`'s `goat_mode_selection_under_50ns` and `goat_mixing_weights_under_100ns`: both read `0.00 ns/call` over 10 000 iterations against a `< 50_000` bar the first time they were made to PRINT, and both now carry `assert!(elapsed.as_nanos() > 0)` plus `black_box` on the loop-invariant argument (3.36 and 12.28 ns/call). They were found by the SILENT bucket, not by this ratchet — which is the argument for reporting that bucket
 
 
 crates/katgpt-core/benches/bench_377_local_branch_routing_goat.rs::main  |  measured 10.4 and 22.8 ns/call (route_argmax, route_sampled)

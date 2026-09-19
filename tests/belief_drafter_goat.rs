@@ -122,6 +122,7 @@ fn g2_variable_length_control() {
     }
     let elapsed_tight = start_tight.elapsed();
 
+    println!("G2 loose {elapsed_loose:?} / tight {elapsed_tight:?} over {iterations} iters each");
     let avg_loose = total_loose_tokens as f64 / iterations as f64;
     let avg_tight = total_tight_tokens as f64 / iterations as f64;
 
@@ -185,6 +186,15 @@ fn g3_cache_empty_overhead_near_zero() {
         let _ = cache.get(&h_i, &emb_i);
     }
     let elapsed = start.elapsed();
+    // ⚠ PRINTED, not only asserted (Issue 855 T5/T6). A quantity that lives only
+    // inside an `assert!` message is visible ONLY on failure, so the method that
+    // found every deleted-loop instance — read the printed value next to the bar —
+    // cannot see it. That slice measured 4x the population's VANISHED rate, and
+    // two of this repo's own arms were dead when first made to print.
+    println!(
+        "G3 cache miss: {:.2} ns/call over {iterations} iters (total {elapsed:?})",
+        elapsed.as_nanos() as f64 / iterations as f64
+    );
 
     // Debug builds are ~10-50x slower than release; 10_000 blake3 hashes
     // in debug mode typically take 10-50ms. The gate verifies the overhead
