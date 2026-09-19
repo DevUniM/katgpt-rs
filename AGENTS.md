@@ -436,6 +436,17 @@ enforced copy, and this prose lagged it. It moved to **25** on 2026-09-16
 is READ OFF THE GATE — `docs_gate_checks_sync.py` + `check_validation_gate.py`
 both print the live count, and a number typed here is a claim about history,
 never the instrument.
+⚑ **First POSIX CPU figure since the set left 17: 71.67s CPU / 107.8s wall at
+32 checks** (2026-09-19, M3, LOADED — a sibling agent session running release
+cargo builds throughout, plus the usual concurrent sessions). It is recorded
+with its load class because that is the only way it is comparable to anything:
+the nearest neighbours in this paragraph are 13.37s at 17 checks on a quiet box
+and 22.75s at 21 on a loaded one, and the loaded-box measurement one paragraph
+down is 2.7-3.4x its own quiet-box twin. So **do not read 71.67s as the
+32-check cost** — read it as an upper bound taken under load, and take a quiet
+figure when a quiet box is available. The cells at 18, 19, 20 and 26-31 checks
+will never be measured at all, which remains the argument for writing the
+CHECKS count beside the number rather than the number alone.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
