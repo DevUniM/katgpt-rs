@@ -11,6 +11,10 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 832 — CLOSED: the last fixed shared-temp site is repaired — the non-demo backlog is zero, the ratchet is the wall (2026-09-19)
+
+**Status: CLOSED 2026-09-19 — T5 complete. The final unrepaired site, seal-remake `crates/seal-view/tests/quest_sim_front.rs` (the relay-hub temp dir), landed its pid-suffix repair at seal-remake `db68f5e` (the concurrent-WIP blocker named in the 09-19 census cleared with that lane's landing), validated in-repo with the guard layer-16 invocation (`cargo test -p seal-view --features quest_sim,sync_client --test quest_sim_front` — 1/1, the front floor). Floors re-pinned `mmorpg-remake 16 1 → 18 0` in the same commit: `fixed=0` verified by the sweep, and the site count grew 16→18 through the sibling lane landing (all pid-suffixed). The two other standing rows are ADJUDICATED, not outstanding: seal-game-editor `services.rs` is the deliberate production scratch root pinned `max_fixed 1` at the Issue-842 close-out (`6964117e`), and riir-clippy's 9 production scratch roots carry `[documented-fixed-root]` markers + the read-before-write mtime-churn fix (`83f4cd89`). Every test-class site is repaired per-repo with sibling SHAs cited (riir-ai `9d138531b`, riir-chain `8a3b0f5`, riir-game-sdk `ef66117`, riir-clippy `f5ada0ec`, riir-deployer `b551028`, mmorpg-remake `db68f5e`, mmorpg-editor + mmorpg-remaster same-day 09-19); the demo class (`examples/`+`src/bin/`) stands adjudicated. The x86_64 matrix is fully green (11,177 assertions, `a77c46c0`). File removed this commit; full record: git history `.issues/832_*`.**
+
 ## Issue 844 — CLOSED: the dot-delegation crossover is length 24, per-ISA, measured on BOTH arches — not a backlog (2026-09-19; full record at the 09-19 dated entry below, file removed this commit)
 
 ## Issue 840 — RESOLVED: two `.research/569` documents landed forty minutes apart and tripped two detectors — the rewrite set was EMPTY, and the attribution lessons became the staged-set rules (2026-09-19)
