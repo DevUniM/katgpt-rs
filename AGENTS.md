@@ -353,6 +353,30 @@ non-citation sweeps green, and the citation sweep surfaced ~35 REAL
 file-addressed defects across 6 repos that the zero-read had hidden — filed
 as Issue 846, the sweep's red there is true positives, not the 842 class.
 
+- ⛔ **The repair was applied to 19 sweeps BY HAND and nothing stopped the
+  twentieth landing unwired for a day** — this file's own most-repeated
+  finding, committed by the change that closed the issue naming it. The wall
+  is a **fourth `MECHANISMS` row** in `sweep_advisory_membership_gate.py`
+  (`alias-open` → `open_repo` / `repo_alias.real`), not a new instrument: the
+  registry exists for exactly this, and a fresh gate over the JOIN would have
+  been the cries-wolf one — measured, 27 findings, because the shipped
+  architecture resolves at the READ seam and keeps CONTRACT-named handles on
+  purpose, so every `ws / n` and every `repo.name` in the family is correct.
+  **Read the architecture before writing the predicate**: a wall aimed at the
+  wrong seam condemns the careful caller.
+- ⚠ It carries this file's **first pinned exemption**, and the row is the
+  interesting half: `len_derived_drift_sweep` is WIRED one hop away — it
+  constructs no repo path of its own and delegates every walk to
+  `len_derived_binding_audit`, which calls `repo_alias.real()` at each read
+  seam. Teaching `calls_any` to follow delegation is PERMISSIVE for all four
+  mechanisms at once (it would credit a sweep for a call some imported module
+  makes for its own reasons), where `check_validation_gate` can credit
+  delegation only because its delegate IS the classifier the check imports.
+  ⛔ The first live row also caught the gate's own PASS line claiming *"every
+  one of 21"* beside a per-mechanism count of 20 — true only while the pin
+  file was empty, and `skill_repo_set_gate`'s recorded defect reproduced in
+  the display of the gate that objects to it.
+
 `scripts/docs_gate.sh` runs the manifest/doc/skill drift assertions and
 **prints its own timing** — a hand-typed duration drifts exactly like a
 hand-typed count, and it was also the wrong quantity. Measured three times:

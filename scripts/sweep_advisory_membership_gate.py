@@ -137,6 +137,26 @@ MECHANISMS: dict[str, tuple[str, tuple[str, ...]]] = {
         "COMMIT CONTAINS into a ceiling, and the obvious remedy is to re-pin "
         "from another session's in-flight edit",
         ("head_delta", "head_overlay", "head_tree", "head_text")),
+    # Issue 842, registered 2026-09-19. The FOURTH, and it is the plainest
+    # case this registry has had: 17 of 19 sweeps opened `WORKSPACE /
+    # <contract-name>` directly, the repair was applied to all of them BY
+    # HAND in one commit, and nothing then stopped the twentieth landing
+    # unwired. On an alias box the contract spelling is not a directory, a
+    # walk over a missing directory returns ZERO rather than raising, and a
+    # repo whose floor is zero prints a SILENT ✓ — so the failure mode is a
+    # sweep adjudicating a TRUE pin against an empty tree, in the direction
+    # nothing detects.
+    #
+    # TWO names, the two seams the repair actually shipped:
+    #   open_repo  the sweep-level seam (`sweep_population.open_repo`)
+    #   real       the audit-module seam (`repo_alias.real`), identity for an
+    #              unmapped name and therefore fixture-safe
+    "alias-open": (
+        "Issue 842 — otherwise a sweep opens a directory that does not exist "
+        "on an alias box, and a walk over a missing directory returns ZERO "
+        "instead of raising, so a TRUE pin is adjudicated against an empty "
+        "tree",
+        ("open_repo", "real")),
 }
 
 # Two floors, failing differently.
@@ -574,9 +594,19 @@ def main() -> int:
 
     if bad:
         return 1
+    # ⛔ The count and the CLAIM must agree. This read "every one of {n}" with
+    # a per-mechanism list beside it, which was true only while the pin file
+    # was empty — the first live exemption made the sentence contradict the
+    # number three words later. That is `skill_repo_set_gate`'s own recorded
+    # defect ("16 of 20 canonical repos" over 13 canonical + 3 extra)
+    # committed by this gate's display, and a count that is not a checksum
+    # over its own set is what this file exists to object to.
     parts = ", ".join(f"{slug} {len(wired[slug])}" for slug in MECHANISMS)
-    print(f"✓ sweep-advisory membership gate PASSED — every one of {n} tracked "
-          f"{GLOB} calls each of the {len(MECHANISMS)} family-wide mechanisms "
+    every = all(len(wired[slug]) == n for slug in MECHANISMS)
+    claim = (f"every one of {n} tracked {GLOB} calls" if every else
+             f"each of {n} tracked {GLOB} calls, or is PINNED for,")
+    print(f"✓ sweep-advisory membership gate PASSED — {claim} "
+          f"each of the {len(MECHANISMS)} family-wide mechanisms "
           f"({parts}; floors {MIN_SWEEPS}/{MIN_WIRED}), "
           f"{len(pins)} pinned exemption(s), 0 stale. ⚠ It does NOT assert the "
           f"patterns name each sweep's own population — that is a per-sweep "
