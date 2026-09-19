@@ -1,8 +1,8 @@
 # Research 573: CUA-S1 — the Open Jev Recipe (Specialist One-Pass Option Scorer)
 
 > **Source:** trycua/cua `libs/cua-s1` @ `83f142c4290a0f7d9ed545ae8532858c6e4f8145` (MIT, sparse clone — `.raw/` deleted after pinning) + HF model card `cua-ai/cua-s1-forms` + HF dataset `cua-ai/cua-s1-forms` (~234k rows, MIT, procedural values)
-> **Date:** 2026-09-19
-> **Status:** Done — **Gain** (files riir-clippy `.issues/125` — specialist option-scorer PoC for healer rule selection; Research 562's reopen trigger FIRED, addendum there)
+> **Date:** 2026-09-19 (addendum 2026-09-20 — PoC verdict below)
+> **Status:** Done — **Gain** (files riir-clippy `.issues/125` files the PoC; **PoC verdict: REFUTED at current corpus scale — see the addendum**) — Research 562's reopen trigger FIRED, addendum there
 > **Related Research:** 562 (parent — TypeSafe Jev; this is its "independent replication with numbers"), 322 (Report-the-Floor — binds the PoC's gates), 278-lineage (Engram)
 > **Related Issues:** katgpt-rs Issue 810 (CalibratedSigmoidGate — the calibration cousin this PoC must NOT inherit CUA-S1's skipping of), riir-clippy Issue 125 (this note's actionable half)
 > **Classification:** Public sources; distillation internal.
@@ -110,6 +110,18 @@ Healer rule selection IS the CUA-S1 task shape: context = code span, options = c
 **MOAT:** katgpt-rs — no new open primitive (the head is track-c; the taxonomy is eval methodology); riir-clippy — consumer-first moat (measured healer-quality gain is the bar); riir-train — recipe recorded here, plan only if the PoC scales beyond the healer.
 
 **Next triggers:** PoC win → riir-clippy plan (rerank-arm wiring + GOAT promotion gate); PoC loss → record numbers here, keep modelless default, reopen only on a corpus-order-of-magnitude change; TypeSafe publishes RLCD math → its own distill (562's standing trigger).
+
+---
+
+## Addendum 2026-09-20 — the PoC verdict: REFUTED at current corpus scale (riir-clippy Bench 098)
+
+The filed PoC ran end-to-end (deterministic harness, 719k-param recipe-faithful tinyx, FD-gradient-gated hand-rolled backward, rule-disjoint OOD split, confuser curriculum, all five gates). **The challenger lost**: composite top-1 **27.7% vs the modelless structural baseline's 88.0%** in-dist (n=83); **5.6% vs 100%** OOD (n=18, signature-disjoint); **8868 µs/span** vs the ~1 ms serving bar (single-thread CPU). Controls validated the harness rather than the model: shuffled-context dropped to 12.0% (PASS — context is read), the frozen head scored 7.2% (training genuinely learned at 27.7%), and calibration after Platt-T was still ECE 0.175 (reported per the Issue-810 tie-in; CUA-S1's uncalibrated posture NOT inherited silently).
+
+**The honest reading is corpus scale, not architecture**: our shipped labeled corpus is ~101 gold contexts (~3.6k episodes) against CUA-S1's ~150k-row compositional generator — three orders of magnitude less signal — and the opponent was not a hosted general model but a structural rerank carrying per-rule hand-derived proposer knowledge (88% on the same pools). The specialist class's pricing (99.7 vs 83.6) does not transfer to a regime where the specialist starves; the deepest failure, G1-OOD 5.6% (zero-shot binding of an UNSEEN rule's pattern bytes to a span), is exactly what a hundred contexts cannot teach.
+
+Also recorded for any rerun: v1's curriculum (25% gold-dropped-same-context "decline" rows) was contradictory label noise and collapsed the model to always-skip (0/83, skip p≈1.00 — WORSE than the frozen control); v2 sources decline honestly (clean spans + gold-absent pools) and weights production-pool episodes ×8.
+
+**Standing after the verdict:** modelless default unchanged, nothing wired into heal paths; the deterministic harness + model land as the re-run lane (feature `choice_scorer_poc`). **Reopen trigger unchanged and now measured**: a corpus-order-of-magnitude change (~10⁴–10⁵ labeled contexts — fleet-scale fixseq rings or frontier-miner oracle-verified spans). Full numbers: [riir-clippy Bench 098](../../riir-clippy/.benchmarks/098_choice_scorer_poc.md). The metric-taxonomy half of the issue (ChoiceTaxonomy rows) had already landed and is unaffected.
 
 ---
 
