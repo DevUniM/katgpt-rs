@@ -419,7 +419,14 @@ def selftest() -> list[str]:
     only reach. Its body stays unmutated either way, because the name is still
     in `ARM_NAMES`.
     """
-    fails = probe_selftest() + prove_fires()
+    # ⛔ `prove_counter` is called HERE, not only from `--prove-fires`.
+    # Left on the CLI path alone it is an arm `arm_reach` never
+    # invokes, so the COUNTER axis's fixture builder and `classify`'s
+    # own counter rows were mutated with nothing watching — measured:
+    # 19 live survivors across `counter_fixture` / `prove_counter` /
+    # `run`. Same argument the docstring above makes for `prove_fires`,
+    # and the same price: 1.17s against the docs gate's ~24s wall.
+    fails = probe_selftest() + prove_fires() + prove_counter()
     if not callable(numbers_added):
         fails.append("probe import: numbers_added missing")
 

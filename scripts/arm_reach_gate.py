@@ -108,7 +108,7 @@ MIN_KILLED = 150
 EXPECTED_EXEMPT = {"main"}
 EXPECTED_ARM_NAMES = {
     "selftest", "self_test", "selftest_scoping", "canary", "gate_selftest",
-    "prove_fires",
+    "prove_fires", "prove_counter",
 }
 
 # desc string -> a whitespace-free token, because the pin file splits on

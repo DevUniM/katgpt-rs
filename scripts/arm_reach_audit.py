@@ -107,6 +107,11 @@ ARM_NAMES = {
     "canary",
     "gate_selftest",
     "prove_fires",
+    # Issue 850 T4: the COUNTER axis's known-answer arm, called from
+    # `selftest` exactly as `prove_fires` is. In ARM_NAMES for the same
+    # reason: an arm BODY is not decision code, and mutating it measures the
+    # fixture rather than a rule.
+    "prove_counter",
 }
 
 # ⛔ The arms actually INVOKED are a strict subset, and the exclusion is
