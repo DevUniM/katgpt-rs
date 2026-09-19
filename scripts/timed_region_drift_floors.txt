@@ -16,8 +16,18 @@
 # (2026-09-19): 1 UNBUILDABLE, 32 run, 2 VANISHED = 6.3%, against this repo's
 # own 7 of 34 = 20.6%. That is enough to constrain the DERIVATIVE — the commit
 # that adds ANOTHER unguarded region reds — and NOT enough for a membership
-# wall: 30 of the 32 are single readings on a loaded box without T3's 4x
+# wall: most of the 32 are single readings on a loaded box without T3's 4x
 # scaling probe, so `fast` and `partly eliminated` are not separated for them.
+#
+# ⚑ The FOUR most exposed of those — every sibling row that printed a
+# sub-nanosecond figure, where `fast` and `partly eliminated` are least
+# distinguishable — were 4x-probed on 2026-09-20 and all four are LIVE:
+#   riir-chain bench_013 g2_quorum       0.430 ns @1M -> 0.334 ns @4M  FLAT
+#   riir-chain sufficiency_gates g2      2 ns    @1M -> 2 ns    @4M    FLAT
+#   riir-ai bench_133_hla_conflict       1.08/0.78 @100k -> 1.38/1.11/0.82 @400k
+# A flat per-iteration figure across a 4x bound means elapsed scaled with the
+# bound; a deleted loop reads ~0 at both. Each file was restored
+# byte-identically (`git diff --quiet`, verified).
 #
 # ⚠ Issue 785's rule is respected, not skirted: it forbids ratcheting a bucket
 # meaning *unanswered*. This bucket means *no loud-zero defence*, every row has
@@ -52,7 +62,14 @@ riir-game-sdk                     50           20              1
 riir-kat                           0            0              0
 riir-llm                           0            0              0
 riir-mmorpg-examples              25           10              0
-riir-neuron-db                    65           40              3
+# riir-neuron-db 3 -> 4 on 2026-09-20: `local_kv/tests.rs::g2_compact_1000_
+# entries_under_50ms` is a classifier FALSE POSITIVE, not a new defect. Its
+# `for i in 0..1000` populates the store and the timed region is a single
+# `compact_wal()` call, so the bound and the timer are unrelated and the
+# `n >= 1000` premise does not apply. Read at HEAD, MASKED by a sibling's
+# in-flight edits at the time. See the gate's STATED blind spot on FN-scope vs
+# REGION-scope matching.
+riir-neuron-db                    65           40              4
 riir-shader                        0            0              1
 riir-train                       220           90              2
 riir-viewbridge                    0            0              0

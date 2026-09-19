@@ -75,6 +75,19 @@ delete.
 ⚠ STATED BLIND SPOTS, printed on the verdict line so a later census reads them
 instead of re-deriving them:
 
+- ⛔ The bound and the timer are matched at **FN scope, not REGION scope**, so
+  a big SETUP loop before `Instant::now()` is credited to the timed region.
+  Measured specimen (riir-neuron-db `local_kv/tests.rs::g2_compact_1000_
+  entries_under_50ms`): `for i in 0..1000 { store.put(..) }` populates the
+  store, and the timed region is a single `compact_wal()` call. The
+  `n >= 1000` premise — *a zero over that many iterations is exact* — does NOT
+  hold for such a row, because there is no loop in the timed region at all.
+  Narrowing the predicate to the span between `Instant::now()` and `.elapsed()`
+  would fix it and is NOT done here: base rate is 1 of 58 READ-tier rows
+  workspace-wide, and the founding specimens all have the loop inside the
+  region, so the change would be a real improvement with a real chance of
+  dropping true rows. Pin such a row with this reason rather than repairing
+  the sibling.
 - The loop bound is resolved ONE hop (a literal `let`/`const`/`static` in the
   same body, else at file scope). A bound computed from anything else —
   arithmetic, a fn call, a CLI arg — is not seen. One hop is what reaches
