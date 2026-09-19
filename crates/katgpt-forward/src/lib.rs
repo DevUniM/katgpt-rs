@@ -685,6 +685,20 @@ pub use diffusion_sampler::{
     SamplerVariant, StabilityTracker, TOPK_DRIFT_K, collect_trajectories,
 };
 
+// ── Issue 859 (2026-09-20): Jev structured reads ──
+// Read-only seeded-canvas decision primitive (Research 574 §5): seed → ONE
+// denoise step → per-free-slot {argmax, exact full-marginal label logprobs,
+// subset-normalized entropy} → return, no commit forward. Composes the
+// `dllm`-gated forward_positions substrate; zero new substrate elsewhere.
+// Opt-in POC — promotion rides Issue 859's GOAT gate.
+#[cfg(all(feature = "dllm", feature = "structured_reads"))]
+pub mod structured_read;
+#[cfg(all(feature = "dllm", feature = "structured_reads"))]
+pub use structured_read::{
+    MAX_LABELS, SlotReadout, StructuredReadError, StructuredReadScratch, sample_label_index,
+    structured_read, structured_read_into,
+};
+
 // ── Plan 400 (2026-07-05): FlashAR cluster ──
 // `flashar_anchor.rs` and `flashar_consensus.rs` moved from root
 // `src/speculative/`. Root's copies are now thin re-export shims. All 10

@@ -235,6 +235,20 @@ gdsd_distill = ["katgpt-pruners/gdsd_distill"]
 # `pub mod d2f_context` declaration + re-exports in lib.rs.
 dllm = []
 
+# Jev structured reads (Issue 859 / Research 574): the read-only seeded-canvas
+# decision primitive — seed (mask-token placement) → one denoise step →
+# per-free-slot {argmax, exact full-marginal label logprobs, subset-normalized
+# entropy} → return, never committing. Composes only `dllm`-gated substrate
+# (forward_bidirectional_positions_into); opt-in POC — promotion rides
+# Issue 859's GOAT gate, not default.
+structured_reads = ["dllm"]
+
+# Forwards katgpt-core's alloc_tracking (Issue 741): compiles the `alloc`
+# module in RELEASE so the structured_reads G4 gate runs against optimised
+# code — `debug_assertions` alone compiles the gate to an empty binary in
+# the profile gates are meant to be read in.
+alloc_tracking = ["katgpt-core/alloc_tracking"]
+
 # RCD (Residual-Conditioned Diffusion) injection fields in `D2fContext`.
 # Forwards to katgpt-core so the gated struct fields + reset impl resolve.
 # Plan 402 (2026-07-06): also gates `BidirectionalContext.rcd_residual_embeddings` /
@@ -339,3 +353,19 @@ set_diffusion = []
 # requires a trained checkpoint to produce non-trivial gain; zero weights are a
 # safe no-op.
 weaver_runtime = ["katgpt-speculative/weaver_runtime"]
+
+# Issue 859 (Research 574) — Jev structured reads GOAT gates.
+# G4 alloc-free hot path: structured_read_into must allocate nothing after
+# scratch construction (canary-armed counting allocator, the bench_811
+# convention). Run in release with alloc_tracking for the honest reading:
+# `cargo test --release -p katgpt-forward --features structured_reads,alloc_tracking --test structured_read_alloc_check`.
+[[test]]
+name = "structured_read_alloc_check"
+required-features = ["structured_reads"]
+
+# G2 latency (read-only read vs the full denoise loop, Issue-723 interleaved
+# pairs) + the three-competitor informational arm (read vs full-loop-then-
+# parse agreement). Release for latency, per the module doc.
+[[test]]
+name = "structured_read_goat"
+required-features = ["structured_reads"]

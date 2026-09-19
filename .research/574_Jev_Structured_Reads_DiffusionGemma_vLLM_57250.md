@@ -75,3 +75,16 @@ MOAT gate: katgpt-rs in-scope (serving-stack primitive, no game semantics). Rout
 | (slot stats substrate, not consumed) | `diffusion_sampler.rs` `SamplerFeatures::from_logits` (per-slot maxp/margin/entropy) | tri_mode-gated and used for remasking inside generation; the pinned claim needs only label-subset stats, so the feature stays minimal (`structured_reads = ["dllm"]`, no tri_mode pull). |
 
 **Composition law honored:** zero new substrate — the primitive is one new module in `katgpt-forward` composing `forward_bidirectional_positions_into` + the mask-token placement convention + new label-subset readout math. Routing per §4: katgpt-forward, feature flag `structured_reads`.
+
+## 6. POC verdict (Issue 859 T3–T6, 2026-09-20 — Bench 816)
+
+**Landed, GOAT G1/G1b/G2/G3/G4 PASS** (opt-in `structured_reads`, NOT promoted — promotion needs the accuracy axis, which rides T1):
+
+- G1: label logprobs exact full-marginal (f64 cross-check < 1e-5; bit-identical across calls). G1b: canvas bit-identical after read (no commit).
+- G2: read/full-loop median ratio **0.4588** (33 interleaved pairs ×8, release; the Issue-723 sequential-timing discipline). Box: M3 under load 3.8–6 with the training measurement live — 2.2× margin against the ≤1.0 bar, load-insensitive verdict.
+- G3: 154/154 existing suite green at the new feature set; default-features build clean.
+- G4: **0 allocations** across 32 reads after scratch construction — canary-armed counting allocator, `--release --features structured_reads,alloc_tracking` (the katgpt-forward `alloc_tracking` forward landed for exactly this — Issue 741's release-profile law).
+- Competitor arm (informational): step-1 read vs full-loop-then-parse 4/4 after 1 commit round at threshold 0.3; mean label entropy 0.4123 nats. Random-init weights carry no ground truth — recorded as mechanism agreement, not accuracy.
+- **T5 partial**: `sample_label_index` (temperature > 0) landed as the stochastic re-read enabler — the deterministic forward re-reads bit-identically, so the reference's agreement-bars policy is only meaningful through it; the measurement rides T1.
+
+**Remaining:** T1 (4090 reference validation — re-run when the sibling tap cross-check drains; re-pin the PR sha at clone) + the T5 measurement + the promotion decision.

@@ -4151,3 +4151,39 @@ random-order seeds, halting law fires at 185/728/2961 observations for
 ε = 0.2/0.1/0.05 (the predicted 1/ε² scaling). Consumed by `set_admission`
 (§115, `vendi_diversity`) — the substrate-level win that arrived while the
 corrected-metric re-gate pends.
+
+## 117. structured_reads — Jev read-only seeded-canvas decisions (Issue 859 / Research 574)
+
+The vLLM PR #57250 contract, instantiated on our D2F stack with zero new
+substrate: `seed(canvas) → ONE denoise step → per-free-slot {argmax, exact
+full-marginal logprob over a caller-supplied label-id list, entropy over the
+subset-NORMALIZED label distribution} → return` — **no commit forward** (the
+canvas is never written; a read never shifts what a later read sees).
+
+- **Seed** = the existing `config.mask_token` placement convention (the
+  denoise loop's own skip rule already honors pre-seeded positions).
+  AcPrefix-SHAPED but AcPrefix-NOT-consumed — the D2F bidirectional forward
+  is natively the right conditioning shape (mask embeddings at free slots,
+  exactly DiffusionGemma's canvas semantics). `canvas_schema` not consumed
+  either (positions-not-tokens topology ≠ token placement).
+- **Step** = `forward_bidirectional_positions_into` — the identical call
+  `denoise_loop` makes per step; the read surface is per-position full-vocab
+  logits.
+- **Read** = `logprob(t) = logits[t] − logsumexp(full vocab)` (exact
+  full-marginal — the reference PR's top-k blindness cannot arise) +
+  subset-renormalized entropy (the reference reviewer's nit corrected by
+  construction).
+- **`structured_read_into`** — the alloc-free core (fixed `[f32; 64]`
+  readouts, reusable `StructuredReadScratch`, MAX_LABELS=64 bounded-domain
+  cap, fail-closed validation); `structured_read` — allocating convenience.
+- **`sample_label_index`** — the T5 stochastic re-read enabler (temperature >
+  0); deterministic re-reads are bit-identical, so agreement bars are only
+  meaningful through it.
+
+Gates (Bench 816): G1 full-marginal exactness (f64 cross-check 1e-5 +
+bit-identity across calls) · G1b canvas bit-identical after read · G2
+read/full-loop median ratio 0.4588 over 33 interleaved pairs (Issue-723
+discipline) · G3 154/154 existing suite green · G4 zero allocs across 32
+reads (canary-armed, `--release --features structured_reads,alloc_tracking`).
+Opt-in POC — the accuracy axis rides the 4090 reference run (Issue 859 T1,
+deferred on sibling GPU occupancy); promotion decision after T1 + T5.
