@@ -7685,3 +7685,34 @@ decision about Actions spend and it stands. What it records is that the
 resulting `develop` lane is **zero, not reduced**, which `ci_gate_coverage.py`
 already prints for 12 of 16 repos; this is the first time it cost this repo a
 red `develop` in Python rather than in Rust.
+
+## Issue 856 (2026-09-19) — the green zero has TWO spellings and the audit built for it saw one: CLOSED
+
+`cfg_gated_target_audit`'s predicate was a single regex for the **inner**
+attribute. A file whose whole body is `#[cfg(feature = "x")] mod tests { … }`
+zeroes its binary identically — `ok. 0 passed`, exit 0 — and the comment
+beside that regex distinguishes `#![cfg]` from `#![allow]`, never deciding
+anything about the outer-on-a-module form: an **unstated** blind spot, which
+is worse than a scoped one. It printed `SILENT-NOW 0` for this repo over 26
+such targets, hiding **175 assertions**, 7 of the targets named `*_goat`.
+
+T1–T5 closed the same day. Classifier widened (`whole_body_cfg_mod`, sharing
+`platform_dead_code_audit.mask_file`), so every consumer inherited it; the
+predicate is *the gated items are the WHOLE body*, with `tests/test_freeze_thaw.rs`
+as the measured true negative that corrected the filing's own count. A run of
+gated modules is gated by `any(...)`, not `all(...)`; a top-level `use` never
+makes a target non-empty. `cfg_row_implication_audit` shares the predicate or
+the repair would have reproduced the defect one gate over. Twelve
+`required-features` rows added and verified by the compiler in both
+directions. Two sibling repos breached their pins and were repaired there
+(`seal-remake 964e780`, `seal-game-editor fbb5a931`); no ceiling was raised
+anywhere.
+
+⛔ The first cut anchored its module matcher with `\A` and passed a non-zero
+`pos`, so it returned `None` for every file — **the repair read exactly like
+the defect**, and it was caught by the summary line not moving rather than by
+anything failing.
+
+Full record, with the before/after table, the per-repo cross-repo read and the
+four perturbation canaries: `.docs/10_audits/cfg_gated_silent_zero_pass.md`
+§"The SECOND spelling". Fix commits `4e2f28f2d` · `6399faf69`.
