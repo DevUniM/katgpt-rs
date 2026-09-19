@@ -11,6 +11,34 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-20 — Issue 859 CLOSED: Jev structured reads — POC GOAT + 4090 reference + T5 policy arm measured; promotion declined on layer posture (evidence-banked)
+
+**Status: CLOSED (RESOLVED) 2026-09-20, all tasks T0–T6 done; code + records in `d1075311`; full issue text: git history.**
+
+The arc, end to end: Research 574 distilled vLLM PR #57250's read-only structured-decision
+contract → Issue 859 (owner-routed to the 4090) → substrate mapping written BEFORE implementing
+(the substrate-first gate) → POC landed as `structured_read[_into]` + `sample_label_index` behind
+opt-in `structured_reads` (katgpt-forward) with GOAT G1/G1b/G2/G3/G4 PASS (Bench 816: exact
+full-marginal logprobs, canvas bit-identity, 0.4588× full-loop latency, 154/154 suite, 0 allocs)
+→ T1 executed on this box (python-only overlay of the PR head onto vllm-openai:nightly; corpora
+10/10 · 10/10 · 9/12-corrected; the mm-video-profiler ~4.4 GiB memory finding; Research 574 §8,
+including the Issue-665 dual-allocation yield) → **T5 measured (Bench 817, this commit's
+companion)**: on the trained `micro_dllm_text` fixture, agreement bars (N=4 re-reads, t=1 — the
+reference's protocol) do NOT beat single-read analytic confidence — CI-decisive in both label
+arms and every M3 gate subset (Δ(agree−(−H1)) [−0.089, −0.071] / [−0.056, −0.030]); the genuinely
+open sub-question resolved the OTHER way: **maxprob beats entropy on wide option sets** (Δ CI
+[+0.015, +0.026]) — deployable guidance `label_entropy` narrow / `argmax_label_prob` wide →
+**T6 promotion decision: stays opt-in, evidence-banked** — every discipline condition is MET
+(GOAT + modelless gain + accuracy axis) but `katgpt-forward`'s `default = []` is deliberately
+minimal, the feature would drag the dllm stack into every default build, and there are zero
+production consumers today (the flashar_anchor precedent). Root feature forward landed for
+findability; re-arm trigger = first production consumer (one-line promotion).
+
+Reopen triggers: a production consumer for `structured_read` (promote then), or evidence that a
+deployment path needs per-read stochastic forwards (the one regime where agreement bars could
+carry information beyond the readout — the reference-side proxy re-run data-spec is in Research
+574 §8's note, optional).
+
 ## 2026-09-19 — the open-issue backlog is cleared by owner call (12 files removed; triggers recorded here)
 
 Every open issue in `.issues/` was adjudicated in one owner session: resolved
