@@ -3424,6 +3424,14 @@ name = "bench_841_calibration_staleness_goat"
 harness = false
 required-features = ["calibration_staleness"]
 
+# Issue 841 §B-3 seam 4 — the conformal calibrator's own gate. Separate from
+# the row above because this seam guards a WRITE as well as a read, and G5
+# measures the contamination the write guard prevents.
+[[bench]]
+name = "bench_841_conformal_staleness_seam_goat"
+harness = false
+required-features = ["calibration_staleness"]
+
 [[bench]]
 name = "bench_841_kv_sink_window_goat"
 harness = false

@@ -60,6 +60,11 @@ mod seasonal;
 // (`ConformalIntervalCalibrator<SeasonalNaiveForecaster>`).
 #[cfg(feature = "conformal_predictive_intervals")]
 mod floor_harness;
+// Issue 841 §B-3 seam 4 — the freeze/thaw staleness guard. Opt-in, and it adds
+// NOTHING to a default build: the calibrator and every method on it are
+// untouched, so this is an additive sibling exactly as seams 1-3 are.
+#[cfg(feature = "calibration_staleness")]
+pub mod staleness;
 
 #[cfg(feature = "conformal_predictive_intervals")]
 pub use floor_harness::{

@@ -253,6 +253,34 @@ impl<T> SnapshotBound<T> {
         }
     }
 
+    /// The calibration **mutably**, or `None` if the snapshot identity has
+    /// moved. Same warning semantics as [`Self::get`].
+    ///
+    /// ⛔ The mutable half is not a convenience — it is the half that guards
+    /// the **supply** side. A read-only refusal protects one call; refusing a
+    /// WRITE protects the pool itself. A calibration that keeps ACCUMULATING
+    /// across a snapshot swap is not stale in a way any later check can see:
+    /// it becomes a mixture of two models' statistics and heals into something
+    /// that looks fitted and describes nothing. See
+    /// [`crate::conformal::staleness`] for the worked case — exchangeability,
+    /// the property a conformal interval's coverage guarantee rests on, is
+    /// destroyed by exactly that mixture.
+    ///
+    /// ⚠ It is **not** [`Self::refit_with`]: this does not rebind, so it is
+    /// for continuing to use a calibration that is still fresh, never for
+    /// re-fitting one that is not.
+    #[inline]
+    pub fn get_mut(&mut self, current: SnapshotId) -> Option<&mut T> {
+        let verdict = self.staleness(current);
+        match verdict.is_fresh() {
+            true => Some(&mut self.inner),
+            false => {
+                self.warn_once(verdict, current);
+                None
+            }
+        }
+    }
+
     /// Re-bind to a new snapshot identity after a refit, and re-arm the
     /// warning latch.
     ///
