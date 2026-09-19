@@ -2,7 +2,7 @@
 
 > **Source:** "Introducing System One Models & Jev" — TypeSafe AI blog, Diogo Almeida, 2026-09-15 — https://typesafe.ai/blog/introducing-system-one-models-and-jev (secondary: HN thread 49717558, The Register 2026-09-16, docs.typesafe.ai)
 > **Date:** 2026-09-16
-> **Status:** Done — Gain verdict, filed katgpt-rs Issue 810 · addendum 2026-09-16: arena head-to-head (11 W / 2 L / 2 SPLIT)
+> **Status:** Done — Gain verdict, filed katgpt-rs Issue 810 · addendum 2026-09-16: arena head-to-head (11 W / 2 L / 2 SPLIT) · **reopen trigger FIRED 2026-09-19** (independent replication with numbers + a decision-head recipe) → Research 573
 > **Related Research:** 322 (Report-the-Floor UQ rule), 311 (conformal line)
 > **Related Plans:** Plan 340 (ConformalIntervalCalibrator, default-on)
 > **Cross-ref (riir-ai / riir-chain / riir-neuron-db):** riir-ai `arg_runtime/pipeline.rs` (ActionBridge ABSTAIN), `integrity/injection.rs` (5 affect scalars), `.proofs/RiirAiProof/Hla/Bounded.lean`
@@ -139,4 +139,6 @@ Question posed by owner: *can we beat it in the game arena?* Verdict: **yes in o
 
 ### What they cannot enter at any price
 
-The benchmark class "thousands of calibrated decision-makers at 20 Hz with fog-of-war, memory, and quorum-verifiable raw sync" requires: per-decision latency ≪ one tick share (µs), bit-determinism, and zero network round-trip on the sync path. Jev fails all three by construction — 70 ms > the whole 50 ms tick, no determinism guarantee, cloud-only. Their own demos (one Doom bot at 10 qps) are the correct size of their unit of work. **The game arena is not a fight they can show up to; the fight they *can* show up to — zero-shot fuzzy judgment on novel text-state tasks — is the one niche where they win today.**
+The benchmark class "thousands of calibrated decision-makers at 20 Hz with fog-of-war, memory, and quorum-verifiable raw sync" requires: per-decision latency ≪ one tick share (µs), bit-determinism, and zero network round-trip on the sync path. Jev fails all three by construction — 70 ms > the whole 50 ms tick, no determinism guarantee, cloud-only. Their own demos (one Doom bot at 10 qps) are the correct size of their unit of work. **The game arena is not a fight they can show up to; the fight they *can* show up to — zero-shot fuzzy judgment on novel text-state tasks — is the one niche where they win today.
+
+**Reopen fired (2026-09-19):** trycua's CUA-S1 is the "independent replication with numbers" this note's trigger named — open code + data + a supervised (no-RL) recipe reaching the Jev contract, 706k params, 99.7% vs 83.6% for hosted Jev in-domain. Architecture confirmed (options-as-queries attention head from `jevlike`); recipe extracted. Distilled in [Research 573](573_CUA_S1_Open_Jev_Recipe_Specialist_Option_Scorer.md); the healer track-c PoC it prices is riir-clippy Issue 125.**
