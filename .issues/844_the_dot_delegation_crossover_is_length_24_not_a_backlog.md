@@ -1,8 +1,8 @@
-# Issue 844: delegating to `simd_dot_f32` pays only ABOVE ~length 24 — so the private single-accumulator dots are mostly correct, and the hand-rolled chunked ones are the actionable class
+# Issue 844: delegating to `simd_dot_f32` pays only ABOVE ~length 24 (x86_64) — and at EVERY length on NEON — so the private single-accumulator dots are mostly correct, and the hand-rolled chunked ones are the actionable class
 
-**Status:** OPEN — the measurement is DONE (§Measured); what remains is a
-per-site read of one named class. Found while auditing a hypothesis that turned
-out to be wrong, which is why it is filed as a *rule* rather than as a backlog.
+**Status:** CLOSED 2026-09-19 — T1–T4 all done. The rule (per-ISA, both arches
+measured) and the full workspace per-site read are recorded here; the repairs
+transfer to the owning repos' issues (Disposition below).
 
 ## What I went looking for, and why it was wrong
 
@@ -68,75 +68,137 @@ point where its own overhead is amortised, and above it the scaling is
 completely different: 3× the elements from 16 to 64 costs the kernel 26% and
 the plain loop 350%.
 
-**Crossover: between length 16 and 32.**
+**Crossover on x86_64: between length 16 and 32.**
+
+## Measured — aarch64/NEON (T4, M3, 2026-09-19): NO crossover — delegation wins at every length
+
+`simd_level() = Neon`, same bench, same discipline, three runs (ratios stable
+to ±0.13; the len-4 row is the noisiest at ±0.08):
+
+| dot length | `simd_dot_f32` ns/dot | plain ns/dot | plain/simd |
+|---|---|---|---|
+| 4 | 0.8–1.5 | 1.5–1.8 | **1.94–2.02** — delegation wins |
+| 8 | 0.9 | 1.6–1.7 | **1.80–1.81** |
+| 16 | 1.5 | 2.5–2.6 | **1.70** |
+| 32 | 1.8–2.0 | 5.7–6.4 | **3.19–3.32** |
+| 64 | 3.2–6.0 | 16.3–17.2 | **5.10–5.20** |
+| 256 | 12.3–12.5 | 112–113 | **9.06–9.08** |
+
+T4's original expectation ("NEON is 4-wide against AVX2's 8, so the crossover
+is expected LOWER") was **refuted in the strongest direction**: the crossover
+is not lower — it is BELOW THE MEASURED RANGE, i.e. below length 4. Two
+mechanisms, both legible: (1) the aarch64 dispatch is COMPILE-TIME
+(`#[cfg(target_arch)]` + direct call — no runtime CPUID probe), so the kernel's
+floor is ~0.8 ns against x86_64's ~3.3 ns; (2) the plain runtime-length loop
+is SLOWER on NEON than x86_64 at every length (1.5 ns vs 1.1 ns at len 4; 113
+vs 78 ns at 256). The "no crossover in range" branch the bench prints is not a
+fixed-overhead-model violation — it means the intersection sits below len 4,
+where no real dot site lives.
+
+**So the workspace rule is per-ISA:**
+- **x86_64/AVX2**: plain loop wins ≤16; delegate ≥~24 (crossover 16–32).
+- **aarch64/NEON**: **always delegate** (every length ≥4, 1.7×–9.1×).
+- Rule 1 above is therefore ISA-conditional: a plain small-D loop is
+  "correct" on x86_64 and a 1.7×–1.9× NEON loss. For crates whose prod path
+  is aarch64/wasm32-heavy, small-D delegation is the better default; the
+  wasm32-simd128 arm of the kernel makes delegation the cross-arch answer.
 
 ## The rule this establishes
 
-1. **A plain single-accumulator loop over a small fixed `D` is CORRECT, not a
-   defect.** At `D ≤ 16` it is the faster code. Most of the 23 "naive" sites
-   are over `[f32; 8]`-shaped data, which is exactly this case. Do not
-   blanket-convert them — and do not file a lint for it.
-2. **Above ~24 elements, delegate.** The margin only widens, and by length 256
-   a hand-written loop is paying 8×.
-3. **Never hand-roll a chunked/multi-accumulator dot.** It is the worst of the
-   three options: slower than a plain loop at small lengths (`dot_8wide`'s
+1. **A plain single-accumulator loop over a small fixed `D` is CORRECT on
+   x86_64, not a defect.** At `D ≤ 16` it is the faster code there. Most of
+   the 23 "naive" sites are over `[f32; 8]`-shaped data. Do not
+   blanket-convert them — and do not file a lint for it. ⚠ On NEON the same
+   loop concedes 1.7×–1.9× (T4); arch-weight the decision per crate.
+2. **Above ~24 elements (x86) — or always (NEON) — delegate.** The margin
+   only widens; by length 256 a hand-written loop pays 8–9×.
+3. **Never hand-roll a chunked/multi-accumulator dot.** It is the worst of
+   the three options: slower than a plain loop at small lengths (`dot_8wide`'s
    1.26×, measured on NEON) *and* slower than the real kernel at large ones,
    while costing a second transcription of arithmetic — the duplication class
    AGENTS.md prices at 30 findings in `dash_attn/channel_aware.rs`.
 4. **Bit-determinism beats all three when a gate depends on it.** The arms are
-   not bit-identical (max |Δ| 2.4e-7 at length 8, 3.8e-6 at 256) because the
-   summation orders differ, so a site with a cross-platform determinism
-   contract is out of scope by construction, whatever the length.
+   not bit-identical (max |Δ| 2.4e-7 at length 8, 3.8e-6 at 256 on x86_64;
+   2.9e-6 at 256 on NEON) because the summation orders differ, so a site with
+   a cross-platform determinism contract is out of scope by construction,
+   whatever the length.
 
 ## Tasks
 
 - [x] **T1 — DONE. Measure the crossover** rather than asserting one.
       `tests/bench_844_dot_delegation_crossover.rs`, reproduced three times
       across two independent harnesses.
-- [~] **T2 — STARTED, and the first read found a live defect: [Issue 845](845_channel_aware_duplicated_a_kernel_and_gated_its_avx2_arm_at_compile_time.md).**
-      `channel_aware.rs` carried a same-named ~200-line duplicate of
-      `simd_dot_f32` whose AVX2 arm was gated on a COMPILE-time
-      `target_feature`, so the shipped path ran a scalar loop — 2.7–7.8× slower
-      on a default build, 1.8–4.8× slower even with `+avx2`. Repaired by
-      delegation, `unsafe` surface of that file now zero, regression-gated with
-      a canary. **11 of the 21 are outside `katgpt-types`; 5 of those
-      (`simd_lut_dequant.rs`) are a different operation (dequant-through-LUT,
-      then dot) and 3 are `katgpt-moka-wasm`'s standalone wasm bundle, whose
-      dependency surface is its own call.** So the residual read is small and
-      named. Remaining:
-      This is the actionable class per rule 3, and the classifier cannot do it:
-      the bucket mixes `katgpt-types`' *genuine* intrinsic kernels (correct, and
-      the thing everything else should call) with hand-rolled multi-accumulator
-      scalar loops (wrong at both ends). Only the second kind is a finding.
-      Exclude `crates/katgpt-types/src/simd/**` first, then read what is left.
-- [ ] **T3 — Read the 56 UNRESOLVED f32 `src` sites.** UNRESOLVED is not clean;
-      it is "the census could not classify the body". The shapes it stumbled on
-      include accumulate-into-slice forms (`dot_acc_into`), tropical/semiring
-      dots that are not f32 sums at all, and const-generic wrappers. Expect most
-      to be out of scope and say so per site.
-- [ ] **T4 — Re-measure the crossover on aarch64.** It is a **per-ISA**
-      property: NEON is 4-wide against AVX2's 8, so the fixed cost is amortised
-      by fewer elements and the crossover is expected LOWER. Any rule quoted as
-      "~24" without this is an x86_64 rule wearing a workspace rule's clothes —
-      and this repo has the `dot_8wide` note as a standing reminder that the two
-      arches disagree about dot products specifically.
+- [x] **T2 — DONE 2026-09-19 (the residual read).** The census's 21 CHUNKED
+      f32-src sites, read by body across the workspace (re-derived census:
+      398 fn-dot defs → 247 src candidates after excluding test trees and
+      `katgpt-types/src/simd/**`). Disposition:
+      - 10 genuine kernels in `katgpt-types/src/simd/**` (the thing to call).
+      - 5 `simd_lut_dequant.rs` — different operation (dequant-through-LUT
+        then dot). OUT.
+      - 3 `katgpt-moka-wasm` — standalone wasm bundle. OUT (its manifest
+        declares katgpt-types, so the exemption is soft — recorded, not
+        acted on).
+      - 1 already-repaired: `channel_aware.rs` (Issue 845).
+      - 3 KERNEL-HOME: `newton_schulz.rs::blocked_dot8{,_neon,_scalar}` — a
+        batched 8-output GEMM micro-kernel (one acc per OUTPUT, not
+        multi-acc-within-one-dot), per-ISA dispatch + scalar fallback, whose
+        remainder columns already delegate to `simd_dot_f32`. Correct as-is.
+      - **3 FINDINGS (rule c, un-repaired at close):**
+        `katgpt-core/src/cgsp/types.rs:41 dot_f32_fma4` (4-acc; katgpt-types
+        already a dep; doc admits mirroring the kernel's scalar fallback);
+        `katgpt-kv/src/still_kv/perceiver.rs:486 dot_chunk4` (katgpt-types
+        already a dep; sibling module `gating.rs` delegates);
+        `katgpt-dec/src/simd.rs:50 simd_dot_f32` (4-acc + `get_unchecked`;
+        ⚠ katgpt-dec is zero-dep BY DESIGN — published to crates.io
+        standalone; adding katgpt-types changes that posture. Owner call.)
+- [x] **T3 — DONE 2026-09-19 (the UNRESOLVED read).** The re-derived census
+      subsumed the 56-UNRESOLVED bucket; every src candidate was read by body
+      (three parallel reads, spot-verified). Outcomes: the UNRESOLVED shapes
+      resolved exactly as predicted — accumulate-into-slice (`rrq_quant::
+      dot_acc_into` — dequant-fused GEMV, OUT), tropical/semiring dots
+      (`tropical_dot_into` — max-sum, OUT), const-generic wrappers (fixed-D,
+      rule-1 OK), plus `#[cfg(test)]` fns, f64 families (`peira`,
+      `ridge_solve`, `mi/*`), i8 families (`moka_int8`), and name-collisions
+      (DoT damage-over-time, UI dots, dotfiles). **No hidden findings beyond
+      the T2 set** — plus the rule-b CANDIDATES (naive, large-D), filed with
+      the owning repos (Disposition).
+- [x] **T4 — DONE 2026-09-19 (aarch64).** Measured above; expectation
+      refuted; rule made per-ISA; the bench's no-crossover print branch
+      repaired in the same change (it read as a model violation where the
+      truth is "delegation wins throughout").
+
+## Disposition — the findings, by owning repo
+
+| repo | issue | contents |
+|---|---|---|
+| riir-ai | [Issue 982](../../riir-ai/.issues/982_hand_rolled_chunked_dots_and_large_d_naive_dots.md) | 3 CHUNKED findings (`cross_game_prefix.rs:528`, `motivation/math.rs:38`, `lora_still_forward.rs:575`) + 6 large-D candidates (64/32-dim engine + poc sites) |
+| riir-train | [Issue 562](../../riir-train/.issues/562_hand_rolled_chunked_dots_844_read.md) | 2 CHUNKED findings (`embedding_translator/model.rs:568 dot8`, `edge_lora/sigmoid_gate.rs:233 dot_product_chunked`) |
+| riir-neuron-db | [Issue 621](../../riir-neuron-db/.issues/621_large_d_naive_dots_844_read.md) | 2 large-D candidates (`transition_error_taxonomy.rs:274`, `hebbian_bridge.rs:849`, both fixed-64) |
+| katgpt-rs | this issue | `cgsp/types.rs:41`, `kv/perceiver.rs:486` (delegable now) + `katgpt-dec/simd.rs:50` (owner call: zero-dep posture) — repair with the next touch of each crate; NOT a blanket sweep |
+
+Also filed from the read: `katgpt-attn-match/score_matrix_simd.rs:121
+dot_8wide` (runtime head_dim, perf-tested at d=64 — delegate) and
+`katgpt-sparse/specialist_projection.rs:206 dot_truncated` (d_hidden ≥32 —
+delegate) as katgpt-rs candidates; same per-site contract.
 
 ## Consumers already affected
 
 `katgpt_core::linalg::kron_tile` (Issue 839) delegates in its step-2 reduction
 and is **correct at the widths it exists for** — `n = 32` (1.54×) and `n = 64`
 (3.13×). ⚠ It also *supports* `n ∈ {8, 16}`, where by this table the delegation
-**costs** 2.0× and 1.2×. Recorded in its module doc rather than repaired: a
-length-conditional branch would add a second summation order and a second code
-path for widths nothing in Research 569 uses, and AGENTS.md's own threshold
-(*"2× is the threshold below which the fast path would not be worth the second
-code path"*) cuts against it at exactly the sizes in question.
+**costs** 2.0× and 1.2× on x86_64 (and WINS 1.8×/1.7× on NEON, T4 — the
+recorded x86-only caveat is itself now ISA-conditional). Recorded in its
+module doc rather than repaired: a length-conditional branch would add a
+second summation order and a second code path for widths nothing in Research
+569 uses, and AGENTS.md's own threshold (*"2× is the threshold below which the
+fast path would not be worth the second code path"*) cuts against it at
+exactly the sizes in question.
 
 ## Non-goals
 
-- **No lint, and no sweep.** The rule is length-conditional and
-  contract-sensitive, so a mechanical check would fire on the 23 sites that are
-  right. This is a documented rule plus a reproducible measurement; that is the
-  correct instrument for it.
+- **No lint, and no sweep.** The rule is length-conditional, arch-conditional
+  and contract-sensitive, so a mechanical check would fire on the sites that
+  are right. This is a documented rule plus a reproducible measurement; that
+  is the correct instrument for it.
 - No change to `similarity.rs::dot_8` or any other site with a stated
   determinism contract, at any length.

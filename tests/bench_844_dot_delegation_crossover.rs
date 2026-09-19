@@ -185,17 +185,34 @@ fn dot_delegation_crossover_by_length() {
                  candidates are the runtime-length, large-D sites only (Issue 844 T2/T3)."
             );
         }
-        None => println!(
-            "   READING: no crossover in {}..={} — one arm wins throughout, which \
-             contradicts the fixed-overhead model and should be investigated before \
-             being quoted.",
-            LENS[0].0,
-            LENS[LENS.len() - 1].0
-        ),
+        None => {
+            // Two opposite causes print identically as "no crossover", and the
+            // aarch64/NEON run (Issue 844 T4, 2026-09-19) hit the first one:
+            // delegation winning THROUGHOUT is the fixed-overhead model working
+            // (the intersection sits below the measured range), not failing.
+            if rows.iter().all(|&(_, r)| r >= 1.0) {
+                println!(
+                    "   READING: no crossover in {}..={} — delegation wins THROUGHOUT \
+                     (every plain/simd ratio ≥ 1.0; measured on aarch64/NEON, Issue \
+                     844 T4). The crossover sits BELOW the measured range, not absent.",
+                    LENS[0].0,
+                    LENS[LENS.len() - 1].0
+                );
+            } else {
+                println!(
+                    "   READING: no crossover in {}..={} — the plain loop wins \
+                     throughout, which contradicts the fixed-overhead model and \
+                     should be investigated before being quoted.",
+                    LENS[0].0,
+                    LENS[LENS.len() - 1].0
+                );
+            }
+        }
     }
     println!(
-        "   ⚠ One box (x86_64/AVX2). The crossover is a per-ISA property: NEON is \
-         4-wide against AVX2's 8, so its crossover is expected LOWER and is not \
-         measured here.\n"
+        "   ⚠ Per-ISA property — both arches measured: x86_64/AVX2 crossover \
+         between 16 and 32; aarch64/NEON (M3, Issue 844 T4, 2026-09-19): \
+         delegation wins at EVERY length ≥ 4 — compile-time dispatch gives the \
+         kernel a ~0.8 ns floor against x86_64's ~3.3 ns runtime-probe floor.\n"
     );
 }

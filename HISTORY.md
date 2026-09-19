@@ -7295,3 +7295,59 @@ errors, 0 unbuildable targets`), and the executed axis held too: test_gate
 203 · 2060 · 249 · 139, every row at its floor. The slt.rs
 `field_reassign_with_default` blocker (`dfa6d3ff0`, fired under
 --all-targets only since `7352a75ab`) was cleared on the way in.
+
+## Issue 844 (2026-09-19) — the dot-delegation crossover measured on BOTH arches; the NEON answer refuted the filing session's own expectation: CLOSED
+
+T4 ran `bench_844_dot_delegation_crossover` on the M3 (aarch64/NEON, three
+runs, ratios stable to ±0.13) and the result is the strongest kind of
+refutation: **there is no crossover at any measured length — delegation wins
+at EVERY length ≥ 4** (1.94–2.02× @4, 1.70× @16, 3.19–3.32× @32, 9.06–9.08×
+@256). The filing text predicted "crossover expected LOWER" (NEON 4-wide vs
+AVX2 8-wide); the truth is the crossover sits below length 4, where no real
+site lives. Both mechanisms are legible: the aarch64 dispatch is compile-time
+(`cfg` + direct call, ~0.8 ns kernel floor) while x86_64 pays a runtime CPUID
+probe (~3.3 ns floor), and the plain runtime-length loop is slower on NEON
+than x86_64 at every length (1.5 vs 1.1 ns @4; 113 vs 78 ns @256). The rule
+is now per-ISA — and rule 1 ("plain small-D loop is CORRECT") is
+ISA-conditional: the same loop concedes 1.7–1.9× on NEON, so arch-weighted
+crates (game runtime, wasm32) should lean to delegation even at D=8–16.
+
+The bench's own "no crossover" print branch was repaired in the same change:
+it read as a fixed-overhead-model violation ("should be investigated before
+being quoted") when the truth on NEON is the model WORKING — the branch now
+names the arm that won throughout.
+
+T2/T3 closed with a full workspace per-site read (re-derived census: 398
+fn-dot defs → 247 src candidates after excluding test trees and
+`katgpt-types/src/simd/**`; three parallel reads, the sharp findings
+spot-verified by hand):
+
+- **8 CHUNKED findings** (rule c): `katgpt-core/cgsp/types.rs:41
+  dot_f32_fma4` and `katgpt-kv/still_kv/perceiver.rs:486 dot_chunk4`
+  (katgpt-types already a dep of both — one-line delegations); `katgpt-dec/
+  simd.rs:50` (⚠ zero-dep-by-design crate published to crates.io — adding the
+  dep is an owner call, not a heal); riir-ai `cross_game_prefix.rs:528`,
+  `motivation/math.rs:38` (STAT_DIM=16, arch-split decision recorded),
+  `lora_still_forward.rs:575`; riir-train `embedding_translator/model.rs:568
+  dot8`, `edge_lora/sigmoid_gate.rs:233 dot_product_chunked`.
+- **10 large-D naive candidates** (delegation wins on both arches): riir-ai
+  982 carries six (64/32-dim engine + poc sites), riir-neuron-db 621 carries
+  two (both fixed-64), plus katgpt-rs' own `score_matrix_simd.rs:121
+  dot_8wide` (runtime head_dim, perf-tested at d=64) and
+  `specialist_projection.rs:206 dot_truncated` (d_hidden ≥32).
+- `newton_schulz::blocked_dot8{,_neon,_scalar}` adjudicated **KERNEL-HOME**
+  (batched 8-output GEMM micro-kernel — one accumulator per OUTPUT, not the
+  multi-acc-within-one-dot shape; remainder columns already delegate).
+- The 56-UNRESOLVED bucket resolved as predicted: accumulate-into-slice
+  (`rrq_quant::dot_acc_into` — dequant-fused GEMV), tropical semirings,
+  const-generic wrappers, `#[cfg(test)]` fns, f64/i8 families, name
+  collisions (DoT damage-over-time, UI dots). **No hidden findings.**
+- The `katgpt-moka-wasm` exemption is SOFT (its manifest declares
+  katgpt-types) — recorded, not acted on.
+
+Disposition: repairs transfer to the owning repos — **riir-ai Issue 982**,
+**riir-train Issue 562**, **riir-neuron-db Issue 621** — each carrying the
+repair contract (delegation changes summation order, max |Δ| ~3e-6 @64;
+adjacent gates re-run on repair; determinism-contract sites out of scope).
+The kron_tile consumer note is now ISA-conditional too (its n∈{8,16} cost is
+x86-only; on NEON those widths WIN 1.8×/1.7×).
