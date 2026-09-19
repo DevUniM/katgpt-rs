@@ -106,8 +106,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numbering_gate as ng  # noqa: E402  (DRY: one scanner, two cadences)
 import highwater_contiguity_audit as hca  # noqa: E402  (DRY: one transition walker, two cadences — Issue 769)
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of, head_text,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_text, sweep_advisory)
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -974,7 +974,7 @@ def main() -> int:
     if bad:
         print("✗ numbering sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         return 1
     _line = "✓ numbering sweep PASSED — nothing above its pinned ratchet"
     if deferred:

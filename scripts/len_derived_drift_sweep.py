@@ -145,9 +145,9 @@ sys.path.insert(0, str(HERE))
 import len_derived_binding_audit as lda  # noqa: E402
 from skill_repo_set_gate import derive_repos as derive_repo_names  # noqa: E402
 from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of,  # noqa: E402
-                            dirty_in_population, head_tree,
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, dirty_in_population, head_tree,
+    sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -1039,7 +1039,7 @@ def main(argv: list[str]) -> int:
     if bad:
         print("✗ len-derived sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    A joined finding is HALF A (in-kernel `.len()` derivation) "
               "met by HALF B (a bind whose DECLARED size can exceed the live "
               "range). Read the bind site's buffer creation, not the kernel.")

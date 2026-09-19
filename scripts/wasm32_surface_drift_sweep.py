@@ -82,8 +82,8 @@ sys.path.insert(0, str(HERE))
 import wasm32_surface_audit as wsa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of, head_tree,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_tree, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -603,7 +603,7 @@ def main() -> int:
     if bad:
         print("✗ wasm32 surface sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    A new UNCOVERED package is an arm that compiles NOWHERE — "
               "mmorpg-remake's was uncompilable from the day it was written. The "
               "repair is a lane row, or deleting a dead arm; it is not a pin.")

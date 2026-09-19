@@ -93,7 +93,7 @@ SELF = irg.REPO_ROOT.name
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from worktree_state import (  # noqa: E402
-    delta_of, head_overlay, sweep_advisory)
+    deferral_line, delta_of, head_overlay, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -585,7 +585,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
     if bad:
         print("✗ instrument-reachability sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         return 1
     _line = "✓ instrument-reachability sweep PASSED — every repo within its pins"
     if deferred:

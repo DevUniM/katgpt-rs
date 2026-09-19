@@ -66,8 +66,8 @@ sys.path.insert(0, str(HERE))
 # sweep and the per-push gate can never disagree about what is load-bearing.
 import cfg_gated_target_audit as cga  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of,  # noqa: E402
-                            head_tree, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_tree, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -610,7 +610,7 @@ def main() -> int:
     if bad:
         print("✗ cfg-gated sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    The fix is a `required-features` row: the #![cfg] protects")
         print("    the COUNT, required-features protects the READER. Adding one")
         print("    cannot red an existing CI — cargo SKIPS a target whose")

@@ -51,8 +51,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (dirty_in_population,  # noqa: E402
-                            head_tree, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    dirty_in_population, head_tree, sweep_advisory)
 import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

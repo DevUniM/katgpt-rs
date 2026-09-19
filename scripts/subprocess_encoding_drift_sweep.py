@@ -90,8 +90,8 @@ import subprocess_encoding_gate as seg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
-from worktree_state import (head_delta, line_free,  # noqa: E402
-                            ordinal_keys, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    deferral_line, head_delta, line_free, ordinal_keys, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -644,7 +644,7 @@ def main() -> int:
     if bad:
         print("✗ subprocess encoding sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print('    The repair is two tokens: encoding="utf-8", errors="replace" '
               'on the parent, env={**os.environ, "PYTHONIOENCODING": "utf-8"} '
               "on a python child. Do NOT raise a ceiling — see Issue 778.")

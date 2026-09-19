@@ -2479,6 +2479,36 @@ investigated as unfixed.
   staleness would let a genuinely-unfixed drift hide behind "you are behind
   origin", and `max_drift` is a wall at 0. The reader is told how to check;
   the wall still holds.
+- ⛔ **`upstream_axis()` is the upstream half of `sweep_advisory`, extracted
+  — because the two entry points were NOT equivalent and nothing said so.**
+  `sweep_advisory()` computes the dirty scope AND asks `behind_origin`;
+  `worktree_advisory()` only RENDERS what it is handed.
+  `sweep_advisory_membership_gate` accepted either, rightly — a narrower
+  predicate once condemned `citation_drift_sweep`, the most carefully wired
+  member — and the premise underneath that repair was never checked. So the
+  one sweep on the low-level path had the WORKTREE axis and **no upstream
+  axis at all**: no STALE, no UNVERIFIED, in the only member whose rows carry
+  a `file:line` address and name another repo.
+  Measured 2026-09-19: it reported a CROSS finding at riir-neuron-db
+  `HISTORY.md:49` with no advisory of any kind, while `origin/develop`
+  already carried the repair and that checkout was 4 commits behind with one
+  commit touching that very file — Issue 798's founding class, *a committed
+  FIX read dirty*, costing an investigation before a manual
+  `git show origin/develop` settled it.
+  The sweep keeps its own scope (`dirty_files` ∩ its own document set, sharper
+  than any glob) and calls `upstream_axis` for the missing half; `WANTED` is
+  `("sweep_advisory", "upstream_axis")` now, so both members of the pair
+  actually deliver the axis and a sweep that only RENDERS is no longer
+  credited.
+  - ⚠ **Not a fifth `MECHANISMS` row, and the registry's own arm is what said
+    so.** Registering one made `sweep_advisory` serve two mechanisms and the
+    anti-POOLING arm fired immediately. It was right: this is ONE mechanism
+    whose membership test was wrong, not two mechanisms. Reach for the
+    registry when the mechanism is new — not when an existing predicate is.
+  - ⚠ The arm that pinned the old behaviour was **replaced, not deleted**: a
+    bare `worktree_advisory(...)` must now NOT be credited, and the low-level
+    path *with* `upstream_axis` must be. An arm pinning a false premise is
+    worse than no arm — it makes the defect a requirement.
 - **One matcher, shared** — `dirty_in_scope` and `behind_origin` both call
   `_match_count`. A git **pathspec** was the obvious implementation for the
   second and answers differently (a bare `Dockerfile` pathspec matches only at

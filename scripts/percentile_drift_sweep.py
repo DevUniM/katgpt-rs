@@ -79,8 +79,8 @@ sys.path.insert(0, str(HERE))
 # DEGENERATE site is.
 import percentile_index_audit as pia  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    deferral_line, head_delta, ordinal_keys, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -638,7 +638,7 @@ def main() -> int:
     if bad:
         print("✗ percentile sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    A 'p99' whose index is n-1 IS the max. Use nearest rank")
         print("    (ceil(p*n)-1) and report tail support, or drop the column")
         print("    when the sample count cannot support the quantile at all.")

@@ -85,7 +85,37 @@ GLOB = "*_drift_sweep.py"
 # `citation_drift_sweep` is wired more thoroughly than any other member and read
 # UNWIRED. A predicate that names one of two entry points reports the most
 # careful caller as the defect — so the criterion is the MECHANISM, by set.
-WANTED = ("sweep_advisory", "worktree_advisory")
+# ⛔ `worktree_advisory` was here and is NOT any more, and the correction is
+# the measurement rather than a tightening for its own sake (2026-09-19).
+#
+# The pair existed because a narrower predicate once condemned
+# `citation_drift_sweep` — the most carefully wired member — for calling the
+# low-level entry point, and "a criterion that condemns the most careful
+# caller is the criterion that is wrong" is this file's own rule. It was the
+# right repair and it rested on a premise that was never checked: that the
+# two entry points deliver the same thing. They did not.
+# `sweep_advisory()` computes the dirty scope AND asks `behind_origin`;
+# `worktree_advisory()` only RENDERS what it is handed. So the one sweep on
+# the low-level path had the worktree axis and no upstream axis at all — no
+# STALE, no UNVERIFIED — in the only member whose rows carry a `file:line`
+# address and name another repo.
+#
+# Measured: it reported a CROSS finding at riir-neuron-db `HISTORY.md:49`
+# with no advisory of any kind, while `origin/develop` already carried the
+# repair and that checkout was 4 commits behind with one of them touching
+# that file. Issue 798's founding class, *a committed FIX read dirty*.
+#
+# `upstream_axis` was factored out of `sweep_advisory` so the low-level path
+# can get the missing half, and it replaces `worktree_advisory` here: the
+# pair still has two members, so the careful caller is still credited, and
+# now BOTH of them actually deliver the axis. A sweep that renders without
+# asking is no longer wired, which is the true reading.
+#
+# ⚠ NOT a fifth MECHANISMS row, and the registry's own arm is what said so:
+# `sweep_advisory` would then have served two mechanisms, and the arm that
+# refuses POOLING fired immediately. It was right — this is one mechanism
+# whose membership test was wrong, not two mechanisms.
+WANTED = ("sweep_advisory", "upstream_axis")
 
 # ⛔ Issue 824. This gate was built for ONE mechanism, and the very failure its
 # docstring describes then happened AGAIN to a different one: Issue 821 landed
@@ -336,12 +366,28 @@ def classifier_arms() -> list[str]:
           "carry such strings, and a text scanner reports them as wiring")
     check(calls_any("import m\ndef f():\n    m.sweep_advisory(a, b)\n", WANTED),
           "a qualified `module.sweep_advisory(...)` call was not credited")
-    # The row-level entry point counts too, and this arm exists because the
-    # gate's first run reported `citation_drift_sweep` — the most thoroughly
-    # wired member in the family — as UNWIRED.
-    check(calls_any("def f():\n    worktree_advisory(s, u, m)\n", WANTED),
-          "the ROW-LEVEL entry point was not credited: a sweep that wires the "
-          "richer split reads as the defect")
+    # ⛔ BOTH directions of the low-level path, and this pair replaces an arm
+    # that asserted the OPPOSITE (2026-09-19). That arm pinned "a bare
+    # `worktree_advisory(...)` counts", written when the gate's first run
+    # condemned `citation_drift_sweep` — the most thoroughly wired member —
+    # as UNWIRED. The repair was right about the CALLER and wrong about the
+    # REASON: it assumed the two entry points deliver the same thing.
+    # `worktree_advisory` only RENDERS what it is handed and asks
+    # `behind_origin` nothing, so the sweep on that path had the worktree
+    # axis and NO upstream axis — measured, it reported a CROSS finding
+    # whose repair was already on origin, with no STALE line. An arm that
+    # pins a false premise is worse than no arm: it makes the defect a
+    # REQUIREMENT.
+    check(not calls_any("def f():\n    worktree_advisory(s, u, m)\n", WANTED),
+          "a bare `worktree_advisory(...)` was credited — it RENDERS what it "
+          "is handed and asks `behind_origin` nothing, so a sweep on that "
+          "path silently has no STALE and no UNVERIFIED")
+    check(calls_any("def f():\n    a, b = upstream_axis(r, p)\n"
+                    "    worktree_advisory(s, u, m, stale=a, unverified=b)\n",
+                    WANTED),
+          "the low-level path WITH the extracted upstream half was not "
+          "credited: a sweep computing its own sharper scope is the careful "
+          "caller, and condemning it is the criterion being wrong again")
     check(not calls_any("def f(:\n", WANTED),
           "an UNPARSED module was credited — silence is not evidence")
     # ── Issue 824: the mechanisms must be INDEPENDENT ─────────────────────

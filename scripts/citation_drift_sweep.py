@@ -246,8 +246,8 @@ from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
 # Issue 842: the derived handles are CONTRACT-named; reads resolve to disk.
 import repo_alias  # noqa: E402
 from worktree_state import (  # noqa: E402
-    STALE_FETCH_HOURS, behind_origin, dirty_files, fetch_age_hours, head_text,
-    worktree_advisory)
+    STALE_FETCH_HOURS, behind_origin, deferral_line, dirty_files,
+    fetch_age_hours, head_text, upstream_axis, worktree_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -1448,7 +1448,30 @@ def main() -> int:
     # run that passes. ADVISORY and not a failure: a sweep that hard-reds on an
     # ordinary dirty worktree is a sweep nobody runs. MASKED is the exception
     # and it already reds through the pins, because `judge` counts it.
-    deferred.extend(worktree_advisory(dirty_scope, n_uncommitted, n_masked))
+    # ⛔ The UPSTREAM axis, which this sweep did not have. It calls the
+    # low-level `worktree_advisory()` rather than `sweep_advisory()` — for a
+    # good reason, its scope is `dirty_files` intersected with its OWN
+    # document set, which is sharper than any glob — and the cost was that it
+    # got the worktree axis and NOTHING about being behind origin, in the one
+    # sweep whose rows carry a `file:line` address and name another repo.
+    #
+    # Measured: it reported a CROSS finding at riir-neuron-db `HISTORY.md:49`
+    # with no advisory at all, while `origin/develop` already carried the
+    # repair and that checkout was 4 commits behind with one of them touching
+    # that very file. Issue 798's founding class, *a committed FIX read
+    # dirty*, and it cost an investigation before `git show origin/develop`
+    # settled it.
+    #
+    # `upstream_axis` is the shared half of `sweep_advisory`, so the two entry
+    # points now mean the same thing — which is what
+    # `sweep_advisory_membership_gate` has been asserting all along by
+    # accepting either. The patterns are the sweep's OWN documents, not a
+    # glob: `behind_origin` should be asked about exactly the files whose
+    # staleness could move a row.
+    _stale, _unver = upstream_axis([repo_alias.real(r) for r in repos],
+                                   tuple(docs))
+    deferred.extend(worktree_advisory(dirty_scope, n_uncommitted, n_masked,
+                                      stale=_stale, unverified=_unver))
 
     # ── T4, second half: the katgpt-rs row must EQUAL the gate's own run ─────
     rc, scanned, findings = gate_says()
@@ -1587,7 +1610,7 @@ def main() -> int:
     if bad:
         print("✗ citation sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    Fix: name the owning repo in the prose — `riir-ai Issue 750`, "
               "`riir-train Issue 513`. The number alone is not an address.")
         return 1

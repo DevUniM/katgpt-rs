@@ -107,7 +107,7 @@ console_safe.apply()
 import console_encoding_gate as ceg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import head_delta, sweep_advisory  # noqa: E402
+from worktree_state import head_delta, sweep_advisory  # noqa: E402, deferral_line
 
 # The repo that owns the membership pin — derived, never typed.
 SELF = ceg.REPO_ROOT.name
@@ -723,7 +723,7 @@ def main(argv: list[str], run_selftest: bool = True) -> int:
     if bad:
         print("✗ console-encoding sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         return 1
     _line = "✓ console-encoding sweep PASSED — every repo within its pins"
     if deferred:

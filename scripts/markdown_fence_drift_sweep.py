@@ -101,8 +101,8 @@ sys.path.insert(0, str(HERE))
 import markdown_fence_gate as mfg  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, head_delta,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, head_delta, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -525,7 +525,7 @@ def main() -> int:
     if bad:
         print("✗ markdown fence sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    The reported line is the DANGLING fence, not necessarily the "
               "defect: read the first non-blank body line — code means a closer "
               "is missing, prose means the fence is an orphan, and a nested "

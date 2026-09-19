@@ -56,8 +56,8 @@ import locale_io_gate as lig  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from tracked_walk import tracked_files  # noqa: E402
-from worktree_state import (head_delta, line_free,  # noqa: E402
-                            ordinal_keys, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    deferral_line, head_delta, line_free, ordinal_keys, sweep_advisory)
 
 import console_safe  # noqa: E402
 
@@ -375,7 +375,7 @@ def main() -> int:
     if bad:
         print("✗ locale-io sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    The repair is one mechanical, idempotent pass: "
               "`scripts/locale_io_fix.py <paths>`. Do NOT raise a ceiling.")
         return 1

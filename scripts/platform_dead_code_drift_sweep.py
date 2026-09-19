@@ -69,8 +69,8 @@ import platform_dead_code_floor_gate as gate      # noqa: E402
 # (Issue 765). A second copy would be a second thing to get wrong, and this one
 # decides whether a short population is a partial clone or a stale file.
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of, head_overlay,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, delta_of, head_overlay, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 # Overridable for testing — the skill_repo_set_gate precedent (Issue 765's

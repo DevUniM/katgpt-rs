@@ -727,28 +727,77 @@ def sweep_advisory(repos, patterns, root=None,
     how two gates come to disagree about one quantity.
     """
     scope: dict[str, int] = {}
+    for r in repos:
+        path = _resolve(r, root)
+        if path is None:
+            continue
+        scope[repo_alias.display(path.name)] = dirty_in_scope(path, patterns)
+    stale, unverified = upstream_axis(repos, patterns, root)
+    return worktree_advisory(scope, uncommitted_rows, masked_rows,
+                             stale=stale, unverified=unverified)
+
+
+def _resolve(r, root) -> Path | None:
+    """A repo handle -> the directory to OPEN, or `None` if unresolvable.
+
+    A name this run cannot resolve is SKIPPED rather than guessed at:
+    `population_verdict()` already owns the "a repo is missing" verdict, and a
+    second instrument answering that question differently is how two gates
+    come to disagree about one quantity.
+    """
+    s = str(r)
+    if isinstance(r, Path) or '/' in s or chr(92) in s:
+        path = Path(r)
+    elif root is not None:
+        # Issue 842: a bare CONTRACT name may be alias-mapped to a different
+        # on-disk directory. Resolving through the codec is the identity on
+        # unaliased boxes; without it the aliased repos are skipped in
+        # SILENCE — the exact gap between "visited but unreadable" and "never
+        # visited at all".
+        path = Path(root) / repo_alias.disk(s)
+    else:
+        path = None
+    return path if path is not None and path.is_dir() else None
+
+
+def upstream_axis(repos, patterns, root=None
+                  ) -> tuple[dict[str, tuple[int, int]],
+                             dict[str, tuple[float | None, int]]]:
+    """`(stale, unverified)` — the UPSTREAM half of `sweep_advisory`, alone.
+
+    ⛔ Factored out because a sweep that computes its OWN dirty scope had no
+    way to get this, and one does: `citation_drift_sweep` calls the low-level
+    `worktree_advisory()` directly (its scope is `dirty_files` intersected
+    with its own document set, sharper than any glob), so it had the WORKTREE
+    axis and **no upstream axis at all** — no STALE, no UNVERIFIED — while
+    being the only sweep in the family whose findings carry a `file:line`
+    address and name another repo.
+
+    Measured the day this was factored out: it reported a CROSS finding at
+    riir-neuron-db `HISTORY.md:49` with no advisory of any kind, and
+    `origin/develop` already carried the repair (the worktree reads `sdk Plan
+    006` where upstream reads `riir-game-sdk Plan 006`), that checkout being
+    4 commits behind with one of them touching the very file. Issue 798's
+    founding class — *a committed FIX read dirty* — in the sweep that most
+    needs the warning, and it cost a real investigation before a manual
+    `git show origin/develop` settled it.
+
+    ⚠ `sweep_advisory_membership_gate` credits that sweep and is RIGHT to:
+    its predicate accepts either entry point, because an earlier, narrower
+    version condemned this same sweep as UNWIRED when it was the most
+    carefully wired member. The gate asserts the CALL; only this factoring
+    makes the two entry points mean the same thing.
+    """
     stale: dict[str, tuple[int, int]] = {}
     unverified: dict[str, tuple[float | None, int]] = {}
     for r in repos:
-        s = str(r)
-        if isinstance(r, Path) or '/' in s or chr(92) in s:
-            path = Path(r)
-        elif root is not None:
-            # Issue 842: a bare CONTRACT name may be alias-mapped to a
-            # different on-disk directory. Resolving through the codec is the
-            # identity on unaliased boxes; without it the aliased repos are
-            # skipped in SILENCE below — measured, the exact gap between
-            # "visited but unreadable" and "never visited at all".
-            path = Path(root) / repo_alias.disk(s)
-        else:
-            path = None
-        if path is None or not path.is_dir():
+        path = _resolve(r, root)
+        if path is None:
             continue
         # The printed key is the CONTRACT spelling (identity on unaliased
         # boxes): the alias content must never reach stdout — run logs get
         # pasted into tracked docs (repo_alias's own disclosure rule).
         label = repo_alias.display(path.name)
-        scope[label] = dirty_in_scope(path, patterns)
         beh = behind_origin(path, patterns)
         if beh is not None and beh[1]:
             stale[label] = beh
@@ -776,8 +825,34 @@ def sweep_advisory(repos, patterns, root=None,
                 # documents as "never pooled" in the DISPLAY is the same
                 # defect one layer down.
                 unverified[label] = (age, beh[0])
-    return worktree_advisory(scope, uncommitted_rows, masked_rows,
-                             stale=stale, unverified=unverified)
+    return stale, unverified
+
+
+GLYPHS = frozenset("⚠⛔✓✗▸")
+
+
+def deferral_line(text: str) -> str:
+    """Render one advisory/deferral line for a sweep's FAILURE path.
+
+    ⛔ Prefix a glyph ONLY when the text does not already carry one. The
+    family's failure path was copy-pasted as `print(f"  ⚠ {_d}")` into eleven
+    sweeps, and the `deferred` list it prints holds lines from TWO sources:
+    `population_verdict`'s deferrals, which are bare text, and
+    `worktree_advisory`'s, which already begin with `⚠` or `⛔`. The result
+    was a doubled `⚠ ⚠ STALE: …` on every failing run — cosmetic, except
+    that verdict lines in this workspace are PARSED INTERFACES (sweeps regex
+    each other's output), so a second glyph is a prefix a consumer did not
+    expect.
+
+    ⚠ It must not normalise the glyph itself: `⛔ MASKED` and `⚠ STALE` are
+    different severities and flattening them would lose the distinction the
+    advisory exists to draw.
+    """
+    # ⛔ A SET, not `in "⚠⛔✓✗▸"`. Substring membership on a str is True
+    # for the EMPTY string, so `text[:1] in "…"` silently passes an empty
+    # line through unprefixed — caught by this function's own arm on its
+    # first run, which is the argument for arming a four-line helper.
+    return text if text[:1] in GLYPHS else f"⚠ {text}"
 
 
 def worktree_advisory(scope_counts: dict[str, int],
@@ -1888,6 +1963,23 @@ def fetch_age_arms() -> list[str]:
           f"an (n, 0) row did not render its count and scope: {n}")
     check("up to date" not in n,
           f"an (n, 0) row was described as up to date: {n}")
+    # ⛔ `deferral_line`, the shared FAILURE-path renderer. 17 sweeps had
+    # `print(f"  ⚠ {_d}")` copy-pasted, and the `deferred` list holds lines
+    # from TWO sources — bare population deferrals and already-glyphed
+    # advisory lines — so every failing run printed `⚠ ⚠ STALE: …`.
+    check(deferral_line("DEFERRED: 4 repos absent") == "⚠ DEFERRED: 4 repos absent",
+          "a BARE deferral did not get its glyph")
+    for g in ("⚠", "⛔", "✓", "✗", "▸"):
+        check(deferral_line(f"{g} already glyphed") == f"{g} already glyphed",
+              f"a line already starting with {g!r} was double-prefixed — "
+              f"verdict lines here are PARSED interfaces")
+    # It must not NORMALISE the glyph: ⛔ MASKED and ⚠ STALE are different
+    # severities and flattening them loses the distinction the advisory draws.
+    check(deferral_line("⛔ MASKED: 3 rows").startswith("⛔"),
+          "the renderer downgraded a ⛔ to a ⚠ — severity is not its to choose")
+    check(deferral_line("") == "⚠ ",
+          "an empty line crashed or was left unprefixed")
+
     # One line, both readings — the split must not fragment the advisory into
     # a second line nobody reads.
     both = worktree_advisory({}, unverified={"a": (30.0, 0), "b": (30.0, 4)})

@@ -66,8 +66,9 @@ from sweep_population import open_repo, population_verdict, pin_row_exempt  # no
 
 # Issue 842: the sweep's population names and its opens go through the codec.
 import repo_alias  # noqa: E402
-from worktree_state import (HeadDelta, delta_of,  # noqa: E402
-                            head_tree, ordinal_keys, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_tree, ordinal_keys,
+    sweep_advisory)
 
 FLOORS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                       "restatement_drift_floors.txt")
@@ -554,7 +555,7 @@ def main():  # population-predicate: not a contract-repo walk (it CALLS restatem
         # to know that seven repos were never measured, that rows sit on
         # uncommitted lines, or that the checkout is behind origin.
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         return 1
     # A deferral rides the FINAL line in both directions — one printed only
     # on failure is one nobody reads on the run that passes.

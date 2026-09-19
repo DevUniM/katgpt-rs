@@ -76,8 +76,8 @@ sys.path.insert(0, str(HERE))
 import toolchain_override_audit as toa  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of, head_overlay,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_overlay, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -584,7 +584,7 @@ def main() -> int:
     if bad:
         print("✗ toolchain override sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         return 1
     _line = "✓ toolchain override sweep PASSED — every repo within its pins"
     if deferred:

@@ -82,8 +82,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from required_features_build_audit import parse_rows, static_invalid  # noqa: E402
 from cfg_gated_target_audit import derive_repos, manifests  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, delta_of,  # noqa: E402
-                            head_tree, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_tree, sweep_advisory)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -544,7 +544,7 @@ def main() -> int:
     if bad:
         print("✗ required-features sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         return 1
     _line = "✓ required-features sweep PASSED — 0 invalid rows, both floors held"
     if deferred:

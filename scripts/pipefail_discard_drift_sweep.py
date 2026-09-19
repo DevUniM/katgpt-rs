@@ -63,8 +63,8 @@ sys.path.insert(0, str(HERE))
 import pipefail_discard_audit as pda  # noqa: E402
 from skill_repo_set_gate import derive_repos  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (head_delta, ordinal_keys,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    deferral_line, head_delta, ordinal_keys, sweep_advisory)
 from tracked_walk import tracked_files  # noqa: E402
 
 REPO_ROOT = HERE.parent
@@ -734,7 +734,7 @@ def main() -> int:
     if bad:
         print("✗ pipefail discard sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    The repair is one neutralizer: `|| true` at the "
               "substitution tail (or a trailing `|| cmd`). Deliberate "
               "tripwires get a pinned row with a reason, never a raised "

@@ -77,8 +77,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cfg_row_implication_audit as cria  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
 from cfg_gated_target_audit import derive_repos  # noqa: E402
-from worktree_state import (HeadDelta, delta_of,  # noqa: E402
-                            head_tree, sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, delta_of, head_tree, sweep_advisory)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent

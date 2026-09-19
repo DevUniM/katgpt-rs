@@ -99,8 +99,8 @@ sys.path.insert(0, str(HERE))
 import trap_exit_launder_audit as tela  # noqa: E402
 import trap_sentinel_gate as tsg  # noqa: E402
 from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
-from worktree_state import (HeadDelta, head_delta,  # noqa: E402
-                            sweep_advisory)
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, head_delta, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -715,7 +715,7 @@ def main() -> int:
     if bad:
         print("✗ trap sentinel sweep FAILED — see the ✗ rows above")
         for _d in deferred:
-            print(f"  ⚠ {_d}")
+            print(f"  {deferral_line(_d)}")
         print("    A gate that ABORTS mid-run reports exit 0. The repair is a "
               "completion sentinel; see scripts/full_gate.sh (full_gate_cleanup).")
         return 1
