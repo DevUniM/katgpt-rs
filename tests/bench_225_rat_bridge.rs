@@ -9,6 +9,12 @@
 use katgpt_attn::rat_bridge::{rat_decode_step, DilatedKvAccessor, RatBridgeState};
 use katgpt_core::types::DilationConfig;
 
+// Issue 855: the load-invariant timing treatment. `best_of_us` panics on an
+// all-zero reading instead of letting a ceiling be satisfied by a loop the
+// optimiser deleted.
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 // ── T6.2: Decode Latency Benchmarks ─────────────────────────────
 
 #[test]
@@ -66,12 +72,34 @@ fn bench_bridge_projection_overhead() {
     let query = vec![0.5; dim];
     let gdn2 = vec![0.1; dim];
 
-    let start = std::time::Instant::now();
-    for _ in 0..10000 {
-        state.compute_gate(&query, &gdn2);
-    }
-    let elapsed = start.elapsed();
-    let per_gate = elapsed / 10000;
+    // Issue 855: the previous loop called `state.compute_gate(&query, &gdn2)`
+    // 10 000 times over loop-invariant inputs and discarded the returned gate,
+    // with `state` dead after the loop — so rustc deleted the whole timed
+    // region and this printed `Gate computation: 0.00ns per call`, satisfying
+    // the < 10 µs ceiling with maximum margin on work that never ran.
+    // `best_of_us` FAILS loudly on an all-zero reading; the gate is summed into
+    // a sink consumed through `black_box`. The bar below is unchanged, and the
+    // total timed iteration count is raised from 10 000 to 100 000.
+    //
+    // ⛔ The `black_box` on the two INPUTS is not decoration. A sink alone was
+    // measured insufficient here: `compute_gate` is pure in its arguments and
+    // both are loop-invariant, so LLVM hoisted the dot product out of the loop
+    // and this still printed `1.00ns per call`. Making the operands opaque per
+    // iteration is what keeps the gate inside the timed region.
+    const ROUNDS: usize = 10;
+    const ITERS: usize = 10_000;
+
+    let best_us = ab_timing::best_of_us(2, ROUNDS, || {
+        let mut sink = 0.0f32;
+        let t0 = std::time::Instant::now();
+        for _ in 0..ITERS {
+            sink += state.compute_gate(std::hint::black_box(&query), std::hint::black_box(&gdn2));
+        }
+        let e = t0.elapsed();
+        std::hint::black_box(sink);
+        e
+    });
+    let per_gate = std::time::Duration::from_secs_f64(best_us * 1e-6 / ITERS as f64);
     println!("Gate computation: {per_gate:.2?} per call");
     assert!(per_gate < std::time::Duration::from_micros(10));
 }

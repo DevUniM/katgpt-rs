@@ -1,6 +1,6 @@
 # Issue 855: a latency ceiling is satisfied by a loop the optimiser DELETED — `0 ns/op` over 100 000 iterations, asserted `< 10 000 ns`, PASS
 
-**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 counted and the ten static candidates MEASURED** (3 VANISHED, 7 SURVIVED, 0 UNMEASURED; the 3 repaired and re-run, every bar unchanged); T4–T5 open.
+**Status:** OPEN — T1 filed with the measurement, **T2 repaired and verified** (5 of 5 arms print a non-zero quantity, every bar unchanged), **T3 COMPLETE — all 34 asserting timed regions at n ≥ 1000 have now been RUN** (10 + 24; **7 VANISHED, 27 SURVIVED, 0 UNMEASURED**; all 7 repaired and re-run, every bar unchanged, every full-target pass count unchanged); T4–T5 open.
 **Found by:** Issue 833 T2's per-target read, 2026-09-19. Not by a census, and
 not by anything failing — by **reading the printed values next to the bars**,
 which is the one thing 833 T2 refuses to skip.
@@ -262,6 +262,179 @@ read by a human as a result. It is a division by a deleted loop.
         constants for exactly that reason.
       - Dedicated `CARGO_TARGET_DIR=/tmp/i855t3` throughout, so no shared
         target-dir contention with sibling sessions.
+
+      ### The REMAINING 24, RUN — T3 is now COMPLETE over its own population
+
+      The ten above were the `let _ =`-spelled slice. These 24 are the rest of
+      the 34: unguarded timed regions looping ≥ 1000 times that ASSERT
+      something, i.e. every remaining verdict a deleted loop could satisfy.
+      Release, per-target `required-features`, never `--all-features`, dedicated
+      `CARGO_TARGET_DIR=/tmp/i855t3b*` per feature set.
+
+      **4 VANISHED of 24.**
+
+      | # | target :: fn | bound | printed | asserted | verdict |
+      |---|---|---|---|---|---|
+      | 11 | `bench_377_local_branch_routing_goat` :: `main` | 1000 | `route_argmax 10.4 ns/call`, `route_sampled 22.8 ns/call` | `< 1000 ns` | **SURVIVED** |
+      | 12 | `bench_412_subspace_steering_goat` :: `g4_structural_size_and_latency_smoke` | 100 000 | **prints nothing**; probe: `100k applies in 407.459µs` = 4.07 ns/call | `elapsed.as_millis() < 400` | **SURVIVED** |
+      | 13 | `bench_416_region_subspace_goat` :: `g4_latency_smoke_and_struct_size` | 100 000 | **`elapsed: 0ns`, `per-call: 0ns`** | `elapsed.as_millis() < 1000` | ⛔ **VANISHED** |
+      | 14 | `switch_cost_663_poc` :: `g2_lookup_latency_single_digit_ns` | 1 000 000 | `1.39 ns/op (best of 3 × 1M)` | `≤ 9 ns` | **SURVIVED** |
+      | 15 | `switch_cost_663_poc` :: `g2_sequence_entropy_under_300ns` | 100 000 | `13.99 ns/eval (best of 3 × 100k)` | `< 300 ns` | **SURVIVED** |
+      | 16 | `bench_815_coulomb_redistribution_poc` :: `run_case` | 1000 | `solve = 2.04 / 13.76 / 74.61 µs` (3 cases) | T1c budget | **SURVIVED** |
+      | 17 | `katgpt-ruliology` `tests::benchmarks` :: `bench_irreducibility_gate_fsm2` | 1000 | `2.188µs per check` | `< 1000 µs` | **SURVIVED** |
+      | 18 | `async_qdq_goat` :: `test_double_buffer_swap_latency` | 10 000 | **`Double-buffer swap latency: 0ns`** | `ns < 10_000.0` | ⛔ **VANISHED** |
+      | 19 | `bench_225_rat_bridge` :: `bench_bridge_projection_overhead` | 10 000 | **`Gate computation: 0.00ns per call`** | `per_gate < 10µs` | ⛔ **VANISHED** |
+      | 20 | `bench_235_slod_goat` :: `g1_pruner_overhead_under_100ns` | 100 000 | `0.8 ns/call` | `≤ 100.0` | **SURVIVED** (4× = 3.98×) |
+      | 21 | `bench_replaid_variance_schedules` :: `bench_variance_minimizer_overhead` | 1 000 000 | `3.5 ns/obs`, and `Observations: 1001000` | `< 100.0` | **SURVIVED** |
+      | 22 | `bench_trust_region` :: `bench_trust_tracker_record` | 1 000 000 | `0.8 ns/call` | `< 100.0` | **SURVIVED** (4× = 3.9×) |
+      | 23 | `bfcf_lsh_cms_goat` :: `g5_roaring_batch_speedup` | 6400 | no figure on pass — both arms cleared its **own** 1 µs floor | `speedup ≥ 2.0` | **SURVIVED** (already guarded) |
+      | 24 | `goat_195_chain_fold` :: `goat1_zero_perf_hurt_noop_baseline` | 1000 | `1000 empty folds in 5.9µs` (median of 3) | `as_secs() < 5` | **SURVIVED** (4× = 3.2×) |
+      | 25 | `goat_195_chain_fold` :: `goat4_binary_search_fold_throughput` | 1000 | `1000 folds in 553.75µs` | `as_secs() < 5` | **SURVIVED** |
+      | 26 | `goat_195_chain_fold` :: `goat4_attention_importance_no_redundant_allocations` | 1000 | `1000 score_steps in 277.958µs` | `as_secs() < 3` | **SURVIVED** |
+      | 27 | `goat_195_chain_fold` :: `summary_goat_195_chain_fold` | 1000 | `1000 folds in 270.208µs` | `goat4_pass` → `all_pass` | **SURVIVED** |
+      | 28 | `pipeline_pruner_goat` :: `test_classify_simple_fast` | 10 000 | `126μs (0.01μs each)` | `as_secs() < 1` | **SURVIVED** |
+      | 29 | `pipeline_pruner_goat` :: `test_classify_code_fast` | 10 000 | `514μs (0.05μs each)` | `as_secs() < 1` | **SURVIVED** |
+      | 30 | `pipeline_pruner_goat` :: `test_classify_long_context_fast` | 10 000 | `128μs` | `as_secs() < 1` | **SURVIVED** |
+      | 31 | `pipeline_pruner_goat` :: `test_classify_reasoning_fast` | 10 000 | `126μs` | `as_secs() < 1` | **SURVIVED** |
+      | 32 | `precision_aware_draft_goat` :: `test_boundary_detection_speed` | 10 000 | `1711μs (0.17μs each)` | `as_secs() < 5` | **SURVIVED** |
+      | 33 | `precision_aware_draft_goat` :: `test_boundary_penalty_overhead` | 1000 | `7665μs (7.66μs each)` | `as_secs() < 10` | **SURVIVED** |
+      | 34 | `rv_gated_routing` :: `test_tracker_overhead_bounded` | 10 000 × 2 arms | **prints nothing**; probe: observe `43.708µs`, reset **`0ns`** | `as_millis() < 10` (twice) | ⛔ **VANISHED** (reset arm) |
+
+      ### The combined population — 34 of 34, and what the spelling was worth
+
+      **All 34 asserting timed regions at n ≥ 1000 have now been RUN**
+      (10 + 24). **7 VANISHED, 27 SURVIVED, 0 UNMEASURED.**
+
+      ⛔ **The `let _ =` spelling has almost NO discriminating power, and
+      that is the measurement T4 was waiting for.** Split the 34 by the
+      spelling that ordered the first pass:
+
+      | slice | n | VANISHED | false-positive rate |
+      |---|---|---|---|
+      | carries `let _ =` | 15 | 3 | **80.0%** |
+      | does not | 19 | 4 | **78.9%** |
+
+      A predicate that fires on 20% of what it selects and 21% of what it
+      rejects is not a classifier — it is the base rate wearing a grep. Every
+      figure T4 needs to decide against a static `let _ =` pass is in that
+      table, and the honest reading is that the spelling was a way to ORDER a
+      read, never a way to shorten one.
+
+      ⛑ **A far sharper predicate fell out of the same run, and it is the
+      OTHER column: `black_box`.**
+
+      | slice | n | VANISHED | hit rate |
+      |---|---|---|---|
+      | timed region contains **no** `black_box` | 23 | **7** | **30.4%** |
+      | contains `black_box` | 11 | **0** | **0%** |
+
+      **All 7 VANISHED rows, in both passes, are in the no-`black_box`
+      slice** — a clean separation across 34 rows, where `let _ =` separated
+      nothing. ⚠ It is still a CANDIDATE predicate, not a verdict: 16 of the
+      23 survived, so it orders a read at 30% rather than 21% and does not
+      shorten one either. T4 owns whether that is worth an instrument; it now
+      has a measured number instead of an argument.
+
+      ### The four repairs — every bar byte-identical
+
+      | target :: test | before | after | 4× probe |
+      |---|---|---|---|
+      | `bench_416` :: `g4_latency_smoke_and_struct_size` | `elapsed: 0ns`, `per-call: 0ns` over 100 000 | `best_of_us`, `10 × 10 000`, `elapsed 864.6µs` — **8 ns/call** | per-call FLAT at 8 ns |
+      | `async_qdq_goat` :: `test_double_buffer_swap_latency` | `0ns` over 10 000 | `best_of_us`, `10 × 10 000` — **1 ns/swap** | per-call FLAT at 1 ns |
+      | `bench_225_rat_bridge` :: `bench_bridge_projection_overhead` | `0.00ns per call` over 10 000 | `best_of_us`, `10 × 10 000` — **8–22 ns/call** (box-dependent) | per-call FLAT at 10–11 ns |
+      | `rv_gated_routing` :: `test_tracker_overhead_bounded` (reset arm) | `0ns` over 10 000 | `best_of_us`, `10 × 10 000` — **6.3–16.1µs per 10K resets** | `6.334 → 25.084µs` = **3.96×** |
+
+      - Harness per the T2/T3a treatment rule: `best_of_us` for all four —
+        every one is a ONE-ARM absolute ceiling, so `ab_median_ratio` is the
+        wrong instrument here. Every sink is consumed through
+        `std::hint::black_box`.
+      - Bars `ns < 10_000.0`, `per_gate < Duration::from_micros(10)`,
+        `elapsed.as_millis() < 1000` and `elapsed.as_millis() < 10` are
+        **unchanged**, and so are the message and `println!` format strings —
+        `bench_225` and `bench_416` rebuild a `Duration` from `best_of_us`'s
+        µs precisely so the pre-existing `{per_gate:.2?}` / `{elapsed:?}`
+        renderings keep meaning what they meant.
+      - Total timed iterations preserved or RAISED: 100 000 → 100 000;
+        10 000 → 100 000; 10 000 → 100 000; 10 000 → 100 000.
+      - Full-target pass counts **unchanged**: **5 / 6 / 5 / 25**
+        (`bench_416` / `async_qdq_goat` / `bench_225_rat_bridge` /
+        `rv_gated_routing`). `cargo clippy --release` on each of the four
+        targets adds **no** finding (the only line is the pre-existing
+        `block v0.1.6` future-incompat note). All four files were rustfmt-
+        DIVERGENT at HEAD and their divergence line count is unchanged
+        (1 / 1 / 3 / 11), per AGENTS.md's no-`cargo fmt -p` rule.
+
+      ⛔ **A sink is NOT always enough, and two of the four proved it on the
+      first re-run.** Both `async_qdq` and `bench_225` still printed ~0 after
+      the textbook repair (accumulate into a sink, `black_box` the sink,
+      `best_of_us`), because the SINK was not the thing LLVM was removing:
+
+      - `bench_225`'s `compute_gate` is pure in its two arguments and both are
+        loop-invariant, so the dot product was hoisted OUT of the loop and the
+        sink was computed once — `1.00ns per call`. The fix is `black_box` on
+        the **inputs**, per iteration.
+      - `async_qdq`'s round is an EVEN number of `mem::swap`es over the same
+        two buffers, i.e. the identity, with `swapped` a constant — so the
+        whole round folded away and it still printed `0ns`. The fix is a
+        `black_box(&mut db)` **receiver**, per iteration.
+
+      Read that as the sharper form of this issue's own rule: *consume the
+      result* is a heuristic; the invariant is **the optimiser must not be able
+      to prove the loop's effect**, and the sink is only one of the three
+      places that proof can come from (result, arguments, receiver).
+
+      ### ⛔ Four notes found on the way, none folded into the counts
+
+      - **Two rows print NO number at all** (`bench_412` g4, `rv_gated_routing`
+        `test_tracker_overhead_bounded`) — their quantities appear only inside
+        an `assert!` message, i.e. only on failure. Neither could be
+        adjudicated by *reading the printed value*, the method that found every
+        other row; both needed a temporary `eprintln!` probe, run, then
+        restored byte-identically (`git diff --quiet`, verified). **That is a
+        strictly worse shape than a bar printing a zero**: a zero in a log is
+        at least visible to a human reading it, and these are invisible in the
+        configuration that passes. `rv_gated_routing` is where it cost
+        something — its reset arm is one of the four VANISHED.
+      - **`rv_gated_routing`'s bar could not have caught it anyway.**
+        `elapsed.as_millis() < 10` over 10 000 `reset()` calls reads `0 ms`
+        whether the loop runs or not (a live round measures 6–16 **µs**). A
+        millisecond-granular bar over a nanosecond-scale body is satisfied by
+        its own units, which is this issue's class with the resolution rather
+        than the optimiser doing the deleting. The repair fixes the
+        measurement; the bar is still 4 orders of magnitude loose, and that is
+        the target owner's call, not this issue's.
+      - **`bfcf_lsh_cms_goat` g5 was misfiled as unguarded** — it carries an
+        explicit `roaring_time >= 1_000ns && linear_time >= 1_000ns` floor with
+        a written-out account of the exact `0.00μ/0.00μ` incident that earned
+        it (Issue 806). Both arms cleared the floor. `switch_cost_663_poc`'s
+        two rows likewise already print `best of 3 × N`. So the static
+        UNGUARDED count over-captures in a second way the first pass did not
+        see: it misses a guard spelled as a bare `assert!` on the raw
+        `Instant` deltas.
+      - **A single sample refuted itself.** `bench_235_slod` at 4× first read
+        `wall 911µs`, `2.3 ns/call` — a 10× scaling that would have been a
+        finding. Re-measured 3× at each bound it is `83.3 / 84.0 / 83.2µs`
+        against `331.3 / 342.7 / 331.7µs` = **3.98×** with per-call flat at
+        0.8 ns. The first reading was the box. *Repair the instrument before
+        blaming the code, and a scaling probe is a median, never a sample.*
+
+      ### Box state, second pass (§Feature Flag Discipline)
+
+      - **Screening (rows 11–34):** M3 Max, 68.7 GB physical, load averages
+        from **3.77 / 7.83 / 15.25** at the first run to **10.96 / 8.51 /
+        12.68** mid-sweep; ~2.9 GB free + ~25.6 GB inactive; 585 GB free on
+        the data volume; no sibling `cargo` (a dedicated
+        `CARGO_TARGET_DIR=/tmp/i855t3b_*` per feature set, and every stage run
+        SEQUENTIALLY in one job so no two builds overlapped a measurement).
+        A **screening** class — adequate for a ZERO, which no load can
+        manufacture, and NOT adequate for adjudicating slack on any SURVIVED
+        bar.
+      - **Repairs + 4× probes:** load averages **6.24 / 8.01 / 11.81** rising
+        to **24.82 / 18.02 / 14.99** by the final verification pass — which is
+        visible in the numbers and is why they are quoted as ranges
+        (`bench_225` read 8, 10, 11 and 22 ns/call across the session; the bar
+        it must clear is 10 000 ns).
+      - The only other heavy process throughout was `Zed Dev` at ~183% CPU.
 - [ ] **T4 — the STATIC detector is tempting and is the weaker instrument;
       decide deliberately.** `let _ = f(…)` inside a timed region with no
       `black_box` is greppable, and `bench_252` above is the measured
