@@ -11,6 +11,60 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## Issue 850 — CLOSED: the UNVERIFIED-upstream guard challenged only ONE of `behind_origin`'s two silent readings — and then PRINTED a false statement about the one it gained (2026-09-19)
+
+**Status: CLOSED 2026-09-19, all four tasks.** Filed as 849, renumbered to
+850 — the second collision of that session, and the one `dual_allocation_gate`
+could NOT see, which is why T4 exists.
+
+- **T1 — the gap.** `behind_origin()` has four readings AGENTS.md documents as
+  *"never pooled"*, two of them SILENT: `(0, 0)` "up to date" and `(n, 0)`
+  "behind, but on nothing in this sweep's population". Issue 827 T5's fetch-age
+  guard was wired to the first ONLY, while the second is the STRONGER claim —
+  it asserts something about the CONTENT of the commits it is behind by, read
+  from the same unrefreshed ref. Repair: `elif beh is not None`. Cost, measured:
+  `shared_temp_path_drift_sweep` reported 6 findings across 3 repos with no
+  advisory; those repos were 22, 9 and 3 commits behind, **4 of the 6 were
+  already FIXED upstream** and 2 were correct at their pins — and six
+  "repairs" were committed across three siblings before anyone fetched, one of
+  which would have undone a recorded adjudication and changed a user-visible
+  path. All reset. ⚠ That the gap CAUSED that silence is **not** claimed: the
+  pre-fetch state was destroyed by the fetch that diagnosed it.
+- **T4 — `dual_allocation_gate` gained the COUNTER axis.** A number allocated
+  and CLOSED in one commit leaves no document in any tree, so `--diff-filter=A`
+  reports nothing; both sides bumping `.highwater` past the merge base is the
+  missing document. Armed both ways — arithmetic on every push with the git
+  reader injected, a real two-repo fixture under `--prove-fires`.
+- **T2 — should a sweep FETCH? NO, on a MEASUREMENT.** The contract-repo fetch
+  costs **250.2s serial / 50.2s at 8-way** cold, 21.5s warm, against a sweep
+  that costs 0.04–40s and a 32-check docs gate at ~164s wall — **5–30x the
+  cost of the thing it precedes**, paid ~19 times over a family run. The design
+  half agrees: a fetch WRITES refs in repos other sessions own (Issue 797's
+  class with the sweep as perpetrator), makes a verdict depend on the network,
+  and a `--fetch` flag nobody passes is not a repair. Freshness is a property
+  of the BOX at a moment, not of a sweep. ⛔ Measuring it surfaced a defect
+  worth more than the cost answer: the remedy text said *"`git fetch` in the
+  named repo"* and named CONTRACT spellings — correctly, since alias content
+  must never reach stdout — which on an aliased box are directories that DO
+  NOT EXIST (`mmorpg-editor` vs the checkout `seal-game-editor`). Both rules
+  right, remedy unusable. Landed `scripts/fetch_contract_repos.py` (origin
+  NAMED, population delegated, arms ASSERT that a fetch leaves HEAD and the
+  worktree untouched).
+- **T3 — the guard PRINTED a false statement, found by observing it.** The
+  task asked for a re-run after a day idle; all 17 repos were 0.2–9.7h fresh,
+  so the trigger was unreachable by waiting and the observation was made by
+  CONSTRUCTION — stub only the clock seam, run a REAL sweep, read its stdout.
+  Reachable, on the FINAL line, rc = 0. And the line said, of every repo,
+  *"report 'up to date'"* — FALSE for `(n, 0)`, about the one fact the sweep
+  had already read. T1 honoured "never pooled" in the TRIGGER and the DISPLAY
+  pooled them one layer down, the `heading_style_blind` shape. `unverified`
+  carries `(age, commits_behind)` now and each repo renders its own reading on
+  ONE line. ⚠ The existing arms asserted PRESENCE, not CONTENT — every one
+  tested `"UNVERIFIED UPSTREAM" in ln`, true of a line saying anything at all.
+  `worktree_state` selftest **148 → 157**, 7 of the 9 new arms proven to red
+  against the pre-repair renderer, 0 at HEAD, both directions of the split
+  armed. File removed this commit; full record: git history `.issues/850_*`.
+
 ## Issue 832 — CLOSED: the last fixed shared-temp site is repaired — the non-demo backlog is zero, the ratchet is the wall (2026-09-19)
 
 **Status: CLOSED 2026-09-19 — T5 complete. The final unrepaired site, seal-remake `crates/seal-view/tests/quest_sim_front.rs` (the relay-hub temp dir), landed its pid-suffix repair at seal-remake `db68f5e` (the concurrent-WIP blocker named in the 09-19 census cleared with that lane's landing), validated in-repo with the guard layer-16 invocation (`cargo test -p seal-view --features quest_sim,sync_client --test quest_sim_front` — 1/1, the front floor). Floors re-pinned `mmorpg-remake 16 1 → 18 0` in the same commit: `fixed=0` verified by the sweep, and the site count grew 16→18 through the sibling lane landing (all pid-suffixed). The two other standing rows are ADJUDICATED, not outstanding: seal-game-editor `services.rs` is the deliberate production scratch root pinned `max_fixed 1` at the Issue-842 close-out (`6964117e`), and riir-clippy's 9 production scratch roots carry `[documented-fixed-root]` markers + the read-before-write mtime-churn fix (`83f4cd89`). Every test-class site is repaired per-repo with sibling SHAs cited (riir-ai `9d138531b`, riir-chain `8a3b0f5`, riir-game-sdk `ef66117`, riir-clippy `f5ada0ec`, riir-deployer `b551028`, mmorpg-remake `db68f5e`, mmorpg-editor + mmorpg-remaster same-day 09-19); the demo class (`examples/`+`src/bin/`) stands adjudicated. The x86_64 matrix is fully green (11,177 assertions, `a77c46c0`). File removed this commit; full record: git history `.issues/832_*`.**
