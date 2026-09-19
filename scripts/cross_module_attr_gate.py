@@ -82,6 +82,8 @@ sys.argv` never fires on a push (Issue 789's finding).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import ast
 import os
 import subprocess
@@ -285,23 +287,23 @@ def scan(root: Path) -> tuple[list[str], list[str], int, int, int, int]:
             n_getattr, len(opaque))
 
 
-def read_expected() -> dict[str, str]:
+def read_expected(path: Path = EXPECTED) -> dict[str, str]:
     """`<key> = <reason>` rows. A reasonless row is REFUSED, not ignored: the
     reason is the adjudication, and a row without one is a backlog wearing a
     pin (Issue 785)."""
     pins: dict[str, str] = {}
-    if not EXPECTED.exists():
+    if not path.exists():
         return pins
-    for i, raw in enumerate(EXPECTED.read_text(encoding="utf-8").splitlines(), 1):
+    for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
-            print(f"⛔ {EXPECTED.name}:{i}: row without a reason — refused")
+            print(f"⛔ {path.name}:{i}: row without a reason — refused")
             raise SystemExit(2)
         key, reason = line.split("=", 1)
         if not reason.strip():
-            print(f"⛔ {EXPECTED.name}:{i}: empty reason — refused")
+            print(f"⛔ {path.name}:{i}: empty reason — refused")
             raise SystemExit(2)
         pins[key.strip()] = reason.strip()
     return pins
@@ -404,6 +406,78 @@ def selftest() -> list[str]:
         write("user.py", "import lib\ndef (:\n")
         f, u, *_ = scan(root)
         check(len(u) == 1, f"a syntax error was not reported UNPARSED: {u}")
+
+
+    # --- `tracked_scripts` against a REAL git repo -------------------------
+    # ⛔ Every other arm here builds a plain temp directory, where
+    # `is_checkout` is False and the GLOB fallback runs — so the `git
+    # ls-files` branch, which is what a real run takes, was reached by
+    # nothing. One exclusion, two code paths: the `platform_dead_code`
+    # vendor-arm failure, where an arm certified the path it was not aimed at.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        sc = root / "scripts"
+        (sc / "kimi_ref").mkdir(parents=True)
+        (sc / "top.py").write_text("X = 1\n", encoding="utf-8", newline="")
+        (sc / "kimi_ref" / "dump.py").write_text("Y = 2\n", encoding="utf-8",
+                                                 newline="")
+        (sc / "untracked.py").write_text("Z = 3\n", encoding="utf-8",
+                                         newline="")
+        for cmd in (["init", "-q", str(root)],
+                    ["-C", str(root), "config", "user.email", "t@t"],
+                    ["-C", str(root), "config", "user.name", "t"],
+                    ["-C", str(root), "add", "scripts/top.py",
+                     "scripts/kimi_ref/dump.py"],
+                    ["-C", str(root), "commit", "-qm", "base"]):
+            subprocess.run(["git", *cmd], capture_output=True)
+
+        names = [p.name for p in tracked_scripts(root)]
+        # the depth filter: a NESTED tracked script is a reference dump, not
+        # an instrument, and its own directory is the boundary
+        check(names == ["top.py"],
+              f"the ls-files branch did not yield exactly the top-level "
+              f"tracked script: {names}")
+        # and the TRACKED half: an untracked scratch file is not a member of
+        # the contract, which is the whole reason this branch exists
+        check("untracked.py" not in names,
+              "an UNTRACKED scratch script entered the population — only git "
+              "can say what the contract covers")
+
+    # --- the pin PARSER, reachable now that `read_expected` takes a path ---
+    # ⛔ Four refusal branches sat behind a module-level constant, so no arm
+    # could hand them a file: unreachable by construction, which is the
+    # pattern AGENTS.md records three times — the EXTRACTION is the repair.
+    with tempfile.TemporaryDirectory() as td:
+        pin = Path(td) / "pins.txt"
+
+        check(read_expected(pin) == {},
+              "a MISSING pin file did not read as zero pins")
+
+        pin.write_text("# only a comment\n\n", encoding="utf-8", newline="")
+        check(read_expected(pin) == {},
+              "comments and blank lines were parsed as rows")
+
+        pin.write_text("a::b = a real reason\n", encoding="utf-8", newline="")
+        check(read_expected(pin) == {"a::b": "a real reason"},
+              "a well-formed row did not parse")
+
+        # ⚠ Both refusals PRINT before they raise, and that output is the
+        # arm's expected noise rather than this gate's verdict — swallowed,
+        # or a green run carries two `⛔` lines above its own `✓`.
+        def _refuses(text: str) -> bool:
+            pin.write_text(text, encoding="utf-8", newline="")
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    read_expected(pin)
+            except SystemExit:
+                return True
+            return False
+
+        check(_refuses("a::b\n"),
+              "a row with NO `=` was accepted — the reason IS the "
+              "adjudication, and a row without one is a backlog wearing a pin")
+        check(_refuses("a::b =   \n"),
+              "a row with an EMPTY reason was accepted")
 
     # --- this gate's OWN pin arithmetic, which no classifier arm reaches ---
     check(MIN_SCRIPTS > 0 and MIN_RESOLVED > 0, "a floor is non-positive")

@@ -71,6 +71,8 @@ as `"$PY" "$script"` with no arguments (Issue 789's finding).
 
 from __future__ import annotations
 
+import contextlib
+import io
 import re
 import subprocess
 import sys
@@ -218,22 +220,22 @@ def scan(root: Path) -> tuple[list[str], dict[str, int], int]:
     return sorted(keys), counts, walked
 
 
-def read_expected() -> dict[str, str]:
+def read_expected(path: Path = EXPECTED) -> dict[str, str]:
     """`<key> = <reason>` rows. A reasonless row is REFUSED, not ignored: the
     reason is the adjudication (Issue 785)."""
     pins: dict[str, str] = {}
-    if not EXPECTED.exists():
+    if not path.exists():
         return pins
-    for i, raw in enumerate(EXPECTED.read_text(encoding="utf-8").splitlines(), 1):
+    for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
-            print(f"⛔ {EXPECTED.name}:{i}: row without a reason — refused")
+            print(f"⛔ {path.name}:{i}: row without a reason — refused")
             raise SystemExit(2)
         key, reason = line.split("=", 1)
         if not reason.strip():
-            print(f"⛔ {EXPECTED.name}:{i}: empty reason — refused")
+            print(f"⛔ {path.name}:{i}: empty reason — refused")
             raise SystemExit(2)
         pins[key.strip()] = reason.strip()
     return pins
@@ -338,6 +340,78 @@ def selftest() -> list[str]:
         check(counts["enable-attr"] == 1,
               f"the correct attribute was not counted: {counts}")
         check(walked == 3, f"the src/ walk counted {walked}, want 3")
+
+
+    # --- `_fn_spans` edge cases, armable from fixture strings alone --------
+    # A signature with NO body (a trait method) must contribute no span: an
+    # attribute cannot be inside one, and inventing a span for it would make
+    # the NEXT function's attributes resolve to the wrong owner.
+    spans = _fn_spans("trait T {\n    fn sig(&self) -> u8;\n}\n")
+    check(all(n != "sig" for n, _s, _e in spans),
+          f"a bodiless fn produced a span: {spans}")
+
+    # Nested fns: the depth counter must close the OUTER body at the outer
+    # brace, not at the inner one. `depth == 0` is the test that does it, and
+    # flipping it silently truncates every enclosing span to its first nested
+    # block — after which every dispatcher attribute resolves to <module>.
+    NESTED = ("fn outer() {\n"
+              "    fn inner() {\n        let _ = 1;\n    }\n"
+              "    let _ = 2;\n"
+              "}\n")
+    spans = _fn_spans(NESTED)
+    by = {n: (a, b) for n, a, b in spans}
+    check("outer" in by and "inner" in by,
+          f"nested fns were not both spanned: {spans}")
+    o, i2 = by["outer"], by["inner"]
+    check(o[0] < i2[0] and i2[1] < o[1],
+          f"the outer span does not CONTAIN the inner one: {by}")
+
+    # `owner_of` must pick the INNERMOST enclosing span, which is what the
+    # width comparison decides. An attribute inside `inner` belongs to
+    # `inner`, not to `outer`.
+    mid = (i2[0] + i2[1]) // 2
+    check(owner_of(NESTED, mid, spans) == "inner",
+          f"the innermost enclosing fn was not chosen: "
+          f"{owner_of(NESTED, mid, spans)}")
+    outer_only = (o[0] + i2[0]) // 2
+    check(owner_of(NESTED, outer_only, spans) == "outer",
+          "a position inside only the OUTER body did not resolve to it")
+
+    # --- the pin PARSER, reachable now that `read_expected` takes a path ---
+    # ⛔ Four refusal branches sat behind a module-level constant, so no arm
+    # could hand them a file: unreachable by construction, which is the
+    # pattern AGENTS.md records three times — the EXTRACTION is the repair.
+    with tempfile.TemporaryDirectory() as td:
+        pin = Path(td) / "pins.txt"
+
+        check(read_expected(pin) == {},
+              "a MISSING pin file did not read as zero pins")
+
+        pin.write_text("# only a comment\n\n", encoding="utf-8", newline="")
+        check(read_expected(pin) == {},
+              "comments and blank lines were parsed as rows")
+
+        pin.write_text("a::b = a real reason\n", encoding="utf-8", newline="")
+        check(read_expected(pin) == {"a::b": "a real reason"},
+              "a well-formed row did not parse")
+
+        # ⚠ Both refusals PRINT before they raise, and that output is the
+        # arm's expected noise rather than this gate's verdict — swallowed,
+        # or a green run carries two `⛔` lines above its own `✓`.
+        def _refuses(text: str) -> bool:
+            pin.write_text(text, encoding="utf-8", newline="")
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    read_expected(pin)
+            except SystemExit:
+                return True
+            return False
+
+        check(_refuses("a::b\n"),
+              "a row with NO `=` was accepted — the reason IS the "
+              "adjudication, and a row without one is a backlog wearing a pin")
+        check(_refuses("a::b =   \n"),
+              "a row with an EMPTY reason was accepted")
 
     # --- this gate's OWN pin arithmetic, which no classifier arm reaches ---
     check(MIN_FILES > 0 and MIN_ATTRS > 0, "a floor is non-positive")

@@ -752,11 +752,18 @@ def sweep_advisory(repos, patterns, root=None,
         beh = behind_origin(path, patterns)
         if beh is not None and beh[1]:
             stale[label] = beh
-        elif beh == (0, 0):
-            # Only the `(0, 0)` reading is challenged here. A repo already
-            # reported STALE needs no second line, and one with no upstream
-            # answers `None` and claims nothing to begin with — it is the
-            # confident "up to date" that can rest on nothing.
+        elif beh is not None:
+            # ⛔ BOTH silent buckets are challenged, not just `(0, 0)`.
+            # `behind_origin` has two readings that print nothing — `(0, 0)`
+            # "up to date" and `(n, 0)` "behind, but on nothing in this
+            # sweep's population" — and they rest on the identical thing: the
+            # remote-tracking ref, i.e. what this box last HEARD. `(n, 0)` is
+            # the stronger claim of the two, because it asserts something
+            # about the CONTENT of the commits it is behind by, and that
+            # content is read from the same unrefreshed ref.
+            #
+            # A repo already reported STALE needs no second line, and one with
+            # no upstream answers `None` and claims nothing to begin with.
             age = fetch_age_hours(path)
             if age is None or age > STALE_FETCH_HOURS:
                 unverified[label] = age
@@ -1757,6 +1764,54 @@ def fetch_age_arms() -> list[str]:
               f"a repo already reported STALE was ALSO called unverified — "
               f"two lines for one repo is the pooling the family refuses: "
               f"{lines}")
+
+    # ── THE SECOND SILENT BUCKET: `(n, 0)` ────────────────────────────────
+    # `behind_origin` prints nothing for TWO readings, not one: `(0, 0)` "up
+    # to date" and `(n, 0)` "behind, but on nothing in this sweep's
+    # population". Only the first was ever challenged, and `(n, 0)` is the
+    # STRONGER claim of the two — it asserts something about the CONTENT of
+    # the commits it is behind by, read from the same unrefreshed ref.
+    #
+    # Its OWN fixture pair, deliberately: the arms above leave upstream ahead
+    # on an IN-scope file, so reusing them cannot produce `(n, 0)` at all —
+    # the first draft of this arm failed its own precondition with `(2, 1)`.
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        up2 = _repo(tmp, "up2")
+        (up2 / "a.sh").write_text("one\n", encoding="utf-8")
+        _run(up2, "add", "-A")
+        _run(up2, "commit", "-qm", "base")
+        dn2 = tmp / "dn2"
+        _run(tmp, "clone", "-q", str(up2), str(dn2))
+        _run(dn2, "config", "user.email", "t@t")
+        _run(dn2, "config", "user.name", "t")
+        fh2 = dn2 / ".git" / "FETCH_HEAD"
+
+        (up2 / "unrelated.txt").write_text("x\n", encoding="utf-8")
+        _run(up2, "add", "-A")
+        _run(up2, "commit", "-qm", "out of scope")
+        _run(dn2, "fetch", "-q", "origin")
+        beh = behind_origin(dn2, ("*.sh",))
+        check(beh is not None and beh[0] > 0 and beh[1] == 0,
+              f"fixture precondition: want (n, 0), got {beh}")
+
+        # Fresh: silent, and that stays right — this bucket's whole point is
+        # not being the banner nobody reads.
+        lines = sweep_advisory([dn2], ("*.sh",))
+        check(not any("UNVERIFIED UPSTREAM" in ln for ln in lines),
+              f"a freshly-fetched (n, 0) produced an advisory: {lines}")
+        check(not any("STALE:" in ln for ln in lines),
+              f"an out-of-scope behind-ness was reported as STALE: {lines}")
+
+        # Stale: the reading rests on nothing, so it must SAY so.
+        aged2 = time.time() - (STALE_FETCH_HOURS + 12) * 3600
+        os.utime(fh2, (aged2, aged2))
+        lines = sweep_advisory([dn2], ("*.sh",))
+        check(any("UNVERIFIED UPSTREAM" in ln for ln in lines),
+              f"an (n, 0) resting on a {STALE_FETCH_HOURS + 12:.0f}h-old "
+              f"fetch was SILENT — its claim that the commits it is behind "
+              f"by miss this population is read from the same unrefreshed "
+              f"ref: {lines}")
 
     # A future-dated mtime clamps to 0 rather than going negative, and
     # unknown-ness keeps its single spelling.
