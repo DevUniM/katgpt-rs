@@ -2207,94 +2207,55 @@ count is what the bucket note above forbids.
   workstation verdict, the same standing as the eleven drift sweeps. There is also deliberately **no `--prove-fires`** — the
   known-answer validation would be a full mutation run over a `git archive`d
   tree to re-derive a fact the issue already records.
-- ⛔ **That 157.6s is STALE by more than an order of magnitude, and the
-  consequence is operational rather than cosmetic** (measured 2026-09-19, at
-  **33** CHECKS). **THREE runs were started and NONE produced a
-  verdict.** Two in the working tree each passed **77 minutes of CPU** before
-  being killed, and a third — in a DETACHED worktree, immune to the live-edit
-  race that voided the first two — was killed at **121 minutes**, ≥46x the
-  figure above and still at 100% CPU on a box at loadavg 4. So this is cost and
-  not a wedge, and the honest standing is stronger than *slow*: at 33 CHECKS
-  this gate has **no measured completion time on this box**. Do not quote
-  157.6s as its cost, and do not plan a session around getting a verdict out of
-  it without first establishing that one is obtainable.
-  - ⛔ **Measured per MODULE, and the obvious explanation is REFUTED.** The
-    audit's substring argument really does select one module, so the cost is
-    decomposable: **2 of 2 sampled modules each exceeded 300s alone**, and
-    `agents_repo_set_gate` — whose `selftest()` is pure over TEXT, with no
-    git, no subprocess and no workspace walk — was killed at **22 min 47 s of
-    CPU** without finishing. That is 8.7x the documented WHOLE-RUN figure, for
-    **1 of 33** modules. So the cost is not a single straggler and not
-    heavyweight arms doing real I/O; a plain text classifier shows it too, and
-    33 such modules is many hours. ⚠ The MECHANISM is **undiagnosed** — the
-    candidates are per-mutant import cost (Issue 848 measured one module at
-    6.238s of a 6.34s import pass), the watchdog's 10x-baseline deadline
-    compounding on non-terminating mutants, or mutant-count growth — and
-    naming one without measuring it is what this file refuses everywhere else.
-    Whoever picks this up should start from the per-module decomposition
-    rather than from another whole-run attempt.
-  - ⛔ **MEASURED one level down, and all three candidates are refuted: the
-    cost is in the HARNESS, not in the modules.** For the same
-    `agents_repo_set_gate`: **13 mutants**, module import **0.001 s**, baseline
-    arm **0.000 s**. Thirteen mutants whose every per-mutant ingredient is at
-    the millisecond floor cannot produce 22m47s — that is ~105 s per mutant
-    against ~1 ms of measurable work. So **per-mutant import cost is out**
-    (0.001 s) and **mutant-count growth is out** (13, not hundreds). The
-    watchdog path survives only as a PARTIAL explanation and the arithmetic
-    says so: its deadline is `max(10x baseline, 30 s)` and a 0 s baseline
-    floors it at 30 s, so even an every-mutant-times-out run is 13 x 30 s =
-    **390 s — 3.5x short of the observed 1367 s.** ✅ **LOCATED, and it is not the per-mutant
-    path at all — it is `arm_reach_audit.selftest()`, which `main()` runs
-    UNCONDITIONALLY before it filters anything.** Measured end to end:
-
-    | what | cost |
-    |---|---|
-    | `audit_module()` on a real module (13 mutants) | **0.03 s** |
-    | each of those 13 mutants through `run_arm`, externally capped | completes, none hangs |
-    | `arm_reach_audit.selftest()` alone | **>40 min — hit a 2400 s cap without finishing** |
-
-    So the auditing work is MILLISECONDS and the fixed entry cost is unbounded,
-    paid on every invocation — including `arm_reach_audit.py <one-module>`,
-    where the substring filter is applied *after* the self-test has already
-    run. That single fact explains every observation above: why "2 of 2 sampled
-    modules exceeded 300 s" (each paid the self-test), why one module read
-    22m47s, and why three whole runs produced zero verdicts.
-    ⛔ **LOCALISED to one point, and it is STATE-DEPENDENT — no single arm
-    reproduces it.** The harness's own progress channel (built for exactly this
-    in Issue 854, and the reason it survives `_silence()`) names the spot:
-    **5 of 5 runs print the same 10 fixture lines and stop after
-    `base_crash.py`**, with `healthy.py` — the next `audit_module` fixture —
-    never appearing. But every piece of that region completes standalone:
-    `audit_module(base_crash)` in **0.00 s**, and the entire block between the
-    two (the four `spin.py` watchdog assertions plus `healthy`) in **~1 s**,
-    with the non-terminating mutant correctly returning `TIMEOUT` in 1.01 s.
-    So the watchdog works, the fixtures work, and the wedge depends on state
-    ACCUMULATED across the self-test rather than on any arm in isolation —
-    the suspects being the watchdog threads and the fd-level `_silence()` /
-    `_PROGRESS_FD` handling that earlier arms install and restore. That is
-    where the next probe goes, and it needs instrumenting the function rather
-    than calling its pieces, which is why this stops here. But the repair is now a bounded question about ONE function
-    rather than about the gate, and the cheap mitigation is available today:
-    `audit_module()` is importable and costs 0.03 s per module, so a caller
-    that needs reach numbers can have them without `main()`. Write the **CHECKS count beside the number**, exactly as the docs-gate
-  CPU paragraph requires: the population is the CHECKS set plus this file, and
-  the CHECKS set has grown from ~21 to 33 since that measurement.
-  - ⛔ **At that duration the gate cannot be run in a tree somebody is
-    working in, and this was learned by breaking it TWICE in one session.**
-    Its population is `scripts/*.py`; it re-reads each module per mutant; so
-    an edit to any CHECK while it runs means it may have read a half-written
-    file and its verdict is void. Both runs were killed rather than trusted —
-    the second after a commit that touched `timed_region_guard_gate.py`, i.e.
-    the same mistake with the lesson already in hand. **A 77-minute read-only
-    pass over the directory a session is editing is not compatible with that
-    session**, and no amount of care fixes it: the window is longer than any
-    realistic quiet period.
-  - ✅ **Run it in a DETACHED worktree** — `git worktree add --detach /tmp/x
-    <sha>` — so live edits provably cannot race it and the verdict names a
-    commit. ⚠ Use `--detach`, never `worktree add -f <branch>`: that shares
-    the ref, and a commit in either worktree then moves the other's HEAD.
-  - ⚠ Kill it by **PID**, never by pattern: `pkill -f arm_reach_gate` reaches
-    a sibling session's run on this box.
+- ⛔ **That 157.6s is STALE, and the corrected figure is 868 s — but read the
+  RETRACTION with it, because three earlier write-ups of this number in this
+  file were wrong** (measured 2026-09-20, at **33** CHECKS). Write the CHECKS
+  count beside the number, exactly as the docs-gate CPU paragraph requires:
+  the population is the CHECKS set plus this file, and that set has grown from
+  ~21 to 33 since 157.6s was taken.
+  - **The measurement that stands is a RANGE, not a budget: one run completed
+    in 868 s (14.5 min); a later run on the same commit did NOT complete
+    within 1800 s.** Both are real and the spread is unexplained — so 868 s is
+    a lower bound on a good run, never a figure to plan against. What IS stable
+    across every re-measurement is the decomposition: the cost is the SUM of
+    per-module costs, which
+    span three orders of magnitude. Measured per module: `bench_doc_audit`
+    **34.34 s** (84 mutants), `cargo_comment_audit` **19.53 s**,
+    `console_encoding_gate` **16.75 s**, `cross_repo_path_dep_gate` **7.51 s**
+    — against `docs_gate_paths_sync` **0.03 s**, `agents_repo_set_gate`
+    **0.05 s**, `cfg_row_implication_gate` **0.06 s**. The expensive ones are
+    the modules whose ARMS walk the tree, re-run once per mutant. So the cost
+    scales with the CHECKS set AND with how much I/O the new check's arm does,
+    which is the thing to weigh when adding one.
+  - ⛔ **RETRACTED, and each was a causal claim built on an intermittent
+    reading:** that the gate has *"no measured completion time"* (it is 868 s);
+    that a single module *"alone burns 22m47s"* (`agents_repo_set_gate` is
+    **0.05 s**); and that the cost is `selftest()` *"run unconditionally before
+    main() filters"* (`selftest()` is **1.03 s**, measured three times). The
+    self-test does run before the filter — that part is true and is still worth
+    knowing — but it costs a second, not minutes.
+  - ⚑ **The lesson is the one this file already states about perf numbers and
+    is worth restating where the mistake happened.** Three runs wedged
+    reproducibly at the same point and two more capped at 300 s, and from five
+    consistent observations a mechanism was inferred, published, and refined
+    twice — each refinement narrower and more confident than the last, all of
+    it resting on readings that later would not reproduce. **Consistency across
+    runs is not reproducibility when every run shares one box and one hour.**
+    The thing that broke the chain was re-measuring the *same* quantity later,
+    not reasoning harder about it; nothing in the earlier evidence was going to
+    reveal the error from the inside.
+  - ⚠ The variance itself is **UNEXPLAINED** and is left that way rather than
+    given a third mechanism. Whole-run observations to date: 868 s (completed),
+    >1800 s, >77 min, >77 min, >121 min (all capped or killed). The stable
+    quantities — `selftest()` at 1.03 s, per-module `audit_module` at
+    0.03-34.34 s — do not add up to the long runs, and nothing measured so far
+    accounts for the difference. Concurrent agent sessions on the box are the
+    obvious suspect and are NOT evidence.
+  - ✅ Still true and still worth doing: run it in a **DETACHED worktree**
+    (`git worktree add --detach /tmp/x <sha>`) so live edits cannot race a
+    14-minute read of `scripts/`, and kill it by **PID**, never by pattern.
+    The gate's population is `scripts/*.py` and it re-reads each module per
+    mutant, so an edit mid-run still voids the verdict.
 - ⚠ **Unlike Issue 789's, this class DOES generalise and a sweep half is
   owed.** 789 measured its population at ONE (katgpt-rs is the only repo with
   a CHECKS array) and declined a sweep on that measurement. Re-measured here

@@ -512,6 +512,28 @@ def selftest() -> None:
     # a clean zero — the failure mode this whole class is about, one level up.
     assert MIN_FILES > 0 and MIN_REGIONS > 0, "a floor of 0 cannot detect blindness"
 
+    # ⛔ A region needs BOTH halves of the timing pair. `Instant::now()` with no
+    # `.elapsed()` is a start time somebody captured and never read — not a
+    # timed region, and counting it would inflate every figure this gate
+    # reports. Arms the `and` in `classify`'s region test, which no other
+    # fixture distinguishes because they all carry both halves.
+    half_pair = (
+        "fn g() { let t = Instant::now();\n"
+        "  for _ in 0..100000 { let _ = f(&x); }\n"
+        "  assert!(true); }\n"
+    )
+    fs = classify(half_pair)
+    assert fs.regions == 0, (
+        "`Instant::now()` with no `.elapsed()` counted as a timed region — the "
+        f"pair test must require BOTH halves: {fs.regions}")
+    assert fs.unguarded == [], f"…and it must not be flagged either: {fs.unguarded}"
+    # The mirror: `.elapsed()` with no `Instant::now()` is equally not a region.
+    assert classify(
+        "fn g() { let d = t.elapsed();\n"
+        "  for _ in 0..100000 { let _ = f(&x); }\n"
+        "  assert!(d.as_nanos() < 10); }\n"
+    ).regions == 0, "`.elapsed()` with no `Instant::now()` counted as a region"
+
     # ⛔ The PREMISE that lets attributes be read off the raw text at a masked
     # offset: `mask_file` is LENGTH-PRESERVING. Asserted, not assumed — if it
     # ever stops being true, `attr_run` reads the wrong lines and the
