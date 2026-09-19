@@ -484,3 +484,162 @@ fn t2_bf16_autovec_vs_intrinsics() {
         );
     }
 }
+
+/// Issue 847 T4 — the aarch64 half of the figures. Every number in this
+/// issue was measured on x86_64/shikuwa; the NEON arms were never
+/// compile-feature-gated (NEON is implied by the arch), so the *defect*
+/// does not exist here — but "the vector arm is N× the scalar" is an
+/// x86_64 measurement, and the gate's bar is skipped off x86_64 rather
+/// than assumed. This test measures the three bf16 families
+/// (widen/rne/trunc) dispatcher-vs-scalar-reference on aarch64 with the
+/// shared interleaved harness, and is also T5's precondition: the delete
+/// decision for `f32_to_bf16_trunc_avx2` needs to know whether its NEON
+/// sibling wins where the AVX2 one does not.
+///
+/// A REPORT, no bar (the `bench_843_ternary_size_sweep` rule: a bar written
+/// before the sweep is a bar written from a hypothesis). What it DOES
+/// assert, on every arch it compiles on, is bit-identity between the
+/// dispatcher and the scalar reference — an assertion no box state can
+/// invalidate, and the same law t2 states for its A/C arms.
+///
+/// ⚠ Reading rule (the module doc's confound, one arch over): on aarch64
+/// the SCALAR arm is compiled with NEON available too, so LLVM may
+/// autovectorise it — the ratio column is `autovectorised-scalar / NEON
+/// intrinsics`, the same comparison t2 runs deliberately under `+avx2`.
+/// Both absolute figures print beside it; the ratio alone never decides.
+#[test]
+fn t4_neon_vs_scalar_aarch64() {
+    use katgpt_core::bf16_convert::{
+        bf16_bits_to_f32_into, bf16_bits_to_f32_scalar_into, f32_to_bf16_rne_into,
+        f32_to_bf16_rne_scalar_into, f32_to_bf16_trunc_into, f32_to_bf16_trunc_scalar_into,
+    };
+
+    if !cfg!(target_arch = "aarch64") {
+        println!(
+            "   t4 SKIPPED on {} — the aarch64 figures are measured on the M3; \
+             this is the loud skip, never a green zero.",
+            std::env::consts::ARCH
+        );
+        return;
+    }
+
+    println!("\n   Issue 847 T4 — NEON dispatcher vs scalar reference (aarch64)");
+    println!(
+        "   {:>8}  {:>22}  {:>14}  {:>14}  {:>11}",
+        "n", "kernel", "NEON disp ns", "scalar ns", "scalar/disp"
+    );
+
+    for &(n, iters) in &NS {
+        // widen — fixture: full-range u16 bit patterns (NaNs included; the
+        // bit-identity assert below compares BITS, not f32 values, the t2 law).
+        let mut bits = vec![0u16; n];
+        let mut lcg = Lcg::new(0x8470_0001);
+        for b in &mut bits {
+            *b = ((lcg.next_u8() as u16) << 8) | lcg.next_u8() as u16;
+        }
+        let mut wd = vec![0f32; n];
+        let mut ws = vec![0f32; n];
+        bf16_bits_to_f32_into(&bits, &mut wd);
+        bf16_bits_to_f32_scalar_into(&bits, &mut ws);
+        assert_eq!(
+            wd.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            ws.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            "widen: dispatcher vs scalar must be BIT-identical (n={n})"
+        );
+        let r1 = ab_median_ratio(
+            11,
+            iters,
+            iters / 2,
+            |_| {
+                bf16_bits_to_f32_into(black_box(&bits), &mut wd);
+                black_box(wd[0]);
+            },
+            |_| {
+                bf16_bits_to_f32_scalar_into(black_box(&bits), &mut ws);
+                black_box(ws[0]);
+            },
+        );
+        println!("   {n:>8}  {:>22}  {:>14.0}  {:>14.0}  {:>11.2}",
+                 "bf16_bits_to_f32", r1.a_ns_per_iter(), r1.b_ns_per_iter(), r1.median);
+        println!(   "   ROW847T4 widen n={n} neon_ns={:.0} scalar_ns={:.0} ratio={:.2}",
+                 r1.a_ns_per_iter(), r1.b_ns_per_iter(), r1.median);
+        assert_eq!(r1.ratios.len(), r1.rounds,
+                   "instrument FAIL: {} of {} rounds survived (widen, n={n})",
+                   r1.ratios.len(), r1.rounds);
+
+        // narrow (RNE) — fixture in [-1, 1) plus a few interesting classes.
+        let mut src = vec![0f32; n];
+        let mut lcg = Lcg::new(0x8470_0002);
+        for (i, v) in src.iter_mut().enumerate() {
+            *v = if i % 97 == 0 {
+                [f32::NAN, f32::INFINITY, 0.0, -0.0, 1e-40][i / 97 % 5]
+            } else {
+                lcg.next_f32()
+            };
+        }
+        let mut rd = vec![0u16; n];
+        let mut rs = vec![0u16; n];
+        f32_to_bf16_rne_into(&src, &mut rd);
+        f32_to_bf16_rne_scalar_into(&src, &mut rs);
+        assert_eq!(rd, rs, "rne narrowing: bit-exact for every input class (n={n})");
+        let r2 = ab_median_ratio(
+            11,
+            iters,
+            iters / 2,
+            |_| {
+                f32_to_bf16_rne_into(black_box(&src), &mut rd);
+                black_box(rd[0]);
+            },
+            |_| {
+                f32_to_bf16_rne_scalar_into(black_box(&src), &mut rs);
+                black_box(rs[0]);
+            },
+        );
+        println!("   {n:>8}  {:>22}  {:>14.0}  {:>14.0}  {:>11.2}",
+                 "f32_to_bf16_rne", r2.a_ns_per_iter(), r2.b_ns_per_iter(), r2.median);
+        println!(   "   ROW847T4 rne n={n} neon_ns={:.0} scalar_ns={:.0} ratio={:.2}",
+                 r2.a_ns_per_iter(), r2.b_ns_per_iter(), r2.median);
+        assert_eq!(r2.ratios.len(), r2.rounds,
+                   "instrument FAIL: {} of {} rounds survived (rne, n={n})",
+                   r2.ratios.len(), r2.rounds);
+
+        // narrow (TRUNC) — T5's precondition. Its scalar body is a bare shift,
+        // the easiest thing in this file for LLVM to autovectorise, so the
+        // ratio here is the closest aarch64 analogue of the x86_64 finding
+        // that the trunc intrinsics lose to the compiler's own loop.
+        let mut td = vec![0u16; n];
+        let mut ts = vec![0u16; n];
+        f32_to_bf16_trunc_into(&src, &mut td);
+        f32_to_bf16_trunc_scalar_into(&src, &mut ts);
+        assert_eq!(td, ts, "trunc narrowing: exact by construction (n={n})");
+        let r3 = ab_median_ratio(
+            11,
+            iters,
+            iters / 2,
+            |_| {
+                f32_to_bf16_trunc_into(black_box(&src), &mut td);
+                black_box(td[0]);
+            },
+            |_| {
+                f32_to_bf16_trunc_scalar_into(black_box(&src), &mut ts);
+                black_box(ts[0]);
+            },
+        );
+        println!("   {n:>8}  {:>22}  {:>14.0}  {:>14.0}  {:>11.2}",
+                 "f32_to_bf16_trunc", r3.a_ns_per_iter(), r3.b_ns_per_iter(), r3.median);
+        println!(   "   ROW847T4 trunc n={n} neon_ns={:.0} scalar_ns={:.0} ratio={:.2}",
+                 r3.a_ns_per_iter(), r3.b_ns_per_iter(), r3.median);
+        assert_eq!(r3.ratios.len(), r3.rounds,
+                   "instrument FAIL: {} of {} rounds survived (trunc, n={n})",
+                   r3.ratios.len(), r3.rounds);
+    }
+    println!(
+        "   ⚠ REPORT, no bar (T4). `scalar/disp` > 1 means the NEON dispatcher \
+         wins. The scalar arm is compiled with NEON available on this arch, so \
+         LLVM may autovectorise it — read the absolute pair, not the ratio \
+         alone (the module-doc confound, one arch over). T5 reads the trunc \
+         rows: if the NEON trunc dispatcher does not beat its scalar reference \
+         anywhere, the aarch64 sibling of the x86_64 finding is confirmed and \
+         the delete case for the AVX2 kernel is measured on both arches."
+    );
+}

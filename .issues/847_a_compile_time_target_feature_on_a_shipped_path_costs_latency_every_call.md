@@ -2,9 +2,13 @@
 
 **Status:** **RESOLVED** for `simd_lut_dequant` (measured, repaired, gated,
 canary-verified) and for `bf16_convert`'s RNE narrowing (T2: 2.4-2.5x on a
-default build). **T6, T4 open** — the widen
-crossover and the aarch64 re-measure; T3's gate is landed and the class
-is WALLED (`scripts/shipped_target_feature_gate.py`). ⛔ T2's finding is that the reflex repair
+default build). **T4 + T5 DONE 2026-09-19** — the aarch64 re-measure landed
+(`t4_neon_vs_scalar_aarch64`: RNE NEON wins 1.23x everywhere; widen + trunc
+NEON lose to LLVM's own loop) and the trunc AVX2 kernel is DELETED (T5, with
+the transcription hypothesis refuted — the loss is the `+avx2` build).
+**T6 alone remains** — the widen crossover on a quiet x86_64 box. T3's gate
+is landed and the class is WALLED
+(`scripts/shipped_target_feature_gate.py`). ⛔ T2's finding is that the reflex repair
 was right for ONE of three kernels, a REGRESSION for the second, and
 undecidable on this box for the third.
 
@@ -337,11 +341,29 @@ Bench 847 is a **gate** now, not a report, and it bars exactly **one** row:
       `cfg!(target_feature = ..)` as a runtime-looking boolean is not seen —
       it is a compile-time constant wearing an `if`, and it is exactly the
       shape 847's own canary used to re-introduce the defect.
-- [ ] **T4 — Re-measure on aarch64.** Every figure here is x86_64. The NEON
-      arms were never compile-feature-gated, so the *defect* does not exist
-      there — but "the vector arm is 5× the scalar" is an x86_64 measurement,
-      and the gate's bar is skipped off x86_64 rather than assumed. Shares a
-      box with 844 T4 and 845 T5.
+- [x] **T4 — DONE 2026-09-19 (M3 Max, aarch64/NEON, release, `bench_847_avx2_arm_reachability::t4_neon_vs_scalar_aarch64` — the new aarch64 arm, interleaved `ab_median_ratio` harness, bit-identity asserted per family).** Box state: 84% free mem (~54 GiB/64), load 3.91 declining (of 16 cores), no concurrent cargo (Zed + RustDesk only, the exempt class). Figures are dispatcher(NEON) vs scalar-reference; on aarch64 the scalar arm is compiled WITH NEON available, so LLVM autovectorises it — the ratio column is autovec-scalar/NEON-intrinsics, the module-doc confound one arch over, and both absolute figures print beside it:
+
+      | kernel | n=256 | n=4096 | n=32768 |
+      |---|---|---|---|
+      | widen `bf16_bits_to_f32` | 15 vs 14 (0.89) | 363 vs 294 (0.80) | 1465 vs 1331 (0.91) |
+      | rne `f32_to_bf16_rne` | 51 vs 62 (**1.23**) | 742 vs 909 (**1.23**) | 5425 vs 6675 (**1.23**) |
+      | trunc `f32_to_bf16_trunc` | 14 vs 11 (0.81) | 181 vs 128 (**0.71**) | 1265 vs 953 (**0.76**) |
+
+      Three findings, and the third is the aarch64 confirmation of T5's
+      mechanism: (1) **RNE's NEON kernel EARNS its keep** — a stable 1.23x at
+      every size (the branchy NaN-handling scalar body does not autovectorise);
+      the aarch64 arm of the 847 repair class is healthy. (2) **widen's NEON
+      kernel loses to LLVM's own loop** (0.80–0.91) — the aarch64 sibling of
+      the x86_64 widen finding, now on both arches. (3) **trunc's NEON kernel
+      loses everywhere** (0.71–0.81) — same mechanism as T5's x86_64 finding
+      (the compiler's default-target vectorisation of `bits >> 16` beats the
+      hand-written SIMD), measured on the second arch: the NEON trunc kernel
+      is REACHED on aarch64 and slower than the autovectorised scalar loop,
+      so its deletion would be a ~1.3x win on the shipped aarch64 path — one
+      cfg-arm + one fn once taken, recorded here as the measured follow-up.
+      The x86_64 `avx2_cfg` bar-skips stay as they were (x86_64-only); on
+      aarch64 there was never a defect, and now there are figures where there
+      were none.
 
 ## Non-goals
 
