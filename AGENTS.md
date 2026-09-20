@@ -3185,7 +3185,12 @@ else happening to be watching the process table.
 (quantization, compression, any bit-changing transform) gates on
 **deployed-path behavior — per-family, conditional retention**, not on
 bit-identity or aggregate perplexity alone: aggregate perplexity can be flat
-while family-conditional behavior flips. (Full rule + confirmations: HISTORY.md.)
+while family-conditional behavior flips. External confirmation (arXiv
+2609.15504, Orthrus repro — riir-clippy walk #9): under BF16, "lossless"
+speculative decoding exact-matches the AR trajectory on only 43–45% of 1,190
+prompts (FP32 restores 100%) while downstream lm-eval aggregates show no
+systematic degradation — aggregate metrics flat while per-prompt behavior
+flips, this rule's exact failure shape. (Full rule + confirmations: HISTORY.md.)
 
 **UQ-bearing primitive GOAT gate extension (the "Report the Floor" rule,
 Research 322 / Plan 340):** any primitive claiming a probability
