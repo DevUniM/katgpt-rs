@@ -8001,7 +8001,6 @@ anything failing.
 Full record, with the before/after table, the per-repo cross-repo read and the
 four perturbation canaries: `.docs/10_audits/cfg_gated_silent_zero_pass.md`
 §"The SECOND spelling". Fix commits `4e2f28f2d` · `6399faf69`.
-```
 
 ## Issue 860 (2026-09-20) — `successor_density_critic`: tabular discounted count-ratio goal-critic: CLOSED
 
@@ -8025,8 +8024,8 @@ riir-ai Issue 991 lane (b) landed `goal_salience` (opt-in), which forwards
 `katgpt-core/successor_density_critic` in `riir-engine/Cargo.toml` (verified
 by grep at close, not inherited from prose), consumer code at
 `riir-engine/src/cgsp_runtime/goal_salience.rs` + `riir-games` swarm, GOAT
-mechanism-gate Bench 949 (6.3× first-reach) + QUEST-WORLD promotion-gate A/B
-Bench 950. riir-train Plan 413's tabular arm remains that repo's own lane at
+mechanism-gate riir-ai Bench 949 (6.3× first-reach) + QUEST-WORLD promotion-gate A/B
+riir-ai Bench 950. riir-train Plan 413's tabular arm remains that repo's own lane at
 adoption. The feature **stays opt-in** as written: promotion rides the
 consumer lanes, and riir-ai's promotion-to-default is production-host-gated
 (owner). Catalog §119; bench `bench_818_successor_density_critic_goat`.
