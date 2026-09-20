@@ -200,10 +200,22 @@ The pre-registered prediction held exactly: on a deterministic forward, correctn
 function of the readout and re-read samples are conditionally independent of it given the
 readout — the M3 gate (H1 > τ → 4 reads) buys error BARS, never discrimination, and on this
 fixture it fires 88–100% of the time (mean reads 3.6–4.0) for a strictly worse ranking signal.
-The control-arm logic extends to the reference by the same argument UNLESS its per-read
-forwards carry genuine stochasticity (diffusion noise per step) — the reference-side proxy
-re-run (persisting per-item answers + first-read H1 + agreement; data-spec in §8's note)
-remains the optional follow-up and is not promotion-blocking.
+**The control-arm logic does NOT extend to the reference — settled by code read (fork head
+`ceb8eebf`, `structured_server.py`):** the reference's re-read is NOT a resample of a fixed
+distribution — `build_canvas` seeds each free slot with `rng.randrange(VOCAB)` from a per-read
+seed (`read_many` passes `seed + k*7919`), so every re-read is a **forward from a different
+random noise initialization** (the diffusion noise draw; the header's own words: "one
+distribution per question, from one denoise step over a seeded canvas, averaged over a few
+noise draws"). Between-read agreement on the reference therefore measures **basin variance
+under noise re-init that no single read can see** — their auto policy is sound on its side,
+and our T5 result stands as the deterministic member of the family (mask-conditioned reads;
+our fixture's mask-corruption training puts random-token slots out of distribution, so the
+noise-draw variant is not a drop-in for `structured_read`). Directional support from the §8
+rows (n=32, anecdote grade): between-draw stderr is real exactly in the gated band (reads=4:
+p_want 0.10–0.78, stderr 0.03–0.10; reads=1: p_want ≈ 0.997, no variance) and the
+highest-stderr item (0.097) is a true miss. A decisive reference-side measurement needs a
+~100-item corpus (authoring effort) — routed to the riir-clippy Issue 125 lane or a future
+session; not promotion-blocking.
 
 **The genuinely open sub-question resolved by width:** maxprob BEATS entropy on wide option
 sets (arm B: Δ CI [+0.0151, +0.0262] — tail mass over many near-zero options dilutes entropy);
