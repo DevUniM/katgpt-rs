@@ -305,6 +305,22 @@ fn trajectory_q(dz: &dyn UgcDenoiser, z: &[usize], u: &[f32], scratch: &mut UgcS
     q_total
 }
 
+/// Debug-observability gate for `estimate_interval` (Issue 861).
+///
+/// Reads `UGC_DEBUG` ONCE via `OnceLock` — the `tpr::kill_switch` pattern.
+/// The per-call `std::env::var` this replaces was debug-profile-only but
+/// heap-allocated on every `estimate_interval` call on Windows/MSVC (the
+/// env-var NAME is converted to a UTF-16 `Vec<u16>` for the W-series Win32
+/// API): exactly 1 allocation per call, invisible on Unix where `getenv`
+/// does not allocate — so the Issue-664 G4 PASS held on macOS/aarch64 while
+/// `ugc_alloc_check` failed 50/50 on this Windows box. Steady-state after
+/// the one-time read is a plain atomic load, zero-allocation everywhere.
+#[cfg(debug_assertions)]
+fn ugc_debug_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("UGC_DEBUG").is_ok())
+}
+
 /// T1 — the paper's tail-robust dyadic interval estimate (Prop 2, Eq 33/34).
 ///
 /// `eta` ∈ (0,1) is the failure probability. `m` ≥ 2 samples. Moment order
@@ -350,7 +366,7 @@ pub fn estimate_interval(
     let b_alpha = mean_q_r.sqrt().max(1e-9); // r = α/2 = 2
     let tau = (q - p) as f64 * b_alpha * (7.0 * log_term / moment_denom).sqrt();
     #[cfg(debug_assertions)]
-    if std::env::var("UGC_DEBUG").is_ok() {
+    if ugc_debug_enabled() {
         let raw_mean = scratch.q_stats.iter().sum::<f64>() / m as f64;
         let raw_max = scratch.q_stats.iter().cloned().fold(0.0f64, f64::max);
         eprintln!(
