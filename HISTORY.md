@@ -11,6 +11,49 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-20 — the x86_64 execution matrix's first full run since 09-16 (354 commits of drift): 11,344 assertions PASSED, and one more load-flipped bar caught by execution
+
+**Status: RECORD 2026-09-20 · matrix run at `7f10d4b7` · repair in this commit.**
+
+The matrix had not run since ~2026-09-16 while develop moved 354 commits —
+including the Bench 816/817/818 (structured reads + successor-density-critic
+GOAT, the goal_salience substrate) and 841/843 landings. Full run, alone on a
+quiet box (23:30, endpoint samples 16.6/17.6 GiB avail):
+
+- Cells 1–7 (lib, `--all-features`, debug, `+avx2`): all green — katgpt-attn
+  440 · katgpt-core 5136 · katgpt-dec 298 · katgpt-pruners 3025 · katgpt-rs
+  577 · katgpt-tokenizer 74 · katgpt-types 266. Every floor cleared; the
+  counts have roughly doubled since the floors were set — floors fire
+  downward only, by design.
+- Cell 8 (root `--tests --release`, default features, `+avx2`): 223 targets,
+  1528 passed, 1 failed → **`bench_105_gdn2_goat::goat_6_context_scaling_flat_o1`
+  PASSED-ALONE 3/3** (spread 0.306 against the 0.30 bar in-cell). 0 confirmed
+  failures, 0 pinned rows — the membership set stays empty.
+
+GOAT 6 is the fourth member of the Issue-833 class found by execution rather
+than census — the same file's GOAT 2 was the third. The shape: four positions
+`[1, 8, 64, 128]`, each measured in ONE sequential 2000-iter window, then
+`(max−min)/mean < 0.30` asserted; load drift between windows lands on single
+positions (here 0.306 — 2% over). Seeded RNG (42), no temp paths: the
+adjudication's two non-latency classes excluded, pure sequential-window
+sensitivity.
+
+**Repair** (this commit): `tests/common/ab_timing.rs` gains `best_of_arms` —
+the N-arm composition of the module's two defenses, which neither existing
+primitive covers (`best_of_us` samples one arm back-to-back, so a drift
+covering that arm's whole window lands entirely on it; `ab_median_ratio`
+interleaves but takes exactly two arms and reduces to a ratio). Round-robin
+sampling so adjacent samples from different arms share a load window,
+per-arm MINIMUM (contention only ever adds time), loud-zero per arm. GOAT 6's
+asserted GDN2 side migrates to it (4 states pre-built after prefill+warmup,
+5 rounds × 2000 iters, one warmup window); the flat-KV side stays sequential —
+its claim is structural growth > 1.5× with ~67% measured slack, load-immune
+per the 833 four-axis read. Measured alone after the repair: spreads
+0.038 / 0.051 / 0.102 across 3 runs against the 0.30 bar — the sequential
+form's razor is gone. `cargo clippy --test bench_105_gdn2_goat -- -D warnings`
+clean (the healer took the doc_markdown half; the needless_range_loop shape
+was manual — the index feeds a callback, not a slice read).
+
 ## 2026-09-20 — Issue 861 CLOSED: the ugc_alloc_check Windows G4 alloc was a per-call env read — and the issue's own isolation table was wrong
 
 **Status: CLOSED (RESOLVED) 2026-09-20, fix in `1ec9b812`; full issue text: git history.**

@@ -252,3 +252,64 @@ where
 
     best_ns as f64 / 1000.0
 }
+
+/// Interleaved best-of-N wall time in microseconds for **N arms compared in
+/// absolute terms** (a flatness/spread claim over more than two things).
+///
+/// Neither existing primitive covers this shape: [`best_of_us`] samples ONE
+/// arm's closure back-to-back, so a load drift covering that arm's whole
+/// sampling window lands entirely on it — the exact defect that flipped
+/// `bench_105_gdn2_goat` GOAT 6 in the `x86_64` execution matrix (2026-09-20:
+/// spread 0.306 against a 0.30 bar in-cell, 3/3 alone; Issue 833's class,
+/// found by execution again). [`ab_median_ratio`] interleaves but takes
+/// exactly two arms and reduces to a ratio. A K-arm spread needs both halves
+/// composed: round-robin sampling so adjacent samples from different arms
+/// share a load window (interleaving — a drift moves all arms together
+/// instead of the one that happened to be sampled under it), and the per-arm
+/// MINIMUM, because contention can only ever add time — the smallest of N
+/// samples is the closest observation of the machine's true cost.
+///
+/// The closure owns the clock per sample exactly as [`best_of_us`] does, and
+/// receives the arm index. Arms keep their own state resident across rounds
+/// (recurrent caches, prebuilt contexts) — the caller builds one state per
+/// arm before calling, exactly as the one-arm-per-window form did.
+///
+/// # Panics
+///
+/// `arms == 0` or `iters == 0`, or ANY arm whose every sample measured 0 ns —
+/// a vanished arm would read as the fastest arm and pass a flatness gate on
+/// work that never ran (the [`best_of_us`] loud-zero defense, per arm).
+pub fn best_of_arms<F>(arms: usize, warmup: usize, iters: usize, mut timed: F) -> Vec<f64>
+where
+    F: FnMut(usize) -> Duration,
+{
+    assert!(arms > 0, "best_of_arms needs arms > 0");
+    assert!(iters > 0, "best_of_arms needs iters > 0");
+
+    for _ in 0..warmup {
+        for a in 0..arms {
+            timed(a);
+        }
+    }
+
+    let mut best_ns = vec![u128::MAX; arms];
+    for _ in 0..iters {
+        for (a, best) in best_ns.iter_mut().enumerate() {
+            let ns = timed(a).as_nanos();
+            if ns < *best {
+                *best = ns;
+            }
+        }
+    }
+
+    for (a, &ns) in best_ns.iter().enumerate() {
+        assert!(
+            ns > 0,
+            "timing instrument failure: arm {a} measured 0 ns on every one of {iters} \
+             samples (work eliminated by the optimiser, or below timer resolution) — \
+             raise the work per call and consume the result",
+        );
+    }
+
+    best_ns.into_iter().map(|ns| ns as f64 / 1000.0).collect()
+}

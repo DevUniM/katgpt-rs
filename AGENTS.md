@@ -1426,7 +1426,12 @@ zero when the optimiser deletes an arm.
 could see; Issue 831 converted a 9th by walking into it; Issue 833's
 `bench_105_gdn2_goat.rs` GOAT 2 was caught by
 `scripts/x86_64_execution_matrix.sh` reporting it PASSED-ALONE (0.844 against a
-0.90 bar in cell 8, then 3/3 alone). **None of the three was found by a
+0.90 bar in cell 8, then 3/3 alone) — and its GOAT 6 joined it on 2026-09-20,
+the same catch by the same instrument (spread 0.306 against a 0.30 bar, 3/3
+alone), this time the N-arm FLATNESS shape: four positions each measured in
+one sequential window, repaired with the shared module's new `best_of_arms`
+primitive (round-robin interleave + per-arm minimum; alone spreads
+0.038–0.102). **None of the four was found by a
 census** — the treatment has existed for months and its members are found by
 tripping over them (Issue 834).
 

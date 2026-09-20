@@ -349,7 +349,16 @@ fn goat_6_context_scaling_flat_o1() {
     let positions: [usize; 4] = [1, 8, 64, 128];
 
     // ── GDN2 scaling (should be flat O(1) per step) ──
-    let mut gdn2_us_per_step: Vec<f64> = Vec::new();
+    // Issue 833's class, found by execution (x86_64 matrix cell 8, 2026-09-20:
+    // spread 0.306 against the 0.30 bar in-cell, 3/3 alone) — the original
+    // loop measured each position in ONE sequential window, so load drift
+    // between windows landed on single positions. Treatment: the ab_timing
+    // defenses composed for N arms — round-robin interleave (adjacent samples
+    // share a load window) + the per-arm minimum (contention only ever adds
+    // time). The GOAT 2 repair in this file, one arm-count over.
+    const SPREAD_ROUNDS: usize = 5;
+
+    let mut gdn2_states: Vec<(ForwardContext, MultiLayerGdn2Cache)> = Vec::new();
     for &target_pos in &positions {
         // Prefill once to reach target_pos
         let mut ctx = ForwardContext::new(&config);
@@ -366,18 +375,28 @@ fn goat_6_context_scaling_flat_o1() {
                 &mut ctx, &weights, &mut cache, 0, target_pos, &config,
             ));
         }
-
-        // Measure ONLY the single step at target_pos (cache already has state)
-        let start = Instant::now();
-        for _ in 0..single_step_iters {
-            black_box(forward_gdn2(
-                &mut ctx, &weights, &mut cache, 0, target_pos, &config,
-            ));
-        }
-        let elapsed = start.elapsed();
-        let us_per_step = elapsed.as_micros() as f64 / single_step_iters as f64;
-        gdn2_us_per_step.push(us_per_step);
+        gdn2_states.push((ctx, cache));
     }
+
+    // Measure ONLY the single step at target_pos (each state keeps its
+    // position's recurrent state resident across rounds — the per-call
+    // semantics are unchanged, only the sampling order interleaves).
+    let gdn2_us_per_step: Vec<f64> = ab_timing::best_of_arms(
+        positions.len(),
+        1,
+        SPREAD_ROUNDS,
+        |arm| {
+            let (ctx, cache) = &mut gdn2_states[arm];
+            let target_pos = positions[arm];
+            let start = Instant::now();
+            for _ in 0..single_step_iters {
+                black_box(forward_gdn2(
+                    ctx, &weights, cache, 0, target_pos, &config,
+                ));
+            }
+            start.elapsed()
+        },
+    );
 
     // ── Flat KV scaling (should grow linearly with position) ──
     let mut flat_us_per_step: Vec<f64> = Vec::new();
