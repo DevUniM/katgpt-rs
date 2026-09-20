@@ -558,6 +558,7 @@ pub fn d2f_decode_block_with_prompt_with(
         screener,
         rng,
         None,
+        None,
     )
 }
 
@@ -595,11 +596,55 @@ pub fn d2f_decode_block_with_prompt_with_q(
         screener,
         rng,
         Some(q_out),
+        None,
     )
 }
 
+/// [`d2f_decode_block_with_prompt_with`] + per-position unmask-step capture
+/// (Plan 602 T1.3, `decode_order_metrics`).
+///
+/// Returns the block result plus π: one `u32` per denoised position holding
+/// the **denoise step at which the position committed**, or `u32::MAX`
+/// (`katgpt_core::dllm::UNMASKED_NEVER`) when it never committed. Ties are
+/// parallel commits within one step (block-parallel decode — exactly the
+/// non-AR behavior the AR-ness instruments measure). Consume with
+/// `katgpt_core::dllm::{local_ar_ness, global_ar_ness}`.
+///
+/// Allocating convenience wrapper for the instrumentation lane — the
+/// G4-sensitive hot loop keeps [`d2f_decode_block_with_prompt_with`]
+/// (the q-capture posture: out-buffers over result fields).
+#[cfg(feature = "decode_order_metrics")]
+pub fn d2f_decode_block_with_unmask_steps(
+    dctx: &mut D2fContext,
+    weights: &TransformerWeights,
+    config: &Config,
+    decode_config: &D2fDecodeConfig,
+    prompt: &[usize],
+    pruner: &dyn ConstraintPruner,
+    screener: &dyn ScreeningPruner,
+    rng: &mut Rng,
+) -> (D2fBlockResult, Vec<u32>) {
+    let seq_len = (prompt.len() + decode_config.block_size).min(config.block_size);
+    let block_positions = seq_len - prompt.len();
+    let mut pi = vec![u32::MAX; block_positions];
+    let result = d2f_decode_block_prompt_q_core(
+        dctx,
+        weights,
+        config,
+        decode_config,
+        prompt,
+        pruner,
+        screener,
+        rng,
+        None,
+        Some(&mut pi),
+    );
+    (result, pi)
+}
+
 /// Shared core of the D2F block decode, optionally capturing per-position
-/// proposal laws (Issue 587).
+/// proposal laws (Issue 587) and/or per-position unmask steps (Plan 602
+/// T1.3 — both out-params follow the same commit-time capture contract).
 #[allow(clippy::too_many_arguments, clippy::needless_option_as_deref)]
 fn d2f_decode_block_prompt_q_core(
     dctx: &mut D2fContext,
@@ -611,6 +656,7 @@ fn d2f_decode_block_prompt_q_core(
     screener: &dyn ScreeningPruner,
     rng: &mut Rng,
     mut q_out: Option<&mut [f32]>,
+    mut pi_out: Option<&mut [u32]>,
 ) -> D2fBlockResult {
     // Standalone decode — no persistent KV across calls
     dctx.committed_len = 0;
@@ -785,6 +831,16 @@ fn d2f_decode_block_prompt_q_core(
             if chosen_prob >= tau_conf && chosen_token != mask {
                 tokens[p] = chosen_token;
                 n_confident += 1;
+                // Plan 602 T1.3: record the denoise step at which this
+                // position committed (π). Same timing contract as the q
+                // capture below — commit time is the last moment this
+                // position is visited.
+                if let Some(pi) = pi_out.as_deref_mut() {
+                    let idx = p - block_start;
+                    if idx < pi.len() {
+                        pi[idx] = step as u32;
+                    }
+                }
                 // Capture the draft-time proposal law q for this position
                 // (Issue 587, ExactQ policy). Must happen at commit time:
                 // once committed the position is never revisited, so this
@@ -825,6 +881,17 @@ fn d2f_decode_block_prompt_q_core(
         for row in 0..q_rows.min(denoising_positions) {
             if tokens[block_start + row] == mask {
                 write_q_point_mass(q, row, vocab, mask);
+            }
+        }
+    }
+
+    // Plan 602 T1.3: never-committed positions keep the sentinel — the
+    // contract is total regardless of caller-side buffer init (mirrors the
+    // q point-mass fill above).
+    if let Some(pi) = pi_out.as_deref_mut() {
+        for row in 0..pi.len().min(denoising_positions) {
+            if tokens[block_start + row] == mask {
+                pi[row] = u32::MAX;
             }
         }
     }

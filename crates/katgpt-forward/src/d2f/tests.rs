@@ -484,3 +484,62 @@ fn test_multistep_schedule_changes_blend_coefficients() {
         assert!(t < config.vocab_size);
     }
 }
+
+/// Plan 602 T1.3: π emission from the D2F block-decode core.
+#[cfg(feature = "decode_order_metrics")]
+#[test]
+fn test_decode_block_unmask_steps() {
+    let config = Config::micro_dllm();
+    // τ = 0: every masked position with a live softmax commits on the step
+    // it is first sampled — deterministic regardless of weight draw.
+    let decode_config = D2fDecodeConfig {
+        denoise_steps: 4,
+        confidence_threshold: 0.0,
+        ..D2fDecodeConfig::with_block_size(4)
+    };
+    let mut rng = Rng::new(42);
+
+    let weights = TransformerWeights::new(&config, &mut rng);
+    let mut ctx = D2fContext::new(&config);
+
+    let (result, pi) = d2f_decode_block_with_unmask_steps(
+        &mut ctx,
+        &weights,
+        &config,
+        &decode_config,
+        &[],
+        &NoPruner,
+        &NoScreeningPruner,
+        &mut rng,
+    );
+
+    assert_eq!(pi.len(), decode_config.block_size);
+    // τ = 0 ⇒ the whole block commits at step 0: a fully parallel π.
+    assert_eq!(pi, vec![0u32; 4]);
+    assert_eq!(result.state, D2fBlockState::FullyActivated);
+    // The parallel-tie shape reads as anti-AR by contract (ties discordant).
+    assert_eq!(katgpt_core::dllm::global_ar_ness(&pi), 0.0);
+    assert_eq!(katgpt_core::dllm::local_ar_ness(&pi), 0.0);
+
+    // τ = 1.1 (unreachable): nothing commits — every entry keeps the
+    // sentinel and the metrics are NaN (the empty measurement is visible,
+    // never a silent 0.5).
+    let strict_config = D2fDecodeConfig {
+        denoise_steps: 2,
+        confidence_threshold: 1.1,
+        ..D2fDecodeConfig::with_block_size(4)
+    };
+    let (result_never, pi_never) = d2f_decode_block_with_unmask_steps(
+        &mut ctx,
+        &weights,
+        &config,
+        &strict_config,
+        &[],
+        &NoPruner,
+        &NoScreeningPruner,
+        &mut Rng::new(42),
+    );
+    assert_eq!(pi_never, vec![u32::MAX; 4]);
+    assert!(katgpt_core::dllm::global_ar_ness(&pi_never).is_nan());
+    assert_ne!(result_never.state, D2fBlockState::FullyActivated);
+}

@@ -147,6 +147,17 @@ lthash = []
 # Bench gate (≥4× the scalar loop at 8 lanes).
 bf16_simd = []
 
+# decode_order_metrics (Plan 602, 2026-09-20): decode-order AR-ness
+# instruments for the DLM lane — local/global AR statistics (ALR/AGR) over
+# any decode trajectory π (per-position unmask step, u32::MAX sentinel for
+# never-committed), plus a windowed O(L·W) AGR variant for streaming
+# canvases. Distilled from dQwen3.5 hybrid-attention DLM (arXiv:2609.20751,
+# Research 575). Pure fns, zero-alloc, no new deps. Consumer: katgpt-forward
+# π-logging (D2F block decode + SW-SetDLM decode paths), which forwards this
+# same feature. OPT-IN pending the Phase-3 G3 GOAT (predictor-chosen
+# (w, block size) ≥ fixed at matched NFE) — promotion NOT claimed.
+decode_order_metrics = []
+
 # graph_stable_pool (Issue 800 Arm C, 2026-09-16): the append-only + free-list
 # + never-invalidate slot pool — the DRY extraction of a contract shipping
 # four times under four names: katgpt-kv radix_prefix nodes

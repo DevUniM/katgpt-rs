@@ -2831,6 +2831,11 @@ pub mod trigger_gate; // Compute-tier trigger gate — always-on
 // Feature-gated (mirror root feature names):
 #[cfg(feature = "critical_interval_gate")]
 pub mod dllm_solver; // Discrete Critical Interval Solver Switching (Plan 222)
+// Plan 602 (2026-09-20): decode-order AR-ness instruments for the DLM lane
+// (ALR/AGR over per-position unmask steps). katgpt-forward's π-logging
+// forwards this same feature.
+#[cfg(feature = "decode_order_metrics")]
+pub mod dllm;
 #[cfg(feature = "modality_pruned_load")]
 pub mod pipeline_pruner; // Pipeline Pruner — modality-aware inference pipeline selection (Plan 227 Phase 3)
 // ── Phase 12 T4.3: folder moves from katgpt-rs/src/.

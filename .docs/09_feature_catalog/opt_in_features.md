@@ -4187,3 +4187,26 @@ discipline) · G3 154/154 existing suite green · G4 zero allocs across 32
 reads (canary-armed, `--release --features structured_reads,alloc_tracking`).
 Opt-in POC — the accuracy axis rides the 4090 reference run (Issue 859 T1,
 deferred on sibling GPU occupancy); promotion decision after T1 + T5.
+
+## 118. decode_order_metrics — decode-order AR-ness instruments for the DLM lane (Plan 602)
+
+Modelless decode-order statistics distilled from dQwen3.5 hybrid-attention
+diffusion LMs ([arXiv:2609.20751](https://arxiv.org/abs/2609.20751),
+Research 575): local/global AR-ness (ALR/AGR) over a decode trajectory π,
+where `π[i]` is the unmask step of position `i` (denoise step for D2F,
+forward-pass index for SW-SetDLM; `u32::MAX` sentinel = never committed).
+Ties count discordant — parallel unmask is exactly the non-AR behavior the
+instrument detects (a deliberate divergence from Kendall tau-b, documented
+in the module contract). Plus a windowed O(L·W) AGR variant for streaming
+canvases (incremental slide, pinned identities: `w=2` ≡ ALR, `w≥L` ≡ AGR).
+
+Phase 1 (landed): the pure-metrics module
+`crates/katgpt-core/src/dllm/arness.rs` (zero-alloc, no deps, 13 known-answer
+tests incl. hand-computed block-swap and the parallel-block anti-AR shape) +
+π-logging in katgpt-forward — `d2f_decode_block_with_unmask_steps` (the
+Issue-587 q_out out-param posture, commit-time capture) and
+`SetDiffusionResult::unmask_steps` with `local_ar_ness()`/`global_ar_ness()`
+readouts. Phase 2 (anchor scoring + schedule integration) and Phase 3 (bench
+cross-tab + the G3 GOAT: predictor-chosen (w, block size) ≥ fixed at matched
+NFE) pending — **promotion NOT claimed**; stays opt-in either way until the
+G3 verdict.

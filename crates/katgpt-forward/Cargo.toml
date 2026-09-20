@@ -346,6 +346,14 @@ binary_plasma = ["katgpt-core/binary_plasma"]
 # `rmsnorm`, `katgpt_core::simd::*`) resolve through existing deps.
 set_diffusion = []
 
+# Decode-order π-logging (Plan 602 T1.3, 2026-09-20): the D2F block-decode
+# core and the SW-SetDLM decode loop emit per-position unmask steps
+# (trajectory π) for the AR-ness instruments — `d2f_decode_block_with_unmask_steps`
+# + `SetDiffusionResult::unmask_steps`. Forwards the pure-metrics module
+# (`katgpt_core::dllm`) so the emitters + consumers share one sentinel.
+# OPT-IN pending the Phase-3 G3 GOAT.
+decode_order_metrics = ["katgpt-core/decode_order_metrics"]
+
 # Weaver inference-only logit corrector (Issue 131, Plan 433). Gates the
 # `dflash_predict_with_weaver` wrapper that combines DFlash predict + Weaver
 # marginal correction in a single call. Forwards to katgpt-speculative so the

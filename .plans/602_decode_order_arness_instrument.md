@@ -1,6 +1,6 @@
 # Plan 602: Decode-Order AR-ness Instrument + Anchor Scoring for the DLM Lane
 
-**Status:** Active — Phase 1 not started
+**Status:** Active — Phase 1 LANDED 2026-09-20 (T1.1+T1.2+T1.3); Phase 2 + Phase 3 pending
 **Date:** 2026-09-20
 **Research:** [katgpt-rs/.research/575_dQwen3.5_Hybrid_Attention_DLM.md](../.research/575_dQwen3.5_Hybrid_Attention_DLM.md)
 **Source paper:** [arXiv:2609.20751](https://arxiv.org/abs/2609.20751) — dQwen3.5: Hybrid-Attention Diffusion Language Models
@@ -17,9 +17,12 @@ Ship the paper's decode-order instruments modellessly over signals the workspace
 
 ### Tasks
 
-- [ ] **T1.1** `katgpt-core` new module `dllm/arness.rs` behind feature `decode_order_metrics`: `local_ar_ness(&[u32]) -> f32` (ALR — adjacent-position order fraction) + `global_ar_ness(&[u32]) -> f32` (AGR — all-pairs concordance) + a windowed O(L·W) AGR variant for streaming canvases. Pure fns, zero-alloc, fixed-size scratch.
-- [ ] **T1.2** Known-answer tests: identity π → (1.0, 1.0); reversed → (0.0, 0.0); seeded uniform-random π → E ≈ 0.5 on both; block-swap pattern → hand-computed values (the paper's block-decoding regime: AGR → ~0.99, ARL ~0.7).
-- [ ] **T1.3** π-logging: d2f block decode (`src/speculative/d2f.rs`) and SetDLM decode paths emit per-position unmask step π into the bench harness (small logging change behind the same feature — the only new surface the panel flagged).
+- [x] **T1.1** `katgpt-core` new module `dllm/arness.rs` behind feature `decode_order_metrics`: `local_ar_ness(&[u32]) -> f32` (ALR — adjacent-position order fraction) + `global_ar_ness(&[u32]) -> f32` (AGR — all-pairs concordance) + a windowed O(L·W) AGR variant for streaming canvases. Pure fns, zero-alloc, fixed-size scratch.
+      **LANDED 2026-09-20**: ties-count-discordant contract (parallel unmask is the non-AR behavior — deliberate Kendall-tau-b divergence, documented); `UNMASKED_NEVER = u32::MAX` sentinel with pair-exclusion semantics; degenerate input → NaN (never a silent 0.5); windowed variant via incremental slide (O(L·W), no scratch needed — the "fixed-size scratch" constraint is satisfied trivially; pinned identities `w=2 ≡ ALR`, `w≥L ≡ AGR`).
+- [x] **T1.2** Known-answer tests: identity π → (1.0, 1.0); reversed → (0.0, 0.0); seeded uniform-random π → E ≈ 0.5 on both; block-swap pattern → hand-computed values (the paper's block-decoding regime: AGR → ~0.99, ARL ~0.7).
+      **LANDED 2026-09-20**: 13 tests — identity/reversed/degenerate-NaN/two-element/ties/`block_swap_hand_computed` (6/7, 3/7)/`parallel_block_decode_is_anti_ar` (0, 0)/`random_permutation_is_near_half` (seeded xorshift Fisher–Yates @ L=1024, 6σ band)/sentinel-exclusion/windowed≡global @ full width/windowed≡ALR @ w=2/windowed mid-width hand-computed (2/3)/windowed skips all-sentinel windows.
+- [x] **T1.3** π-logging: d2f block decode (`src/speculative/d2f.rs`) and SetDLM decode paths emit per-position unmask step π into the bench harness (small logging change behind the same feature — the only new surface the panel flagged).
+      **LANDED 2026-09-20**: katgpt-forward (the root d2f.rs is a re-export shim — the real loops live there). `d2f_decode_block_prompt_q_core` gained `pi_out: Option<&mut [u32]>` (the Issue-587 q_out posture — commit-time capture, sentinel end-fill, unconditional param so ONE code path compiles in both feature states) surfaced via cfg-gated `d2f_decode_block_with_unmask_steps -> (D2fBlockResult, Vec<u32>)`; `SetDiffusionResult` gained cfg-gated `unmask_steps` (pass index at commit) + `local_ar_ness()`/`global_ar_ness()` readouts. 4 emission tests: block-causal strong signal → π=[0,0,1,1] exact + ALR 1/3 + AGR 2/3; never-committed → all-sentinel + NaN metrics; partial-commit bounds; d2f τ=0 → fully-parallel π=[0,0,0,0] (anti-AR by tie contract) + τ=1.1 → all-sentinel. Validation: core 2076/2063 (on/off), forward 131/150/170 (default/dllm+dom/sd+dom), clippy -D warnings clean at every state, docs gate 33/33 (README feature counts 623→624 at 5 claim sites + opt-in catalog §118).
 
 ## Phase 2 — Anchor scoring + schedule integration
 
