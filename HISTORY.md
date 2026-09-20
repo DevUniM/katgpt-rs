@@ -11,6 +11,57 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-20 — Issue 861 CLOSED: the ugc_alloc_check Windows G4 alloc was a per-call env read — and the issue's own isolation table was wrong
+
+**Status: CLOSED (RESOLVED) 2026-09-20, fix in `1ec9b812`; full issue text: git history.**
+
+`ugc_alloc_check` (the Issue-664 G4 gate) failed 50/50 on this Windows/MSVC
+box: exactly 1 heap allocation per loop iteration, debug-only, release-clean,
+green on macOS. The filing session's characterization table had ruled out
+`estimate_interval` ("isolated out") and named the sampler as the failing
+path, with `Backtrace::force_capture()` in the allocator as the prescribed
+next step.
+
+That instrument settled it in one run — and settled it the OTHER way. The
+armed-window allocator (disarm before capture — `force_capture` allocates
+internally, recursion hazard) caught the site directly:
+
+```
+19: std::env::var::<&str>
+20: katgpt_core::ugc_schedule::estimate_interval
+        at src/ugc_schedule.rs:353
+15-17: to_u16s -> Vec::with_capacity -> getenv   (Layout { size: 20, align: 2 })
+```
+
+Root cause: `#[cfg(debug_assertions)] if std::env::var("UGC_DEBUG").is_ok()`
+— a debug print gated on an env var read **per call inside the hot path**. On
+Windows the env-var NAME is converted to a UTF-16 `Vec<u16>` for the
+W-series Win32 API: one heap allocation per call, every call. On Unix
+`getenv` does not allocate — which is exactly why the Issue-664 G4 PASS held
+on macOS/aarch64 while the same binary failed 50/50 here. **A single armed
+sampler call allocates ZERO** — the filing's "sampler-only loop failed 50"
+row was wrong (its experiment cannot be reconstructed; the backtrace is the
+evidence), a live instance of the repo's own rule that a characterization
+row is a claim, not a fact, until the instrument pins it.
+
+Fix: `ugc_debug_enabled()` — the env read cached in a `OnceLock<bool>`, the
+exact shape `tpr::kill_switch` already ships (the only other hot-path env
+read in the crate; grep found one further `env::var` site and it is
+`#[cfg(test)]`-scoped). Steady state after the one-time read is a plain
+atomic load — zero-allocation everywhere, both profiles, both platforms.
+`UGC_DEBUG=1` still prints the interval diagnostics in debug builds.
+
+Verified on this box: `ugc_alloc_check` G4 = **0 allocations** (was 50) ·
+`ugc_664_poc` 12/12 · lib ugc tests 6 (default) + 12
+(`--features decode_order_metrics`) · clippy clean.
+
+Lesson (the third restatement of the repo's own posture rule, now on the
+alloc axis): **a debug-only logging gate is still code that runs on the
+measured profile** — and `std::env::var` is allocation-shaped on exactly one
+mainstream platform, which is the platform a third of this workspace's
+lanes never execute. Every env read that can sit inside a hot path takes the
+`OnceLock` form, not the per-call form.
+
 ## 2026-09-20 — Issue 859 CLOSED: Jev structured reads — POC GOAT + 4090 reference + T5 policy arm measured; promotion declined on layer posture (evidence-banked)
 
 **Status: CLOSED (RESOLVED) 2026-09-20, all tasks T0–T6 done; code + records in `72718f81` (cited post-rebase — the pre-rebase landing commit was `d1075311`, superseded when a sibling doc-sync push forced a rebase); full issue text: git history.**
