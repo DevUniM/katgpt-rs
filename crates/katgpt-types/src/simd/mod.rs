@@ -96,16 +96,17 @@ use sparse::scalar_sparse_dot_f32;
 // after the file → folder split. Existing call sites (e.g. `simd::simd_dot_f32`,
 // `simd::SimdLevel`) continue to resolve without modification.
 pub use activations::{
-    cephes_exp_scalar, fast_exp, fast_sigmoid, fast_tanh, logsumexp_parts, simd_exp_inplace,
-    simd_exp_sum_inplace, simd_reciprocal_inplace, simd_sigmoid_inplace,
-    simd_sigmoid_tanh_clamp_inplace, simd_tanh_inplace,
+    cephes_exp_scalar, exact_sigmoid, exact_sigmoid_f64, fast_exp, fast_sigmoid, fast_tanh,
+    logsumexp_parts, simd_exp_inplace, simd_exp_sum_inplace, simd_reciprocal_inplace,
+    simd_sigmoid_inplace, simd_sigmoid_tanh_clamp_inplace, simd_tanh_inplace,
 };
 pub use argmax::simd_argmax_f32;
 pub use dot::{
-    simd_dot_f16_f16, simd_dot_f16_f32, simd_dot_f32, simd_fma_row, simd_matmul_f16_f16_rows,
-    simd_matmul_f16_f16_rows_parallel, simd_matmul_f16_f32_rows, simd_matmul_f16_f32_rows_parallel,
-    simd_matmul_relu_rows, simd_matmul_rows, simd_matmul_rows_batched, simd_matmul_rows_parallel,
-    simd_matvec, simd_outer_product_acc, simd_outer_product_acc_scaled,
+    dot_f32_ordered, simd_dot_f16_f16, simd_dot_f16_f32, simd_dot_f32, simd_fma_row,
+    simd_matmul_f16_f16_rows, simd_matmul_f16_f16_rows_parallel, simd_matmul_f16_f32_rows,
+    simd_matmul_f16_f32_rows_parallel, simd_matmul_relu_rows, simd_matmul_rows,
+    simd_matmul_rows_batched, simd_matmul_rows_parallel, simd_matvec, simd_outer_product_acc,
+    simd_outer_product_acc_scaled,
     simd_transpose_matvec_acc, simd_transpose_matvec_into,
 };
 pub use elementwise::{

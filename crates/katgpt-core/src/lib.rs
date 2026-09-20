@@ -30,9 +30,38 @@
 /// (Proposal 003 Phase 0.1) so the upcoming `katgpt-band` extraction doesn't
 /// drag a math utility into the band crate. Per the project rule: sigmoid,
 /// never softmax.
+///
+/// ⚠ This returns the APPROXIMATION. For committed-value paths that must not
+/// inherit it (consensus scoring, reward gates, replay-pinned values), use
+/// [`exact_sigmoid`] — the libm two-branch reference form.
 #[inline]
 pub fn sigmoid(x: f32) -> f32 {
     simd::fast_sigmoid(x)
+}
+
+/// Exact logistic sigmoid: the two-branch numerically stable form over libm
+/// `exp` — no Cephes polynomial, no ±40 saturation early-exit. The
+/// **bit-stable reference variant** of [`sigmoid`] for committed-value
+/// paths (consensus scoring, reward gates, replay-pinned values); the two
+/// differ on ~9% of `[-40, 40]` inputs and on every input past ±40, where
+/// [`sigmoid`] clamps to exactly `0.0`/`1.0` while the true value is a
+/// representable tiny/one-minus-tiny.
+///
+/// Always available — no feature gate (the [`crate::float_order`]
+/// ungated-math precedent; pure math, additive API, no existing call site
+/// rerouted). Per the project rule: sigmoid, never softmax.
+#[inline]
+pub fn exact_sigmoid(x: f32) -> f32 {
+    simd::exact_sigmoid(x)
+}
+
+/// [`exact_sigmoid`] in f64 — the form callers compute in when they narrow
+/// to f32 only at the end (riir-chain's congestion/forensic paths; Issue
+/// 156). Narrowing first and using the f32 variant would be a numerics
+/// change, not a delegation.
+#[inline]
+pub fn exact_sigmoid_f64(x: f64) -> f64 {
+    simd::exact_sigmoid_f64(x)
 }
 
 /// Noisy-OR span aggregation `1 − Π(1−kᵢ)`, direct product form.
