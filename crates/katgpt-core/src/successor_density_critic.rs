@@ -578,13 +578,10 @@ impl SuccessorDensityTable {
     #[must_use]
     pub fn p_successor(&self, s: u32, a: u32, g: u32) -> f32 {
         let x = self.score(s, a, g) as f64;
-        let sig = if x >= 0.0 {
-            1.0 / (1.0 + (-x).exp())
-        } else {
-            let e = x.exp();
-            e / (1.0 + e)
-        };
-        sig as f32
+        // Bench-844 substrate delegation (Issue 861) — f64 compute + narrow,
+        // the exact shape `exact_sigmoid_f64`'s doc names. Bit-identical to
+        // the pre-substrate inline form.
+        crate::exact_sigmoid_f64(x) as f32
     }
 
     /// The configuration the table was built under.
@@ -1048,6 +1045,9 @@ mod tests {
                     let p = t.p_successor(s, a, g);
                     assert!(p > 0.0 && p < 1.0, "p_successor({s},{a},{g}) = {p} out of (0,1)");
                     // Link identity: p == sigmoid(score) within f32 rounding.
+                    // The inline form is the INDEPENDENT ORACLE (Issue 861):
+                    // production delegates to `crate::exact_sigmoid_f64`; this
+                    // copy must stay inline or the assert becomes circular.
                     let x = t.score(s, a, g) as f64;
                     let sig = if x >= 0.0 {
                         1.0 / (1.0 + (-x).exp())

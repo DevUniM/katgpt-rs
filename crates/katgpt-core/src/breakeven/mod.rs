@@ -252,14 +252,11 @@ impl BreakevenTracker {
 // ---------------------------------------------------------------------------
 
 /// Standard sigmoid function. Use sigmoid (not softmax) per project conventions.
+/// Delegates to the Bench-844 substrate (Issue 861) — expression-identical
+/// two-branch f64 body, bit-identical by construction.
 #[inline]
 fn sigmoid(x: f64) -> f64 {
-    if x >= 0.0 {
-        1.0 / (1.0 + (-x).exp())
-    } else {
-        let ex = x.exp();
-        ex / (1.0 + ex)
-    }
+    crate::exact_sigmoid_f64(x)
 }
 
 // ---------------------------------------------------------------------------

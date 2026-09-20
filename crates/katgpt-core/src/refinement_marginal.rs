@@ -350,13 +350,9 @@ pub fn expected_escalation_cost(records: &[CoarseRecord]) -> f32 {
 #[inline]
 pub fn escalation_sigmoid(cost: f32, threshold: f32, sharpness: f32) -> f32 {
     let x = (cost - threshold) * sharpness;
-    // Numerically stable sigmoid (shared exponent shape either way).
-    if x >= 0.0 {
-        1.0 / (1.0 + (-x).exp())
-    } else {
-        let e = x.exp();
-        e / (1.0 + e)
-    }
+    // Bench-844 substrate delegation (Issue 861) — the pre-substrate body was
+    // expression-identical (shared exponent shape either way).
+    crate::exact_sigmoid(x)
 }
 
 #[cfg(test)]

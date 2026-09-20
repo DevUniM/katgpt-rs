@@ -95,14 +95,11 @@ pub fn log_reveal_odds(t: f32) -> f32 {
 }
 
 /// Inverse log-reveal-odds `r = σ(λ) = e^λ/(1+e^λ)` (numerically stable).
+/// Delegates to the Bench-844 substrate (Issue 861) — expression-identical
+/// body, bit-identical by construction.
 #[inline]
 pub fn inv_log_reveal_odds(lambda: f32) -> f32 {
-    if lambda >= 0.0 {
-        1.0 / (1.0 + (-lambda).exp())
-    } else {
-        let e = lambda.exp();
-        e / (1.0 + e)
-    }
+    crate::exact_sigmoid(lambda)
 }
 
 // ---------------------------------------------------------------------------

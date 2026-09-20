@@ -8072,8 +8072,13 @@ frozen legacy bodies (`f7eb85e4` + `b0b710e0`, then `7facc3cd`), green
 before AND after the flip; `consensus/congestion::inclusion_probability`
 refused-and-recorded — its `x < 0` domain is reachable through pub inputs
 and a consensus-path numerics change is its own decision. The ≥5 in-repo
-copies of the two-branch shape (salience/gate, breakeven,
-refinement_marginal, ugc_schedule, successor_density_critic) are a recorded
-follow-up, deliberately NOT refactored in the promotion unit. README
-showcase section landed with this row (the float_order surface set: README
-+ HISTORY; ungated primitives take no catalog row).
+copies of the two-branch shape were delegated by the recorded follow-up
+(Issue 861, executed 2026-09-21 — `salience/gate.rs`, `breakeven/mod.rs`,
+`refinement_marginal::escalation_sigmoid`, `ugc_schedule::
+inv_log_reveal_odds`, `successor_density_critic::p_successor`; the
+deliberately-not-delegated set — the link-identity TEST oracle, gate.rs's
+FMA-convention `dot_fma`, and riir-chain's congestion refusal — recorded in
+the issue, file removed at close, this row + the Bench-844 follow-up section
+are the record). README showcase section landed with this row (the
+float_order surface set: README + HISTORY; ungated primitives take no
+catalog row).

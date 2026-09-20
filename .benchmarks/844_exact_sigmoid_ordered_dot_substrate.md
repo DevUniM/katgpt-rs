@@ -47,6 +47,22 @@ M3 Max (aarch64, macOS), AC power, **loaded box** — sibling agent sessions run
 
 - riir-chain (Issue 156 T2): `curator_bridge::{sigmoid, dot_product}` and `forensic/recover::sigmoid` delegate to these fns behind a bit-identity pin that carries copies of the legacy bodies (verdict R5). `consensus/congestion::inclusion_probability` is deliberately NOT delegated — its `x < 0` domain is reachable three ways through `pub` inputs (negative stake, negative trust, negative `lambda`), and the two-branch form differs from the shipped inline form on that domain; a consensus-path numerics change is its own decision, not a side effect of dedup (verdict R1, refused-and-recorded).
 
+## Follow-up executed (2026-09-21, Issue 861)
+
+The ≥5 in-repo copies were delegated in the recorded follow-up:
+`salience/gate.rs::sigmoid`, `breakeven/mod.rs::sigmoid` (f64),
+`refinement_marginal::escalation_sigmoid`, `ugc_schedule::inv_log_reveal_odds`,
+and `successor_density_critic::p_successor` (the f64-compute-then-narrow shape)
+now all consume `crate::exact_sigmoid`/`exact_sigmoid_f64`. Bit-identical by
+construction (expression-identical bodies); validated per the
+feature-aware law — clippy + module tests at default AND at
+`breakeven_routing,refinement_marginal,successor_density_critic` — full
+default-feature lib suite 2063/2063. The link-identity TEST copy at
+`successor_density_critic.rs:1055` deliberately STAYS inline: it is the
+independent oracle for its assert, and delegating it would make the test
+circular. `salience/gate.rs`'s stale TODO ("hoist to `fast_sigmoid` when the
+SIMD dispatcher lands") is gone — it named the approximation as the target.
+
 ## Re-run
 
 ```bash
