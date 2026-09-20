@@ -11,6 +11,48 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-21 — the first full-gate run since 09-16 caught the Issue-860 landing RED: 8 `-D`-list errors in the opt-in feature's test code, invisible to every default-feature lane
+
+**Status: RECORD 2026-09-21 · gate run at `c9939347` · repair in this commit.**
+
+The workstation full gate (`--allow-partial-platform`) had not run since
+~09-16 while develop moved through the 818/860 wave. First run back:
+Layer 3 (workspace `--all-targets --all-features` clippy with the
+mechanical `-D` list) red with **8 errors, all in
+`successor_density_critic.rs`'s `#[cfg(test)]` code** — 5×
+`needless_range_loop` + 3× `identity_op`, e.g. `b.n_sa[1 * 2 + 0]` and
+three range loops indexing `nxt`/`exact` directly. The Issue-803 class
+again, on the non-default blind-spot axis specifically: the module is
+`#[cfg(feature = "successor_density_critic")]` (opt-in POC), so every
+default-feature gate — test_gate, the per-crate runs, the landing
+session's own checks — compiled the file to nothing; only the
+all-features layer reads it. The 860 landing session validated GOAT
+execution (`--features` runs) but never linted at `--all-targets`.
+
+**Repair** (this commit): the two `n_sa` stride asserts gain a `sa`
+closure beside the existing `cell` closure (keeps the `(s·A + a)`
+documentation intent clippy-clean); the fixed-point sweep iterates
+`nxt.iter_mut().enumerate()`; the G1 error loop iterates
+`exact.iter()` with enumerate (the flat-index arithmetic on `n_sag`/
+`n_sa` stays — those uses are not index-only). Semantics identical:
+12/12 module tests green, `g1_exactness_and_ranking_vs_analytic_ring`
+included. The healer took 6 `doc_markdown` edits in the same file first
+(compile-gated, kept); the loop/identity shapes were manual — the index
+math is documentation, and `1 * 2 + 0` reduced to `sa(1, 0)` preserves
+it.
+
+**Riders** from the same log: `set_diffusion_schedule.rs` 
+`manual_range_contains` → `(0.3..=0.5).contains(&w)`; `ugc_schedule.rs`
+deleted the never-called `TableJoint::index` test helper (dead code,
+the digits-inverse fold); `bench_602_ar_ness_cross_tab.rs`'s const-value
+pin `assert!(CHANCE_NELBO > 3.29 && CHANCE_NELBO < 3.30)` moved into a
+`const { }` block — compile-time tripwire now, strictly stronger.
+
+**Verdict after repair**: `⚠ full gate PARTIAL — every layer that RAN is
+clean (0 errors, 0 unbuildable)` — 1120 s warm, the macOS device-backend
+axis disclosed as always on this box. The 1 ungated warning finding the
+pre-repair run counted was the bench_602 const assert (fixed above).
+
 ## 2026-09-20 — the x86_64 execution matrix's first full run since 09-16 (354 commits of drift): 11,344 assertions PASSED, and one more load-flipped bar caught by execution
 
 **Status: RECORD 2026-09-20 · matrix run at `7f10d4b7` · repair in this commit.**

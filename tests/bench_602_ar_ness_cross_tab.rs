@@ -82,7 +82,9 @@ fn cross_tab_labels_are_parseable_and_timed() {
         assert!(r.time_per_step_us.is_finite() && r.time_per_step_us > 0.0);
     }
     // The chance-floor constant stays tied to micro_dllm's vocab: 27.
-    assert!(CHANCE_NELBO > 3.29 && CHANCE_NELBO < 3.30);
+    const {
+        assert!(CHANCE_NELBO > 3.29 && CHANCE_NELBO < 3.30);
+    }
 }
 
 // ── T3.2: the gap-predictor G3 gate (real-text lane) ──────────────────

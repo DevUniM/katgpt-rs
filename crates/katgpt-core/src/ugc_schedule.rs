@@ -1253,10 +1253,6 @@ mod anchor_view_tests {
                 .collect()
         }
 
-        fn index(&self, xs: &[usize]) -> usize {
-            xs.iter().fold(0usize, |acc, &v| acc * self.alpha + v)
-        }
-
         /// Σ table entries consistent with `fixed` (marginal / partial
         /// conditioning — the test-side oracle, independent of the
         /// denoiser impl).

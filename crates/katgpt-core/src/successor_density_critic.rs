@@ -64,7 +64,7 @@
 //! # Consumers (pull-gated, filed as their own lanes)
 //!
 //! riir-ai Issue 991 (per-NPC goal salience `argmax_g`, think-brain only,
-//! never synced), riir-train Plan 413 Phase 1 tabular arm (map_walk
+//! never synced), riir-train Plan 413 Phase 1 tabular arm (`map_walk`
 //! gridworld). Opt-in feature `successor_density_critic`; promotion to
 //! default requires the GOAT gate (Bench 818) AND a live consumer.
 
@@ -163,7 +163,7 @@ pub struct SuccessorDensityBuilder {
     n_sa: Vec<f64>,
     /// `N(g)` — marginal goal mass.
     n_g: Vec<f64>,
-    /// `N` — total successor mass (== Σ n_g == Σ n_sa up to f64 rounding;
+    /// `N` — total successor mass (== Σ `n_g` == Σ `n_sa` up to f64 rounding;
     /// the maintained value is committed, never re-derived).
     n_total: f64,
 }
@@ -403,7 +403,7 @@ impl SuccessorDensityBuilder {
     /// [n_sag f64 × S·A·S]`.
     ///
     /// Weighted counts are fractional (`f64`), so counts are committed at
-    /// full bit precision (contrastive_scope casts integer counts to u32;
+    /// full bit precision (`contrastive_scope` casts integer counts to u32;
     /// that shortcut would round the sampler weights away).
     fn freeze_bytes(&self) -> Vec<u8> {
         let s = self.cfg.n_states as usize;
@@ -743,8 +743,9 @@ mod tests {
         b.observe_step(1, 0, 3);
         let w = 0.5_f64; // (1 − 0.5)
         let cell = |s: u32, a: u32, g: u32| b.n_sag[((s as usize) * 2 + a as usize) * 4 + g as usize];
+        let sa = |s: usize, a: usize| s * 2 + a;
         assert_eq!(cell(1, 0, 3), w);
-        assert_eq!(b.n_sa[1 * 2 + 0], w);
+        assert_eq!(b.n_sa[sa(1, 0)], w);
         assert_eq!(b.n_g[3], w);
         assert_eq!(b.n_total, w);
         // Unvisited cells stay at the smoothed prior; score() must agree
@@ -762,17 +763,18 @@ mod tests {
         let mut b = SuccessorDensityBuilder::new(cfg(4, 2, 1.0, 0.5, SamplerKind::Discounted));
         b.observe_trajectory(&[0, 1, 2], &[0, 0]);
         let cell = |s: usize, a: usize, g: usize| b.n_sag[(s * 2 + a) * 4 + g];
+        let sa = |s: usize, a: usize| s * 2 + a;
         assert_eq!(cell(0, 0, 1), 0.5);
         assert_eq!(cell(0, 0, 2), 0.25);
         assert_eq!(cell(1, 0, 2), 0.5);
         assert_eq!(b.n_sa[0], 0.75);
-        assert_eq!(b.n_sa[1 * 2], 0.5);
+        assert_eq!(b.n_sa[sa(1, 0)], 0.5);
         assert_eq!(b.n_g[1], 0.5);
         assert_eq!(b.n_g[2], 0.75);
         assert_eq!(b.n_total, 1.25);
     }
 
-    /// C-learning blend on the same trajectory: w_next = (1−γ)/(2−γ) = 1/3;
+    /// C-learning blend on the same trajectory: `w_next` = (1−γ)/(2−γ) = 1/3;
     /// the far state (j = 1, γ^0 = 1) carries the same folded weight
     /// (1−γ)/(2−γ)·γ^0 = 1/3. Non-dyadic → tolerance compare.
     #[test]
@@ -856,10 +858,10 @@ mod tests {
         }
     }
 
-    /// Analytic helper REMOVED: the closed-form "stay → point mass"
-    /// measure was the wrong oracle (greedy-action-repeat, not the paper's
-    /// behavior-continued conditioning) — superseded by
-    /// [`ring_measure_exact`].
+    // Analytic helper REMOVED: the closed-form "stay → point mass"
+    // measure was the wrong oracle (greedy-action-repeat, not the paper's
+    // behavior-continued conditioning) — superseded by
+    // [`ring_measure_exact`].
 
     /// Exact behavior-continued discounted measure for the 4-state
     /// stay/step ring, by fixed-point iteration on the Bellman recursion
@@ -872,17 +874,16 @@ mod tests {
         let mut p = [[[0.0f64; 4]; 2]; 4];
         for _ in 0..200 {
             let mut nxt = [[[0.0f64; 4]; 2]; 4];
-            for s in 0..4usize {
-                for a in 0..2usize {
+            for (s, nxt_s) in nxt.iter_mut().enumerate() {
+                for (a, nxt_sa) in nxt_s.iter_mut().enumerate() {
                     let s2 = match a {
                         0 => s,
                         _ => (s + 1) % 4,
                     };
-                    for g in 0..4usize {
+                    for (g, slot) in nxt_sa.iter_mut().enumerate() {
                         let hit = if s2 == g { 1.0 } else { 0.0 };
-                        let v = (1.0 - gamma) * hit
+                        *slot = (1.0 - gamma) * hit
                             + gamma * 0.5 * (p[s2][0][g] + p[s2][1][g]);
-                        nxt[s][a][g] = v;
                     }
                 }
             }
@@ -893,7 +894,7 @@ mod tests {
 
     /// G1 (unit-scale): empirical conditional successor mass converges to
     /// the analytic behavior-continued discounted measure, and every
-    /// argmax_a with a decisive exact gap (≥ 0.02, ≫ sampling noise)
+    /// `argmax_a` with a decisive exact gap (≥ 0.02, ≫ sampling noise)
     /// matches the exact-measure argmax. Near-tie pairs are counted and
     /// excluded, never silently folded into the pass.
     #[test]
@@ -924,11 +925,11 @@ mod tests {
 
         let exact = ring_measure_exact(gamma);
         let mut max_cond_err = 0.0_f64;
-        for s in 0..4_usize {
-            for a in 0..2_usize {
-                for g in 0..4_usize {
+        for (s, exact_s) in exact.iter().enumerate() {
+            for (a, exact_sa) in exact_s.iter().enumerate() {
+                for (g, &exact_v) in exact_sa.iter().enumerate() {
                     let cond = b.n_sag[(s * 2 + a) * 4 + g] / b.n_sa[s * 2 + a];
-                    max_cond_err = max_cond_err.max((cond - exact[s][a][g]).abs());
+                    max_cond_err = max_cond_err.max((cond - exact_v).abs());
                 }
             }
         }

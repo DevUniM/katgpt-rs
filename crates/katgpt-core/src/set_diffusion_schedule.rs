@@ -1317,7 +1317,7 @@ mod tests {
             // out-of-order, globally LTR) maps to the mid table, never the
             // sequential or fully-parallel endpoints.
             let w = predict_w_from_order_stats(0.60, 0.90);
-            assert!(w >= 0.3 && w <= 0.5, "hybrid-band signature mapped to w={w}");
+            assert!((0.3..=0.5).contains(&w), "hybrid-band signature mapped to w={w}");
         }
 
         #[test]
