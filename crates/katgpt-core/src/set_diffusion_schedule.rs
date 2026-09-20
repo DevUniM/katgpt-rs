@@ -524,7 +524,105 @@ pub fn inverse_lambda_slot_counts(l: usize, steps: usize) -> Vec<usize> {
     counts
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// ── Plan 602 T3.2: the gap-predictor (Research 575 §distilled-2) ────────
+
+/// The calibrated (ALR, AGR) signature table over the w-sweep —
+/// `bench_ar_ness_w_sweep` (Plan 602 T3.1, micro set-causal fixture,
+/// L=8/V=8, trained at w=0.5, 16 seeded greedy decodes per w). The
+/// predictor inverts this table; re-calibrate by re-measuring and editing
+/// these constants IN ONE PLACE (the table is the calibration).
+#[cfg(feature = "decode_order_metrics")]
+pub const ORDER_STATS_TO_W_TABLE: [(f32, f64, f64); 6] = [
+    // (w, ALR, AGR) — measured 2026-09-20, this bench fixture.
+    (0.1, 1.000, 1.000),
+    (0.3, 0.804, 0.944),
+    (0.5, 0.589, 0.797),
+    (0.7, 0.580, 0.701),
+    (0.9, 0.536, 0.562),
+    (1.0, 0.518, 0.547),
+];
+
+/// The gap-predictor (Plan 602 T3.2, arXiv:2609.20751 §decode-order): from
+/// a probe decode's measured (ALR, AGR), recommend the schedule width `w`
+/// whose calibrated signature is nearest (L2) — the measured mechanism
+/// behind the Plans 379–384 w=0.5 win. Signature-matching semantics:
+/// decode with the schedule whose induced order statistics best match the
+/// regime the probe measured — a strictly-AR signature (ALR ≈ AGR ≈ 1)
+/// maps to the sequential end; a uniform-random signature (both ≈ 0.5) to
+/// the parallel end; an off-curve hybrid signature (mid ALR + high AGR —
+/// the paper's locally-out-of-order, globally-LTR band) maps to the
+/// mid table (the w=0.5 class). NOTE this is deliberately NOT a
+/// "high gap ⇒ crank parallelism" rule: in the w parameterization the
+/// high-AGR signatures live at LOW w, so the recommendation follows the
+/// measured regime, never a headroom extrapolation.
+///
+/// Nearest-row over [`ORDER_STATS_TO_W_TABLE`]; ties → the LOWER w (the
+/// conservative/sequential side — never recommend parallelism off a tie).
+/// Inputs are clamped into [0,1]; a NaN input returns the conservative
+/// 0.1 endpoint (an unmeasurable probe must not look parallel-safe).
+#[cfg(feature = "decode_order_metrics")]
+pub fn predict_w_from_order_stats(alr: f32, agr: f32) -> f32 {
+    if !alr.is_finite() || !agr.is_finite() {
+        return ORDER_STATS_TO_W_TABLE[0].0;
+    }
+    let (a, g) = (alr.clamp(0.0, 1.0) as f64, agr.clamp(0.0, 1.0) as f64);
+    let mut best_w = ORDER_STATS_TO_W_TABLE[0].0;
+    let mut best_d = f64::INFINITY;
+    for &(w, ca, cg) in ORDER_STATS_TO_W_TABLE.iter() {
+        let d = (a - ca) * (a - ca) + (g - cg) * (g - cg);
+        // Strict `<`: ties keep the earlier (lower-w) row.
+        if d < best_d {
+            best_d = d;
+            best_w = w;
+        }
+    }
+    best_w
+}
+
+/// The RESIDUAL gap-predictor (Plan 602 T3.2, the paper's actual measurement
+/// posture): probe the model under a KNOWN schedule (`probe_w`), measure
+/// the trajectory's (ALR, AGR), and shift the recommendation by the AR-DRAG
+/// — the deviation of the measured ALR from the schedule's own calibrated
+/// signature at `probe_w` (nearest row of [`ORDER_STATS_TO_W_TABLE`]):
+/// ΔALR > 0 means the model defers commits until left context lands (drags
+/// toward AR) → recommend a LOWER w; ΔALR ≤ 0 keeps `probe_w`.
+///
+/// Measured on the G3 fixture (real-text denoisers, probe w=0.5):
+/// AR-trained ΔALR = +0.144, uniform-trained ΔALR = +0.015 — the
+/// discrimination the mdlm-endpoint probe could not produce (a confident
+/// model commits everything at once → all-ties → no signal).
+///
+/// `SHIFT = 2`: ΔALR of +0.2 moves w by −0.4 (the calibrated span from
+/// w=0.5's 0.589 to w=0.1's 1.000 is ~0.4 ALR over ~0.4 w — unit slope,
+/// doubled for the conservative direction). Output clamped to
+/// [0.1, 1.0]; NaN measurements return `probe_w` clamped (no signal —
+/// keep the incumbent posture, never extrapolate).
+#[cfg(feature = "decode_order_metrics")]
+pub fn predict_w_residual(alr: f32, agr: f32, probe_w: f32) -> f32 {
+    const SHIFT: f32 = 2.0;
+    let probe_w = probe_w.clamp(ORDER_STATS_TO_W_TABLE[0].0, 1.0);
+    if !alr.is_finite() || !agr.is_finite() {
+        return probe_w;
+    }
+    // Nearest calibrated row to probe_w (the schedule's own signature).
+    let mut cal_alr = ORDER_STATS_TO_W_TABLE[0].1;
+    let mut best_d = f64::INFINITY;
+    for &(w, ca, _) in ORDER_STATS_TO_W_TABLE.iter() {
+        let d = (probe_w as f64 - w as f64) * (probe_w as f64 - w as f64);
+        if d < best_d {
+            best_d = d;
+            cal_alr = ca;
+        }
+    }
+    let delta = alr as f64 - cal_alr;
+    if delta <= 0.0 {
+        probe_w
+    } else {
+        (probe_w - SHIFT * delta as f32).clamp(ORDER_STATS_TO_W_TABLE[0].0, 1.0)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1188,6 +1286,53 @@ mod tests {
             let c = inverse_lambda_slot_counts(100, 10);
             assert_eq!(c.iter().sum::<usize>(), 100);
             assert!(*c.last().unwrap() >= 4 * c[0], "profile must grow: {c:?}");
+        }
+
+        // ── predict_w_from_order_stats (T3.2 gap-predictor) ───────────
+
+        #[test]
+        fn predictor_recovers_calibrated_signatures() {
+            // Exact table signatures invert exactly (ties → lower w).
+            for &(w, ca, cg) in ORDER_STATS_TO_W_TABLE.iter() {
+                assert_eq!(
+                    predict_w_from_order_stats(ca as f32, cg as f32),
+                    w,
+                    "signature ({ca}, {cg})"
+                );
+            }
+        }
+
+        #[test]
+        fn predictor_endpoints_and_conservatism() {
+            // Strict-AR signature → the sequential endpoint.
+            assert_eq!(predict_w_from_order_stats(1.0, 1.0), 0.1);
+            // Uniform-random signature → the parallel endpoint (nearest
+            // row is w=1.0: (0.518, 0.547) at d≈0.0025 vs w=0.9 at d≈0.0051).
+            assert_eq!(predict_w_from_order_stats(0.5, 0.5), 1.0);
+            // NaN → conservative 0.1 (an unmeasurable probe is never
+            // parallel-safe).
+            assert_eq!(predict_w_from_order_stats(f32::NAN, 0.7), 0.1);
+            assert_eq!(predict_w_from_order_stats(0.6, f32::NAN), 0.1);
+            // The paper's hybrid band (ALR ~0.6, AGR ~0.9 — locally
+            // out-of-order, globally LTR) maps to the mid table, never the
+            // sequential or fully-parallel endpoints.
+            let w = predict_w_from_order_stats(0.60, 0.90);
+            assert!(w >= 0.3 && w <= 0.5, "hybrid-band signature mapped to w={w}");
+        }
+
+        #[test]
+        fn predictor_residual_shifts_against_ar_drag() {
+            // No drag (measured == calibrated, or below): keep probe_w.
+            assert_eq!(predict_w_residual(0.589, 0.797, 0.5), 0.5);
+            assert_eq!(predict_w_residual(0.40, 0.70, 0.5), 0.5);
+            // AR drag lowers w: Δ=+0.144 (the measured AR-trained fixture)
+            // → 0.5 − 2·0.144 = 0.212.
+            assert!((predict_w_residual(0.733, 0.9, 0.5) - 0.212).abs() < 1e-3);
+            // Clamped at the sequential endpoint for huge drag.
+            assert_eq!(predict_w_residual(1.0, 1.0, 0.5), 0.1);
+            // NaN measurements keep the incumbent posture.
+            assert_eq!(predict_w_residual(f32::NAN, 0.8, 0.7), 0.7);
+            assert_eq!(predict_w_residual(0.6, f32::NAN, 0.7), 0.7);
         }
     }
 }

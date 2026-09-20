@@ -2850,7 +2850,10 @@ pub use ugc_schedule::CertifiedSpineView;
 // stays always-on, only these variants are gated; promote-only-on-G3,
 // demote silently if the Phase-3 G3 GOAT fails).
 #[cfg(feature = "decode_order_metrics")]
-pub use set_diffusion_schedule::{confidence_threshold_eligible, inverse_lambda_slot_counts};
+pub use set_diffusion_schedule::{
+    confidence_threshold_eligible, inverse_lambda_slot_counts, predict_w_from_order_stats,
+    predict_w_residual, ORDER_STATS_TO_W_TABLE,
+};
 #[cfg(feature = "modality_pruned_load")]
 pub mod pipeline_pruner; // Pipeline Pruner — modality-aware inference pipeline selection (Plan 227 Phase 3)
 // ── Phase 12 T4.3: folder moves from katgpt-rs/src/.
