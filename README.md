@@ -3380,6 +3380,40 @@ sync; only raw scalars (contagion intensity, witness counts) cross. First
 consumer: riir-stealth's `agreement_contagion` witness-scaled alarm (via
 riir-games-shared's `agreement_tier` forward).
 
+### 📐 exact_sigmoid / dot_f32_ordered — the committed-value math substrate (riir-chain Issue 156 T1, Bench 844)
+
+The substrate's only sigmoid, `fast_sigmoid`, is a Cephes-polynomial
+approximation with a ±40 saturation clamp — fine for inference, wrong for
+committed-value paths: consensus, curator, and forensic code that must
+reproduce a scalar bit-identically across nodes cannot tolerate a variant
+whose far tail returns exactly 0.0/1.0 where the true value is a
+representable tiny (σ(−50) = 1.9e−22). And `simd_dot_f32` reassociates its
+lanes by construction — on the cancellation input `[1e8, 1.0, −1e8, 1.0]`
+it reads 0 where the sequential fold reads 1.0 — so a delegatable target
+for committed-value math did not exist until these landed.
+
+Three ungated primitives (the `float_order` precedent: additive, pure math,
+always compiled): `exact_sigmoid(f32)` / `exact_sigmoid_f64(f64)` — the
+two-branch numerically stable form over libm `exp`, no polynomial, no
+clamp; `dot_f32_ordered(&[f32], &[f32])` — sequential index-order fold,
+deterministic by construction (Rust does not reassociate float adds without
+fast-math). **Bench 844 GOAT PASS:** exact max **2 ULP** vs the f64-narrowed
+reference where `fast_sigmoid` reads **580,601,137 ULP** on the same grid
+(the abs-error column does NOT separate them — the clamp error lives where
+absolute values are negligible; ULP is the load-bearing metric); f64
+reflection/monotonicity/bounds pins; the ordered-dot frozen-value +
+anti-dedup pins (target-independent — every backend reassociates). G2
+timings reported, not barred: `exact_sigmoid` **1.7 ns** vs `fast_sigmoid`
+3.1 ns on aarch64 — the doc's "~1.7× faster than libm" Cephes claim
+INVERTS on this arch; do not quote it un-re-measured. The ordered dot pays
+the committed-value premium (12.4× the SIMD kernel at n=1024); inference
+kernels keep `simd_dot_f32`. Consumer: riir-chain 156 T2 delegated its
+consensus/curator + forensic sigmoids behind `to_bits`-level bit-identity
+pins; `congestion::inclusion_probability` deliberately NOT delegated (its
+`x < 0` domain is reachable and a consensus-path numerics change is its own
+decision). The ≥5 in-repo copies of the two-branch shape are a recorded
+follow-up, deliberately not refactored in the promotion unit.
+
 ### Dev workflow
 
 All work happens on **`develop`** (no feature branches). Use [conventional

@@ -8032,3 +8032,48 @@ consumer lanes, and riir-ai's promotion-to-default is production-host-gated
 (owner). Catalog §119; bench `bench_818_successor_density_critic_goat`.
 Hygiene close: 12/12 module tests green on `develop` at removal
 (`successor_density` filter, feature on).
+
+## The exact_sigmoid / dot_f32_ordered substrate promotion (2026-09-20) — the riir-chain Issue 156 T1 landing executed in this repo
+
+Landed `5458dd69b` (develop) + `5e2b730f2` (main, cherry-picked via a
+detached worktree following the lthash precedent — the git-dep consumers pin
+main, and the branch topology flag remains owner-gated). Three ungated pure-
+math primitives, additive, always compiled (the `float_order` precedent):
+`exact_sigmoid(f32)` / `exact_sigmoid_f64(f64)` in
+`katgpt-types/src/simd/activations.rs` (re-exported `katgpt_core::`), the
+two-branch libm form with NO Cephes polynomial and NO ±40 clamp; and
+`dot_f32_ordered(&[f32], &[f32])` in `katgpt-types/src/simd/dot.rs`, the
+sequential index-order fold that is deterministic by construction.
+`katgpt_core::sigmoid`'s doc now names the exact variant — the trap where a
+new caller silently gets the approximation is closed at the doc seam.
+
+**Bench 844 GOAT PASS** (`844_exact_sigmoid_ordered_dot_substrate.md`):
+G1a f32 exactness max **2 ULP** vs the f64-computed-and-narrowed reference,
+against `fast_sigmoid`'s **580,601,137 ULP** on the same grid — clamp-
+dominated far tails where the abs-error column does not separate the
+variants, which is why the ULP metric is the load-bearing one; G1b f64
+reflection/monotone/bounds (no ULP oracle — the f64 impl IS libm, an
+"≤1 ULP vs libm" gate would be circular) + f32 bounds incl. the
+representable-nonzero far tail; G1c ordered-dot frozen-value pin (the
+`[1e8, 1.0, −1e8, 1.0]` cancellation input reads 1.0 where every SIMD
+backend reads 0 — the anti-dedup pin, target-independent by design: it reds
+the day a backend converges with the sequential fold); G2 reported not
+barred; G3 no-regression by construction (additive, no call site rerouted);
+G4 alloc-free by inspection. **Honest finding:** the Cephes speed claim
+inverts on aarch64 — `exact_sigmoid` 1.7 ns vs `fast_sigmoid` 3.1 ns
+(best-of-50 minima, loaded box, `/tmp` target dir; upper bounds) — the
+`fast_sigmoid` doc's "~1.7× faster than libm" must not be quoted on this
+arch un-re-measured.
+
+Consumer (same unit): riir-chain 156 T2 delegated
+`curator_bridge::{sigmoid, dot_product}` + `forensic/recover::sigmoid` to
+these fns behind permanent `to_bits`-level bit-identity pins carrying the
+frozen legacy bodies (`f7eb85e4` + `b0b710e0`, then `7facc3cd`), green
+before AND after the flip; `consensus/congestion::inclusion_probability`
+refused-and-recorded — its `x < 0` domain is reachable through pub inputs
+and a consensus-path numerics change is its own decision. The ≥5 in-repo
+copies of the two-branch shape (salience/gate, breakeven,
+refinement_marginal, ugc_schedule, successor_density_critic) are a recorded
+follow-up, deliberately NOT refactored in the promotion unit. README
+showcase section landed with this row (the float_order surface set: README
++ HISTORY; ungated primitives take no catalog row).
