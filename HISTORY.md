@@ -11,6 +11,63 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-21 — the x86_64 execution matrix caught a day-old test that had never executed on x86_64: the ordered-dot anti-dedup pin was crafted at NEON's vector width
+
+**Status: RECORD 2026-09-21 · matrix run at `b6dc1d16` (cells 1-6 green at
+floors) · repair in this commit.**
+
+First matrix run since the 09-20 drift-sweep run — which predates the
+same-day `5458dd69` landing, so the new test had still never executed
+on x86_64. Cell 7 (katgpt-types `--lib --all-features`,
+`+avx2`, debug) CONFIRMED red — failed in-cell AND 3/3 alone — on
+`simd::dot::ordered_dot_tests::ordered_dot_differs_from_simd_dot`, landed
+the DAY BEFORE in `5458dd69` (the `dot_f32_ordered` committed-value
+substrate, riir-chain Issue 156 T1, Bench 844). The test executed on
+x86_64 by nothing until this run: test_gate is macOS, full_gate is
+compile+lint, wasm32 builds a third triple. The compile-vs-EXECUTE row's
+own doctrine, live: an uninvoked assertion is *unknown*, not passing —
+and this one was red.
+
+**Mechanism (the craft was arch-relative):** the anti-dedup pin asserted
+`simd_dot_f32 != dot_f32_ordered` on a len-4 crafted cancellation input.
+len 4 is NEON's full vector width — the M3 lane where the landing session
+validated it diverges (pairwise `vaddvq` → 0.0 vs 1.0). It is strictly
+below AVX2's 8-wide floor: `chunks4 = 4/32 = 0`, `remaining = 4/8 = 0`,
+and the `while i < len` scalar tail IS the ordered fold bit-for-bit →
+1.0 == 1.0 → `assert_ne!` red. The scalar fallback converges at len 4
+too (one element per accumulator + lane-ordered `acc.iter().sum()`), so
+the doc claim "Every simd_dot_f32 backend reassociates" was false below
+one full vector on every non-NEON backend. The test's own doc named the
+duty — "the two kernels have converged and this module's reason to exist
+must be re-adjudicated" — and the re-adjudication is: the KERNELS are
+correct (the sub-vector tail being the ordered fold is cheap, harmless,
+and irrelevant to the committed-value contract, which needs the ordered
+fold to EXIST, not the simd path to always differ); the TEST's craft was
+the defect.
+
+**Repair (this commit):** recrafted at len 16 — the smallest length that
+engages a grouped path on EVERY backend (NEON 16-wide unroll, AVX2 8-wide
+remainder loop, wasm-simd128 16-wide unroll, scalar 4-accumulator
+chunks). Input `[1e8, 1, 1, 1, −1e8, 1, 1, 1, 0×8] · [1;16]`:
+ordered = 3.0 (the three +1s before −1e8 are lost, ulp 8 at 1e8; the
+three after survive); every reassociating backend pairs the cancellation
+inside one lane/accumulator group and keeps all three +1s → 6.0
+(hand-computed per backend: AVX2 `hi+lo` elementwise then the pairwise
+128 reduce; NEON `acc0+acc1` then `vaddvq`; scalar `acc=[0,2,2,2]`). The
+ordered reference is pinned in-test (`assert_eq! 3.0` — every
+intermediate exactly representable), and the doc comment records the
+vector-width dependency so the next len-4-style craft reds review, not
+debug. Matrix-posture rerun green (7/7 dot-module tests, `+avx2` debug
+`--all-features`).
+
+Cell 8's two PASSED-ALONE rows (`bench_176_router_forward_cpu`,
+`t3_latency_p99`) adjudicated per the three-class checklist: both are
+sequential-arms latency BARs (the Issue-723/833 family; 176 already a
+documented candidate at 13.3 pts slack), seeded RNG, no fixed temp
+paths — load-class evidence only, no finding. Also operational: this run
+needed `X86_MATRIX_DIR` on E: — C: sat at 99% / 9.8 GiB free, too tight
+for a cold matrix scratch (disk-clean candidate).
+
 ## 2026-09-21 — the first full-gate run since 09-16 caught the Issue-860 landing RED: 8 `-D`-list errors in the opt-in feature's test code, invisible to every default-feature lane
 
 **Status: RECORD 2026-09-21 · gate run at `c9939347` · repair in this commit.**
