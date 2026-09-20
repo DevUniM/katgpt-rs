@@ -622,6 +622,14 @@ on the final line, in both directions.
   `repo_set.txt` has since registered, is a STALE acknowledgement and fails.
   So the marker cannot only ever loosen, and an acknowledgement does not
   outlive the repo it was written for.
+- ⚑ **The Issue-842 alias codec RETIRES the marker — measured on the 4090
+  (2026-09-20).** With `repo_alias.local.txt` mapping the on-disk
+  `seal-game-editor`/`seal-online-remaster`/`seal-remake` to their
+  registered contract names, those directories read REGISTERED through the
+  codec and the marker reds in exactly the stale-acknowledgement direction
+  the bullet above names: 2/33 failed WITH the marker, 33/33 clean WITHOUT
+  it. The alias file is the box-local repair that supersedes the marker —
+  drop the env var, don't widen it.
 - Never auto-detected, the `DOCS_GATE_CI` idiom, for the partial marker's own
   reason: a repo whose `repo_set.txt` row was simply forgotten is
   set-identical, from the walk alone, to one that does not belong.
