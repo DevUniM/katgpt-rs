@@ -2840,6 +2840,11 @@ pub mod dllm;
 // paper's sparse anchor set A — same feature, root-level per the plan target).
 #[cfg(feature = "decode_order_metrics")]
 pub mod anchor_score;
+// Plan 602 T2.2: the certified-spine anchor view over UGC reveal
+// trajectories (same feature; defined in ugc_schedule.rs per the plan
+// target — ugc_schedule itself stays always-on, only this view is gated).
+#[cfg(feature = "decode_order_metrics")]
+pub use ugc_schedule::CertifiedSpineView;
 #[cfg(feature = "modality_pruned_load")]
 pub mod pipeline_pruner; // Pipeline Pruner — modality-aware inference pipeline selection (Plan 227 Phase 3)
 // ── Phase 12 T4.3: folder moves from katgpt-rs/src/.

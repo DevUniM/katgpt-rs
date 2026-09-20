@@ -4206,11 +4206,17 @@ tests incl. hand-computed block-swap and the parallel-block anti-AR shape) +
 π-logging in katgpt-forward — `d2f_decode_block_with_unmask_steps` (the
 Issue-587 q_out out-param posture, commit-time capture) and
 `SetDiffusionResult::unmask_steps` with `local_ar_ness()`/`global_ar_ness()`
-readouts. Phase 2 partial (T2.1 landed): the offline anchor scorer
+readouts. Phase 2 partial (T2.1 + T2.2 landed): the offline anchor scorer
 `crates/katgpt-core/src/anchor_score.rs` — first-unmask-in-block frequency
 (π logs) + masked-position entropy (Issue-587 q rows) → per-position anchor
 score ranking toward the paper's sparse anchor set A; planted-anchor GOAT
-arm green (uniquely-determining token ranks #1). T2.2 (UGC certified-spine
-view) + T2.3 (schedule variants) and Phase 3 (bench cross-tab + the G3 GOAT:
-predictor-chosen (w, block size) ≥ fixed at matched NFE) pending —
-**promotion NOT claimed**; stays opt-in either way until the G3 verdict.
+arm green (uniquely-determining token ranks #1). And the UGC certified-spine
+anchor view `CertifiedSpineView` (in `ugc_schedule.rs`, same feature): the
+sampler's init-kernel reveals as the sparse anchor set A, the remainder as
+the conditional chain — `bernoulli_unmask_with_grid` gained the optional
+`steps_out` reveal recording (alloc-neutral), and the factorization-identity
+GOAT arm pins `q(x) = q(x_A)·Π q(x_i|x_<i, x_A)` exactly by enumeration on a
+synthetic joint. T2.3 (schedule variants) and Phase 3 (bench cross-tab +
+the G3 GOAT: predictor-chosen (w, block size) ≥ fixed at matched NFE)
+pending — **promotion NOT claimed**; stays opt-in either way until the G3
+verdict.

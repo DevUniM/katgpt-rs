@@ -1005,7 +1005,7 @@ fn g4_scratch_reuse_stability() {
     }
     let mut out = vec![0usize; d];
     for _ in 0..8 {
-        bernoulli_unmask_with_grid(&dz, &[0.2, 0.5, 0.8], &mut rng, &mut s, &mut out);
+        bernoulli_unmask_with_grid(&dz, &[0.2, 0.5, 0.8], &mut rng, &mut s, &mut out, None);
         assert!(out.iter().all(|&v| v < 2));
     }
 }
