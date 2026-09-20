@@ -61,6 +61,30 @@ pub fn simd_fma_row(weight_row: &[f32], input: &[f32], len: usize) -> f32 {
     simd_dot_f32(weight_row, input, len)
 }
 
+/// Order-stable sequential dot product: `Σ a[i] * b[i]`, accumulated in
+/// ascending index order with plain `mul`/`add` — no SIMD lane
+/// reassociation, no FMA contraction (Rust does not reassociate float adds
+/// without fast-math, so the fold is deterministic by construction).
+///
+/// [`simd_dot_f32`] computes the same sum through SIMD lanes (or the
+/// 4-accumulator + `mul_add` scalar fallback), which reassociates the
+/// additions — on the same input the two generally differ in the last ULP.
+/// `ordered_dot_differs_from_simd_dot` in this module's tests pins a
+/// crafted input where they diverge, so the distinction stays load-bearing
+/// and a future "dedup" that collapses one into the other reds by
+/// construction.
+///
+/// **When to use**: paths whose outputs are committed or compared bit-wise
+/// across nodes (consensus scoring, Merkle-committed embeddings, replay
+/// determinism). For inference kernels, prefer [`simd_dot_f32`].
+///
+/// Panics if lengths differ.
+#[inline(always)]
+pub fn dot_f32_ordered(a: &[f32], b: &[f32]) -> f32 {
+    assert_eq!(a.len(), b.len(), "dot_f32_ordered: length mismatch");
+    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
+}
+
 #[inline(always)]
 #[allow(dead_code)]
 pub(super) fn scalar_dot_f32(a: &[f32], b: &[f32], len: usize) -> f32 {
@@ -1505,5 +1529,65 @@ mod tests {
     fn batched_zero_batch_is_noop() {
         let mut y = vec![0.0f32; 0];
         simd_matmul_rows_batched(&mut y, &[], &[], 4, 4, 0);
+    }
+}
+
+#[cfg(test)]
+mod ordered_dot_tests {
+    use super::{dot_f32_ordered, simd_dot_f32};
+
+    /// The frozen sequential-fold value on a cancellation-heavy input.
+    /// Hand-computed: ((1e8 + 1) loses the +1 to f32 spacing at 1e8 (8), so
+    /// 1e8; + (-1e8) = 0; + 1 = 1.0). Any reassociating backend (SIMD lanes
+    /// or the 4-accumulator scalar fallback) pairs {1e8, -1e8} = 0 and
+    /// {1, 1} = 2 → 2.0. The frozen value is the CONTRACT; if it ever reds,
+    /// the fold stopped being sequential.
+    #[test]
+    fn ordered_dot_is_the_sequential_fold() {
+        let a = [1e8f32, 1.0, -1e8, 1.0];
+        let b = [1.0f32; 4];
+        assert_eq!(dot_f32_ordered(&a, &b), 1.0);
+    }
+
+    /// The anti-dedup pin: on this input the SIMD kernel's reassociated sum
+    /// differs from the ordered fold. Every simd_dot_f32 backend
+    /// reassociates (NEON/AVX2/wasm-simd128 lanes, or the 4-accumulator +
+    /// mul_add scalar fallback), so the inequality holds on every target —
+    /// if a future backend makes this red, the two kernels have converged
+    /// and this module's reason to exist must be re-adjudicated.
+    #[test]
+    fn ordered_dot_differs_from_simd_dot() {
+        let a = [1e8f32, 1.0, -1e8, 1.0];
+        let b = [1.0f32; 4];
+        let simd = simd_dot_f32(&a, &b, 4);
+        assert_ne!(dot_f32_ordered(&a, &b), simd, "ordered == simd on the crafted pin input");
+    }
+
+    #[test]
+    #[should_panic(expected = "length mismatch")]
+    fn ordered_dot_panics_on_length_mismatch() {
+        let _ = dot_f32_ordered(&[1.0, 2.0], &[1.0]);
+    }
+
+    #[test]
+    fn ordered_dot_agrees_with_simd_on_generic_inputs_within_tolerance() {
+        // The kernels answer the same mathematical question — they differ
+        // only in last-ULP rounding. On pseudo-random well-scaled inputs the
+        // relative gap stays tiny (last-ULP class), which is what lets the
+        // SIMD kernel serve inference while the ordered fold serves
+        // committed-value paths.
+        let mut seed = 0x9E3779B97F4A7C15u64;
+        let mut pseudo = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 40) as f32 / (1 << 24) as f32 - 8.0
+        };
+        let a: Vec<f32> = (0..1024).map(|_| pseudo()).collect();
+        let b: Vec<f32> = (0..1024).map(|_| pseudo()).collect();
+        let ordered = dot_f32_ordered(&a, &b);
+        let simd = simd_dot_f32(&a, &b, 1024);
+        let rel = ((ordered - simd) / ordered).abs();
+        assert!(rel < 1e-5, "relative gap {rel} exceeds last-ULP class");
     }
 }

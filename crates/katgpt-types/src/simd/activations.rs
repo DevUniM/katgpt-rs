@@ -313,6 +313,50 @@ pub fn fast_sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + cephes_exp_scalar(-x))
 }
 
+/// Exact logistic sigmoid: `σ(x) = 1/(1 + e^{-x})`, output in (0, 1).
+///
+/// The two-branch numerically stable form (`x >= 0` → `1/(1+e^{-x})`, else
+/// `e^x/(1+e^x)`) over libm `exp` — no Cephes polynomial, no saturation
+/// early-exit. This is the **bit-stable reference variant**: identical input
+/// → identical output bits on a given platform, including the far tails
+/// (`σ(-40) = 4.2e-18`, where [`fast_sigmoid`] clamps to exactly `0.0`) and
+/// the ~9% of `[-40, 40]` inputs where `fast_sigmoid`'s polynomial drifts
+/// off the libm bits.
+///
+/// **When to use**: committed-value paths — consensus scoring, reward gates,
+/// anything whose outputs are Merkle-committed, cross-node compared, or
+/// pinned bit-identical in a replay. For activation internals where
+/// ≤ 1.2e-7 drift is acceptable, prefer [`fast_sigmoid`] (~1.7× faster on
+/// aarch64).
+///
+/// Zero-allocation, always compiled (the `float_order` ungated-math
+/// precedent). Mirrors the exact form riir-chain's consensus/curator layer
+/// ships (Issue 156 — the delegation target).
+#[inline(always)]
+pub fn exact_sigmoid(x: f32) -> f32 {
+    if x >= 0.0 {
+        1.0 / (1.0 + (-x).exp())
+    } else {
+        let ex = x.exp();
+        ex / (1.0 + ex)
+    }
+}
+
+/// [`exact_sigmoid`] in f64 — same two-branch stable form in double
+/// precision. Callers that compute in f64 and narrow to f32 only at the end
+/// (riir-chain's congestion/forensic paths) must delegate to this, not to
+/// the f32 variant — narrowing first would be a numerics change, not a
+/// delegation.
+#[inline(always)]
+pub fn exact_sigmoid_f64(x: f64) -> f64 {
+    if x >= 0.0 {
+        1.0 / (1.0 + (-x).exp())
+    } else {
+        let ex = x.exp();
+        ex / (1.0 + ex)
+    }
+}
+
 /// Bounded tanh via Padé [2/2]: `tanh(x) ≈ x·(27+x²)/(27+9x²)`, output in (-1, 1).
 ///
 /// This is a pure-arithmetic rational polynomial (no `exp` call), making it
@@ -1772,5 +1816,119 @@ unsafe fn wasm32_sigmoid_tanh_clamp(out: &mut [f32], a: &[f32], q: &[f32], clamp
             *out.get_unchecked_mut(i) = v.clamp(-clamp, clamp);
             i += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_sigmoid_tests {
+    use super::{exact_sigmoid, exact_sigmoid_f64, fast_sigmoid};
+
+    /// Monotone ULP distance over the f32 bit pattern (two's-complement map).
+    fn ulp_diff(a: f32, b: f32) -> u32 {
+        (a.to_bits() as i32).wrapping_sub(b.to_bits() as i32).unsigned_abs()
+    }
+
+    /// The f64-computed sigmoid, narrowed — the highest-precision reference
+    /// std can express (the ULP gate's oracle).
+    fn f64_ref(x: f32) -> f32 {
+        (1.0f64 / (1.0 + (-(x as f64)).exp())) as f32
+    }
+
+    #[test]
+    fn f32_exact_is_within_2ulp_of_the_f64_reference() {
+        let mut max_ulp = 0u32;
+        let mut x = -90.0f32;
+        while x <= 90.0 {
+            let d = ulp_diff(exact_sigmoid(x), f64_ref(x));
+            assert!(d <= 2, "x={x}: {d} ULP vs f64 reference");
+            max_ulp = max_ulp.max(d);
+            x += 0.0137;
+        }
+        for edge in [-1e-45f32, 1e-45, 1e-30, -1e-30, 1.0, -1.0, 27.5, -27.5] {
+            let d = ulp_diff(exact_sigmoid(edge), f64_ref(edge));
+            assert!(d <= 2, "edge x={edge}: {d} ULP");
+            max_ulp = max_ulp.max(d);
+        }
+        assert!(max_ulp <= 2);
+    }
+
+    #[test]
+    fn f32_exact_is_closer_to_the_reference_than_fast() {
+        // The differentiator that justifies a second variant: the exact form
+        // must not lose to the Cephes approximation on its own gate.
+        let exact_max = ulp_scan(|x| ulp_diff(exact_sigmoid(x), f64_ref(x)));
+        let fast_max = ulp_scan(|x| ulp_diff(fast_sigmoid(x), f64_ref(x)));
+        assert!(exact_max < fast_max, "exact {exact_max} vs fast {fast_max}");
+    }
+
+    /// Max ULP distance over a coarse stride of [-90, 90].
+    fn ulp_scan(mut d: impl FnMut(f32) -> u32) -> u32 {
+        let mut m = 0u32;
+        let mut x = -90.0f32;
+        while x <= 90.0 {
+            m = m.max(d(x));
+            x += 7.0;
+        }
+        m
+    }
+
+    #[test]
+    fn f32_edges_are_exact_values() {
+        assert_eq!(exact_sigmoid(0.0), 0.5);
+        assert_eq!(exact_sigmoid(f32::INFINITY), 1.0);
+        assert_eq!(exact_sigmoid(f32::NEG_INFINITY), 0.0);
+        assert!(exact_sigmoid(f32::NAN).is_nan());
+        // Far tail: representable tiny value, NOT the 0.0 clamp fast_sigmoid
+        // applies past -40 (this is the value difference between the two).
+        let tail = exact_sigmoid(-50.0);
+        assert!(tail > 0.0 && tail < 1e-17);
+        assert_eq!(exact_sigmoid(800.0), 1.0);
+        assert_eq!(exact_sigmoid(-800.0), 0.0);
+    }
+
+    #[test]
+    fn f32_fast_and_exact_genuinely_differ_somewhere() {
+        // Guard against the variants collapsing into each other silently:
+        // fast_sigmoid's own doc claims 90.6% bit-exact with libm, so some
+        // inputs on this grid must differ.
+        let mut differing = 0usize;
+        let mut x = -40.0f32;
+        while x <= 40.0 {
+            if exact_sigmoid(x).to_bits() != fast_sigmoid(x).to_bits() {
+                differing += 1;
+            }
+            x += 1.0;
+        }
+        assert!(differing > 0, "variants must not be bit-identical everywhere");
+    }
+
+    #[test]
+    fn f64_reflection_monotonicity_and_bounds() {
+        // Reflection: σ(x) + σ(-x) = 1 to within 1 ULP at 1.0 (the f64
+        // variant has no higher-precision std oracle, so its gates are
+        // properties).
+        let mut x = -50.0f64;
+        while x <= 50.0 {
+            let s = exact_sigmoid_f64(x) + exact_sigmoid_f64(-x);
+            assert!((s - 1.0).abs() <= f64::EPSILON, "x={x}: sum={s}");
+            x += 0.019;
+        }
+        // Monotone non-decreasing.
+        let mut prev = -1.0f64;
+        let mut x = -50.0f64;
+        while x <= 50.0 {
+            let s = exact_sigmoid_f64(x);
+            assert!(s >= prev, "non-monotone at x={x}");
+            prev = s;
+            x += 0.011;
+        }
+        // Bounds.
+        assert_eq!(exact_sigmoid_f64(0.0), 0.5);
+        assert_eq!(exact_sigmoid_f64(f64::INFINITY), 1.0);
+        assert_eq!(exact_sigmoid_f64(f64::NEG_INFINITY), 0.0);
+        assert!(exact_sigmoid_f64(f64::NAN).is_nan());
+        assert_eq!(exact_sigmoid_f64(800.0), 1.0);
+        assert_eq!(exact_sigmoid_f64(-800.0), 0.0);
+        assert!(exact_sigmoid_f64(-40.0) > 0.0);
     }
 }

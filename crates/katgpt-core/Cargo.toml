@@ -1144,6 +1144,18 @@ name = "bench_313_ac_prefix_modelless"
 harness = false
 required-features = ["ac_prefix"]
 
+# riir-chain Issue 156 T1 — the exact-sigmoid + ordered-dot substrate
+# promotion GOAT gate: G1a f32 ULP-vs-f64-reference pin (exact must measure
+# strictly closer than fast_sigmoid), G1b f64 property gates (reflection /
+# monotone / bounds — no higher-precision std oracle exists, so no ULP gate),
+# G1c the ordered-dot frozen sequential value + the anti-dedup pin vs
+# simd_dot_f32, G2 timings REPORTED not barred (the claim is exactness),
+# G3 additive-by-construction, G4 pure stack math by inspection. Ungated —
+# the promoted fns carry no feature (the float_order precedent).
+[[bench]]
+name = "bench_844_exact_sigmoid_ordered_dot"
+harness = false
+
 # Plan 585 Phase 3 — Usage-rate (mass/age) KV eviction GOAT gate: T3.1 planted
 # age-bias fixture (raw-H2O evicts the hot row, mass/age retains it), T3.2
 # micro-GPT recall at matched KV budget across 6 policies (ring, raw-H2O,
