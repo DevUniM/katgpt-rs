@@ -4221,7 +4221,15 @@ synthetic joint. T2.3 landed (schedule variants, same feature):
 the dynamic counterpart of `probability_order`; NaN never eligible) and
 `inverse_lambda_slot_counts` (the 1/λ_t time-reweighted objective
 transferred to per-pass unmask budgets — hard early passes commit few
-tokens each; exact-sum largest-remainder allocation). Phase 3 (bench
-cross-tab + the G3 GOAT: predictor-chosen (w, block size) ≥ fixed at
-matched NFE) pending — **promotion NOT claimed**; stays opt-in either way
-until the G3 verdict (demote silently if G3 fails).
+tokens each; exact-sum largest-remainder allocation). Phase 3 partial
+(T3.1 landed): the AR-ness × w cross-tab bench —
+`katgpt_rs::benchmark::bench_ar_ness_w_sweep` (root feature
+`decode_order_metrics`, implying `set_diffusion`): trains one set-causal
+model at the SW-SetDLM default w=0.5, sweeps inference w (0.1–1.0) + the
+mdlm parallel endpoint, and cross-tabs ALR/AGR (π logs) against NELBO /
+NFE / convergence — measured: w=0.5 sits at ALR 0.589 / AGR 0.797, inside
+the paper's hybrid band, with the endpoints (w=0.1 → 1.0/1.0, uniform →
+~0.52, mdlm → 0/0 ties floor) spanning the axis. Remaining: the gap-
+predictor G3 GOAT, the retention floor G0, and the bench doc + verdict.
+**Promotion NOT claimed**; stays opt-in either way until the G3 verdict
+(demote silently if G3 fails).

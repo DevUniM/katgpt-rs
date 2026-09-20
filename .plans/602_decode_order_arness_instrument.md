@@ -1,6 +1,6 @@
 # Plan 602: Decode-Order AR-ness Instrument + Anchor Scoring for the DLM Lane
 
-**Status:** Active — Phase 1 LANDED 2026-09-20 (T1.1+T1.2+T1.3); Phase 2 COMPLETE — T2.1+T2.2+T2.3 LANDED 2026-09-20; Phase 3 pending
+**Status:** Active — Phase 1 LANDED 2026-09-20 (T1.1+T1.2+T1.3); Phase 2 COMPLETE (T2.1+T2.2+T2.3) 2026-09-20; Phase 3 PARTIAL — T3.1 LANDED 2026-09-20, T3.2+T3.3+T3.4 pending
 **Date:** 2026-09-20
 **Research:** [katgpt-rs/.research/575_dQwen3.5_Hybrid_Attention_DLM.md](../.research/575_dQwen3.5_Hybrid_Attention_DLM.md)
 **Source paper:** [arXiv:2609.20751](https://arxiv.org/abs/2609.20751) — dQwen3.5: Hybrid-Attention Diffusion Language Models
@@ -39,7 +39,8 @@ Ship the paper's decode-order instruments modellessly over signals the workspace
 
 ### Tasks
 
-- [ ] **T3.1** Integrate the ALR/AGR cross-tab into `src/benchmark/diffusion.rs`: w-sweep × order statistics — the measured explanation axis for the Plans 379–384 SW-SetDLM w=0.5 win (0.71 NLL).
+- [x] **T3.1** Integrate the ALR/AGR cross-tab into `src/benchmark/diffusion.rs`: w-sweep × order statistics — the measured explanation axis for the Plans 379–384 SW-SetDLM w=0.5 win (0.71 NLL).
+      **LANDED 2026-09-20**: `bench_ar_ness_w_sweep` in src/benchmark/diffusion.rs behind the NEW root feature `decode_order_metrics = [set_diffusion, katgpt-core/decode_order_metrics, katgpt-forward/decode_order_metrics]` (the root lane for the bench; pub re-export via `katgpt_rs::benchmark::bench_ar_ness_w_sweep` for the Phase-3 tests). Protocol: ONE `train_mini_set_causal` run at the SW-SetDLM default (w=0.5 — L=8/V=8/300ep/lr 0.01, the validated GOAT-fixture shape; L=16 MEASURED to diverge to NaN weights at this lr — recorded in the bench comment), then 6 inference-w arms × 16 seeded decodes each (greedy τ=0.5, temp 0) + the mdlm parallel endpoint. Axis semantics pinned in-code: eligibility is CUMULATIVE (`gen_step <= current_step`) so permutation schedules decode with singleton outer steps — w acts through ORDER correlation with position; the parallel endpoint is the separate mdlm arm (ALR=0 by the ties-discordant contract; its NELBO carries the Bench-809 degenerate identity-copy caveat). MEASURED cross-tab (debug smoke, this box): w=0.1→(1.000,1.000), 0.3→(0.804,0.944), **0.5→(0.589,0.797)**, 0.7→(0.580,0.701), 0.9→(0.536,0.562), 1.0→(0.518,0.547), mdlm→(0,0) — the winner sits in the paper's hybrid band (ALR 0.6–0.7 class, globally LTR). NELBO saturated ~0 on the pattern cell (Bench-809 Cell-A class) — the quality discriminator is the real-text cell, deferred to T3.2/T3.4. Regression home `tests/bench_602_ar_ness_cross_tab.rs` (required-features decode_order_metrics; endpoint-span + uniform≈0.5 + mdlm-undercut + label-parse arms, 2 tests ~17s). Clippy --all-targets clean at the new state + default; docs gate 33/33.
 - [ ] **T3.2** Gap-predictor: from (ALR, AGR, per-block order cost) choose block size + w; **G3** = predictor-chosen ≥ fixed settings at matched NFE (no-regression floor, improvement target) on the existing bench models.
 - [ ] **T3.3** Capability-retention floor **G0**: any promoted default holds `score_after / score_before ≥ 0.95` on the pinned eval suite (the paper's LR lesson — loss is not the gate).
 - [ ] **T3.4** Bench doc in `.benchmarks/` + verdict; promote to default or demote the loser per GOAT rule. Feed the instrument to riir-train Plan 414 T1.3 (decode-order readout on adapted-model trajectories).
