@@ -2836,6 +2836,10 @@ pub mod dllm_solver; // Discrete Critical Interval Solver Switching (Plan 222)
 // forwards this same feature.
 #[cfg(feature = "decode_order_metrics")]
 pub mod dllm;
+// Plan 602 T2.1: the offline anchor scorer (decode-log ranking toward the
+// paper's sparse anchor set A — same feature, root-level per the plan target).
+#[cfg(feature = "decode_order_metrics")]
+pub mod anchor_score;
 #[cfg(feature = "modality_pruned_load")]
 pub mod pipeline_pruner; // Pipeline Pruner — modality-aware inference pipeline selection (Plan 227 Phase 3)
 // ── Phase 12 T4.3: folder moves from katgpt-rs/src/.

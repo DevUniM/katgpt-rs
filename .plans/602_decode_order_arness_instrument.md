@@ -1,6 +1,6 @@
 # Plan 602: Decode-Order AR-ness Instrument + Anchor Scoring for the DLM Lane
 
-**Status:** Active — Phase 1 LANDED 2026-09-20 (T1.1+T1.2+T1.3); Phase 2 + Phase 3 pending
+**Status:** Active — Phase 1 LANDED 2026-09-20 (T1.1+T1.2+T1.3); Phase 2 PARTIAL — T2.1 LANDED 2026-09-20, T2.2+T2.3 pending; Phase 3 pending
 **Date:** 2026-09-20
 **Research:** [katgpt-rs/.research/575_dQwen3.5_Hybrid_Attention_DLM.md](../.research/575_dQwen3.5_Hybrid_Attention_DLM.md)
 **Source paper:** [arXiv:2609.20751](https://arxiv.org/abs/2609.20751) — dQwen3.5: Hybrid-Attention Diffusion Language Models
@@ -28,8 +28,10 @@ Ship the paper's decode-order instruments modellessly over signals the workspace
 
 ### Tasks
 
-- [ ] **T2.1** Offline anchor scorer `anchor_score.rs`: first-unmask-in-block frequency + masked-position entropy from existing decode logs; outputs a per-position anchor score (paper §5 sparse anchor set analog). GOAT arm: planted-anchor fixture — a uniquely-determining token must rank #1.
+- [x] **T2.1** Offline anchor scorer `anchor_score.rs`: first-unmask-in-block frequency + masked-position entropy from existing decode logs; outputs a per-position anchor score (paper §5 sparse anchor set analog). GOAT arm: planted-anchor fixture — a uniquely-determining token must rank #1.
+      **LANDED 2026-09-20**: `crates/katgpt-core/src/anchor_score.rs` (root-level per the plan target, same `decode_order_metrics` feature). Inputs are the logs Phase-1/T-587 already emit: π (T1.3 `unmask_steps`) for `first_unmask_frequencies` (ties at the earliest step ALL count — joint anchors; all-sentinel blocks contribute nothing) + the Issue-587 q rows (row-major `[positions × vocab]`) for `masked_entropies` (nats, 0·ln0=0). `anchor_scores` = 0.5·freq_norm + 0.5·(1−ent_norm), min-max per component, degenerate range → 0.5 (no discrimination, never a fake 0/1). GOAT arm `planted_anchor_ranks_first` GREEN (point-mass q + strictly-earliest π → score 1.0 at the anchor, 0.0 elsewhere, rank #1) + 7 contract tests (tie counting, sentinel blocks, empty-inputs, degenerate-half, uniform-flat). 8/8; core 2084/2063 on/off; clippy --all-targets clean.
 - [ ] **T2.2** UGC anchor view: expose the certified-set spine of `ugc_schedule.rs` as the sparse anchor set A (view + accessor, zero new math). GOAT arm: factorization-identity test on synthetic q — certified spine as A, remainder as conditional chain.
+      *(Scope note for the next session: Research 575 line 21 names the mapping — "the certified high-confidence masks: the certified set is the spine, the rest decodes as the conditional chain". The view needs a read of `ugc_schedule.rs`'s `UgcBlockPlan`/`reveal_grid_from_plan`/`bernoulli_unmask_with_grid` to pick the exact certified-set surface; the factorization-identity arm pins `q(x) = q(x_A)·Π_{i∉A} q(x_i|·)` on a synthetic joint.)*
 - [ ] **T2.3** Optional schedule variants, promote-only-on-G3: confidence-threshold τ unmasking beside `PositionOffsetSchedule::probability_order/uniform_order` in `set_diffusion_schedule.rs`; 1/λ_t-shaped unmask-slot allocation (spend more slots on hard early steps). Both feature-gated; demote silently if G3 fails.
 
 ## Phase 3 — Bench + GOAT gate
