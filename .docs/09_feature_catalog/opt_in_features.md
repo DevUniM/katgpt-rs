@@ -4188,48 +4188,35 @@ reads (canary-armed, `--release --features structured_reads,alloc_tracking`).
 Opt-in POC — the accuracy axis rides the 4090 reference run (Issue 859 T1,
 deferred on sibling GPU occupancy); promotion decision after T1 + T5.
 
-## 118. decode_order_metrics — decode-order AR-ness instruments for the DLM lane (Plan 602)
+## 119. successor_density_critic — the tabular modelless CRL goal-critic (Issue 860)
 
-Modelless decode-order statistics distilled from dQwen3.5 hybrid-attention
-diffusion LMs ([arXiv:2609.20751](https://arxiv.org/abs/2609.20751),
-Research 575): local/global AR-ness (ALR/AGR) over a decode trajectory π,
-where `π[i]` is the unmask step of position `i` (denoise step for D2F,
-forward-pass index for SW-SetDLM; `u32::MAX` sentinel = never committed).
-Ties count discordant — parallel unmask is exactly the non-AR behavior the
-instrument detects (a deliberate divergence from Kendall tau-b, documented
-in the module contract). Plus a windowed O(L·W) AGR variant for streaming
-canvases (incremental slide, pinned identities: `w=2` ≡ ALR, `w≥L` ≡ AGR).
+Count-based closed-form estimator of the CRL log-density-ratio goal critic
+`f*(s,a,g) = log p(s_{t+}=g | s,a) / p(g)` (riir-ai Research 386;
+arXiv:2206.07568 Eysenbach et al.): Laplace-smoothed log-count ratio over
+dense `[S][A][S]` weighted-count tables, `laplace_log_ratio` as a pure pub
+fn, `argmax_a` / `argmax_g` (goal salience), sigmoid link (sigmoid never
+softmax), BLAKE3-committed freeze/thaw (the contrastive_scope pattern).
+Successor samplers are DETERMINISTIC and zero-variance: `Discounted` (the
+default — expectation form of the paper's §3 geometric hindsight sampler,
+exactly consistent with the behavior-continued discounted measure) and
+`CLearning` (the App. D blend — horizon-reweighting parity variant, requires
+γ > 0, deliberately NOT the G1-gated default). Observation is ONE reverse
+sweep per trajectory — O(L·G), fixed accumulation order (bit-identical
+rebuilds); goals share the state id space (the hindsight samplers only ever
+assign visited states).
 
-Phase 1 (landed): the pure-metrics module
-`crates/katgpt-core/src/dllm/arness.rs` (zero-alloc, no deps, 13 known-answer
-tests incl. hand-computed block-swap and the parallel-block anti-AR shape) +
-π-logging in katgpt-forward — `d2f_decode_block_with_unmask_steps` (the
-Issue-587 q_out out-param posture, commit-time capture) and
-`SetDiffusionResult::unmask_steps` with `local_ar_ness()`/`global_ar_ness()`
-readouts. Phase 2 partial (T2.1 + T2.2 landed): the offline anchor scorer
-`crates/katgpt-core/src/anchor_score.rs` — first-unmask-in-block frequency
-(π logs) + masked-position entropy (Issue-587 q rows) → per-position anchor
-score ranking toward the paper's sparse anchor set A; planted-anchor GOAT
-arm green (uniquely-determining token ranks #1). And the UGC certified-spine
-anchor view `CertifiedSpineView` (in `ugc_schedule.rs`, same feature): the
-sampler's init-kernel reveals as the sparse anchor set A, the remainder as
-the conditional chain — `bernoulli_unmask_with_grid` gained the optional
-`steps_out` reveal recording (alloc-neutral), and the factorization-identity
-GOAT arm pins `q(x) = q(x_A)·Π q(x_i|x_<i, x_A)` exactly by enumeration on a
-synthetic joint. T2.3 landed (schedule variants, same feature):
-`confidence_threshold_eligible` (the paper's τ parallel-decoding policy —
-the dynamic counterpart of `probability_order`; NaN never eligible) and
-`inverse_lambda_slot_counts` (the 1/λ_t time-reweighted objective
-transferred to per-pass unmask budgets — hard early passes commit few
-tokens each; exact-sum largest-remainder allocation). Phase 3 partial
-(T3.1 landed): the AR-ness × w cross-tab bench —
-`katgpt_rs::benchmark::bench_ar_ness_w_sweep` (root feature
-`decode_order_metrics`, implying `set_diffusion`): trains one set-causal
-model at the SW-SetDLM default w=0.5, sweeps inference w (0.1–1.0) + the
-mdlm parallel endpoint, and cross-tabs ALR/AGR (π logs) against NELBO /
-NFE / convergence — measured: w=0.5 sits at ALR 0.589 / AGR 0.797, inside
-the paper's hybrid band, with the endpoints (w=0.1 → 1.0/1.0, uniform →
-~0.52, mdlm → 0/0 ties floor) spanning the axis. Remaining: the gap-
-predictor G3 GOAT, the retention floor G0, and the bench doc + verdict.
-**Promotion NOT claimed**; stays opt-in either way until the G3 verdict
-(demote silently if G3 fails).
+Gates (Bench 818, all green at dev AND release): G1a empirical-vs-Bellman
+exactness 0.00841 ≤ 0.01 (the oracle is the iterated behavior-continued
+measure — the greedy-action-repeat closed form was measured WRONG and
+replaced, see the bench doc) · G1b argmax_a == exact argmax on 128 decisive
+(s,g) of 32×32 · G1c Lemma 4.1 executable (goal-prior perturbation ×0.001
+to ×1e6 leaves argmax_a bit-identical) · G1d byte-identical re-seeded
+rebuild · G2 0.9 ns score / 4.3 ns argmax_a / 44 ns argmax_g (release,
+absolute budgets) · G3a uniform-prior argmax_g == raw conditional argmax
+(structural) · G3b the empirical prior moves 21 of 24 goal-salience argmax_g
+(two-fixture split: γ = 0.9 lets the prior outrun the conditional ladder;
+γ = 0.5 cannot flip, measured) · G3c critic 0 ranking discordances vs
+raw-count 95 over 1854 enforced pairs · G4 zero allocs (alloc_tracking).
+Opt-in — promotion additionally requires a live consumer (riir-ai Issue 991
+goal salience, pull-gated; riir-train Plan 413 tabular arm). Zero deps;
+zero runtime cost unless constructed.

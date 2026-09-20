@@ -510,6 +510,24 @@ recirculation = []
 # cost unless a table is constructed.
 contrastive_scope = []
 
+# successor_density_critic (Issue 860 / riir-ai Research 386, arXiv:2206.07568
+# CRL): the tabular, modelless CRL extraction — a count-based closed-form
+# estimator of the paper's log-density-ratio goal critic f*(s,a,g) =
+# log p(s_t+ = g | s,a)/p(g): Laplace-smoothed log-count ratio over dense
+# [S][A][S] weighted-count tables, deterministic zero-variance successor
+# samplers (Discounted = the expectation form of the paper's §3 geometric
+# hindsight sampler; CLearning = the App. D blend, parity-only), argmax_a /
+# argmax_g (goal salience), sigmoid link (Bench 048; sigmoid never softmax),
+# BLAKE3-committed freeze/thaw (the contrastive_scope pattern). Lemma 4.1's
+# ranking-preservation is an executable property (goal-prior perturbation
+# leaves argmax_a bit-identical) and the G1 gate checks the empirical
+# conditional successor mass against the analytic discounted measure of a
+# closed-form ring MDP. Pure counts + ln + sigmoid + BLAKE3; zero deps;
+# zero runtime cost unless constructed. Opt-in — promotion requires the GOAT
+# gate (.benchmarks/818) AND a live consumer (riir-ai Issue 991 goal
+# salience / riir-train Plan 413 tabular arm, both pull-gated).
+successor_density_critic = []
+
 # bounded_target (Issue 695 / Research 432, arXiv:2608.24646 DiffusionOPSD):
 # the modelless half of the OPSD recipe — SPSA bounded-target direction
 # (unit by construction), bounded pairs/corrections (type-level ‖Δ‖≤ε),
@@ -1464,6 +1482,18 @@ required-features = ["ac_prefix"]
 name = "bench_313_ac_prefix_modelless"
 harness = false
 required-features = ["ac_prefix"]
+
+# Issue 860 Phase 3 — successor-density goal-critic GOAT gate: G1 analytic
+# exactness (empirical conditional successor mass vs the closed-form ring
+# MDP's discounted measure) + Lemma-4.1 ranking (argmax_a == exact-measure
+# argmax, goal-prior perturbation invariance), G2 O(1) lookup + argmax-scan
+# absolute budgets (best-of-N minimum), G3 the density-ratio correction vs
+# raw-count / marginal-naive baselines on a goal-salience ranking task, G4
+# alloc-free read path (alloc_tracking profile).
+[[bench]]
+name = "bench_818_successor_density_critic_goat"
+harness = false
+required-features = ["successor_density_critic"]
 
 # Plan 585 Phase 3 — Usage-rate (mass/age) KV eviction GOAT gate: T3.1 planted
 # age-bias fixture (raw-H2O evicts the hot row, mass/age retains it), T3.2

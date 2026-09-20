@@ -3124,6 +3124,21 @@ pub mod recirculation;
 #[cfg(feature = "contrastive_scope")]
 pub mod contrastive_scope;
 
+// Successor-density goal critic (Issue 860 / riir-ai Research 386,
+// arXiv:2206.07568 CRL): the tabular, modelless CRL extraction — a
+// count-based closed-form estimator of the paper's log-density-ratio goal
+// critic f*(s,a,g) = log p(s_t+ = g | s,a)/p(g) over dense [S][A][S]
+// weighted-count tables, with deterministic zero-variance successor
+// samplers, argmax_a / argmax_g (goal salience), a sigmoid link (Bench 048;
+// sigmoid never softmax), and BLAKE3-committed freeze/thaw (the
+// contrastive_scope pattern). Lemma 4.1's ranking preservation is an
+// executable property here (goal-prior perturbation leaves argmax_a
+// bit-identical), not a paper claim. Consumers (riir-ai Issue 991 per-NPC
+// goal salience — think-brain only, never synced; riir-train Plan 413
+// tabular arm) file consumer-side at adoption. Opt-in POC.
+#[cfg(feature = "successor_density_critic")]
+pub mod successor_density_critic;
+
 // Bounded-target correction + realization-gap triage primitives (Issue 695
 // / Research 432, arXiv:2608.24646 DiffusionOPSD, Zhou et al.): the OPSD
 // recipe's modelless half — one-measurement SPSA direction (unit by
