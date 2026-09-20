@@ -8001,3 +8001,34 @@ anything failing.
 Full record, with the before/after table, the per-repo cross-repo read and the
 four perturbation canaries: `.docs/10_audits/cfg_gated_silent_zero_pass.md`
 §"The SECOND spelling". Fix commits `4e2f28f2d` · `6399faf69`.
+```
+
+## Issue 860 (2026-09-20) — `successor_density_critic`: tabular discounted count-ratio goal-critic: CLOSED
+
+The modelless CRL extraction (riir-ai Research 386; arXiv:2206.07568) landed
+complete at `2c7a1f157`: dense `[S][A][S]` f64 weighted-count tables,
+hindsight-geometric observation as ONE O(L·G) reverse sweep, `Discounted`
+(default, exactly consistent) + `CLearning` (parity variant, divergence
+recorded — non-default by design because it breaks the G1 oracle's exactness
+certification), BLAKE3 freeze/thaw at full bit precision, Lemma-4.1 ranking
+invariance as an executable property. **Bench 818 GOAT PASS** — G1a exactness
+0.00841 ≤ 0.01 against the behavior-continued Bellman fixed point (the first
+draft's greedy-action-repeat closed form was the WRONG oracle and the gate
+caught it), G1b ranking 128/128 decisive, G1c prior-perturbation
+bit-identity ×0.001…×1e6, G1d byte-identical freeze, G2 absolute budgets
+(score 0.9 ns / argmax_a 4.3 ns / argmax_g 44.0 ns), G3a–c structure/prior
+bite/0 discordances vs 95 raw-count, G4 zero allocs — release AND dev,
+box state M3 (this arch; no 858-class cross-arch exposure).
+
+The consumer pull-gate half — the issue's one open item — is **satisfied**:
+riir-ai Issue 991 lane (b) landed `goal_salience` (opt-in), which forwards
+`katgpt-core/successor_density_critic` in `riir-engine/Cargo.toml` (verified
+by grep at close, not inherited from prose), consumer code at
+`riir-engine/src/cgsp_runtime/goal_salience.rs` + `riir-games` swarm, GOAT
+mechanism-gate Bench 949 (6.3× first-reach) + QUEST-WORLD promotion-gate A/B
+Bench 950. riir-train Plan 413's tabular arm remains that repo's own lane at
+adoption. The feature **stays opt-in** as written: promotion rides the
+consumer lanes, and riir-ai's promotion-to-default is production-host-gated
+(owner). Catalog §119; bench `bench_818_successor_density_critic_goat`.
+Hygiene close: 12/12 module tests green on `develop` at removal
+(`successor_density` filter, feature on).
