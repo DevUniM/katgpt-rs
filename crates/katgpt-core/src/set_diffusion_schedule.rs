@@ -424,6 +424,106 @@ pub fn mdlm_gen_steps(l: usize) -> Vec<u32> {
     vec![0u32; l]
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Plan 602 T2.3 — optional decode-order schedule variants
+// (feature `decode_order_metrics`; promote-only-on-G3, demote silently
+// if the Phase-3 G3 GOAT fails — the plan's standing rule)
+// ═══════════════════════════════════════════════════════════════
+
+/// Confidence-threshold τ eligibility (Plan 602 T2.3, arXiv:2609.20751's
+/// parallel-decoding policy — the paper holds the quality–speed frontier
+/// under τ unmasking to ~8×): the positions whose current confidence is
+/// `≥ τ` are eligible to commit this pass.
+///
+/// The dynamic counterpart of [`probability_order`]'s static full sort
+/// (same DBTM attractor law, Issue 811 / Research 563: confident positions
+/// are the safe early reveals) — a decode loop calls this per pass with
+/// the current confidences instead of pre-committing to one ordering.
+/// Ascending indices; NaN confidences are never eligible (`NaN ≥ τ` is
+/// false under IEEE — incomparable confidences stay masked, never a
+/// false commit). The count the caller needs for NFE accounting is just
+/// the length of the returned slice.
+#[cfg(feature = "decode_order_metrics")]
+pub fn confidence_threshold_eligible(confidence: &[f32], tau: f32) -> Vec<usize> {
+    confidence
+        .iter()
+        .enumerate()
+        .filter(|&(_, &c)| c >= tau)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// 1/λ_t-shaped unmask-slot allocation (Plan 602 T2.3): split `l` unmask
+/// slots across `steps` decode passes with per-pass counts shaped by the
+/// paper's time-reweighted objective `w_t = 1/λ_t` (equal weight per masked
+/// target, linear schedule `α_t = 1−t`) transferred to inference — λ_t is
+/// the remaining-masked count under the linear baseline, so early
+/// (heavily-masked, hard) passes commit FEW tokens each and the compute
+/// budget concentrates on the hard early region, while late passes take
+/// larger, confident batches.
+///
+/// Contract: counts are **non-decreasing over the active prefix** (the
+/// passes that carry work), every active pass commits ≥ 1 (surplus passes
+/// when `steps > l` idle with 0 at the END — the hard early region keeps
+/// its passes), and the total is exactly `l` (min-1 pre-assignment +
+/// largest-remainder distribution, ties to the later pass). `steps == 0`
+/// panics; `l == 0` returns all zeros.
+#[cfg(feature = "decode_order_metrics")]
+pub fn inverse_lambda_slot_counts(l: usize, steps: usize) -> Vec<usize> {
+    assert!(steps > 0, "steps must be positive");
+    let mut counts = vec![0usize; steps];
+    if l == 0 {
+        return counts;
+    }
+    // At most `l` passes carry work; surplus passes idle at the end.
+    let active = steps.min(l);
+    // Baseline remaining-masked at the START of active pass t (0-indexed):
+    // r_t = ceil(l · (active − t) / active), ≥ 1 for every t < active.
+    // Weight w_t = 1/r_t — increasing in t (later = fewer masked = larger
+    // per-pass share), the transferred shape of the training objective.
+    let weights: Vec<f64> = (0..active)
+        .map(|t| {
+            let r = (l * (active - t)).div_ceil(active);
+            1.0 / r as f64
+        })
+        .collect();
+    // Every active pass commits at least one token; distribute the
+    // remaining l − active by largest remainder of the exact quotas
+    // extra · w_t / Σw.
+    for c in counts[..active].iter_mut() {
+        *c = 1;
+    }
+    let extra = l - active;
+    if extra == 0 {
+        return counts;
+    }
+    let wsum: f64 = weights.iter().sum();
+    let quota = |t: usize| extra as f64 * weights[t] / wsum;
+    let mut floors: Vec<usize> = (0..active).map(|t| quota(t) as usize).collect();
+    let mut assigned: usize = floors.iter().sum();
+    // Largest fractional part first (descending); ties to the LATER pass
+    // (keeps the profile non-decreasing — a tie broken earlier could
+    // invert it).
+    let mut order: Vec<usize> = (0..active).collect();
+    order.sort_by(|&a, &b| {
+        let (fa, fb) = (quota(a) - floors[a] as f64, quota(b) - floors[b] as f64);
+        fa.partial_cmp(&fb)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .reverse()
+            .then(b.cmp(&a))
+    });
+    let mut idx = 0;
+    while assigned < extra {
+        floors[order[idx % active]] += 1;
+        assigned += 1;
+        idx += 1;
+    }
+    for (t, &f) in floors.iter().enumerate() {
+        counts[t] += f;
+    }
+    counts
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
@@ -986,5 +1086,108 @@ mod tests {
             }
         }
         count
+    }
+
+    /// Plan 602 T2.3 schedule-variant tests (feature-gated with the fns).
+    #[cfg(all(test, feature = "decode_order_metrics"))]
+    mod decode_order_variants {
+        use super::*;
+
+        // ── confidence_threshold_eligible ─────────────────────────────
+
+        #[test]
+        fn threshold_picks_confident_positions_ascending() {
+            let conf = [0.9f32, 0.2, 0.7, 0.95, 0.1];
+            assert_eq!(confidence_threshold_eligible(&conf, 0.7), vec![0, 2, 3]);
+            assert_eq!(confidence_threshold_eligible(&conf, 0.9), vec![0, 3]);
+        }
+
+        #[test]
+        fn threshold_boundary_is_inclusive() {
+            let conf = [0.5f32, 0.4999999, 0.5000001];
+            // τ exactly at a confidence includes it (≥, not >).
+            assert_eq!(confidence_threshold_eligible(&conf, 0.5), vec![0, 2]);
+            // τ above everything / below everything.
+            assert_eq!(confidence_threshold_eligible(&conf, 0.6), Vec::<usize>::new());
+            assert_eq!(confidence_threshold_eligible(&conf, 0.0), vec![0, 1, 2]);
+        }
+
+        #[test]
+        fn threshold_nan_never_eligible_and_empty_is_empty() {
+            let conf = [f32::NAN, 0.5, f32::NAN];
+            assert_eq!(confidence_threshold_eligible(&conf, 0.3), vec![1]);
+            assert_eq!(confidence_threshold_eligible(&conf, 0.0), vec![1]);
+            let empty: [f32; 0] = [];
+            assert!(confidence_threshold_eligible(&empty, 0.5).is_empty());
+        }
+
+        #[test]
+        fn threshold_agrees_with_probability_order_prefix() {
+            // With distinct confidences, the eligible set is exactly the
+            // top-|eligible| prefix of probability_order — the dynamic τ
+            // policy and the static confidence sort name the same tokens.
+            let conf: Vec<f32> = (0..24).map(|i| ((i * 37) % 97) as f32 / 97.0).collect();
+            for &tau in &[0.1f32, 0.3, 0.5, 0.7, 0.9] {
+                let eligible = confidence_threshold_eligible(&conf, tau);
+                let order = probability_order(&conf);
+                let top: std::collections::HashSet<usize> =
+                    order.iter().take(eligible.len()).copied().collect();
+                let got: std::collections::HashSet<usize> = eligible.iter().copied().collect();
+                assert_eq!(got, top, "tau={tau}");
+            }
+        }
+
+        // ── inverse_lambda_slot_counts ────────────────────────────────
+
+        #[test]
+        fn slot_counts_sum_exact_and_are_monotone() {
+            for &l in &[0usize, 1, 2, 3, 6, 10, 32, 100, 257] {
+                for &steps in &[1usize, 2, 3, 4, 7, 16, 64] {
+                    let c = inverse_lambda_slot_counts(l, steps);
+                    assert_eq!(c.len(), steps, "l={l} steps={steps}");
+                    assert_eq!(c.iter().sum::<usize>(), l, "l={l} steps={steps}: {c:?}");
+                    // Non-decreasing over the active prefix (trailing zeros
+                    // are idle surplus passes, not part of the profile).
+                    let active = steps.min(l);
+                    assert!(
+                        c[..active].windows(2).all(|w| w[0] <= w[1]),
+                        "non-monotone l={l} steps={steps}: {c:?}"
+                    );
+                    // Zeros only ever trail (surplus passes idle at the END).
+                    if let Some(first_zero) = c.iter().position(|&x| x == 0) {
+                        assert!(c[first_zero..].iter().all(|&x| x == 0), "interior zero l={l} steps={steps}: {c:?}");
+                    }
+                    // Active passes commit ≥ 1.
+                    assert!(c[..active].iter().all(|&x| x >= 1), "l={l} steps={steps}: {c:?}");
+                }
+            }
+        }
+
+        #[test]
+        fn slot_counts_hand_computed() {
+            // l=6, steps=3: active=3, min-1 base [1,1,1], extra=3.
+            // r_t = ceil(6·(3−t)/3) = [6, 4, 2] → w = [1/6, 1/4, 1/2],
+            // Σw = 11/12. quotas = 3·w/Σw = [6/11, 9/11, 18/11]
+            // → floors [0, 0, 1] (Σ=1), remainder 2 → fracs
+            // [6/11, 9/11, 7/11] → t1 then t2 get +1.
+            // Final: [1+0, 1+1, 1+1+1] = [1, 2, 3].
+            assert_eq!(inverse_lambda_slot_counts(6, 3), vec![1, 2, 3]);
+            // Degenerate shapes.
+            assert_eq!(inverse_lambda_slot_counts(5, 1), vec![5]);
+            assert_eq!(inverse_lambda_slot_counts(1, 4), vec![1, 0, 0, 0]);
+            assert_eq!(inverse_lambda_slot_counts(0, 3), vec![0, 0, 0]);
+            assert_eq!(inverse_lambda_slot_counts(4, 4), vec![1, 1, 1, 1]);
+        }
+
+        #[test]
+        fn slot_counts_backload_batch_size() {
+            // l=100, steps=10: quota_0 = 90·(1/100)/Σw ≈ 3.07 → the first
+            // (hardest) pass commits ~4 tokens while the last commits ~32 —
+            // the 1/λ_t shape concentrates per-pass batch size late, keeping
+            // the early region's careful small batches.
+            let c = inverse_lambda_slot_counts(100, 10);
+            assert_eq!(c.iter().sum::<usize>(), 100);
+            assert!(*c.last().unwrap() >= 4 * c[0], "profile must grow: {c:?}");
+        }
     }
 }

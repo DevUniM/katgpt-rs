@@ -4216,7 +4216,12 @@ sampler's init-kernel reveals as the sparse anchor set A, the remainder as
 the conditional chain — `bernoulli_unmask_with_grid` gained the optional
 `steps_out` reveal recording (alloc-neutral), and the factorization-identity
 GOAT arm pins `q(x) = q(x_A)·Π q(x_i|x_<i, x_A)` exactly by enumeration on a
-synthetic joint. T2.3 (schedule variants) and Phase 3 (bench cross-tab +
-the G3 GOAT: predictor-chosen (w, block size) ≥ fixed at matched NFE)
-pending — **promotion NOT claimed**; stays opt-in either way until the G3
-verdict.
+synthetic joint. T2.3 landed (schedule variants, same feature):
+`confidence_threshold_eligible` (the paper's τ parallel-decoding policy —
+the dynamic counterpart of `probability_order`; NaN never eligible) and
+`inverse_lambda_slot_counts` (the 1/λ_t time-reweighted objective
+transferred to per-pass unmask budgets — hard early passes commit few
+tokens each; exact-sum largest-remainder allocation). Phase 3 (bench
+cross-tab + the G3 GOAT: predictor-chosen (w, block size) ≥ fixed at
+matched NFE) pending — **promotion NOT claimed**; stays opt-in either way
+until the G3 verdict (demote silently if G3 fails).

@@ -2845,6 +2845,12 @@ pub mod anchor_score;
 // target — ugc_schedule itself stays always-on, only this view is gated).
 #[cfg(feature = "decode_order_metrics")]
 pub use ugc_schedule::CertifiedSpineView;
+// Plan 602 T2.3: optional decode-order schedule variants (same feature;
+// defined in set_diffusion_schedule.rs per the plan target — that module
+// stays always-on, only these variants are gated; promote-only-on-G3,
+// demote silently if the Phase-3 G3 GOAT fails).
+#[cfg(feature = "decode_order_metrics")]
+pub use set_diffusion_schedule::{confidence_threshold_eligible, inverse_lambda_slot_counts};
 #[cfg(feature = "modality_pruned_load")]
 pub mod pipeline_pruner; // Pipeline Pruner — modality-aware inference pipeline selection (Plan 227 Phase 3)
 // ── Phase 12 T4.3: folder moves from katgpt-rs/src/.

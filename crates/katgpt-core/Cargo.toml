@@ -152,8 +152,11 @@ bf16_simd = []
 # any decode trajectory π (per-position unmask step, u32::MAX sentinel for
 # never-committed), plus a windowed O(L·W) AGR variant for streaming
 # canvases; the offline anchor scorer (T2.1) ranking positions toward the
-# paper's sparse anchor set A; and the UGC certified-spine anchor view
-# (T2.2, `CertifiedSpineView` + the sampler's steps_out reveal recording).
+# paper's sparse anchor set A; the UGC certified-spine anchor view
+# (T2.2, `CertifiedSpineView` + the sampler's steps_out reveal recording);
+# and the T2.3 schedule variants (`confidence_threshold_eligible` τ
+# parallel-decoding eligibility + `inverse_lambda_slot_counts` 1/λ_t-shaped
+# per-pass unmask budgets) in set_diffusion_schedule.rs.
 # Distilled from dQwen3.5 hybrid-attention DLM (arXiv:2609.20751,
 # Research 575). Pure fns, no new deps. Consumers: katgpt-forward
 # π-logging (D2F block decode + SW-SetDLM decode paths, which forwards
