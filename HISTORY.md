@@ -8417,3 +8417,17 @@ is strong. Two stale statements corrected in riir-ai in the same window
 still unmet. Scope limitation recorded in Bench 308 (addendum) + the Phase
 22 feature-def comment; proposal status line updated. Full data + box state:
 `.benchmarks/849_karc_deployed_shape_quality.md`.
+
+## Issue 865 file hygiene (2026-09-22) — issue file removed per noise-reduction, the lane's record was already durable: CLOSED (hygiene)
+
+The file's own status line said it: T1/T2/T5 LANDED, T3 measured NEGATIVE
+(Bench 847), T4 DEFERRED — "nothing remains actionable in this lane until
+the multi-layer kernel extension lands; re-open there." Every landing and
+defer already has its durable home (the T3 HISTORY entry below, the catalog
+row `.docs/09_feature_catalog/opt_in_features.md` §120, Research 578,
+riir-train recipe rows A/B, and the G2a/G2b inverted regression pins in
+`tests/probe_guidance_goat.rs` that red the day guidance wins). The file was
+therefore pure noise; removed with no content change. Re-open path
+unchanged: the Bonsai-scale re-open (multi-layer kernel extension + a trunk
+with headroom) files its own issue where G2a/G2b are the pre-wired promotion
+decider.
