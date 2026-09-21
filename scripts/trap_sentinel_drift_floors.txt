@@ -95,4 +95,4 @@ mmorpg-remake                     3    1    0     0         0         0         
 # Drop this to 0 in the commit that sentinels or retires that script. Do not
 # raise it for a different script: two EXPOSED rows here would be one proven
 # inert and one unexamined, under one number.
-riir-reflex                       1    1    0     0         0         0         0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-reflex                       1    0    0     0         0         0         0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth); min_population re-pinned 1->0 same session from the sweep's own measurement — the ci_feature_guard.sh carries set -euo pipefail but NO EXIT trap, so it is outside the population (no trap = nothing to launder); min_scripts=1 keeps the walk honest

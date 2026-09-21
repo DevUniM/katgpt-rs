@@ -108,4 +108,4 @@ mmorpg-remake                30            100              0
 # repository, riir-ai's vendored `wgpu-hal` fork, riir-train's cargo OUT_DIR
 # sources under `.runs/target-*`). A reader who cannot see that the population
 # DEFINITION changed reads that drop as a catastrophe.
-riir-reflex                   8              9              0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-reflex                   8              7              0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth); cfg_sites re-pinned 9->7 same session from the sweep's own measurement (the gate's outer-#[cfg] counter does not count #![cfg]-gated TARGET headers the way the first hand count did — 7 is the measured outer-site count over the 8 tracked .rs)
