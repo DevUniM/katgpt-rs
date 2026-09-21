@@ -8,7 +8,7 @@ Related: [Research 576](../.research/576_Laya_Open_Jev_Generalist_RLCD_Compariso
 
 ## TL;DR
 
-Ship the **KatGPT decision engine + benchmark harness** (new private repo `riir-reflex`, riir-clippy-shaped): a localhost serving binary over the landed substrate — modelless heads, `SigmoidGateCalibrator`-calibrated bridges, `structured_read` — benchmarked head-to-head against the Laya family and TypeSafe Jev in four lanes (byte-identical questions): (1) **KatGPT latent** (in-process), (2) **Laya latent** (their Apache-2.0 checkpoints loaded locally on the same machine, by a NATIVE-RUST runner — zero Python, owner directive), (3) **Jev API** via the *visitor's own* key (browser-side; we never pay anyone), (4) **KatGPT API** (the same engine behind localhost HTTP — apples-to-apples API-vs-API). Phase 1 is the primary deliverable and needs no marketing call: it alone discharges `structured_reads`' recorded promotion trigger ("when a consumer appears") and builds the **corpus flywheel's intake** — consent-gated decision outcomes flowing through the existing KAT contribution network, growing the labeled corpus that riir-clippy Issue 125's *measured* reopen trigger (10⁴–10⁵ contexts) demands; at threshold the specialist retrains (RLCD recipe — now published via laya, Research 576 §3), freeze/thaws as a BLAKE3 vessel, and ships as a selectable per-domain engine profile. The **public arena site** at **`reflex.gist.rs`** (dark-red rust theme — explicitly not laya's yellow; public product name **Reflex** under the KatGPT funnel) is Phase 2 — **GREEN-LIT (owner 2026-09-21)**: per-task losses published (the standing recommendation, adopted) and distribution following the cargo-heal pattern (new public binary-release repo + tap + bucket; source stays private in `riir-reflex`). The substrate race is already won and landed (562's arena scoreboard: 11W/2L/2SPLIT; Benches 808/816/817); the missing pieces are the consumer, the corpus engine, and the surface. This is a katgpt-rs + new-repo product proposal distilling a public competitor set, not a new research claim.
+Ship the **KatGPT decision engine + benchmark harness** (new private repo `riir-reflex`, riir-clippy-shaped): a localhost serving binary over the landed substrate — modelless heads, `SigmoidGateCalibrator`-calibrated bridges, `structured_read` — benchmarked head-to-head against the Laya family and TypeSafe Jev in four lanes (byte-identical questions): (1) **KatGPT latent** (in-process), (2) **Laya latent** (their Apache-2.0 checkpoints loaded locally on the same machine, by a NATIVE-RUST runner — zero Python, owner directive), (3) **Jev API** via the *visitor's own* key (browser-side; we never pay anyone), (4) **KatGPT API** (the same engine behind localhost HTTP — apples-to-apples API-vs-API). Phase 1 is the primary deliverable and needs no marketing call: it alone discharges `structured_reads`' recorded promotion trigger ("when a consumer appears") and builds the **corpus flywheel's intake** — consent-gated decision outcomes flowing through the existing KAT contribution network, growing the labeled corpus that riir-clippy Issue 125's *measured* reopen trigger (10⁴–10⁵ contexts) demands; at threshold the specialist retrains (RLCD recipe — now published via laya, Research 576 §3), freeze/thaws as a BLAKE3 vessel, and ships as a selectable per-domain engine profile. The **public arena site** at **`reflex.gist.rs`** (dark-red rust theme — explicitly not laya's yellow; public product name **Reflex** under the KatGPT funnel) is Phase 2 — **GREEN-LIT (owner 2026-09-21)**: per-task losses published (the standing recommendation, adopted) and distribution following the cargo-heal pattern (new public binary-release repo + tap + bucket; source stays private in `riir-reflex`). The substrate race is already won and landed (562's arena scoreboard: 11W/2L/2SPLIT; Benches 808/816/817); the missing pieces are the consumer, the corpus engine, and the surface. This is a katgpt-rs + new-repo product proposal distilling a public competitor set, not a new research claim. **Hosted serving (added 2026-09-21, the owner's six service/economics questions — TUNA trial, devnet/mainnet, tokenomics, CF container deploy, site pricing, CLI-vs-API parity): designed in §"The hosted serving plane" as a Phase-4 sketch — one ledger, no second token, the shop press/hold settlement pattern, per-decision µKAT as an owner constant.**
 
 ## The problem this solves
 
@@ -46,7 +46,72 @@ Consent-gated decision outcomes (semantics mirroring `--stats`: **Unset never pu
 
 ### What the site shows
 
-Hero ("Typed decisions. Calibrated against a floor. Self-evolving. Free."), stat chips (ECE-vs-floor, latency, abstain rate, $0, bit-identical, on-chain provenance), the four-column comparison table (KatGPT vs Laya vs Jev vs a generic LLM: open weights / runs local / typed+probs / calibrated-vs-floor / abstains / self-evolves / cost), live playground (paste text → pick a pattern: Route / Guard / Score / Filter / Watch / Cascade), benchmark tab (the four-lane CI tables), agent-skill download (`SKILL.md` teaching coding agents to wire the engine — the laya-integration analog, and our home format), clone-and-run block.
+Hero ("Typed decisions. Calibrated against a floor. Self-evolving. Free."), stat chips (ECE-vs-floor, latency, abstain rate, $0 local — hosted on KAT per the Phase-4 plane, bit-identical, on-chain provenance), the four-column comparison table (KatGPT vs Laya vs Jev vs a generic LLM: open weights / runs local / typed+probs / calibrated-vs-floor / abstains / self-evolves / cost), live playground (paste text → pick a pattern: Route / Guard / Score / Filter / Watch / Cascade), benchmark tab (the four-lane CI tables), agent-skill download (`SKILL.md` teaching coding agents to wire the engine — the laya-integration analog, and our home format), clone-and-run block.
+
+## The hosted serving plane — services & economics, e2e (added 2026-09-21; the owner's six questions)
+
+The arena makes the engine free to run locally. This section designs the plane where the engine is ALSO a service — hosted decisions for people who don't run the binary — wired into the EXISTING KAT/TUNA economy. One ledger, one identity, no second token, zero new payment code.
+
+### The three access surfaces (one account, one balance)
+
+| Surface | Runs where | Pays | Identity |
+|---|---|---|---|
+| `reflex` local engine | the visitor's machine | nothing — free forever, the hero claim | none |
+| `reflex` CLI → hosted engine | our compute | KAT burn (the cargo-heal plane) | Ed25519 account key (`reflex login` — the heal login chain) |
+| Hosted HTTP API | our compute | KAT burn (the press/hold plane) | the same account key → session (SIWR/passkey or key verify) |
+
+**Price the decision, not the client.** One µKAT-per-decision rate across CLI and API; cargo heal and reflex are two burners on ONE account and ONE balance — which is exactly why the trial wording must go fleet-wide (§1). Differences between the surfaces are service posture, never price (§6).
+
+### 1. TUNA trial — mechanically free, narratively a reword
+
+- **The draw is account-level, not lane-level.** `record_burn` draws TUNA-first (oldest expiry first) then KAT, against the account's balances — there is no per-lane filter in the ledger. A hosted decision burn goes through the SAME call as a heal burn, so every existing property holds unchanged: once-per-account-life claim (`/account/claim`, 30-day TTL from claim), expired credit inert until swept, trial burns do NOT fund the mining pool, and the plane split (`charged_tuna_micro`/`charged_kat_micro`) rides every ack.
+- **What changes is the strings.** The fleet FAQ says trial credit is "spent on healing only" — true today only because heal is the only burner. The first non-heal burner (reflex) must land the fleet-wide reword ("your free trial credit pays first — healing, decisions, everything on the network") in the SAME commit as the first reflex burn lane: front-page FAQ + `/tuna/stats` copy + the client `--info` render. A consumer-facing string describing scope is part of the wire of trust, not docs debt.
+- **Sizing stays envelope doctrine.** The 100 KAT-equivalent trial (the Issue-094 D1 recalibration) is sized for evaluation, not free hosting — the dao envelope gate ([7 days, 2 years] drain for a heavy user at the sustained rate) applies to reflex spend identically; the Phase-4 plan re-measures the envelope with the decision rate included.
+
+### 2. devnet / mainnet — no second ledger, the standing ladder
+
+- **reflex hosted rides the EXISTING kat-service ledger** — the same DOs, the same epoch settle, the same burn watermark, the same faucet-never posture. No new worker ledger, no new genesis, no new consensus surface. `reflex.gist.rs` is the product FRONT (static + playground + pricing); the money plane is routes on the kat-service worker (the `/shop/*` + `/art/*` route-family precedent), reachable at `ai.gist.rs/reflex/*` with a worker route binding `api.reflex.gist.rs` if a vanity host is wanted.
+- **The ladder is the fleet's:** Phase 1 (localhost) and Phase 2 (static site) touch NO money. Phase 3 (decstat contributions) lands on the devnet fleet ledger first. Phase 4 (hosted burn/press lanes) is devnet-first — apex `ai.gist.rs` stays THE mainnet, and mainnet promotion is the owner ceremony it already is (SettlementSubmitter owner-gated; unfunded planes answer fail-closed `unconfigured`, never a silent half-live surface). TUNA genesis for the hosted plane is a dated operator batch like every reservoir action.
+
+### 3. tokenomics — a burn sink that closes the flywheel
+
+- **Hosted decisions are a new KAT burn source, and KAT burns fund the mining pool.** The loop closes: hosted spend pays the pool that pays decstat contributors — the two-sided economy gains its spend side exactly when the contribution side (Phase 3) lands. TUNA trial burns still fund nothing (honest, unchanged).
+- **Pricing is an owner constant, never-lever class.** The per-decision rate sits beside the pack prices in the ledger bounds table — KAT-denominated money-adjacent constants are owner territory (the NEVER_LEVERS doctrine). NO dao lever at launch. A future bounded lever (a per-decision-rate lever under per-lever delta bounds + circuit breaker, the guard engine) is a recorded OPTION for a later plan, not a promise.
+- **No new mints anywhere.** No grant change, no reservoir change, no never-lever touched. The only new ledger motion is burn (debit) and press hold/settle (escrow-style, the shop plane pattern).
+
+### 4. Cloudflare container deploy — three tiers, one measurement
+
+| Tier | What | Shape |
+|---|---|---|
+| 0 | reflex.gist.rs (site, playground, `/pricing`, `/bench` tables) | Workers static assets — zero marginal cost |
+| 1 | hosted API edge (session, identity, hold/settle, rate limit, error codes) | `/reflex/*` routes on the kat-service worker — ALL existing machinery |
+| 2 | the engine runner | decided by MEASUREMENT at the Phase-4 plan (below) |
+
+**Tier 2's two postures, one discriminator:**
+- **(a) wasm-in-Worker** — the modelless lane is ns–µs tier and katgpt-core already has wasm32 lanes with simd128 kernels (the wasm32 gate builds both arms). If the modelless lane's frozen tables fit the Workers script/memory budget, the API edge serves decisions with NO second compute shape at all. The discriminator is a number: measured frozen-vessel size vs the budget — read at the Phase-4 plan, never assumed.
+- **(b) CF Container** — the `edge-wallet-container` precedent: the native `riir-reflex` binary (the SAME release artifact `gist-rs/reflex` ships) in a distroless image, HEALTHCHECK + `--cpus`/`--memory` budgets, behind the Worker edge. The deploy mechanics are riir-deployer's: `deploy.yaml` in riir-reflex (cf-container destination, `cross-build.sh` linux-x86 artifact staged from the mac, stage → verify, L3 rolling drain/flip for updates, explicit rollback). The container exists for process isolation + specialist vessels — modelless marginal compute is µs-tier CPU, never a GPU story.
+- **The laya lane is NEVER hosted** — two BERT-class encoders (421M + 322M) are the visitor's hardware in this proposal's design, deliberately: hosting them is a GPU cost center with no moat, while the local binary IS the product. Hosted = modelless + specialist lanes only.
+
+### 5. service cost & payment on the website — reuse, then honesty
+
+- **`/pricing` on reflex.gist.rs, three cards:** Free local (unlimited, $0, no account) · Trial (the once-per-life TUNA grant, 30 days) · Pay-per-decision (µKAT rate + KAT packs). A live balance widget renders the account's KAT+TUNA position (`/balance` + `/history` — the web twin of `cargo heal --info`) and a burn meter.
+- **Payment reuses the fleet rails VERBATIM:** Stripe + Solana Pay (`kat_payments`/`kat_solana`), the payreq signature seams, the machine-readable money-route error codes, mint receipts with the stats stamp. ZERO new payment code in reflex — the pricing page links the existing ai.gist.rs top-up flow.
+- **The cost page publishes the honest model:** modelless marginal compute ≈ nil; what the KAT funds (the pool → contributors); the reconcile posture ai.gist.rs already runs. A pricing page that hides where the money goes gets audited by the same crowd that audits the losses table.
+
+### 6. CLI vs API keys — one rate, two settlement planes
+
+- **One rate.** Per-decision µKAT is identical for CLI and API — no client-class discount. What differs is service: API = programmatic sessions + SLA posture; CLI = contributor-first (decstat/mining rebates — the ~2/3 pool rebate — offsetting or exceeding spend; the "contribute or pay" doctrine extended to decisions).
+- **The real difference is the settlement wire, and it is already built twice.** The CLI keeps the cumulative signed burn watermark (`kat:burnwm`, offline stacking) because it executes locally and reports honestly; a HOSTED call cannot serve-then-trust, so it uses the press/hold plane (`katsvc:shophold:` precedent): the client signs a hold for N decisions, the service settles the ACTUAL count in ONE CommitBatch, and the press-fate matrix is inherited verbatim — RETAINED on pre-settle refusals, REAPED on expiry, SPENT at settle. An expired hold is a retry, never a lost debit and never a free serve.
+- **Refusals reuse the error-code table** (`insufficient_balance` / `rate_limited` / `account_banned` / `bad_signature` / `unconfigured`) — the soft-gate posture ("contribute or top up") reads identically on the web pricing page. No new codes unless a decision-specific terminal class actually appears.
+- **API keys ARE account keys** (the `account_key` substrate; SIWR/passkey session mint for browsers). One account, one key — the heal posture; per-key scopes are a later need, not a Phase-4 design input.
+
+### Phase 4 sketch — the hosted plane (after Phase 3 lands; owner constants at plan time)
+
+- [ ] T4.1 dapps: `/reflex/*` route family + press/hold decision settlement + the fleet-wide trial-string reword (same commit as the first reflex burn lane)
+- [ ] T4.2 runner posture decided by MEASUREMENT (wasm-in-worker vs CF container, the vessel-size discriminator); `deploy.yaml` + `cross-build.sh` + the rolling ladder
+- [ ] T4.3 `/pricing` + balance widget + top-up links on reflex.gist.rs
+- [ ] T4.4 the rate constant (owner) → ledger bounds-table row + envelope re-measure with decisions included + soft-gate wording parity
+- [ ] T4.5 devnet e2e (the shop chaos-matrix pattern over hold/settle: retention/reap/spend + conservation per round) → mainnet promote = the owner ceremony
 
 ## Honest caveats — READ BEFORE IMPLEMENTING
 
@@ -57,6 +122,7 @@ Hero ("Typed decisions. Calibrated against a floor. Self-evolving. Free."), stat
 5. **The 20 Hz / determinism selling points apply only to the modelless lane.** laya/Jev lanes are ms-tier and non-deterministic; per-lane scoping or the comparison table is a false claim by aggregation.
 6. **Bench 817's policy verdict binds the engine's confidence readout**: label-entropy for narrow option sets, argmax-label-prob for wide ones; agreement-across-rereads is NOT a better ranking signal on deterministic forwards. Inherit, don't re-derive.
 7. **Owner-gated calls — ALL RESOLVED 2026-09-21:** (a) brand = **`Reflex`** (product name) under the KatGPT funnel; (b) repo name = **`riir-reflex`** (not riir-jev — "Jev" is TypeSafe's product name); (c) site domain = **`reflex.gist.rs`**; (d) theme = **dark red rust, no yellow** (the owner's explicit directive in the filing message — the branding section records it; exact hex/typography refinement is T2.1 implementation detail, never an owner gate); **(e) THE MARKETING GATE: Phase 2 GREEN-LIT** — per-task losses published (the recommendation adopted), distribution = the cargo-heal pattern (`gist-rs/reflex` releases + tap + bucket, source private). The new-repo registration is a workspace-contract change — one dedicated commit with the boundary gates green.
+8. **The hosted plane (§"The hosted serving plane") is DESIGNED, not green-lit as a build order.** Phases 1–3 are unchanged by it. Three owner constants live inside it and none is decided here: the per-decision µKAT rate, the mainnet promotion, and any future dao-lever promotion — all deliberately owner territory per the NEVER_LEVERS doctrine. The wasm-vs-container posture is a measurement, not a preference (the Phase-4 plan reads the vessel size before anything deploys). And a wording clarification: "No paid API usage anywhere" (below) was always about THIRD-party APIs (we never pay for Jev) — our own hosted plane charging KAT is the Phase-4 sketch, not an exclusion.
 
 ## Fusion lineage
 
@@ -90,8 +156,11 @@ Hero ("Typed decisions. Calibrated against a floor. Self-evolving. Free."), stat
 ### Deferred — riir-kat + riir-dapps (flywheel server half)
 - `decstat` row type, settle integration, adoption-surface rows.
 
+### Deferred — the hosted serving plane (the Phase-4 sketch above)
+- dapps `/reflex/*` routes + press/hold decision settlement + the fleet trial-string reword; the runner posture (wasm-in-worker vs CF container, measured); `/pricing` + balance widget; the rate constant + bounds row; the devnet chaos matrix over hold/settle.
+
 ### Explicitly NOT shipped by this proposal
-- No game code and no riir-ai deps in the public surface or riir-reflex (boundary; the game moat stays hidden by construction). **No Python anywhere in the lane** (owner directive — no sidecar, no `uv`, no HF transformers dependency; the laya lane is the native-Rust port). No paid API usage anywhere. No multilingual lane of OUR OWN (honest gap — the ported mmBERT checkpoint serving multilingual requests is laya's capability running locally, not a claim about our engine). No copy of brainfunctioncollapse content. No replacement of riir-clippy's healer surface (the code-fix domain forwards to it).
+- No game code and no riir-ai deps in the public surface or riir-reflex (boundary; the game moat stays hidden by construction). **No Python anywhere in the lane** (owner directive — no sidecar, no `uv`, no HF transformers dependency; the laya lane is the native-Rust port). **No paid THIRD-party API usage anywhere** (the Jev lane is BYO-key; we never pay anyone — our OWN hosted plane charging KAT is the Phase-4 sketch, deliberately outside Phases 1–3). No multilingual lane of OUR OWN (honest gap — the ported mmBERT checkpoint serving multilingual requests is laya's capability running locally, not a claim about our engine). No copy of brainfunctioncollapse content. No replacement of riir-clippy's healer surface (the code-fix domain forwards to it).
 
 ## Phased rollout (sketch — the plan expands)
 
@@ -117,6 +186,13 @@ Hero ("Typed decisions. Calibrated against a floor. Self-evolving. Free."), stat
 - [ ] T3.2 epoch settle + rewards for decision rows; adoption surfaces
 - [ ] T3.3 corpus-threshold monitor → specialist-retrain plan (RLCD or CE, Research 576 §3) → freeze/thaw vessel → per-domain promotion (demote the loser)
 
+### Phase 4 — the hosted serving plane (sketch; after Phase 3, owner constants at plan time)
+- [ ] T4.1 dapps `/reflex/*` routes + press/hold settlement + fleet trial-string reword
+- [ ] T4.2 runner posture by measurement (wasm-in-worker vs CF container); deploy.yaml + cross-build + rolling ladder
+- [ ] T4.3 `/pricing` + balance widget + top-up links
+- [ ] T4.4 rate constant (owner) + bounds row + envelope re-measure
+- [ ] T4.5 devnet chaos e2e → mainnet = owner ceremony
+
 ## Risks
 
 1. **Phase-2 marketing exposure — ACCEPTED (owner 2026-09-21, caveat 7e):** the honest table shows losses on their home turf; the mitigation IS the honesty (credibility with the audience that audits everything) plus the cargo-heal-pattern distribution (install one-liner next to the tables). Phase 1 carries no exposure.
@@ -140,4 +216,4 @@ Multilingual decision lane; training our own generalist base; hosting anyone's p
 
 ## TL;DR (closer)
 
-**Ship it, phased, engine-first — every owner gate is resolved:** Phase 1 (engine + harness + riir-reflex, incl. the native-Rust laya runner) is the primary deliverable — it discharges `structured_reads`' recorded promotion trigger and builds the Issue-125 corpus engine with standalone value; Phase 2 (the arena at `reflex.gist.rs` + the `gist-rs/reflex` binary distribution, cargo-heal pattern) is GREEN-LIT with the losses published; Phase 3 (the flywheel) needs only Phase 1. **Open the Phase-1 plan (next `.plans/` number) now.**
+**Ship it, phased, engine-first — every owner gate is resolved:** Phase 1 (engine + harness + riir-reflex, incl. the native-Rust laya runner) is the primary deliverable — it discharges `structured_reads`' recorded promotion trigger and builds the Issue-125 corpus engine with standalone value; Phase 2 (the arena at `reflex.gist.rs` + the `gist-rs/reflex` binary distribution, cargo-heal pattern) is GREEN-LIT with the losses published; Phase 3 (the flywheel) needs only Phase 1. **The hosted serving plane (TUNA trial → KAT burn → packs; devnet-first, mainnet = the owner ceremony; CF container deploy via riir-deployer; `/pricing` reusing the fleet rails; CLI/API one-rate parity) is designed as the Phase-4 sketch — owner constants at plan time. Open the Phase-1 plan (next `.plans/` number) now.**
