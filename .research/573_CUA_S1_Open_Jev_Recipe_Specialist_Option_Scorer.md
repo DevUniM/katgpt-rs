@@ -4,7 +4,7 @@
 > **Date:** 2026-09-19 (addendum 2026-09-20 — PoC verdict below)
 > **Status:** Done — **Gain** (files riir-clippy `.issues/125` files the PoC; **PoC verdict: REFUTED at current corpus scale — see the addendum**) — Research 562's reopen trigger FIRED, addendum there
 > **Related Research:** 562 (parent — TypeSafe Jev; this is its "independent replication with numbers"), 322 (Report-the-Floor — binds the PoC's gates), 278-lineage (Engram)
-> **Related Issues:** katgpt-rs Issue 810 (CalibratedSigmoidGate — the calibration cousin this PoC must NOT inherit CUA-S1's skipping of), riir-clippy Issue 125 (this note's actionable half)
+> **Related Issues:** katgpt-rs Issue 810 (the calibration pair — "CalibratedSigmoidGate" is a prose phantom; shipped as `SigmoidGateCalibrator` + `CalibratedActionBridge` — the calibration cousin this PoC must NOT inherit CUA-S1's skipping of), riir-clippy Issue 125 (this note's actionable half)
 > **Classification:** Public sources; distillation internal.
 
 ---

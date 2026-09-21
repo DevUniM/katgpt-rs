@@ -82,7 +82,7 @@ Jev's Doom demo is *structured game state in → typed decisions + confidence ou
 
 ## 7. Fusion
 
-**Paper × Plan 340 conformal floor × Bench-706 Brier-vs-floor × ActionBridge ABSTAIN → `CalibratedSigmoidGate`.**
+**Paper × Plan 340 conformal floor × Bench-706 Brier-vs-floor × ActionBridge ABSTAIN → the Issue-810 calibration pair ("CalibratedSigmoidGate" here is a prose phantom — shipped as `SigmoidGateCalibrator` + `CalibratedActionBridge`, Bench 808).**
 A generic katgpt-core primitive: record `(sigmoid_output, outcome)` pairs per direction; refit temperature+bias (2-param convex fit — track-b, no base-weight mutation, BLAKE3-frozen + freeze/thaw-versioned like any snapshot); emit calibrated p + keep ABSTAIN. Consumers: ActionBridge confidence, affect scalars, CLR verifier (already ECE-gated — becomes the first calibrated consumer), later riir-clippy blend weights. Ranking preserved iff temperature > 0 — gate it. GOAT gate must beat (a) uncalibrated baseline on decision-level ECE/Brier and (b) the Bench-706-style sigmoid floor, per the Report-the-Floor rule (Research 322).
 
 ## 8. Verdict
