@@ -3359,6 +3359,14 @@ static TEST_GLOBAL_ALLOC: alloc::TrackingAllocator = alloc::TrackingAllocator;
 #[cfg(feature = "sigmoid_calibration")]
 pub mod sigmoid_calibration;
 
+/// Corpus-distance abstain gate (Proposal 014 T1.6 / Issue 863) — the
+/// Research 576 §2.1 extraction: max-cosine similarity to registered
+/// corpus exemplars → sigmoid → abstain when the decision state is far
+/// from every corpus region (the OOD failure mode a score-threshold
+/// ABSTAIN is blind to). Opt-in (`distance_abstain`).
+#[cfg(feature = "distance_abstain")]
+pub mod distance_abstain;
+
 /// Calibration staleness at the freeze/thaw seam (Issue 841 §B-3) — a
 /// snapshot swap invalidates every attached calibration head; `SnapshotBound`
 /// returns `None` + one loud warning instead of a stale plausible score.

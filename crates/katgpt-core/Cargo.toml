@@ -755,6 +755,29 @@ refinement_marginal = []
 # after the PoC GOAT gate.
 sigmoid_calibration = []
 
+# distance_abstain (Proposal 014 T1.6 / Issue 863, 2026-09-21): corpus-distance
+# abstain — max-cosine similarity to K registered exemplars → sigmoid → the
+# OOD-abstain signal a score-threshold ABSTAIN is structurally blind to
+# (confident AND off-corpus = the hallucination regime; Research 576 §2.1,
+# arXiv:2503.23303 SalesRLAgent extraction). Zero-alloc query path (one stack
+# scratch row, one fold); empty corpus = abstain-always (honest no-coverage
+# degradation, not an error); fused OR with the score gate ships in-module.
+# T1.6 gate (bench_845, 8 world replicates, K=128 D=64 OOD 30%): W1 fused
+# beats the score gate — AURC 0.1894 vs 0.2289 (−17%), mean Δ sel-acc +0.34 pp
+# @ ρ=20% / +0.97 pp @ ρ=30% (positive 8/8 replicates), ~89% of the labeled
+# oracle's ρ=30% gain captured; W2 control — distance-alone collapses
+# (−8.7 pp @ ρ=30%) and fused-W2 AURC stays WORSE than score: the advantage
+# vanishes exactly when the OOD mechanism is absent (the fixture
+# discriminates). G1 7 lib tests (monotone/scale-invariant/NaN-free/threshold
+# semantics/fused-OR); G4 0 allocs/4096 queries; G5 2.2–14.9 µs/query across
+# runs on a LOADED M3 (sibling cargo active — box-state rule), ceiling 20 µs.
+# ⚠ Rank fusion is load-bearing: min(p, d_conf) on RAW scales degenerates to
+# distance-only (d_conf < p everywhere) — fuse the batch quantiles
+# (production: running quantiles / SigmoidGateCalibrator). OPT-IN per the
+# no-default-consumer rule (margin_gate precedent) — the candidate consumer
+# is the Proposal 014 Phase-1 engine's abstain arm (owner-gated).
+distance_abstain = []
+
 # calibration_staleness (Issue 841 §B-3, 2026-09-19): the freeze/thaw seam's
 # missing invalidation rule. A calibration head — a Platt (T, b) pair, a
 # per-head attention scale table, a conformal residual pool — is fitted
@@ -3388,6 +3411,21 @@ required-features = ["jsd_topk"]
 name = "bench_808_action_bridge_calibration_goat"
 harness = false
 required-features = ["sigmoid_calibration", "action_bridge"]
+
+# Bench 845 — corpus-distance abstain T1.6 gate (Proposal 014 T1.6 /
+# Issue 863; the Research 576 §2.1 SalesRLAgent extraction). CorpusDistanceGate
+# vs the score-threshold ABSTAIN baseline on risk–coverage over TWO error
+# worlds on one geometry: W1 OOD-blind (the arena's world) must show the
+# fused win; W2 score-only is the negative control that proves the fixture
+# discriminates. Gates: G1 mechanism sanity; G2 W1 fused win (AURC +
+# non-inferiority at every ρ + margins at ρ=20/30%); G3 W2 control;
+# G4 zero-alloc query path; G5 per-query latency budget. Run:
+# cargo bench -p katgpt-core --features distance_abstain
+# --no-default-features --bench bench_845_distance_abstain_goat -- --nocapture
+[[bench]]
+name = "bench_845_distance_abstain_goat"
+harness = false
+required-features = ["distance_abstain"]
 
 # Issue 800 Arm A — SIMD bf16⇄f32 batch conversion GOAT gate (G1 known-answer
 # vs `half` RNE + NaN/Inf/subnormal survival, G2 ≥4× scalar at 8 lanes,
