@@ -4326,13 +4326,27 @@ day** (riir-train `weak_probe_train` example, feature `probe_guidance_train`):
 frozen mini-dLLM trunk, taps through the real D2F kernel, Adam on the
 connector, all five gates PASS (health 0.69→0.22 CE, tap-choice 0.2166 vs
 1.9026, uniform 3.30, wire round-trip through the BLAKE3 verifier,
-byte-identical retrain). The T3 λ-sweep GOAT gate (quality-vs-diversity
-Pareto vs unguided + dropout-autoguidance arm) is OPEN — OPT-IN until the
-GOAT passes, promotion modelless-only. The micro_dllm fixture collapses to a
-point mass (confidence 1.0 at step 0), which is why the behavioral test proves
-OVERRIDE (a probe favoring a different token at λ = 0.5 diverges the decode)
-rather than sharpening. Zero new deps (blake3 rides belief_drafter); zero cost
-unless the feature is on and a probe is installed.
+byte-identical retrain). **T3 (2026-09-21) — the λ-sweep GOAT gate ran, VERDICT
+NEGATIVE, feature stays opt-in** ([Bench
+847](../../.benchmarks/847_probe_guidance_lambda_sweep_goat.md)): the guided
+best (λ=1.25, +0.21 pts at lower resample diversity) is dominated by the
+unguided temperature point at matched diversity (T=1.0: 100.00% at the same
+3.2171 nats), and the trained probe loses to a ZERO-logit probe (with which
+the λ combine is exactly temperature scaling — the no-information null) at
+every λ ≥ 1.5. Root cause measured: the mini trunk is saturated (loss 0.0000,
+one-hot) so the weak side carries no disagreement to extrapolate along. G1
+PASS (λ=1 bit-identity, pipeline level, real artifact) and **G4 PASS (1,000
+probe calls, 0 allocations)** — the machinery is qualified; the mechanism
+verdict needs a non-saturated trunk (Bonsai-scale, gated on the multi-layer
+kernel extension). The negative verdict is PINNED as a regression gate
+(`tests/probe_guidance_goat.rs`: G2a/G2b inverted bars red the day guidance
+genuinely wins — the promotion decider, pre-wired; plus the G0 fixture-pairing
+canary, the G-noise null envelope, and the G-bonus directionality control).
+The micro_dllm fixture collapses to a point mass (confidence 1.0 at step 0),
+which is why the T2 behavioral test proves OVERRIDE (a probe favoring a
+different token at λ = 0.5 diverges the decode) rather than sharpening. Zero
+new deps (blake3 rides belief_drafter); zero cost unless the feature is on
+and a probe is installed.
 
 ### `decision_wire` — the Jev/laya decision wire contract (Plan 603 T1.2, 2026-09-21)
 
