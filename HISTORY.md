@@ -1,3 +1,28 @@
+## 2026-09-21 — Issue 864 closed: BITCOS tier ships opt-in — footprint PASS, latency honestly LOSES on this host (Bench 846)
+
+Executed [Issue 864](../.issues/864_bitcos_distribution_adaptive_ternary_codec.md) (filed from
+[Research 577](../.research/577_BITCOS_Distribution_Adaptive_Ternary_Layout.md) the same day):
+`bitcos` feature in katgpt-types — the distribution-adaptive ternary container (presence bitmap +
+compacted neg-sign stream, rate 2−z bits/w + f16 scale), the z-meter (`zero_density_report`), and
+three GEMV consumers (scalar bit-identical to the bit-plane reference; 256-entry LUT
+presence-nibble×sign-window — the GPU-portable pdep-free mechanism; pdep+SWAR AVX2 arm
+runtime-probed AVX2∧BMI2) + the roofline dispatch `should_use_bitcos(z, γ, β)`.
+
+- **G1 PASS** (roundtrip bit-exact incl. scales; scalar/LUT bit-identity chains), **G2 PASS**
+  (footprint beats BOTH tiers at every z above the 0.375 crossover — 0.950/0.892/0.854× vs trit —
+  and is honestly LARGER than trit below it, asserted), **G4 PASS** (alloc-free kernels).
+- **G2b(a) FAIL → opt-in by the issue's own promotion clause**: >L3 streaming at z=0.5 measures
+  bitcos 0.767× vs the shipped bit-plane SWAR / 0.846× vs trit. Measured roofline: γ = 1.23 B/ns
+  (bitcos decode) < β = 1.96 B/ns (achieved streaming) — instruction-bound on this 13700K host,
+  the paper's Lunar Lake class reproduced on ours. The dispatch refuses, and the
+  dispatch-verdict == gate-outcome assert pins that the predicate tracks the knee.
+- **Two codec bugs caught by the gates pre-timing**: pack must pext (compact), not pdep (scatter)
+  — strayed high bits tripped `is_canonical`; and the scalar kernel's pos plane is `p & !neg`,
+  not presence (a negative weight has both bits set). Research 577's "compacted pos bits" wording
+  is inverted against its own 0=+1/1=−1 convention — neg-compaction ships, pinned in-code.
+- Record: [Bench 846](../.benchmarks/846_bitcos_goat.md); feature-count claim sites updated
+  626→627; the riir-gpu CUDA LUT-arm pointer stays recorded (now with an in-tree reference).
+
 # HISTORY.md — katgpt-rs
 
 Historical record moved out of `AGENTS.md` (2026-09-06 compaction, from

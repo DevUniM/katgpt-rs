@@ -82,6 +82,10 @@ pub mod simd;
 pub mod slod;
 pub mod temporal;
 mod ternary;
+/// BITCOS — distribution-adaptive ternary layout: presence bitmap +
+/// compacted signs, rate `2−z` bits/weight (Issue 864, `bitcos` feature).
+#[cfg(feature = "bitcos")]
+pub mod bitcos;
 /// Ternary `{-1,0,+1}` bit-planes with per-128 f16 group scale — the
 /// `Q2_0_g128` container (Issue 578, `ternary_group_scale` feature).
 #[cfg(feature = "ternary_group_scale")]
@@ -99,6 +103,11 @@ mod tests_types;
 // underlying items.
 #[cfg(feature = "binary_plasma")]
 pub use binary::{BinaryWeights, GROUP_SIZE};
+#[cfg(feature = "bitcos")]
+pub use bitcos::{
+    TRIT_CROSSOVER_Z, BitcosWeights, ZeroDensityReport, bitcos_bits_per_weight,
+    bitcos_payload_bytes_per_weight, should_use_bitcos, zero_density_report,
+};
 #[cfg(feature = "ternary_group_scale")]
 pub use ternary_group::{
     TernaryBlockAoS, TernaryBlockContiguousWeights, TernaryFfnHook, TernaryGroupWeights,

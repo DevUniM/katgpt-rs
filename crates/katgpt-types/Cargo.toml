@@ -101,6 +101,16 @@ ternary_group_scale = ["binary_plasma"]
 # ternary_group_scale for GROUP_SIZE + the `from_group`/`to_group` repack.
 ternary_trit_pack = ["ternary_group_scale"]
 
+# Issue 864 / Research 577 (arXiv:2609.16338): BITCOS — distribution-adaptive
+# ternary layout (presence bitmap + compacted signs), rate 2−z bits/weight +
+# f16 scale. Beats the bit-plane tier at every z; beats the trit tier only at
+# z > 0.375 (a 0.96× regression at Bonsai-27B z=0.297) — the roofline dispatch
+# (`should_use_bitcos`) encodes both the regime and the tier boundary. Opt-in:
+# regime-gated (bandwidth-bound only) and tier-relative, GOAT-gated vs BOTH
+# shipped tiers before any promotion. Implies ternary_group_scale for the
+# container it repacks.
+bitcos = ["ternary_group_scale"]
+
 # Issue 845 (riir-ai) / arXiv:2609.00363: snap group scales to the nearest power
 # of two at quantize time so scale application is EXACT on every backend
 # (multiply/divide by 2^k is an exponent shift) — cross-backend bit-identity at
@@ -150,6 +160,13 @@ required-features = ["ternary_group_scale", "plasma_path"]
 [[test]]
 name = "bench_582_trit_pack_goat"
 required-features = ["ternary_trit_pack"]
+
+# Issue 864 GOAT gates: G1 cross-tier bit-identity, G2 footprint vs BOTH
+# shipped tiers across the z sweep, G2b regime latency (>L3 streaming +
+# L1-resident negative control), G4 alloc-free, T4 roofline dispatch.
+[[test]]
+name = "bench_864_bitcos_goat"
+required-features = ["bitcos", "ternary_trit_pack"]
 
 # Issue 583 A/B: group scale hoisted vs folded in the bit-plane NEON kernel.
 # Needs plasma_path only because the harness shares bench_578's feature shape.

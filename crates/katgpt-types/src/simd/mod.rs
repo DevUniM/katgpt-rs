@@ -62,6 +62,9 @@ pub mod ternary_group;
 /// Trit-packed ternary matvec kernels (`ternary_trit_pack`, Issue 582).
 #[cfg(feature = "ternary_trit_pack")]
 pub mod ternary_trit;
+/// BITCOS presence-bitmap GEMV kernels (`bitcos`, Issue 864).
+#[cfg(feature = "bitcos")]
+pub mod bitcos;
 
 #[cfg(test)]
 mod tests;
@@ -128,6 +131,8 @@ pub use ternary_group::{
 pub use ternary_trit::{
     simd_ternary_trit_matvec, simd_ternary_trit_matvec_parallel, ternary_trit_matvec_scalar,
 };
+#[cfg(feature = "bitcos")]
+pub use bitcos::{BITCOS_LUT, bitcos_matvec, bitcos_matvec_lut, bitcos_matvec_scalar};
 #[cfg(feature = "maxsim")]
 pub use maxsim::{maxsim_score, maxsim_score_packed};
 pub use research::{
