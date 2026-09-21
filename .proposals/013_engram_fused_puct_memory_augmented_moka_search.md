@@ -1,6 +1,6 @@
 # Proposal 013 — Engram-Fused PUCT: Offline-Mined Memory for the Moka Go Search
 
-Status: **draft**
+Status: **POC SCOPED — filed as [Issue 868](../.issues/868_engram_fused_puct_arena_poc.md) (2026-09-21, owner go by filing); substrates shipped separately (Engram Plan 299 / PUCT Issues 204-207), fusion unimplemented (puct.rs has zero engram refs). G5 gate + GOAT G1-G6 per the issue.**
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: Engram (Plan 299 / Research 278, katgpt-core) × Moka+PUCT (Plan 565, katgpt-moka-wasm) × the Issue 565 G5 corrected-forward seam

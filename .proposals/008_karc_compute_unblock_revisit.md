@@ -1,6 +1,6 @@
 # Proposal 008 — KARC `karc_forecaster` compute-unblock: path revisit + the `faer` option Issue 186 missed
 
-Status: **draft (analysis + recommendation; no implementation)**
+Status: **ANALYSIS COMPLETE — its open question resolved within a day, by promotion** (Bench 308 Phase 5.2: K=10 threshold 7.36 LT — the 8.5 LT extrapolation was WRONG, plateau confirmed; Phase 5.3: R=1 NRMSE capacity ceiling). The gate was re-specified (Issue 186 Path D3, split-config) and `karc_forecaster` promoted to DEFAULT-ON 2026-07-21 (Cargo.toml Phase 22). Residual: the D3 contract was measured on ChebyshevBasis K=8 configs; the deployed riir-engine consumer runs `FourierBasis` at M=4/M=8 — coverage audit filed as [Issue 866](../.issues/866_karc_d3_promotion_coverage_audit.md). `faer` (Path E) stays DEFERRED conditional on a second heavy-BLAS consumer.
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: [Issue 186](../.benchmarks/308_karc_goat.md) §Phase 5 (Path A–D deliberation, Path B chosen + shipped) × [Issue 187](../.benchmarks/308_karc_goat.md) §Phase 5 (parallelization + actual G1 measurement — supersedes 186's compute framing) × commit `c0830d12` (λ-sweep — recovers NRMSE, threshold 10% short, structural) × prior-art survey (faer / OxiBLAS / LAPACK thread-safety)
