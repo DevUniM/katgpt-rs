@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research workflow for distilling ML/AI papers into modelless inference primitives, freeze/thaw runtime patterns, latent-space operations, AND model-based training plans across the multi-repo stack. Use when reading arxiv papers, deciding which repo a paper belongs in, creating .research/ notes or .plans/ files, implementing modelless inference primitives, or routing training-vs-inference insights. Enforces the commercial strategy (public engine / private runtime / private chain / private neuron-db / private training / private SDK facade / private product-domain), three-track system (modelless inference + self-adaptive runtime + model-based trained weights — all three exist across the stack, not just riir-train), latent-to-latent preference, and freeze/thaw-over-fine-tuning rule.
+description: Research workflow for distilling ML/AI papers into modelless inference primitives, freeze/thaw runtime patterns, latent-space operations, AND model-based training plans across the multi-repo stack. Use when reading arxiv papers, deciding which repo a paper belongs in, creating .research/ notes or .plans/ files, implementing modelless inference primitives, or routing training-vs-inference insights. Enforces the commercial strategy (public engine / private runtime / private chain / private neuron-db / private training / private SDK facade / private product-domain), three-track system (modelless inference + self-adaptive runtime + model-based trained weights — all three exist across the stack, not just riir-train), latent-to-latent preference, and freeze/thaw-over-fine-tuning rule. Every task ends with a mandatory Claude verdict ping-pong (§5) before any file is committed.
 ---
 
 # Research Workflow — Modelless Inference, Freeze/Thaw, Latent-to-Latent
@@ -134,6 +134,8 @@ The highest-value latent Super-GOATs cluster in seven module trees. `list_direct
 Runtime GRPO self-play stays in `riir-ai` (self-adaptive track — updates latent state, not weights). Model-based training (LoRA/SFT/GRPO on actual weights) lives in BOTH `riir-train` AND in-repo training pipelines (`quest_grammar/grammar_training.rs` in riir-ai, `TernaryDraftModel` `.bits` files in riir-ai/riir-clippy). Quant-aware **inference** stays here; quant-aware **training** → riir-train. **Never assume a repo is modelless-only** — grep for existing training/model-based code first (pre-flight #5).
 
 ## Workflow
+
+Every path through this workflow terminates at **§5 — the Claude verdict ping-pong** — before anything commits. §1.5 / §1.55 / §1.6 grade the verdict; §5 is what makes it final.
 
 ### 0. Read & classify
 
@@ -355,6 +357,32 @@ Before claiming a mechanism "already ships", achieves "parity", or "covers" the 
 ### 4.5. Optional deeper search
 
 If §4 surfaces rich landscape, use web search for deeper exploration of specific papers/authors/follow-ups. Not mandatory, valuable when prior-art landscape is dense.
+
+### 5. Final verdict — Claude ping-pong (MANDATORY before any commit)
+
+**A verdict is not DONE until the Claude reviewer has seen it.** The gates above (§1.5 / §1.55 / §1.6) are your self-grade. Before anything commits, negotiate the verdict against the Claude reviewer sub-agent via the `request_verdict` tool (the claude-sub-agent-verdict reviewer, Proposal 001). This is the research-side merge gate and it operationalizes the standing owner rule — *ask Claude for verdict and make decision for any owner gated*. A self-graded verdict that never met the reviewer is the research analogue of an unreviewed merge.
+
+**Protocol** (the tool enforces the mechanics; the Summary is YOUR job):
+
+1. **Compose the `## Summary`** — complete, because the reviewer CANNOT see your context. It carries: paper ID + full title · the pinned one-sentence novelty claim (§1.5's precondition form) · per-track verdicts with tiers (never pooled) · the Path 0 inventory outcome (analog / extracted / deferred per component) · routing (repo + every file created or edited, exact `{NNN}_{Short_Title}.md` names) · the 2–3 closest cousins considered and why they don't kill the claim · and **the weakest point you know of, named by you** — the reviewer finds it anyway, and naming it first costs one round instead of two.
+2. **Round 1** — call `request_verdict` with the Summary + the note's file paths (so the reviewer can read the note itself) + the literal instruction: "Reply with a verdict that MUST start with `#Verdict: AGREE` or `#Verdict: REVISE` followed by bullet-point reasons."
+3. **REVISE** → address EVERY bullet with EVIDENCE — a grep result, a verbatim quote at the pinned sha, a bench number, a file path — then call again with the SAME `session_id` (the negotiation stays in one thread). Rephrasing your position without new evidence does not address a reason.
+4. **AGREE (and you agree)** → state your own agreement, restate the final agreed `## Summary`, pass `final_round: true` on that closing call, and only then stage the NAMED files + commit + push.
+5. **Round cap (default 3)** → the tool refuses further calls. STOP. Present the remaining disagreement to the USER with both positions — the user is the owner gate, never a tiebreak you award yourself. A capped disagreement escalates; it does not self-resolve by picking your side.
+
+**Scope — mandatory vs optional:**
+
+- **Mandatory:** Super-GOAT and GOAT verdicts · every `riir-train` Plan filing (Path 0.5) · every verdict that creates or rewrites a `.research/` note, `.plans/` file, or architectural guide · every advocate-finding discard (§3.5) · every "already ships"/parity claim granted without the PoC (§3.6 exemptions) · every owner-gated call (feature promotion/demotion, default-on flips, §1.6 tier re-routing).
+- **Optional (encouraged):** a plain PASS with zero files and no PASS-Redirects edits; a routing call the owner already made in-conversation this session.
+
+**What the reviewer checks — hand it the hooks:** novelty claim vs the §4 searches actually cited (never asserted) · §3.6 signal-diffs on every coverage dismissal · routing vs the MOAT table + fusion priority ladder · per-track separation (no cascade from a training-track kill) · discard reasons surviving mechanism-level scrutiny (§3.5) · file hygiene (numbers from `.highwater`, PASS-Redirects lines present, no "candidate" escape-hatch wording).
+
+**Standing failure modes (how this gate dies quietly — pre-registered, not yet measured):**
+
+- **Self-AGREE drift** — summarizing your way to AGREE by omitting the weak axis. The Summary must name the weakest point explicitly; an omission voids the verdict, and a re-opened verdict after files shipped costs a renumber + citation rewrite (the exact cost the numbering rules exist to price).
+- **Cap-racing** — burning rounds re-arguing instead of producing evidence. Each REVISE round must ADD something checkable; a round that adds nothing is a round the user now has to arbitrate.
+- **Post-AGREE drift** — editing a verdict-bearing section after AGREE without re-running the gate. A material post-AGREE edit re-opens the negotiation on the SAME `session_id` before the next commit; the commit after a `final_round` close is byte-frozen to what was agreed.
+- **Reviewer-unavailable** — if `request_verdict` is not in the toolset, fall back to `spawn_agent` with the same Summary + the same `#Verdict:` reply contract, and record in the note that the verdict rode the fallback (weaker evidence; the next session touching the note re-runs the gate).
 
 ## Constraints (non-negotiable)
 
