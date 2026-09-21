@@ -1,9 +1,9 @@
 # Issue 867 — Non-hidden-state canonical construction: AST-histogram POC (cross-arch reopen attempt)
 
-Status: **OPEN — POC issue; Phases 1–3 scoped; the G5 gate is make-or-break and an honest negative result is an expected outcome, not a failure of process.**
+Status: **OPEN — POC issue; Phases 1–3 scoped; the G5 gate is make-or-break and an honest negative result is an expected outcome, not a failure of process. T1 UNBLOCKED: the fixture corpus landed riir-train-side (`data/canon_rust_contrastive/`, commit `49a4a72f`, issue 567 T1 record `c155ab08`) — 116 idiomatic-vs-non-idiomatic whole Rust item pairs, syn-validated, manifest+BLAKE3.**
 Proposal: [Proposal 010 — Non-Hidden-State Canonical Construction](../.proposals/010_non_hidden_state_canonical_construction.md) (the authority for the G5 bar: **agreement > +0.3**)
 Reopen authority: [Research 459](../.research/459_canonical_intent_space_plug_and_play.md) (CLOSED 2026-07-27 — "reopens only on a non-hidden-state construction, NOT on any further hidden-state method")
-Sibling prerequisite: riir-train Issue 567 (Rust-only contrastive corpus generation — T1 is BLOCKED on it)
+Sibling prerequisite: riir-train Issue 567 (**T1 LANDED 2026-09-22** — `data/canon_rust_contrastive/` at riir-train `49a4a72f`: 116 pairs, 10 idiom families, whole items, syn-validated pools, pair-level per-model length caps, BLAKE3 `50a012c6…`; T2 forward passes + T3 gate run remain riir-train-side)
 Branch: `develop`
 
 ## Why this issue exists
