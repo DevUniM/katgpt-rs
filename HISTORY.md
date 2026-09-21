@@ -8384,3 +8384,36 @@ folds into the same scope, both prerequisites shared) needs only to run it.
 The feature stays opt-in; the dropout-autoguidance arm deferred (no kernel
 dropout exists; moot post-verdict; owner scope at re-open). Full data +
 box state: `.benchmarks/847_probe_guidance_lambda_sweep_goat.md`.
+
+## Issue 866 (2026-09-22) — KARC D3 promotion coverage audit: VERDICT QUALIFY — the contract's passing legs live on configs nobody constructs: CLOSED
+
+The audit (Bench 849, `crates/katgpt-core/examples/karc_deployed_shape_quality.rs`):
+Bench 308's D3 split-config G1 contract (NRMSE ≤ 1e-3, threshold ≥ 8 LT) was
+never measured on any config a consumer constructs, and no downstream gate
+supplies a substitute. Three findings carry the verdict. (1) Both passing
+legs sit on `ChebyshevBasis` (NRMSE at K=8/M=8/R=2 λ=5e-2; threshold at
+K=8/M=24/R=1 λ=5e-3); every deployed monomorphization is `FourierBasis` R=1
+(Lod0 F<4>/K=2, Lod1 F<8>/K=4, Lod2 F<8>/K=8, period 4.0), and all three
+fail BOTH D3 bars on the D3 record's own double-scroll fixture (1-LT NRMSE
+2.4–53; threshold 0.03–0.16 LT) — first-order Fourier cannot reconstruct
+that attractor (the paper's headline needed second-order; Phase 5.3's R=1
+floor was the Chebyshev one). (2) The six riir-engine `karc_runtime` GOATs
+measure divergence / curiosity-ratio / detection / wire-exactness / latency
+/ commitment — none measures absolute forecast accuracy, so the D3 contract
+was never ratified downstream either. (3) The deployed consumer exercises
+ONE-STEP forecasting from observed delay rings (`tick_karc`, re-fit each
+`tau_reest`) and never rolls out autonomously; on a Lorenz-driven
+leaky-belief fixture built through the runtime's own `leaky_step` math, the
+deployed shapes' one-step NRMSE is 1.2–4.1e-3 at the deployed λ=1e-4 — the
+deployed configs' quality record per the issue's QUALIFY arm. The same
+fixture measured the autonomous rollout as violently unstable (~2.2×/step
+amplification, λ-independent) — irrelevant to `tick_karc`, a live
+precondition check for any future multi-step/rollout consumer. Not DEMOTE:
+the consumer-relevant properties are separately gated and one-step quality
+is strong. Two stale statements corrected in riir-ai in the same window
+(Plan 332's "shape fixed at Plan 308 GOAT" line; `karc_bridge/lod.rs`'s
+"3-variant enum" doc block — it is 2-variant, Lod1 never dispatches). T2's
+`faer` spike stays conditional — the second-heavy-BLAS-consumer trigger is
+still unmet. Scope limitation recorded in Bench 308 (addendum) + the Phase
+22 feature-def comment; proposal status line updated. Full data + box state:
+`.benchmarks/849_karc_deployed_shape_quality.md`.

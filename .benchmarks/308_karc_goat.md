@@ -36,6 +36,15 @@ Issue 186 Path D variant D3, analogous to Plan 306's G4 re-spec
 (structurally-impossible relative gate → absolute-latency gate) and
 `ac_prefix`'s modelless-unblock promotion (Plan 313).
 
+> **Issue 866 coverage audit (2026-09-22): VERDICT QUALIFY.** Both passing
+> legs were measured on `ChebyshevBasis` configs no consumer constructs; the
+> deployed Fourier R=1 shapes fail both D3 bars on this record's own
+> double-scroll fixture, and no riir-engine runtime gate substitutes (none
+> measures absolute forecast accuracy). The deployed configs' own quality
+> record: one-step NRMSE 1.2–4.1e-3 at the deployed λ=1e-4 on a
+> Lorenz-driven leaky-belief fixture. Scope limitation + data:
+> [.benchmarks/849_karc_deployed_shape_quality.md](849_karc_deployed_shape_quality.md).
+
 ---
 
 ## G1 — Double-Scroll (paper §A.1)
@@ -638,3 +647,32 @@ passing configs sit at orthogonal (M, R) axes. `karc_forecaster` promotes
 to DEFAULT-ON under the split-config gate contract documented in this
 benchmark + Issue 186. Promotion commit: see git log for the Cargo.toml
 change.
+
+---
+
+## Addendum — Issue 866 deployed-shape coverage audit (2026-09-22)
+
+**Verdict: QUALIFY.** The retrospective audit Issue 866 asked whether this
+record's forecast-quality contract was ever measured on any config a consumer
+actually constructs. Answer: **no, and it cannot be** — this is now part of
+the contract's scope statement, not a defect to fix:
+
+- Every deployed monomorphization is `FourierBasis` R=1 (Lod0 F<4>/K=2
+  d_h=64, Lod1 F<8>/K=4 d_h=256, Lod2 F<8>/K=8 d_h=512, period 4.0,
+  riir-engine `karc_bridge`). Both passing legs here sit on `ChebyshevBasis`
+  (NRMSE at K=8/M=8/**R=2** λ=5e-2; threshold at K=8/M=24/R=1 λ=5e-3) —
+  constructed by nobody.
+- Measured on this record's own double-scroll fixture at the deployed
+  family, both legs fail: 1-LT NRMSE 2.4–53 (bar ≤ 1e-3), threshold
+  0.03–0.16 LT (bar ≥ 8 LT). Consistent with §Phase 5.3's R=1 floor and the
+  paper's second-order requirement.
+- No riir-engine runtime gate substitutes: the six `karc_runtime` GOATs
+  measure divergence/curiosity-ratio/detection/exactness/latency/commitment
+  — none measures absolute forecast accuracy against this record's bars.
+- The deployed consumer exercises ONE-STEP forecasting from observed delay
+  rings (`tick_karc`, re-fit each `tau_reest`), never autonomous rollout.
+  One-step quality on a Lorenz-driven leaky-belief fixture (the runtime's
+  own `leaky_step` math): 1.2–4.1e-3 at the deployed λ=1e-4.
+
+Data, the belief fixture, and the autonomous-rollout instability caveat for
+any future multi-step consumer: [849_karc_deployed_shape_quality.md](849_karc_deployed_shape_quality.md).
