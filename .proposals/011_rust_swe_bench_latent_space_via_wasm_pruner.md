@@ -1,5 +1,7 @@
 # Proposal 011 — Rust-SWE-bench as a Latent-Space Benchmark via WASM Constraint Pruner
 
+Status: **PARTIALLY IMPLEMENTED — Layer 4 ✅ COMPLETE (Plan 566: Issues 569-571 + Benches 011-020; structural discrimination G5 PASS 100% on real Kimi-K3 trajectories, Bench 014; value-level PASS via SeqStateStats sequence trajectory, Bench 018). Layer 3 SPECULATIVE — blocked on rubrc. Layers 1-2 not started. Full verdict in the closing TL;DR.**
+
 ## TL;DR
 
 **Should we use Rust-SWE-bench (500 real-world Rust SWE tasks from 34 popular repos) as a latent-space validation target, by compiling each task's test suite to WASM and loading it as a `ConstraintPruner` inside the model's inference loop?**

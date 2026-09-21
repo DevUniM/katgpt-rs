@@ -1,6 +1,6 @@
 # Proposal 012 — Kernel-Healing Drafter+Pruner: Thermal-Tier Routing × Latent-MoE Expert Selection × Numeric-Compare Validator
 
-Status: **draft**
+Status: **IMPLEMENTED (absorbed)** — superseded by riir-clippy Plan 001 Phase 3 as the `kernel_opt` domain: `KernelExpertRouter` (modelless argmax over 15 centroids = the latent-MoE expert selection) + `KernelThermalRouter` (Plasma→Freeze thermal tiers) shipped and mined to 627 rules (Batch 170, 2026-09-21). Caveats carried forward: `kernel_verify` is a compile-check STUB and the domain is NOT default-promoted (GOAT gate pending) — the numeric-compare validator half of this proposal remains open. See `../riir-clippy/src/domains/kernel_opt/`.
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: [Proposal 034](../../riir-ai/.proposals/034_clippy_healing_drafter_pruner.md) (clippy-healing drafter+pruner — the direct precedent) × [Proposal 011](011_rust_swe_bench_latent_space_via_wasm_pruner.md) (WASM pruner in-loop) × [`roofline.rs`](crates/katgpt-core/src/roofline.rs) (Plasma-tier kernel-dispatch) × [`GemvAutotune`](../../riir-ai/crates/riir-gpu/src/gemv_autotune.rs) (Warm-tier runtime benchmark) × [`pick_domain`](crates/katgpt-core/src/variable_rank_domain_expert.rs) (latent-MoE expert selection) × popcorn (`katopz/popcorn`, fork of `tilde-research/popcorn` — corpus + methodology source)

@@ -1,5 +1,7 @@
 # Proposal 009: Canonical Intent Space — Plug-and-Play Any Base Model
 
+**Status:** **CLOSED-NEGATIVE on the cross-arch claim (Recipe D, Bench 427 — structural cross-arch disagreement, not length/noise); the intra-arch substrate SHIPPED — `crates/katgpt-canon/` (CanonicalIntent + Procrustes/Subspace/Mask adapters, Bench 562 G1/G2/G4 PASS). Rollout plan never opened. Reopen path = Proposal 010 (non-hidden-state construction). Detailed phase record below.**
+
 **Date:** 2026-07-25
 **Research:** [katgpt-rs/.research/459_canonical_intent_space_plug_and_play.md](../.research/459_canonical_intent_space_plug_and_play.md)
 **Training-side counterpart:** [riir-train/.research/406_git_rebasin_universal_subspace.md](../../riir-train/.research/406_git_rebasin_universal_subspace.md)

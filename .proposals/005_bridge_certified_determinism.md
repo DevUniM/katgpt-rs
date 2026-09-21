@@ -1,6 +1,6 @@
 # Proposal 005 — BridgeCertified: continuous determinism contract for raw↔latent bridges at the sync boundary
 
-Status: **draft**
+Status: **PARTIALLY ADOPTED** — the determinism contract ships BY MIRROR in riir-chain's AOI primitive (Plan 017 G1: ≥10⁴ bit-identity corpus, `tests/aoi_g1_determinism.rs` + `aoi_g1_cross_arch_corpus.rs`; `riir-chain/src/aoi/mod.rs` "BridgeCertified mirror"). The katgpt-rs pieces are NOT implemented (grep-verified 2026-09-21): no `BridgeCertified` trait in katgpt-core, no drift sampler, no `BridgeDriftEvidence` in the slashing pipeline. Grep only text files; an arm that exists and runs may still reach nothing — re-verify before citing this as a determinism guarantee for new bridge code.
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: Plan 385 T3.4 (`CogSlashEvidence` / `NonDeterminism` slashing) × `katgpt-core/src/closure/bridge.rs`
