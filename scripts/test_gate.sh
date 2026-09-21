@@ -70,7 +70,13 @@
 # / Bench 764 — the slt module promoted default-on, +12 tests; same box,
 # measured). katgpt-core raised 2053→2060 2026-09-15 (Issue 782 / Bench 765
 # — slt_sweep promoted default-on, +7 gate tests +1 ignored diagnostics;
-# same box, measured 2060/8). Raising a floor is a
+# same box, measured 2060/8). Floor 2060 reads 2063/8 measured 2026-09-21
+# (M3, HEAD ca3eb4124 — default-visible test additions landed since 09-15;
+# floor left at 2060, downward-firing). katgpt-core raised to 2074/8 at
+# `--features decision_wire` 2026-09-21 (Plan 603 T1.2 — the decision wire
+# module's 11 tests are INVISIBLE at default features, so the row that
+# executes them names the feature; measured 2074 passed / 0 failed / 8
+# ignored on this box, isolated target dir). Raising a floor is a
 # measured act; lowering one needs a note in the commit that does it.
 #
 # --test-threads=2 is deliberate (the riir-train 507 precedent): a weekly
@@ -127,6 +133,7 @@ set -u
 ROWS="
 katgpt-rs:203
 katgpt-core:2060
+katgpt-core:2074:decision_wire
 katgpt-dec:249:pca_global
 katgpt-types:139
 "

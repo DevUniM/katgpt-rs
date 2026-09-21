@@ -778,6 +778,18 @@ sigmoid_calibration = []
 # is the Proposal 014 Phase-1 engine's abstain arm (owner-gated).
 distance_abstain = []
 
+# decision_wire (Plan 603 T1.2): the Jev/laya-compatible decision wire
+# contract — DecisionRequest/DecisionResponse over the choice/score/noul
+# vocabulary (Research 562/574/576), with abstention as a first-class
+# answer, probabilities + confidence, and the routing/calibration metadata
+# the arena's Report-the-Floor tables read. WIRE ONLY — no engine logic;
+# the engine lives in riir-reflex (T1.3). Golden JSON byte-pins + serde
+# (json + postcard) round-trips + fail-closed structural validation ride
+# in the module, gate-covered by the katgpt-core:decision_wire test-gate
+# row. OPT-IN per the no-default-consumer rule — the consumer is the
+# Proposal 014 Phase-1 engine; promotion rides the GOAT gate.
+decision_wire = []
+
 # calibration_staleness (Issue 841 §B-3, 2026-09-19): the freeze/thaw seam's
 # missing invalidation rule. A calibration head — a Platt (T, b) pair, a
 # per-head attention scale table, a conformal residual pool — is fitted

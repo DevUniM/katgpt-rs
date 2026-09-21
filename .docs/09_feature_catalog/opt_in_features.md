@@ -4321,3 +4321,27 @@ point mass (confidence 1.0 at step 0), which is why the behavioral test proves
 OVERRIDE (a probe favoring a different token at λ = 0.5 diverges the decode)
 rather than sharpening. Zero new deps (blake3 rides belief_drafter); zero cost
 unless the feature is on and a probe is installed.
+
+### `decision_wire` — the Jev/laya decision wire contract (Plan 603 T1.2, 2026-09-21)
+
+`katgpt_core::decision_wire` — the public wire contract both Proposal 014 arena
+lanes speak and every published table reads (Research 562/574/576):
+`DecisionRequest { state, questions }` → `DecisionResponse { answers, routing,
+calibration }` over the typed vocabulary **`choice`** (options defined at
+request time — laya's answer-space law), **`score`** (ordinal rubric, lowest
+first), **`noul`** (yes/no, TypeSafe's typed boolean). Answers carry the typed
+outcome + calibrated per-option probabilities + the scalar confidence readout
+(Bench 817 policy, inherited — label-entropy narrow / argmax-label-prob wide).
+Abstention is a first-class answer (`outcome: None` — Jev cannot abstain,
+Research 562's recorded flaw; the distribution still rides so risk–coverage
+tables compute from one response). `Calibration` is the G1 Report-the-Floor
+surface; `Routing` names the lane (modelless/laya/hybrid) + the router's
+reason. WIRE ONLY — no engine logic; the engine lives in riir-reflex (T1.3).
+Fail-closed structural validation (`WireError`: arity, ranges, finiteness, id
+alignment, kind agreement). Fields are ALWAYS serialized (no
+`skip_serializing_if`): postcard is positional and cannot decode a skipped
+field back (the ptg_functor_edges law) — one wire shape across serde_json and
+postcard, golden byte-pins + round-trips for both. Gate-covered by the
+`katgpt-core:2074:decision_wire` test-gate row (11 module tests invisible at
+default features). Opt-in per the no-default-consumer rule; promotion rides
+the GOAT gate.

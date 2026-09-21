@@ -3381,6 +3381,16 @@ pub mod calibration_staleness;
 #[cfg(feature = "legal_token_set")]
 pub mod legal_token_set;
 
+/// Jev/laya-compatible decision wire contract (Plan 603 T1.2, Proposal 014
+/// — Research 562/574/576): typed questions (`choice`/`score`/`noul`, the
+/// answer space defined at request time) answered with probabilities +
+/// confidence, abstention as a first-class answer (`outcome: None` — Jev
+/// cannot abstain, the engine can), and the routing/calibration metadata
+/// the arena's Report-the-Floor tables read. WIRE ONLY — no engine logic;
+/// the engine lives in riir-reflex (T1.3). Opt-in (`decision_wire`).
+#[cfg(feature = "decision_wire")]
+pub mod decision_wire;
+
 /// Permanent attention sinks + a bounded KV window (Issue 841) — a
 /// deterministic RAM ceiling for decode. Composes with `kv_eviction`'s
 /// selector rather than replacing it. Opt-in (`kv_sink_window`).
