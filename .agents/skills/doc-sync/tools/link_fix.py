@@ -62,6 +62,21 @@ KNOWN_REPOS = {"katgpt-rs", "riir-ai", "riir-chain", "riir-clippy", "riir-train"
                "katgpt-web", "riir-dao", "riir-deployer", "mmorpg-editor", "mmorpg-remake"}
 
 
+def read_text_eol(path: Path) -> str:
+    # newline="" keeps \r\n and lone \r intact — the plain read_text/write_text
+    # pair translated them whole-file (measured: a CRLF .research doc came back
+    # LF-normalized everywhere except the one fixed line). Line indexing still
+    # matches linkcheck_sweep.py: both split on the same str.splitlines set.
+    with open(path, "r", encoding="utf-8", errors="replace", newline="") as fh:
+        return fh.read()
+
+
+def write_text_eol(path: Path, text: str) -> None:
+    # newline="" writes the string untranslated — no os.linesep substitution.
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
 def decide(target: str, md: Path):
     """Return (action, new_target_or_None)."""
     if target.startswith(("~", "/Users/")) or "*" in target:
@@ -116,7 +131,7 @@ def main():
         if not md.exists():
             print(f"SKIP file-gone: {rel}")
             continue
-        lines = md.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
+        lines = read_text_eol(md).splitlines(keepends=True)
         if lineno - 1 >= len(lines):
             print(f"SKIP line-gone: {rel}:{lineno}")
             continue
@@ -131,7 +146,7 @@ def main():
             print(f"NOMATCH: {rel}:{lineno} ({target})")
             continue
         lines[lineno - 1] = new_line
-        md.write_text("".join(lines), encoding="utf-8")
+        write_text_eol(md, "".join(lines))
         stats[action] += 1
         per_file[rel] = per_file.get(rel, 0) + 1
     print(f"\n{REPO.name}: repoint(R1)={stats['R1']} repoint(R2)={stats['R2']} "
