@@ -354,6 +354,19 @@ set_diffusion = []
 # OPT-IN pending the Phase-3 G3 GOAT.
 decode_order_metrics = ["katgpt-core/decode_order_metrics"]
 
+# Probe guidance (Issue 865 T1): weak-side probe seam + affine autoguidance
+# combine on the D2F decode path — `logits' = λ·logits + (1−λ)·probe_logits`
+# after the multistep blend, before sampling. Gates the `WeakLogitProbe`
+# trait + `ProbeCtx`, `D2fContext::{set_guidance, clear_guidance,
+# probe_logits_flat, guidance_lambda, weak_probe}`, `apply_probe_guidance`,
+# and `D2fPipeline::set_guidance`. λ = 1.0 (default) is bit-identical to
+# unguided decode (G1: the combine is skipped, the probe never invoked).
+# The trained probe artifact is T2 (riir-train `nextlat_*` lane pattern,
+# freeze/thaw wire); OPT-IN until the T3 λ-sweep GOAT gate passes.
+# Implies `dllm` — the combine lives inside the dllm-gated d2f module, so a
+# probe_guidance build without dllm would compile the feature to nothing.
+probe_guidance = ["dllm"]
+
 # Weaver inference-only logit corrector (Issue 131, Plan 433). Gates the
 # `dflash_predict_with_weaver` wrapper that combines DFlash predict + Weaver
 # marginal correction in a single call. Forwards to katgpt-speculative so the

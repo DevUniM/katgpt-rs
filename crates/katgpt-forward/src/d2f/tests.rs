@@ -543,3 +543,264 @@ fn test_decode_block_unmask_steps() {
     assert!(katgpt_core::dllm::global_ar_ness(&pi_never).is_nan());
     assert_ne!(result_never.state, D2fBlockState::FullyActivated);
 }
+
+// ═══════════════════════════════════════════════════════════
+// Probe guidance (Issue 865 T1) — feature-gated: compiles to nothing
+// without `probe_guidance`.
+// ═══════════════════════════════════════════════════════════
+#[cfg(feature = "probe_guidance")]
+mod probe_guidance_tests {
+    use super::*;
+    use crate::d2f_context::WeakLogitProbe;
+
+    /// Probe that writes `value` into every output slot.
+    struct ConstProbe(f32);
+
+    impl WeakLogitProbe for ConstProbe {
+        fn probe(&mut self, _input: crate::d2f_context::ProbeCtx<'_>, out: &mut [f32]) {
+            out.fill(self.0);
+        }
+    }
+
+    /// Probe that writes a poison value — any invocation is detectable. Used
+    /// to prove λ = 1.0 never invokes the probe (G1) and the combine never
+    /// touches the strong logits.
+    struct PoisonProbe;
+
+    impl WeakLogitProbe for PoisonProbe {
+        fn probe(&mut self, _input: crate::d2f_context::ProbeCtx<'_>, out: &mut [f32]) {
+            out.fill(999.0);
+        }
+    }
+
+    /// Probe carrying fixed values (set at construction) — for the
+    /// probe == logits identity case.
+    struct EchoProbe {
+        values: Vec<f32>,
+    }
+
+    impl WeakLogitProbe for EchoProbe {
+        fn probe(&mut self, _input: crate::d2f_context::ProbeCtx<'_>, out: &mut [f32]) {
+            out.copy_from_slice(&self.values[..out.len()]);
+        }
+    }
+
+    fn block_range(vocab: usize) -> std::ops::Range<usize> {
+        2 * vocab..6 * vocab
+    }
+
+    #[test]
+    fn combine_kernel_lambda_one_is_full_noop() {
+        // G1: λ = 1.0 must not even invoke the probe — the poison stays
+        // unwritten and the strong logits stay untouched.
+        let config = Config::micro_dllm();
+        let mut dctx = D2fContext::new(&config);
+        let vocab = config.vocab_size;
+        let range = block_range(vocab);
+        for (i, l) in dctx.logits_flat[range.clone()].iter_mut().enumerate() {
+            *l = (i % 13) as f32 * 0.25 - 1.0;
+        }
+        dctx.set_guidance(1.0, Box::new(PoisonProbe));
+        let logits_before = dctx.logits_flat[range.clone()].to_vec();
+        let probe_before = dctx.probe_logits_flat[range.clone()].to_vec();
+
+        crate::d2f_context::apply_probe_guidance(&mut dctx, &[], 2, 6, vocab, config.n_embd, 0);
+
+        assert_eq!(dctx.logits_flat[range.clone()], logits_before);
+        assert_eq!(dctx.probe_logits_flat[range], probe_before);
+    }
+
+    #[test]
+    fn combine_kernel_no_probe_is_noop() {
+        // λ = 2.0 but no probe installed → unguided no-op.
+        let config = Config::micro_dllm();
+        let mut dctx = D2fContext::new(&config);
+        let vocab = config.vocab_size;
+        let range = block_range(vocab);
+        for (i, l) in dctx.logits_flat[range.clone()].iter_mut().enumerate() {
+            *l = (i % 7) as f32 * 0.5;
+        }
+        dctx.guidance_lambda = 2.0;
+        let logits_before = dctx.logits_flat[range.clone()].to_vec();
+
+        crate::d2f_context::apply_probe_guidance(&mut dctx, &[], 2, 6, vocab, config.n_embd, 0);
+
+        assert_eq!(dctx.logits_flat[range], logits_before);
+    }
+
+    #[test]
+    fn combine_kernel_formula() {
+        // logits' = λ·logits + (1−λ)·probe, checked per element at λ = 0.5.
+        let config = Config::micro_dllm();
+        let mut dctx = D2fContext::new(&config);
+        let vocab = config.vocab_size;
+        let range = block_range(vocab);
+        let n = range.len();
+        for (i, l) in dctx.logits_flat[range.clone()].iter_mut().enumerate() {
+            *l = (i % 11) as f32 * 0.3 - 1.2;
+        }
+        dctx.set_guidance(0.5, Box::new(ConstProbe(3.0)));
+        let logits_before = dctx.logits_flat[range.clone()].to_vec();
+
+        crate::d2f_context::apply_probe_guidance(&mut dctx, &[], 2, 6, vocab, config.n_embd, 0);
+
+        for i in 0..n {
+            let want = 0.5 * logits_before[i] + 0.5 * 3.0;
+            assert_eq!(dctx.logits_flat[range.start + i], want, "elem {i}");
+        }
+    }
+
+    #[test]
+    fn combine_kernel_lambda_zero_replaces_with_probe() {
+        // λ = 0: the weak side fully replaces the strong side.
+        let config = Config::micro_dllm();
+        let mut dctx = D2fContext::new(&config);
+        let vocab = config.vocab_size;
+        let range = block_range(vocab);
+        for (i, l) in dctx.logits_flat[range.clone()].iter_mut().enumerate() {
+            *l = (i % 5) as f32;
+        }
+        dctx.set_guidance(0.0, Box::new(ConstProbe(-2.5)));
+
+        crate::d2f_context::apply_probe_guidance(&mut dctx, &[], 2, 6, vocab, config.n_embd, 0);
+
+        assert!(dctx.logits_flat[range].iter().all(|&l| l == -2.5));
+    }
+
+    #[test]
+    fn combine_kernel_probe_equals_logits_is_fixed_point() {
+        // probe == logits ⇒ logits' = λ·l + (1−λ)·l = l — the affine form's
+        // fixed point. Bit-exact only at λ = 1 (the two weighted terms round
+        // independently otherwise); at λ = 1.75 hold it to f32 rounding.
+        let config = Config::micro_dllm();
+        let mut dctx = D2fContext::new(&config);
+        let vocab = config.vocab_size;
+        let range = block_range(vocab);
+        let values: Vec<f32> = (0..range.len()).map(|i| (i % 17) as f32 * 0.2 - 1.0).collect();
+        dctx.logits_flat[range.clone()].copy_from_slice(&values);
+        dctx.set_guidance(1.75, Box::new(EchoProbe { values: values.clone() }));
+
+        crate::d2f_context::apply_probe_guidance(&mut dctx, &[], 2, 6, vocab, config.n_embd, 0);
+
+        for (a, b) in dctx.logits_flat[range].iter().zip(values.iter()) {
+            assert!((a - b).abs() < 1e-4, "fixed point drift {a} vs {b}");
+        }
+    }
+
+    /// Decode one block from the same seed twice: once unguided, once with
+    /// the given guidance installed, and compare results field-wise.
+    fn decode_pair(
+        install: Option<(f32, Box<dyn WeakLogitProbe>)>,
+    ) -> (D2fBlockResult, D2fBlockResult) {
+        let config = Config::micro_dllm();
+        let decode_config = D2fDecodeConfig::with_block_size(4);
+        let weights = TransformerWeights::new(&config, &mut Rng::new(42));
+
+        let mut plain = D2fContext::new(&config);
+        let unguided = d2f_decode_block_with_prompt_with(
+            &mut plain,
+            &weights,
+            &config,
+            &decode_config,
+            &[],
+            &NoPruner,
+            &NoScreeningPruner,
+            &mut Rng::new(42),
+        );
+
+        let mut guided_ctx = D2fContext::new(&config);
+        if let Some((lambda, probe)) = install {
+            guided_ctx.set_guidance(lambda, probe);
+        }
+        let guided = d2f_decode_block_with_prompt_with(
+            &mut guided_ctx,
+            &weights,
+            &config,
+            &decode_config,
+            &[],
+            &NoPruner,
+            &NoScreeningPruner,
+            &mut Rng::new(42),
+        );
+        (unguided, guided)
+    }
+
+    fn results_equal(a: &D2fBlockResult, b: &D2fBlockResult) -> bool {
+        a.tokens == b.tokens
+            && a.confidence_history == b.confidence_history
+            && a.steps_used == b.steps_used
+    }
+
+    #[test]
+    fn g1_lambda_one_guided_is_bit_identical_to_unguided() {
+        // G1 end-to-end: λ = 1.0 with a poison probe installed decodes
+        // byte-identical to unguided — the probe is never invoked.
+        let (unguided, guided) = decode_pair(Some((1.0, Box::new(PoisonProbe))));
+        assert!(results_equal(&unguided, &guided));
+    }
+
+    #[test]
+    fn absent_probe_lambda_two_is_bit_identical_to_unguided() {
+        // Guidance strength alone does nothing without a probe.
+        let (unguided, guided) = decode_pair(None);
+        assert!(results_equal(&unguided, &guided));
+    }
+
+    #[test]
+    fn guidance_can_override_strong_proposal() {
+        // micro_dllm collapses to a point mass (every position picks one token
+        // with confidence 1.0), so sharpening (λ=2, zero probe) is invisible.
+        // What IS observable: a probe favoring a different token at λ < 1
+        // pulls the proposal toward it — proving the weak side can override
+        // the strong side when blended.
+        struct OpposingProbe {
+            token: usize,
+            boost: f32,
+        }
+        impl WeakLogitProbe for OpposingProbe {
+            fn probe(&mut self, input: crate::d2f_context::ProbeCtx<'_>, out: &mut [f32]) {
+                let count = input.seq_len - input.block_start;
+                for p in 0..count {
+                    for t in 0..input.vocab {
+                        out[p * input.vocab + t] = if t == self.token { self.boost } else { 0.0 };
+                    }
+                }
+            }
+        }
+        let vocab = Config::micro_dllm().vocab_size;
+        let strong_pick = 15usize; // the point-mass token this fixture collapses to
+        let other = (strong_pick + 7) % (vocab - 1); // mask_token = vocab−1, never propose it
+        let (unguided, guided) = decode_pair(Some((
+            0.5,
+            Box::new(OpposingProbe { token: other, boost: 10.0 }),
+        )));
+        assert_eq!(
+            unguided.tokens,
+            vec![strong_pick; unguided.tokens.len()],
+            "fixture premise: unguided decode collapses to the point mass"
+        );
+        assert_ne!(
+            guided.tokens, unguided.tokens,
+            "guided decode must diverge from the point mass somewhere, got {:?}",
+            guided.tokens
+        );
+    }
+
+    #[test]
+    fn pipeline_set_guidance_wires_through() {
+        // The pipeline builder applies guidance to its internal context:
+        // λ = 1.0 + poison probe decodes identical to the plain pipeline.
+        let config = Config::micro_dllm();
+        let decode_config = D2fDecodeConfig::with_block_size(4);
+        let weights = TransformerWeights::new(&config, &mut Rng::new(42));
+
+        let plain = D2fPipeline::with_prompt(&config, decode_config, 4, &[0, 1])
+            .decode_all(&weights, &NoPruner, &NoScreeningPruner, &mut Rng::new(42));
+        let guided = D2fPipeline::with_prompt(&config, decode_config, 4, &[0, 1])
+            .set_guidance(1.0, Box::new(PoisonProbe))
+            .decode_all(&weights, &NoPruner, &NoScreeningPruner, &mut Rng::new(42));
+
+        assert_eq!(plain.tokens, guided.tokens);
+        assert_eq!(plain.total_steps, guided.total_steps);
+    }
+}

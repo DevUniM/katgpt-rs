@@ -104,6 +104,21 @@ pub struct D2fContext {
     /// Softmax scratch buffer for RCD: `[vocab_size]`.
     #[cfg(feature = "rcd_residual")]
     pub rcd_softmax_scratch: Vec<f32>,
+    /// Probe-guidance scratch (Issue 865 T1): weak-side probe logits
+    /// `[max_seq * vocab_size]`. Written by the installed probe each
+    /// denoising step, consumed by [`apply_probe_guidance`] — always fully
+    /// written before read, never reset (same contract as the other temp
+    /// buffers).
+    #[cfg(feature = "probe_guidance")]
+    pub probe_logits_flat: Vec<f32>,
+    /// Probe-guidance strength λ (Issue 865 T1). 1.0 = off — the combine is
+    /// skipped entirely, which is what makes guided and unguided decode
+    /// bit-identical at the default (G1).
+    #[cfg(feature = "probe_guidance")]
+    pub guidance_lambda: f32,
+    /// Installed weak-side probe, if any.
+    #[cfg(feature = "probe_guidance")]
+    pub weak_probe: Option<Box<dyn WeakLogitProbe>>,
     // usize fields after all Vec<f32> fields to eliminate inter-field padding.
     /// Number of positions with committed KV cache entries.
     /// Positions `[0..committed_len)` are valid and won't be recomputed.
@@ -144,6 +159,12 @@ impl D2fContext {
             entropy_weights: vec![0.0f32; max_seq],
             #[cfg(feature = "rcd_residual")]
             rcd_softmax_scratch: vec![0.0f32; vocab],
+            #[cfg(feature = "probe_guidance")]
+            probe_logits_flat: vec![0.0f32; max_seq * vocab],
+            #[cfg(feature = "probe_guidance")]
+            guidance_lambda: 1.0,
+            #[cfg(feature = "probe_guidance")]
+            weak_probe: None,
             committed_len: 0,
         }
     }
@@ -402,4 +423,149 @@ pub fn denoising_accuracy(predicted: &[usize], target: &[usize]) -> f32 {
     }
     let correct = (0..len).filter(|&i| predicted[i] == target[i]).count();
     correct as f32 / len as f32
+}
+
+// ═══════════════════════════════════════════════════════════
+// Probe guidance (Issue 865 T1) — weak-side probe seam + affine combine
+// ═══════════════════════════════════════════════════════════
+//
+// The autoguidance form (Research 68 §7.2 / arXiv:2609.19356): extrapolate
+// along the strong−weak prediction difference,
+//
+//   logits' = logits + (λ−1)·(logits − probe_logits)
+//           = λ·logits + (1−λ)·probe_logits
+//
+// The strong side is the trunk's own logits; the weak side is a cheap probe
+// (T2 trains a `LatentDynamicsMLP`-class artifact on a frozen trunk — the
+// class already ships in `katgpt-speculative/src/belief_drafter.rs`, Plan
+// 217). This module owns the MECHANISM only: the seam a probe plugs into and
+// the zero-alloc combine. λ = 1.0 (the default) skips all work, so a context
+// without guidance is bit-identical to pre-Issue-865 decode (G1).
+
+/// Everything a weak-side probe may read for one denoising step (Issue 865
+/// T1). Field slices, not a whole-context borrow: the probe contract names
+/// exactly what it may read, and disjoint field borrows are what let the
+/// caller hand these out while writing the probe's own scratch buffer.
+/// T2 may extend this with tap-point fields (early-layer hidden states)
+/// without breaking probe call sites.
+#[cfg(feature = "probe_guidance")]
+pub struct ProbeCtx<'a> {
+    /// Final-layer residual embeddings, `[seq_len * n_embd]` (per position).
+    pub xr: &'a [f32],
+    /// Normalized embeddings, `[seq_len * n_embd]` (per position).
+    pub x_norm: &'a [f32],
+    /// Current token state (prompt + block; uncommitted positions hold the
+    /// mask token).
+    pub tokens: &'a [usize],
+    /// Valid KV prefix length — positions `[0..committed_len)` are committed.
+    pub committed_len: usize,
+    /// First denoised (block) position in `tokens`.
+    pub block_start: usize,
+    /// Total sequence length this step (prompt + block).
+    pub seq_len: usize,
+    /// Vocabulary size (the probe's `out` holds `count * vocab` logits).
+    pub vocab: usize,
+    /// Embedding width, `[position * n_embd..]` indexing into `xr`/`x_norm`.
+    pub n_embd: usize,
+    /// Denoising step index (0-based) this probe call serves.
+    pub step: usize,
+}
+
+/// Weak-side probe: produces the cheap logits the guidance extrapolates
+/// AGAINST (Issue 865 T1). Implementations write exactly
+/// `(seq_len − block_start) * vocab` logits into `out`, ordered by position
+/// then vocab — the same layout as `D2fContext::logits_flat`'s block range.
+/// A trained artifact loads via the freeze/thaw wire (BLAKE3-checked) and
+/// stays consistent with the modelless consumption rule. `Send + Sync` is
+/// required so `D2fContext` keeps its auto-`Send + Sync`: the tri_mode
+/// verifier structs (`SpeculativeVerifier: Send + Sync`) embed the context,
+/// and the probe payload — a frozen MLP or plain fixture data — is plain
+/// data anyway.
+#[cfg(feature = "probe_guidance")]
+pub trait WeakLogitProbe: Send + Sync {
+    fn probe(&mut self, input: ProbeCtx<'_>, out: &mut [f32]);
+}
+
+#[cfg(feature = "probe_guidance")]
+impl D2fContext {
+    /// Install probe guidance with strength `lambda` (Issue 865 T1).
+    ///
+    /// `lambda = 1.0` leaves decode bit-identical to unguided (the combine is
+    /// skipped, the probe is never invoked); values above 1.0 extrapolate
+    /// away from the weak side, below 1.0 blend toward it. Calling again
+    /// replaces the previous probe and strength.
+    pub fn set_guidance(&mut self, lambda: f32, probe: Box<dyn WeakLogitProbe>) {
+        self.guidance_lambda = lambda;
+        self.weak_probe = Some(probe);
+    }
+
+    /// Remove any installed probe and restore the no-op default (λ = 1.0).
+    pub fn clear_guidance(&mut self) {
+        self.guidance_lambda = 1.0;
+        self.weak_probe = None;
+    }
+}
+
+/// Affine probe-guidance combine (Issue 865 T1):
+/// `logits' = λ·logits + (1−λ)·probe_logits` over the denoised block's
+/// positions.
+///
+/// Applied AFTER the (optional) multistep blend and BEFORE per-position
+/// sampling, so the sampler reads guided logits exactly as it reads raw ones
+/// and the two logit transforms never fight over ordering. No-ops when
+/// λ == 1.0 (G1 bit-identity — not even the probe is invoked) or when no
+/// probe is installed. Zero-alloc: reads/writes the context's flat buffers
+/// only; the combine loop is chunked 8-wide and branch-free so LLVM
+/// auto-vectorizes it.
+#[cfg(feature = "probe_guidance")]
+pub(crate) fn apply_probe_guidance(
+    dctx: &mut D2fContext,
+    tokens: &[usize],
+    block_start: usize,
+    seq_len: usize,
+    vocab: usize,
+    n_embd: usize,
+    step: usize,
+) {
+    if dctx.guidance_lambda == 1.0 {
+        return;
+    }
+    // take()/put-back: the probe must not hold a borrow of the context while
+    // the probe scratch buffer is handed out mutably.
+    let Some(mut probe) = dctx.weak_probe.take() else {
+        return;
+    };
+    let range = block_start * vocab..seq_len * vocab;
+    {
+        let input = ProbeCtx {
+            xr: &dctx.xr,
+            x_norm: &dctx.x_norm,
+            tokens,
+            committed_len: dctx.committed_len,
+            block_start,
+            seq_len,
+            vocab,
+            n_embd,
+            step,
+        };
+        probe.probe(input, &mut dctx.probe_logits_flat[range.clone()]);
+    }
+    dctx.weak_probe = Some(probe);
+
+    let lambda = dctx.guidance_lambda;
+    let w_probe = 1.0 - lambda;
+    let logits = &mut dctx.logits_flat[range.clone()];
+    let probe_logits = &dctx.probe_logits_flat[range];
+    let n = logits.len();
+    let mut i = 0;
+    while i + 8 <= n {
+        for j in 0..8 {
+            logits[i + j] = lambda * logits[i + j] + w_probe * probe_logits[i + j];
+        }
+        i += 8;
+    }
+    while i < n {
+        logits[i] = lambda * logits[i] + w_probe * probe_logits[i];
+        i += 1;
+    }
 }

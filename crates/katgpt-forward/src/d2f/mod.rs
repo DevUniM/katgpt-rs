@@ -26,6 +26,8 @@
 // `crate::types::*` → `katgpt_types::*`.
 
 use crate::d2f_context::{D2fContext, denoising_accuracy, forward_block_causal_with};
+#[cfg(feature = "probe_guidance")]
+use crate::d2f_context::apply_probe_guidance;
 use katgpt_core::simd::{simd_add_scalar_inplace, simd_exp_inplace, simd_max_f32};
 use katgpt_core::traits::{ConstraintPruner, ScreeningPruner};
 use katgpt_transformer::TransformerWeights;
@@ -737,6 +739,21 @@ fn d2f_decode_block_prompt_q_core(
             // Rotate caches: prev ← raw current, prev_prev ← old prev
             std::mem::swap(&mut dctx.prev_logits_flat, &mut dctx.prev_prev_logits_flat);
         }
+
+        // Probe guidance (Issue 865 T1): affine combine against the weak-side
+        // probe AFTER the multistep blend, BEFORE sampling — the sampler reads
+        // guided logits exactly as it reads raw ones. No-op (bit-identical)
+        // when λ = 1.0 or no probe is installed.
+        #[cfg(feature = "probe_guidance")]
+        apply_probe_guidance(
+            dctx,
+            &tokens,
+            block_start,
+            seq_len,
+            vocab,
+            config.n_embd,
+            step,
+        );
 
         let mut n_confident = 0usize;
 
@@ -1458,6 +1475,10 @@ pub struct D2fPipeline<'a> {
     /// the binary mask/token denoising loop.
     #[cfg(feature = "dmax_spd")]
     soft_config: Option<SoftDecodeConfig>,
+    /// Probe guidance installed for `decode_all` (Issue 865 T1): strength λ
+    /// plus the weak-side probe. `None` = unguided (the default).
+    #[cfg(feature = "probe_guidance")]
+    guidance: Option<(f32, Box<dyn crate::d2f_context::WeakLogitProbe>)>,
 }
 
 /// Result of full pipeline decode.
@@ -1485,6 +1506,8 @@ impl<'a> D2fPipeline<'a> {
             prompt: Vec::new(),
             #[cfg(feature = "dmax_spd")]
             soft_config: None,
+            #[cfg(feature = "probe_guidance")]
+            guidance: None,
         }
     }
 
@@ -1502,6 +1525,8 @@ impl<'a> D2fPipeline<'a> {
             prompt: prompt.to_vec(),
             #[cfg(feature = "dmax_spd")]
             soft_config: None,
+            #[cfg(feature = "probe_guidance")]
+            guidance: None,
         }
     }
 
@@ -1512,6 +1537,18 @@ impl<'a> D2fPipeline<'a> {
     #[cfg(feature = "dmax_spd")]
     pub fn with_soft_config(mut self, soft_config: SoftDecodeConfig) -> Self {
         self.soft_config = Some(soft_config);
+        self
+    }
+
+    /// Install probe guidance for the pipeline's decode (Issue 865 T1).
+    ///
+    /// Builder-style: `D2fPipeline::with_prompt(..).set_guidance(λ, probe)
+    /// .decode_all(..)`. λ = 1.0 is a no-op (bit-identical, G1); the probe is
+    /// a [`crate::d2f_context::WeakLogitProbe`] (T2 trains the artifact;
+    /// tests use fixture probes).
+    #[cfg(feature = "probe_guidance")]
+    pub fn set_guidance(mut self, lambda: f32, probe: Box<dyn crate::d2f_context::WeakLogitProbe>) -> Self {
+        self.guidance = Some((lambda, probe));
         self
     }
 
@@ -1540,6 +1577,10 @@ impl<'a> D2fPipeline<'a> {
         let temperature = self.decode_config.temperature;
         let vocab = self.config.vocab_size;
         let mut ctx = D2fContext::new(self.config);
+        #[cfg(feature = "probe_guidance")]
+        if let Some((lambda, probe)) = self.guidance {
+            ctx.set_guidance(lambda, probe);
+        }
 
         let mut all_tokens = self.prompt.clone();
         let mut block_results = Vec::with_capacity(n_blocks);

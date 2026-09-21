@@ -4273,3 +4273,34 @@ raw-count 95 over 1854 enforced pairs · G4 zero allocs (alloc_tracking).
 Opt-in — promotion additionally requires a live consumer (riir-ai Issue 991
 goal salience, pull-gated; riir-train Plan 413 tabular arm). Zero deps;
 zero runtime cost unless constructed.
+
+## 120. probe_guidance — weak-side probe seam + affine autoguidance on the D2F decode path (Issue 865 T1)
+
+The autoguidance mechanism (Research 68 §7.2, unblocked by Research 578 /
+arXiv:2609.19356): extrapolate along the strong−weak prediction difference,
+`logits' = logits + (λ−1)·(logits − probe_logits) = λ·logits + (1−λ)·probe`,
+applied to the denoised block AFTER the multistep blend and BEFORE sampling
+in `d2f_decode_block_prompt_q_core` — the sampler reads guided logits exactly
+as it reads raw ones. Ships the MECHANISM (T1): `WeakLogitProbe: Send + Sync`
+(the supertraits keep `D2fContext` auto-Send+Sync for the tri_mode verifier
+structs) + `ProbeCtx` (field slices, disjoint-borrow probe contract that T2
+can extend with tap-point fields) + `D2fContext::{set_guidance,
+clear_guidance}` + `D2fPipeline::set_guidance` + the zero-alloc 8-wide
+chunked combine kernel. λ lives on the CONTEXT, not `D2fDecodeConfig` — the
+config has 52 literal constructions and zero-churn beats an ergonomic field
+(`set_guidance` is the decode-configuration seam). Feature implies `dllm`
+(the combine lives in the dllm-gated d2f module — a bare flag would compile
+to nothing, the green-zero trap).
+
+G1 (bit-identity) PROVEN by test: λ = 1.0 skips all work — the probe is never
+invoked (poison-probe test) and guided decode is byte-identical to unguided
+end-to-end; absent probe + λ ≠ 1 is likewise a no-op. Kernel tests pin the
+affine formula at λ ∈ {0, 0.5} and the probe==logits fixed point (bit-exact
+only at λ = 1, f32-rounded at λ ≠ 1). T2 (the trained probe artifact,
+riir-train `nextlat_*` lane pattern, freeze/thaw wire) and the T3 λ-sweep
+GOAT gate (quality-vs-diversity Pareto vs unguided + dropout-autoguidance
+arm) are OPEN — OPT-IN until the GOAT passes, promotion modelless-only. The
+micro_dllm fixture collapses to a point mass (confidence 1.0 at step 0),
+which is why the behavioral test proves OVERRIDE (a probe favoring a
+different token at λ = 0.5 diverges the decode) rather than sharpening.
+Zero deps; zero cost unless the feature is on and a probe is installed.
