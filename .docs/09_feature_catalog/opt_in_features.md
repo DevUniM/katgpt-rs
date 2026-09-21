@@ -4307,15 +4307,27 @@ connector (Plan 217 class, now `Clone`) + the trunk's shared head — and
 now forwards to `katgpt-speculative/probe_artifact`): per block position the
 tapped early-layer hidden goes through the connector (zero `next_emb` — the
 training convention; block positions are mask tokens whose embeddings carry no
-per-position signal) then the shared head. The single-layer D2F kernel taps
-ONLY layer 0 (the pre-layer input residual — `ProbeCtx.tap` aliases `xr`);
-an artifact declaring a deeper tap is REJECTED at `MlpWeakProbe::new`, never
-silently misread (deeper taps need the multi-layer kernel extension). 15 new
+per-position signal) then the shared head. The tap point is the layer-0
+POST-ATTENTION residual (`ProbeCtx.tap` reads `D2fContext::probe_tap_flat`,
+captured by the forward when the decode cores arm it — a pure copy, zero cost
+when guidance is off); the pre-layer input residual was REJECTED BY
+MEASUREMENT: at masked positions it is mask-embedding + position only (no
+context) — the training lane's ablation reads held-out CE 1.9026 pre-layer vs
+0.2166 at the context tap (8.8×, riir-train `weak_probe_train` G-tap). An
+artifact declaring a deeper tap is REJECTED at `MlpWeakProbe::new`, never
+silently misread (deeper taps need the multi-layer kernel extension). The same
+commit fixed a latent T1 defect: `D2fPipeline::decode_all` never applied the
+combine — `set_guidance` was dead on the pipeline path and the T1 pipeline
+test passed vacuously at λ = 1 (now non-vacuously tested). 15 new
 tests (8 artifact wire: commitment/roundtrip/tamper/truncation/shape; 5 probe
 consumer: tap rejection/direct-math/offset/roundtrip/purity; 2 end-to-end:
-λ=1 bit-identity + λ=0.5 engagement). The TRAINING half (riir-train
-`nextlat_*` lane pattern) and the T3 λ-sweep GOAT gate (quality-vs-diversity
-Pareto vs unguided + dropout-autoguidance arm) are OPEN — OPT-IN until the
+λ=1 bit-identity + λ=0.5 engagement). **The TRAINING half also LANDED same
+day** (riir-train `weak_probe_train` example, feature `probe_guidance_train`):
+frozen mini-dLLM trunk, taps through the real D2F kernel, Adam on the
+connector, all five gates PASS (health 0.69→0.22 CE, tap-choice 0.2166 vs
+1.9026, uniform 3.30, wire round-trip through the BLAKE3 verifier,
+byte-identical retrain). The T3 λ-sweep GOAT gate (quality-vs-diversity
+Pareto vs unguided + dropout-autoguidance arm) is OPEN — OPT-IN until the
 GOAT passes, promotion modelless-only. The micro_dllm fixture collapses to a
 point mass (confidence 1.0 at step 0), which is why the behavioral test proves
 OVERRIDE (a probe favoring a different token at λ = 0.5 diverges the decode)
