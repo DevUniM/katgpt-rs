@@ -11,6 +11,64 @@ histories · staged-set + shared-target-dir narratives · feature-flag rule
 history (lossy surface, Report the Floor, Plan 467) · the Repo count
 paragraph's drift history · the resolved issue log.
 
+## 2026-09-21 — Issue 858 closed: g8's arch-conditional bar gets its aarch64 executing lane (PERF_ROWS)
+
+**Status: RESOLVED + REMOVED (this commit). Full issue record: git history
+`.issues/858_g8_cached_faster_than_uncached_is_RED_on_aarch64.md`.**
+
+**The finding (2026-09-19):** `g8_cached_faster_than_uncached` in
+`tests/belief_drafter_goat.rs` was red on the M3, reproducibly, ALONE —
+median ratio 0.6844–0.7111 over 5 runs against the then-universal
+`ab.median < 0.5` bar ("at least 2× faster", Plan 217's claim, calibrated
+at `dd8dadbba` on x86_64: 8 runs 0.39–0.41, a=360.3 b=141.7 ns). Every
+PASSED-ALONE class excluded: not load (3.9% spread, quiet box), not
+concurrency, not an unseeded draw (25 interleaved rounds, whole distribution
+above the bar), not Issue 855's vanished-work class (both arms `black_box`'d
+at input and output, a≈243 b≈165 ns/iter — real work). Found by ACCIDENT:
+adding a `println!` to two neighbouring arms meant running the whole target,
+and the target was already red.
+
+**T1 — the arch reading (2026-09-19, 4090 box):** 13/13 x86_64 runs PASS —
+default features, `--release`, `--exact`: +avx2 (matrix-lane cfg) median band
+0.4523–0.4712 (4.2% spread), plain 0.3896–0.3973; b≈137–155 ns across all
+runs, consistent with the `dd8dadbba` b=141.7. The arch gap (~0.23) is ~6×
+the run-to-run spread on both boxes. **Arch hypothesis CONFIRMED; cache
+regression REFUTED.** (Honest riders: the `dd8dadbba` band matches today's
+PLAIN build almost exactly — its attribution to "release + avx2" may
+describe a plain-build reading; and +avx2 headroom under sibling-build load
+is 2.9–4.8 points — a future red there is a BOX-CONDITIONS question first.)
+
+**T2 — the dual pin (2026-09-19):** `G8_BAR` in the test is
+arch-conditional — aarch64 0.75 (M3 worst median 0.7111 + ~5% headroom,
+mirroring x86_64's own headroom over 0.4712), everything else the strict 0.5
+claim (an unmeasured arch must meet the stated claim or red loudly — never
+silently inherit the relaxed bar). The Bench-806-T7 sanctioned form, not a
+silent global 0.75; the x86_64 claim did not move. Both x86_64 configs
+green post-edit.
+
+**T3 — the lane gap, closed by this commit:** the standing finding was that
+a target whose repair was calibrated on an arch with no executing lane is
+*unknown*, not green — full_gate is macOS/aarch64 but compile+lint; the
+x86_64 execution matrix executes the integration cell but refuses off
+x86_64; and test_gate (the only executing lane either arch has, schedule
+suspended) never reached integration targets. Fixed by a new row kind in
+`scripts/test_gate.sh`: **`PERF_ROWS`** (`pkg:floor:target`, executed at
+`--release --test-threads=1` — timing rows measure; the lib rows'
+threads=2 is a count-floor noise compromise), first row
+`katgpt-rs:12:belief_drafter_goat`. Whole target 0.03 s in release — the
+row's cost is the build, not the run. Floor 12 = the target's full test
+inventory (platform- and profile-invariant: no `#[ignore]`, no cfg-gated
+test fns — the only arch-conditional item is the `G8_BAR` const).
+`--canary` now floor-bombs the first row of EACH list. **Measured on the
+4090 (x86_64, no concurrent cargo): full gate PASS 207/2063/249/150 +
+12/12 on the new row; canary FAILS on both lists as designed.** The
+aarch64 reading lands the next time the gate runs on the M3 — the state
+moves from unknown to executed on both arches. `suite_membership_audit`
+already counted the target "pinned" (plan files name it on paper) — the
+gap was EXECUTION naming, which this row now provides in
+`scripts/test_gate.sh`. Record doc:
+`.docs/10_audits/ci_compile_vs_execute_axis.md` §2026-09-21.
+
 ## 2026-09-21 — the x86_64 execution matrix caught a day-old test that had never executed on x86_64: the ordered-dot anti-dedup pin was crafted at NEON's vector width
 
 **Status: RECORD 2026-09-21 · matrix run at `b6dc1d16` (cells 1-6 green at

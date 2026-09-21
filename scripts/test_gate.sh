@@ -36,8 +36,8 @@
 #                 check finding real debt, not a reason to widen silently.
 #   NOT COVERED — the 477 integration-test targets (each carries
 #                 required-features or multi-minute single tests — priced
-#                 out of a weekly gate; the floors here make expanding
-#                 this gate a one-line ROWS addition), the 176 bench
+#                 out of a weekly gate; the affordable exceptions ride
+#                 PERF_ROWS below), the 176 bench
 #                 targets, and everything needing Metal/ANE/4090 — those
 #                 stay workstation-owned.
 #
@@ -48,10 +48,10 @@
 # `#![cfg]`-gated-file green-zero trap: `ok. 0 passed` with exit 0 is
 # byte-for-byte a real pass, and a skipped target produces no line at all).
 #
-# --canary: runs the first row with a floor of 100000 and asserts the gate
-# FAILS — the proof the floors are live (same comparison path as a
-# blind/zero target, without mutating the tree). Dev-time; too costly to
-# run in CI every week.
+# --canary: runs the first row of EACH list (lib + PERF) with a floor of
+# 100000 and asserts the gate FAILS — the proof the floors are live
+# (same comparison path as a blind/zero target, without mutating the
+# tree). Dev-time; too costly to run in CI every week.
 #
 # Parse discipline: exactly ONE `test result:` line is expected per `--lib`
 # invocation. More or fewer means the parse has gone blind — fail loudly
@@ -82,6 +82,23 @@
 # a feature-gated surface's tests compile to NOTHING at default features —
 # the green-zero trap — so the row that executes them must NAME the
 # feature). First row must stay featureless (the --canary arm runs it).
+#
+# PERF_ROWS (Issue 858 T3, 2026-09-21): `pkg:floor:target` — an
+# INTEGRATION-target row, executed at --release with --test-threads=1
+# (timing rows measure; the lib rows' --test-threads=2 is a runner-noise
+# compromise for count floors, not a measurement posture). These rows
+# exist because a PERF bar calibrated per-arch needs an executing lane on
+# EVERY arch it can run on. The first one is g8 in belief_drafter_goat —
+# an arch-CONDITIONAL dual pin since Issue 858 (aarch64 0.75 / everything
+# else 0.5): x86_64 executes that target via the x86_64 execution matrix's
+# integration cell, but aarch64 had NOTHING — full_gate is compile+lint,
+# this gate's lib rows never reach integration targets, and the matrix
+# refuses off x86_64. The M3's g8 red (0.68–0.71 against the then-
+# universal 0.5 bar) existed for one day and was found by accident.
+# Whole target: 0.03 s in release on x86_64 — the row's cost is the build,
+# not the run. A red here is a real arch/calibration reading (the dual
+# pin's own design: "that red is information"), never something to
+# re-pin away.
 
 set -u
 
@@ -114,10 +131,15 @@ katgpt-dec:249:pca_global
 katgpt-types:139
 "
 
+# See the PERF_ROWS comment above (Issue 858 T3) for why these exist.
+PERF_ROWS="
+katgpt-rs:12:belief_drafter_goat
+"
+
 canary=0
 if [ "${1:-}" = "--canary" ]; then
     canary=1
-    echo "canary: running the first row with floor=100000 — the gate MUST fail"
+    echo "canary: running the first row of each list with floor=100000 — the gate MUST fail"
 fi
 
 fail=0
@@ -157,6 +179,42 @@ for row in $ROWS; do
     echo "passed=$n floor=$floor"
     if [ "$n" -lt "$floor" ]; then
         echo "FAIL $pkg: passed $n < floor $floor — a target reporting fewer assertions than its floor is blind, skipped, or broken"
+        fail=1
+    fi
+done
+
+# ── PERF_ROWS: integration targets at --release (see the header comment
+# for the Issue-858 rationale and the threads=1 measurement posture).
+pfirst=1
+for row in $PERF_ROWS; do
+    pkg=${row%%:*}
+    tail=${row#*:}
+    floor=${tail%%:*}
+    target=${tail#*:}
+    if [ "$canary" = 1 ] && [ "$pfirst" = 1 ]; then
+        floor=100000
+    fi
+    pfirst=0
+
+    echo "=== $pkg --test $target (release, floor $floor, --test-threads=1) ==="
+    if ! out=$(cargo test --release -p "$pkg" --test "$target" -- --test-threads=1 2>&1); then
+        echo "FAIL $pkg/$target: cargo test exited non-zero"
+        printf '%s\n' "$out" | tail -20
+        fail=1
+        continue
+    fi
+
+    n=$(printf '%s\n' "$out" | awk '$1 == "test" && $2 == "result:" { for (i = 3; i <= NF; i++) if ($i == "passed;") print $(i-1) }')
+    nlines=$(printf '%s\n' "$n" | grep -c .)
+    if [ "$nlines" != "1" ]; then
+        echo "FAIL $pkg/$target: expected exactly 1 'test result:' line, got $nlines — the parse is blind or the target shape changed"
+        fail=1
+        continue
+    fi
+
+    echo "passed=$n floor=$floor"
+    if [ "$n" -lt "$floor" ]; then
+        echo "FAIL $pkg/$target: passed $n < floor $floor — a target reporting fewer assertions than its floor is blind, skipped, or broken"
         fail=1
     fi
 done
