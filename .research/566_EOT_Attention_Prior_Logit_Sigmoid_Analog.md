@@ -2,7 +2,7 @@
 
 > **Source:** "You Need Better Attention Priors" — Elon Litman (Stanford), arXiv:2601.15380, ICML 2026. https://arxiv.org/abs/2601.15380
 > **Date:** 2026-09-17
-> **Status:** Resolved — T1/T2/T3/T5 LANDED 2026-09-17 (`prior_logit_lane` + `sink_margin_forecast`, [Bench 813](../.benchmarks/813_prior_lane_margin_goat.md) G1–G4 ALL PASS; [Issue 819](../.issues/819_sigmoid_prior_logit_lane_sink_margin_forecast.md); T4 training arm deferred, owner-gated)
+> **Status:** Resolved — T1/T2/T3/T5 LANDED 2026-09-17 (`prior_logit_lane` + `sink_margin_forecast`, [Bench 813](../.benchmarks/813_prior_lane_margin_goat.md) G1–G4 ALL PASS; `Issue 819`; T4 training arm deferred, owner-gated)
 > **Related Research:** 258 (Attention Sink NOP/Broadcast, Plan 287), 261 (FuncAttn sink verdict — closed negative), 392 (SSMax + GoldShare, Plan 411), 487 (Massive Activations / sink-aware KV quant), 549 (ASEntmax)
 > **Related Plans:** 411 (ssmax_temperature DEFAULT-ON, gold_share_probe opt-in), 287 (sink_aware_attn)
 > **Classification:** Public

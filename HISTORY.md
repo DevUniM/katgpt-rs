@@ -1,7 +1,7 @@
 ## 2026-09-21 — Issue 864 closed: BITCOS tier ships opt-in — footprint PASS, latency honestly LOSES on this host (Bench 846)
 
-Executed [Issue 864](../.issues/864_bitcos_distribution_adaptive_ternary_codec.md) (filed from
-[Research 577](../.research/577_BITCOS_Distribution_Adaptive_Ternary_Layout.md) the same day):
+Executed `Issue 864` (filed from
+[Research 577](.research/577_BITCOS_Distribution_Adaptive_Ternary_Layout.md) the same day):
 `bitcos` feature in katgpt-types — the distribution-adaptive ternary container (presence bitmap +
 compacted neg-sign stream, rate 2−z bits/w + f16 scale), the z-meter (`zero_density_report`), and
 three GEMV consumers (scalar bit-identical to the bit-plane reference; 256-entry LUT
@@ -20,7 +20,7 @@ runtime-probed AVX2∧BMI2) + the roofline dispatch `should_use_bitcos(z, γ, β
   — strayed high bits tripped `is_canonical`; and the scalar kernel's pos plane is `p & !neg`,
   not presence (a negative weight has both bits set). Research 577's "compacted pos bits" wording
   is inverted against its own 0=+1/1=−1 convention — neg-compaction ships, pinned in-code.
-- Record: [Bench 846](../.benchmarks/846_bitcos_goat.md); feature-count claim sites updated
+- Record: [Bench 846](.benchmarks/846_bitcos_goat.md); feature-count claim sites updated
   626→627; the riir-gpu CUDA LUT-arm pointer stays recorded (now with an in-tree reference).
 
 # HISTORY.md — katgpt-rs
@@ -31,9 +31,9 @@ section below is preserved verbatim from the pre-compaction `AGENTS.md`.
 
 ## 2026-09-22 — Issue 868 closed NEGATIVE: engram-fused PUCT G5 FAIL — the evidence gate worked, and that is why nothing happened (Bench 848)
 
-Executed [Issue 868](../.issues/868_engram_fused_puct_arena_poc.md) (record lives in git
+Executed `Issue 868` (record lives in git
 history; file removed per the noise-reduction rule) via
-[Plan 605](../.plans/605_engram_fused_puct_poc.md): Proposal 013's engram×PUCT fusion
+[Plan 605](.plans/605_engram_fused_puct_poc.md): Proposal 013's engram×PUCT fusion
 implemented end-to-end — `engram_puct` feature (opt-in, native-gated, optional katgpt-core
 dep), `engram_fuse.rs` (TT-key packing `(board, ko, to_play)` → 4 words; `MinedTable`
 BLAKE3-committed stats artifact with strict key-sorted determinism; count-sigmoid evidence
@@ -68,7 +68,7 @@ default wasm32 tree.
 - **Re-open conditions**: a transposition-dense domain, neighbourhood generalization (the
   M-MCTS mechanism hard-hash routing lacks by construction), or a much larger mining
   corpus + re-mining cadence (`EngramHotSwap` exists). Record:
-  [Bench 848](../.benchmarks/848_engram_puct_arena_g5.md); Proposal 013 status line
+  [Bench 848](.benchmarks/848_engram_puct_arena_g5.md); Proposal 013 status line
   updated to MEASURED NEGATIVE.
 Operational rules live in `AGENTS.md`; removed issue files: git history.
 
@@ -588,7 +588,7 @@ fallback biased toward f32) in `katgpt-types::simd::plasma_dispatch`, for
 callers holding BOTH representations (the quantize-from-dense seam).
 Option (b) (pre-expanded i8 sign rows, ~1.7–2× back at 5.3× footprint) NOT
 taken — the bitplane footprint is not the product at served shapes.
-GOAT G1+G2 GREEN ([Bench 843-dispatch](../.benchmarks/843_plasma_dispatch_goat.md)):
+GOAT G1+G2 GREEN ([Bench 843-dispatch](.benchmarks/843_plasma_dispatch_goat.md)):
 bit-identical to the selected kernel both sides of a forced boundary; 2.11×
 vs pure ternary at 1024² (bar 1.5×, the house slack convention); −1.6% vs
 pure dense (≤10% bar). `plasma_path` STAYS DEFAULT-ON — the 21× footprint

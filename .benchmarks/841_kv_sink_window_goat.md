@@ -2,7 +2,7 @@
 
 **Status:** ✅ PASSED 5/5 — **NOT promoted** (opt-in `kv_sink_window`), and the reason is a
 *missing measurement*, not a failing gate: see [Promotion](#promotion-is-blocked-by-a-corpus-not-by-a-gate).
-**Issue:** [841](../.issues/841_cactus_sweep_follow_ups.md) §KV permanent sinks (Research 571 §B-8)
+**Issue:** `841` §KV permanent sinks (Research 571 §B-8)
 **Feature:** `kv_sink_window` (opt-in; requires `usage_rate_eviction`)
 **Target:** `crates/katgpt-core/benches/bench_841_kv_sink_window_goat.rs`
 **Box:** M3 Max, macOS 26.6.2, 16 cores, 64 GiB — loaded (concurrent agent sessions), battery/charging.

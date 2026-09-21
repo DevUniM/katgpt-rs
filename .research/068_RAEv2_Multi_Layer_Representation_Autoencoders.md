@@ -293,7 +293,7 @@ This is "free CFG" — no separate model, no extra full forward pass. The interm
 
 **Connection to MTP:** Our MTP drafter already projects mid-layer activations. The intermediate LM head is essentially the MTP projection head repurposed for guidance rather than drafting.
 
-> **Addendum (2026-09-21, Research 578):** the "needs weight training" blocker has eroded — arXiv:2609.19356 (probe guidance) shows the weak side needs only a ~2%-FLOP **early-layer MLP probe** on detached hidden states (not a mid-layer LM head; their ablation finds mid/late layers the WRONG tap point — the guidance direction vanishes as weak≈strong), and riir-train's `nextlat_*` lane already trains exactly that probe class. Position law correction: this note's `n_layer/2` sketch is superseded — tap EARLY. Implementation task: [Issue 865](../.issues/865_probe_guidance_dllm_lane.md).
+> **Addendum (2026-09-21, Research 578):** the "needs weight training" blocker has eroded — arXiv:2609.19356 (probe guidance) shows the weak side needs only a ~2%-FLOP **early-layer MLP probe** on detached hidden states (not a mid-layer LM head; their ablation finds mid/late layers the WRONG tap point — the guidance direction vanishes as weak≈strong), and riir-train's `nextlat_*` lane already trains exactly that probe class. Position law correction: this note's `n_layer/2` sketch is superseded — tap EARLY. Implementation task: `Issue 865`.
 
 ### 7.3 EP Accuracy@k Metric for GOAT (Trivial Effort, High Impact)
 

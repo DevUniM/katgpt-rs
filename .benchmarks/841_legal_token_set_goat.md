@@ -1,7 +1,7 @@
 # Bench 841 — legal-token-set enumeration + the restricted vocabulary projection
 
 **Status:** ✅ PASSED 5/5 — **PROMOTED to default-on 2026-09-19**
-**Issue:** [841](../.issues/841_cactus_sweep_follow_ups.md) §grammar-forced vocab-projection skip (Research 571 §B-8)
+**Issue:** `841` §grammar-forced vocab-projection skip (Research 571 §B-8)
 **Feature:** `legal_token_set` (root default-on; `katgpt-core` / `katgpt-pruners` / `katgpt-speculative` own defaults stay `[]`)
 **Target:** `benches/bench_841_legal_token_set_goat.rs`
 **Box:** M3 Max, macOS 26.6.2, 16 cores, 64 GiB — loaded (5+ concurrent agent sessions), on battery/charging.
