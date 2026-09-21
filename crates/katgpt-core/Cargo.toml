@@ -1150,6 +1150,7 @@ prior_logit_lane = []  # Per-key additive prior-logit lane (Issue 819 T2, Resear
 
 closure_instrument = ["dep:papaya", "dep:ahash"]  # Closure-Expansion Instrument (CEI) — PTG recorder + motif miner + PRI/CDG/TaR metrics (Plan 290, Research 264, arxiv 2606.15386). DEFAULT-ON (Plan 290 T4.7 + G4 fix, 2026-06-26): G1 67us<100us (bit matrix, Issue 035), G2 638us<5ms, G3 synthetic-proxy monotone, G4 0.296MB<1MB (Option<[u8;32]> fix). 55/55 tests green. ahash powers the G1 hot-path bit-matrix PRI (Issue 035).
 ptg_functor_edges = ["closure_instrument"]  # Issue 040 — PTG × latent_functor edge composition. Adds `FunctorPtg` composite (wraps an unchanged `PrimitiveTransitionGraph` with a parallel `Vec<Option<FunctorEdgeParams>>`), `apply_functor_edge_into` (zero-alloc sigmoid-gated cosine·direction apply path), and `functor_edge_gate` (diagnostic gate query). Wire-format safe: the inner PTG is byte-identical to a bare PTG (T1 audit found postcard `#[serde(default)]` does NOT work for missing trailing fields — adding a field to `PtgEdge` would break deserialization of existing PTGs, so the composite approach is mandatory). DEFAULT-ON (Issue 040 T7, 2026-07-04): all GOAT gates pass (G1 6/6 + 17 unit tests, G2 34ns/call <200ns, G2-alloc 0, G3 default/no-default/all-features clean + 1046 lib tests, G4 44 bytes, G5/G6 modelless).
+bridge_certified = ["closure_instrument"]  # BridgeCertified — continuous determinism contract for the raw↔latent motif bridge at the sync boundary (Proposal 005, Plan 604). Certified kernel = `dot_f32_ordered` (sequential fold, no lane reassociation) + `fast_sigmoid` (Cephes polynomial) — fixed software op sequences, bit-identical x86_64↔aarch64↔wasm32 by construction; the shipped `ptg_to_motif_embedding` keeps its platform-SIMD dot and stays byte-identical (opt-in per call site). G1 cross-arch corpus (10⁴ PTGs) + audit tests + zero-alloc `*_into` gate; stays OPT-IN — proposal Phase-4 promotion needs the Phase-3 runtime/slashing wiring (riir-ai/riir-chain, deferred).
 ict_branching = []  # ICT Distributional Branching-Point Detector — collision_purity β(π), Rényi H₂, JS-divergence-to-group-mean, BranchingDetector (Plan 294, Research 270, arxiv 2606.19771). Opt-in — Plan 324 T9.4 GOAT G7+G8+G9 ALL PASS (2026-06-20+; G7 zero ICT data in SyncBlock across 1000 ticks, G8 ICT-gated CLR 89.72% quality at 9.40% cost, G9 ICT-gated HLA recall = 100% of baseline); stays opt-in pending in-game integration test at 1000-NPC scale (k_select floor finding: per-NPC cognitive savings smaller than paper's ~10% headline; crowd-scale savings come from Phase 4 rotating sampler).
 induced_cwm = []  # Induced Code World Model kernel primitive — `InducedCwmKernel: GameState` marker + `CwmCommitment` (BLAKE3) + `BeliefInferenceFn<S>` + `TransitionUnitTest` (Plan 296, Research 275, arxiv 2510.04542). Open half of the CWM Super-GOAT: LLM-induction pipeline is private (riir-ai Plan 326). Opt-in — Plan 296 G1-G4 ALL PASS (.benchmarks/296_induced_cwm_primitive_goat.md, 2026-06-21 — 47/47 tests, all 4 gates green); stays opt-in by design per Plan 296 T5.4 verdict — primitive, not default-on capability; ready for downstream consumption (riir-ai Plan 326).
 induced_cwm_ismcts = ["induced_cwm"]  # Information-Set MCTS over an induced CWM + belief fn (Plan 296 Phase 2). Self-contained search tree (does NOT reuse root-crate `mcts_search` — that lives in katgpt-rs/src, katgpt-core cannot depend on the root).
@@ -3546,3 +3547,25 @@ required-features = ["calibration_staleness"]
 name = "bench_841_kv_sink_window_goat"
 harness = false
 required-features = ["kv_sink_window"]
+
+# Plan 604 (Proposal 005 Phase 1+2) — the BridgeCertified determinism audit:
+# hash content-addressing, replay round-trip, FreezeSkew/BadInputs taxonomy,
+# certified≠simd load-bearing pin, and the G1 aarch64 corpus-digest pin
+# (cross-arch protocol lives in the harness example).
+[[test]]
+name = "bridge_certified_invariants"
+required-features = ["bridge_certified"]
+
+# Plan 604 G4 — zero-alloc steady state for certified_ptg_to_motif_embedding_into.
+# Separate single-fn binary (the *_alloc_check convention: a counting
+# allocator would pick up parallel sibling tests in a shared target).
+[[test]]
+name = "bridge_certified_alloc_check"
+required-features = ["bridge_certified"]
+
+# Plan 604 G1 harness — record mode prints the corpus digest + arch; verify
+# mode (--expect <hex>) exits non-zero on divergence. Run it on BOTH
+# aarch64-apple-darwin and x86_64-apple-darwin (Rosetta) and compare.
+[[example]]
+name = "bridge_determinism_check"
+required-features = ["bridge_certified"]

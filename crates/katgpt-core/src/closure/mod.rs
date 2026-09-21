@@ -37,6 +37,10 @@
 
 pub mod admit;
 pub mod bridge;
+// BridgeCertified determinism contract (Proposal 005 / Plan 604) — opt-in on
+// top of the closure instrument; feature dep keeps one cfg spelling.
+#[cfg(feature = "bridge_certified")]
+pub mod bridge_certified;
 #[cfg(feature = "ptg_functor_edges")]
 pub mod functor_edge;
 pub mod metrics;
@@ -49,6 +53,11 @@ pub mod trace;
 pub use admit::{GateResult, MotifAdmitter, RejectionReason};
 pub use bridge::{
     DEFAULT_MOTIF_DIRS, MotifDirections, motif_embedding_to_tar_score, ptg_to_motif_embedding,
+};
+#[cfg(feature = "bridge_certified")]
+pub use bridge_certified::{
+    BridgeCertified, BridgeCertifyError, G1Corpus, G1_SEED, certified_ptg_to_motif_embedding,
+    certified_ptg_to_motif_embedding_into, embedding_from_bytes, embedding_to_bytes, g1_corpus,
 };
 pub use metrics::{CdgScore, PriScores, compute_tar_score};
 pub use motif::{FixedU32Set, MAX_MOTIF_EDGES, MAX_MOTIF_NODES, Motif, MotifMiner, RING_BUFFER_K};
