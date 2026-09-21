@@ -480,6 +480,15 @@ case (one sustained measurement + one test build, not multi-tenant
 compile churn), so read it as bounding the 71.67s outlier further, not as
 refuting the LIMIT. The 33-check figure to compare against remains the
 **46.74–50.22s range**.
+⚑ **A first reading at 34 checks: 50.03s CPU / 54.5s wall** (2026-09-21,
+M3, LOADED — sibling cargo builds plus two concurrent agent sessions
+throughout; the run was also the landing check for the
+`distance_abstain` feature, whose 625→626 README count bump it
+verified). At the 33-check range's midpoint, so the CHECKS 33→34 move is
+invisible at this load class and the 71.67s outlier stays confirmed as
+load. The quiet-box figure remains unrecorded at every CHECKS count ≥ 18
+— take the live count from the gate's own PASS line, never from this
+sentence.
 ⛔ And "load-invariant" has a measured LIMIT (2026-09-14): two runs at the
 same 17 checks / 1517-file fence floor, on a box carrying the g50 training
 precompute plus ≥3 concurrent agent sessions, measured **44.97s · 36.28s
