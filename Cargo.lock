@@ -2013,6 +2013,7 @@ dependencies = [
 name = "katgpt-moka-wasm"
 version = "0.1.0"
 dependencies = [
+ "katgpt-core",
  "katgpt-nn",
  "katgpt-types",
  "serde",

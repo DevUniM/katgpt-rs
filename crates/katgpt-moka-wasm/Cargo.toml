@@ -15,9 +15,28 @@ serde_json = "1"
 katgpt-types = { path = "../katgpt-types" }
 katgpt-nn = { path = "../katgpt-nn" }
 wasm-bindgen = "0.2"
+# Issue 868 / Plan 605: engram substrate for the fused-PUCT POC. OPTIONAL
+# and native-gated — the wasm32 browser build (default features) never
+# resolves it, so the T2.1 artifact-identity claim holds by construction.
+katgpt-core = { path = "../katgpt-core", optional = true, default-features = false }
 
 [dev-dependencies]
 wasmi = { version = "2", features = ["simd"] }
+
+# Issue 868 / Plan 605 targets — required-features keeps them out of every
+# default-feature invocation (a plain `cargo test`/`cargo build --examples`
+# SKIPS them loudly instead of compiling to a green zero).
+[[example]]
+name = "engram_miner"
+required-features = ["engram_puct"]
+
+[[example]]
+name = "engram_puct_arena"
+required-features = ["engram_puct"]
+
+[[test]]
+name = "engram_puct_gates"
+required-features = ["engram_puct"]
 
 [features]
 # Research hooks for the Issue 565 / Research 463 quant-error-LoRA defend-wrong PoC.
@@ -29,3 +48,12 @@ wasmi = { version = "2", features = ["simd"] }
 # enables it. Native-only; used by riir-ai/crates/riir-poc.
 default = []
 research = []
+# Issue 868 / Plan 605: engram-fused PUCT POC (Proposal 013) — offline-mined
+# value/prior memory (`katgpt-core/src/engram/`, Plan 299 GOAT) read at the
+# node-expansion seam: count-sigmoid evidence gate, one-shot damped Q-init,
+# bounded prior sharpening. NATIVE-GATED — every consumer is
+# `#[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]`; the
+# browser/wasm build is out of scope by proposal. Opt-in — G5 (head-to-head
+# arena, Issue 868 T3.3) decides promotion; a FAIL records the negative and
+# the feature stays opt-in.
+engram_puct = ["dep:katgpt-core", "katgpt-core/engram"]

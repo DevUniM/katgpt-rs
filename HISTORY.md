@@ -28,6 +28,48 @@ runtime-probed AVX2∧BMI2) + the roofline dispatch `should_use_bitcos(z, γ, β
 Historical record moved out of `AGENTS.md` (2026-09-06 compaction, from
 commit `1801c0ab`) so agent context stays small. Nothing was deleted: every
 section below is preserved verbatim from the pre-compaction `AGENTS.md`.
+
+## 2026-09-22 — Issue 868 closed NEGATIVE: engram-fused PUCT G5 FAIL — the evidence gate worked, and that is why nothing happened (Bench 848)
+
+Executed [Issue 868](../.issues/868_engram_fused_puct_arena_poc.md) (record lives in git
+history; file removed per the noise-reduction rule) via
+[Plan 605](../.plans/605_engram_fused_puct_poc.md): Proposal 013's engram×PUCT fusion
+implemented end-to-end — `engram_puct` feature (opt-in, native-gated, optional katgpt-core
+dep), `engram_fuse.rs` (TT-key packing `(board, ko, to_play)` → 4 words; `MinedTable`
+BLAKE3-committed stats artifact with strict key-sorted determinism; count-sigmoid evidence
+gate σ((n−8)/4); one-shot damped Q-init `visits=1, total=gate·v̄`; bounded prior sharpening
+γ = exp(2·ln2·(b−0.5)·gate) ∈ [0.5, 2]), miner + arena examples (required-features), and the
+GOAT gate tests. All fusion sites cfg-gated at item granularity — the feature-off compile
+is source-identical, and T2.1 measured **size-identical** (381,353 B raw wasm pre/post;
+sha differs only via cargo's `-C metadata` permutation) with zero katgpt-core in the
+default wasm32 tree.
+
+- **G5 FAIL — 296/616 = 48.1%** head-to-head (paired, both colours per seed), Wilson
+  one-sided 95% lower **44.8%** < 50%. Budget arm (fused b25 vs plain b50): **35.7%** —
+  memory does not compensate halved budget. Independent-opponent control: fused 93.0% vs
+  plain 97.0% vs GREEDY — **−4.0 pp, not significant**. G2: **293 ns/read** vs the <100 ns
+  bar (16 runtime-modulus divisions; ~1% of a forward pass, gate-absolute FAIL).
+- ⛔ **The control arm's first numbers were corrupted by a reward-inversion bug** (White-game
+  rewards counted for the PUCT arm — both arms forced to ~50%, the 51/51 "tie" was the
+  artifact). Caught by checking the output against the harness reference (85–94% vs
+  GREEDY); fixed + re-measured. The h2h and budget arms inverted explicitly and were
+  never affected.
+- **The interpretable negative (T1.3 sanity gates did their job)**: the memory FIRED at
+  98.4% of 1.06 M lookups, but 100% of the 16,930 mined positions have n < 4 (only 136
+  repeat visits in 17,066 plies — 9×9 self-play barely transposes), so the count-based
+  gate — the issue's own anti-rumor rule — correctly damped 99.98% of rows to ≤0.18
+  strength. "Memory doesn't help" is now separable from "memory never fired": it fired
+  everywhere and could not legally trust what it read. Collisions: 22.0% of entries share
+  ≥1 of their 16 slots (2²⁰ slots) — real but mooted by the gate.
+- **Gates that PASSED**: G1 (empty table ⇒ bit-identical to feature-off, 40 positions +
+  2 full games), G4 (zero-alloc read; counting allocator, mutex-serialized because the
+  counter is process-wide), G6 (deterministic build + round-trip + tamper refusal), and
+  the Q-init direction arm (a v̄=+1 row strictly suppresses the move leading into it).
+- **Re-open conditions**: a transposition-dense domain, neighbourhood generalization (the
+  M-MCTS mechanism hard-hash routing lacks by construction), or a much larger mining
+  corpus + re-mining cadence (`EngramHotSwap` exists). Record:
+  [Bench 848](../.benchmarks/848_engram_puct_arena_g5.md); Proposal 013 status line
+  updated to MEASURED NEGATIVE.
 Operational rules live in `AGENTS.md`; removed issue files: git history.
 
 contents: modelless-first canonical-failure story · full-gate narratives ·

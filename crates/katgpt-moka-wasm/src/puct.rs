@@ -132,6 +132,12 @@ pub struct PuctPlayer {
     corrected: Option<crate::research::OwnedCorrections>,
     #[cfg(feature = "research")]
     lora_scratch: Vec<f32>,
+    /// Engram-fused memory (Issue 868 / Plan 605). `None` = the feature-off
+    /// posture — bit-identical search. Only [`with_engram`](Self::with_engram)
+    /// sets it, and only at K=1 (batched + engram is out of POC scope, the
+    /// int8-at-K>1 precedent).
+    #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+    engram: Option<crate::engram_fuse::EngramPuctMemory>,
 }
 
 /// Virtual loss magnitude applied during batched selection (Issue 205).
@@ -207,6 +213,8 @@ impl PuctPlayer {
             corrected: None,
             #[cfg(feature = "research")]
             lora_scratch: Vec::new(),
+            #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+            engram: None,
         }
     }
 
@@ -240,6 +248,53 @@ impl PuctPlayer {
     #[inline]
     pub fn nodes_evaluated(&self) -> usize {
         self.nodes_evaluated
+    }
+
+    /// Construct with engram-fused memory (Issue 868 / Plan 605 — Proposal
+    /// 013's offline-mined value/prior table read at the expansion seam).
+    /// Forces the K=1 sequential path (batched + engram is out of POC scope,
+    /// the int8-at-K>1 precedent) with the default int8 forward.
+    ///
+    /// Fusion rule (see `engram_fuse`): at each expansion, ONE engram read
+    /// keyed on the expanded node's own `(board, ko, to_play)` —
+    /// Q-init as one damped pseudo-visit (`visits = 1`,
+    /// `total_value = gate · v̄`) + prior sharpening of the child softmax by
+    /// the bounded γ. `hits == 0` behaves exactly like the feature-off
+    /// player (G1).
+    #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+    pub fn with_engram(
+        budget: usize,
+        c_puct: f32,
+        top_k: usize,
+        memory: crate::engram_fuse::EngramPuctMemory,
+    ) -> Self {
+        let mut player = Self::with_options(budget, c_puct, top_k, 1, true);
+        player.engram = Some(memory);
+        player
+    }
+
+    /// Fusion telemetry: `(lookups, fires)` from the fused memory, if
+    /// present. Diagnostics for the arena report ("memory never fired" is
+    /// the diagnosability the T1.3 gates exist to protect).
+    #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+    pub fn engram_telemetry(&self) -> Option<(u64, u64)> {
+        self.engram.as_ref().map(|m| m.telemetry())
+    }
+
+    /// Root children's `(action, visit_count)` pairs from the most recent
+    /// `select_move`, in child order. Mining/diagnostics only — this
+    /// allocates and is not a hot-path API. The engram miner consumes it
+    /// for the concentration statistic `b` (Issue 868 T1).
+    #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+    pub fn root_child_visits(&self) -> Vec<(Option<usize>, u32)> {
+        match self.arena.first() {
+            Some(root) => root
+                .children
+                .iter()
+                .map(|&c| (self.arena[c].action, self.arena[c].visits))
+                .collect(),
+            None => Vec::new(),
+        }
     }
 
     /// Expand a node: run policy+value, create children for top_k legal moves.
@@ -291,6 +346,28 @@ impl PuctPlayer {
         let (policy, value) = self.forward_leaf();
         self.nodes_evaluated += 1;
 
+        // Issue 868 fusion (Plan 605): ONE engram read for this node's own
+        // state — Q-init as one damped pseudo-visit + the child-softmax
+        // sharpening γ. `hits == 0` ⇒ exactly the feature-off path (G1).
+        // Native-gated only; the fused player is forced to K=1, and this is
+        // the K=1 expansion path.
+        #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+        let gamma = match self.engram.as_mut() {
+            Some(mem) => match mem.read(&self.arena[node_idx].state) {
+                Some(row) => {
+                    let node = &mut self.arena[node_idx];
+                    node.visits = 1;
+                    node.total_value = row.gate * row.value_mean;
+                    row.gamma
+                }
+                None => 1.0,
+            },
+            None => 1.0,
+        };
+
+        #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+        self.expand_with_policy_value(node_idx, &policy, value, gamma);
+        #[cfg(not(all(feature = "engram_puct", not(target_arch = "wasm32"))))]
         self.expand_with_policy_value(node_idx, &policy, value);
         value
     }
@@ -378,6 +455,10 @@ impl PuctPlayer {
         node_idx: usize,
         policy: &[f32],
         _value: f32,
+        // Issue 868: prior-sharpening factor for the child softmax, fused
+        // path only. γ > 0 preserves the top-k sort order — only the
+        // softmax below is scaled.
+        #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))] gamma: f32,
     ) {
         let parent_state = self.arena[node_idx].state;
 
@@ -393,13 +474,22 @@ impl PuctPlayer {
         scored.truncate(self.top_k);
 
         // Softmax the top_k priors for normalized P(s,a).
+        // Issue 868: the paired arms below are cfg-TWINS — identical modulo
+        // the γ multiply. The γ-free arm must stay the exact pre-fusion
+        // expression (the T2.1 byte-identity claim rests on it).
         let max_logit = scored.iter().map(|(l, _)| *l).fold(f32::NEG_INFINITY, f32::max);
+        #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+        let exp_sum: f32 = scored.iter().map(|(l, _)| (gamma * (l - max_logit)).exp()).sum();
+        #[cfg(not(all(feature = "engram_puct", not(target_arch = "wasm32"))))]
         let exp_sum: f32 = scored.iter().map(|(l, _)| (l - max_logit).exp()).sum();
         let inv_exp_sum = if exp_sum > 0.0 { 1.0 / exp_sum } else { 1.0 };
 
         // Push children.
         let children_start = self.arena.len();
         for (logit, action) in &scored {
+            #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+            let prior = (gamma * (logit - max_logit)).exp() * inv_exp_sum;
+            #[cfg(not(all(feature = "engram_puct", not(target_arch = "wasm32"))))]
             let prior = (logit - max_logit).exp() * inv_exp_sum;
             let mut child_state = parent_state;
             match *action {
@@ -643,6 +733,12 @@ impl PuctPlayer {
                         {
                             // Already expanded — just use the value.
                         } else {
+                            // Issue 868: batched expansion is fusion-free (the
+                            // fused player forces K=1) — γ = 1 keeps the two
+                            // arms shape-identical.
+                            #[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+                            self.expand_with_policy_value(leaf_idx, &policy_buf, v, 1.0);
+                            #[cfg(not(all(feature = "engram_puct", not(target_arch = "wasm32"))))]
                             self.expand_with_policy_value(leaf_idx, &policy_buf, v);
                         }
                         v
