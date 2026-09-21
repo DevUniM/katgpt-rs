@@ -3569,3 +3569,10 @@ required-features = ["bridge_certified"]
 [[example]]
 name = "bridge_determinism_check"
 required-features = ["bridge_certified"]
+
+# Plan 603 T1.3 — `score_into` zero-alloc gate (the bench-811 convention).
+# The allocating `score` path is the cold path; the hot scorer's G4 claim
+# lives HERE, at a separate binary with its own counting allocator.
+[[test]]
+name = "compression_drafter_alloc_gate"
+required-features = ["compression_drafter"]

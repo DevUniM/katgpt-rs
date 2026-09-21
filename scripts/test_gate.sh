@@ -78,6 +78,10 @@
 # executes them names the feature; measured 2074 passed / 0 failed / 8
 # ignored on this box, isolated target dir). Raising a floor is a
 # measured act; lowering one needs a note in the commit that does it.
+# The compression_drafter row: measured 2079/0/8 2026-09-21 (M3,
+# --features compression_drafter --lib, --test-threads=2) = the 2074
+# decision_wire-era baseline + the lz4 module's feature-gated tests + the
+# 2 score_into parity/determinism tests (Plan 603 T1.3 substrate half).
 #
 # --test-threads=2 is deliberate (the riir-train 507 precedent): a weekly
 # red on runner-load noise from a timing-sensitive test would be alarm
@@ -105,6 +109,16 @@
 # not the run. A red here is a real arch/calibration reading (the dual
 # pin's own design: "that red is information"), never something to
 # re-pin away.
+#
+# Row grammar extension (Plan 603 T1.3, 2026-09-21):
+# `pkg:floor:target[:features]` — an optional 4th field names the feature
+# set the target requires (the required-features row in the manifest keeps
+# the target out of default invocations, so the lane that executes it must
+# NAME the feature — the same law the lib rows' third field carries). The
+# first non-timing row is `compression_drafter_alloc_gate`: an ALLOC-COUNT
+# row (the bench-811 zero-alloc gate for the corpus-drafter hot scorer
+# `score_into`, the substrate half of riir-reflex Plan 603 T1.3's G4) —
+# the floor is a passed-COUNT floor like the lib rows, not a latency bar.
 
 set -u
 
@@ -134,6 +148,7 @@ ROWS="
 katgpt-rs:203
 katgpt-core:2060
 katgpt-core:2074:decision_wire
+katgpt-core:2074:compression_drafter
 katgpt-dec:249:pca_global
 katgpt-types:139
 "
@@ -141,6 +156,7 @@ katgpt-types:139
 # See the PERF_ROWS comment above (Issue 858 T3) for why these exist.
 PERF_ROWS="
 katgpt-rs:12:belief_drafter_goat
+katgpt-core:1:compression_drafter_alloc_gate:compression_drafter
 "
 
 canary=0
@@ -197,14 +213,19 @@ for row in $PERF_ROWS; do
     pkg=${row%%:*}
     tail=${row#*:}
     floor=${tail%%:*}
-    target=${tail#*:}
+    tail=${tail#*:}
+    target=${tail%%:*}
+    features=${tail#*:}
+    [ "$features" = "$target" ] && features=""
+    feat_args=""
+    [ -n "$features" ] && [ "$features" != "$target" ] && feat_args="--features $features"
     if [ "$canary" = 1 ] && [ "$pfirst" = 1 ]; then
         floor=100000
     fi
     pfirst=0
 
-    echo "=== $pkg --test $target (release, floor $floor, --test-threads=1) ==="
-    if ! out=$(cargo test --release -p "$pkg" --test "$target" -- --test-threads=1 2>&1); then
+    echo "=== $pkg --test $target (release, floor $floor, --test-threads=1${features:+, features $features}) ==="
+    if ! out=$(cargo test --release -p "$pkg" --test "$target" $feat_args -- --test-threads=1 2>&1); then
         echo "FAIL $pkg/$target: cargo test exited non-zero"
         printf '%s\n' "$out" | tail -20
         fail=1
