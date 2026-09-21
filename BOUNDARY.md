@@ -50,6 +50,7 @@ Everything downstream is a consumer, never a dependency:
 | — | — | **Nothing workspace-internal.** katgpt-rs is UPSTREAM of riir-ai; any riir dep here is a dependency cycle. |
 | `blake3` | crates.io | `katgpt-device-verify` pins `default-features = false` (pure-Rust core-only). The `std` feature is host/CI only; a device build must not enable it. |
 | `bevy_ecs` | crates.io | OPTIONAL only (features `bomber` / `monopoly` / `bomber-wasm`), used as a schedule-free data-structure layer (`World` + `query{,_filtered}` + `Messages` drain + derives; zero scheduler/Commands/change-detection — Issue 799 API audit). The bomber/monopoly arenas are GOAT evidence infrastructure (Bench 432 kernel_blend gates measured on bomber tournaments) and pass the domain test: an evaluation harness with no riir dep, upstream of everything. Pinned at the workspace 0.19 wave (bumped 0.15→0.19, Issue 799; measured: game semantics byte-identical before/after, `run_tick` World paths ~1.8× slower — floors still pass with ≥10× headroom, see the Bench 799 record). |
+| `syn` | crates.io | OPTIONAL only (feature `canon_source_features` in `katgpt-canon`, Issue 867 T1): Rust-source parsing for the AST node-type histogram extractor — setup-time only, NEVER on a per-token path. Opt-in feature, default build's dep graph unchanged (syn was already transitive in the lock; the direct edge activates nothing without the feature). |
 
 ### Consumers of `katgpt-device-verify` (outbound, informational)
 

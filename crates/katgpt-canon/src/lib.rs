@@ -42,6 +42,7 @@
 //! | `canon` (P0) | [`CanonicalIntent`] + [`ModelAdapter`] + [`ProcrustesAdapter`] | opt-in |
 //! | `canon_subspace` (P1) | [`SubspaceAdapter`] (cross-arch joint-SVD) | opt-in |
 //! | `canon_mask` (P4) | [`MaskAdapter`] (lottery-ticket application) | opt-in |
+//! | `canon_source_features` (Issue 867 P1) | [`source_features`] AST histogram extractor | opt-in |
 //!
 //! ## The P1 result (Bench 423, G5 GO)
 //!
@@ -121,3 +122,11 @@ pub use subspace_adapter::{
 pub mod mask_adapter;
 #[cfg(feature = "canon_mask")]
 pub use mask_adapter::MaskAdapter;
+
+/// Deterministic AST node-type histogram extractor (Issue 867 Phase 1 —
+/// Proposal 010 §Feature 1). Architecture-independent source features; the
+/// fixture corpus lives riir-train-side (`data/canon_rust_contrastive/`).
+#[cfg(feature = "canon_source_features")]
+pub mod source_features;
+#[cfg(feature = "canon_source_features")]
+pub use source_features::{ast_histogram, AstBin, AstHistogram, N_AST_BINS};

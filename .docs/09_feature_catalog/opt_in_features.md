@@ -807,7 +807,7 @@ Config tag + tier-promotion Wout projection. Three nested tiers (LOD0 background
 
 **Known limitation (honest).** `ProcrustesAdapter::project_into` at production model dim (d=2304, Gemma2-2B) is 1.328ms — O(d²) scaling, **not gated against the 50µs target**. The theoretical SIMD floor at d=2304 is ~220µs (5.3M flops / 8-wide AVX2 FMA / 3 GHz); even perfect SIMD can't hit 50µs. The 50µs G2 floor applies to the per-direction-per-tick hot path — that's SubspaceAdapter (O(d·k), k≪d) and MaskAdapter (O(d)). ProcrustesAdapter's use case is same-arch snapshot swap, a setup-time operation where 1.3ms is acceptable.
 
-🔧 Feature flags: `canon`, `canon_subspace`, `canon_mask` (independent, default-off). Crates: `katgpt-canon`.
+🔧 Feature flags: `canon`, `canon_subspace`, `canon_mask`, `canon_source_features` (independent, default-off; the last is Issue 867 Phase 1's syn-gated AST node-type histogram extractor — `source_features` module, 38-bin frozen vocabulary, setup-time only, fixture corpus riir-train-side `data/canon_rust_contrastive/`). Crates: `katgpt-canon`.
 
 📖 Proposal: [`.proposals/009_canonical_intent_space.md`](../../.proposals/009_canonical_intent_space.md), Research: [`.research/459_canonical_intent_space_plug_and_play.md`](../../.research/459_canonical_intent_space_plug_and_play.md) (CLOSED), Benchmark: [`.benchmarks/562_katgpt_canon_goat.md`](../../.benchmarks/562_katgpt_canon_goat.md), Cross-arch demotion: [`negative_results.md`](negative_results.md) §15, Non-hidden-state follow-up: [`.proposals/010_non_hidden_state_canonical_construction.md`](../../.proposals/010_non_hidden_state_canonical_construction.md) (draft).
 

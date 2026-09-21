@@ -1894,6 +1894,8 @@ dependencies = [
  "bytemuck",
  "katgpt-core",
  "katgpt-spectral",
+ "serde_json",
+ "syn",
 ]
 
 [[package]]

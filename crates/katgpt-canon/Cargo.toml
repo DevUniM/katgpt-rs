@@ -29,6 +29,16 @@ blake3 = "1"
 # bytemuck: zero-cost f32→bytes cast for blake3 commitments. Non-optional —
 # every adapter's commitment() casts an f32 slice to bytes.
 bytemuck = "1"
+# syn: Rust-source parsing for the AST node-type histogram extractor (Issue
+# 867 T1 — the non-hidden-state canonical construction, Proposal 010 §
+# Feature 1). Optional, feature-gated (`canon_source_features`), SETUP-TIME
+# only — never on a per-token path. BOUNDARY.md §May depend on carries the
+# matching row.
+syn = { version = "2", optional = true, features = ["full", "visit"] }
+
+[dev-dependencies]
+# Issue 867 T1 corpus gate: reads the sibling whole-item pairs.jsonl.
+serde_json = "1"
 
 [features]
 default = []
@@ -51,6 +61,13 @@ canon_subspace = ["canon"]
 # modelless elementwise multiply. Opt-in until P4 lands.
 canon_mask = ["canon"]
 
+# Issue 867 Phase 1 — AST node-type histogram extractor over `syn::visit`
+# (`source_features` module). Standalone: does NOT imply `canon` — source
+# features are architecture-independent inputs, orthogonal to the adapter
+# features; the T2 SourceFeatureAdapter composes them explicitly. Opt-in
+# (Proposal 010 self-assesses HIGHLY SPECULATIVE); setup-time only.
+canon_source_features = ["dep:syn"]
+
 # ─── Bench 562 — GOAT G1/G2/G4 gates (ProcrustesAdapter + SubspaceAdapter
 # + MaskAdapter). std::time::Instant + inlined CountingAllocator (matches
 # the procrustes_bench convention; criterion is not a dep). Runs all three
@@ -71,3 +88,12 @@ harness = false
 [[test]]
 name = "subspace_planted_signal"
 required-features = ["canon_subspace"]
+
+# ─── Issue 867 T1 corpus gate — extractor correctness on inline idiom
+# pairs (iterator-chain vs index-loop, `?` vs unwrap) + determinism + the
+# sibling whole-item corpus read when the riir-train checkout is present
+# (loud skip otherwise — katgpt-rs is the public upstream and must stay
+# green in a bare clone).
+[[test]]
+name = "source_features_corpus"
+required-features = ["canon_source_features"]
