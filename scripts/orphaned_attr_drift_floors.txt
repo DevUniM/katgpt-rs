@@ -108,3 +108,4 @@ mmorpg-remake                30            100              0
 # repository, riir-ai's vendored `wgpu-hal` fork, riir-train's cargo OUT_DIR
 # sources under `.runs/target-*`). A reader who cannot see that the population
 # DEFINITION changed reads that drop as a catastrophe.
+riir-reflex                   8              9              0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)

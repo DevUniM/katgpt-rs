@@ -18,6 +18,7 @@ riir-kat
 riir-llm
 riir-mmorpg-examples
 riir-neuron-db
+riir-reflex
 riir-shader
 riir-train
 riir-viewbridge

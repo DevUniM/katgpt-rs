@@ -234,3 +234,4 @@ max_misattributed_in_range = 0
 # PARTIAL clone, so a full checkout clears it by construction and the floor
 # only ever catches a PARSE regression, never a population change.
 min_heading_shaped = 260
+riir-reflex                  4      0               0       0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)

@@ -101,3 +101,4 @@ mmorpg-remake                 3          0           0          0
 # ⚠ Read that list as a MEASUREMENT RECORD, not as a second set of pins. The
 # floors above are the claim; these are what they were derived from, dated so a
 # later reader can tell a real shrink from a re-pin nobody justified.
+riir-reflex                   0          0           0          0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)

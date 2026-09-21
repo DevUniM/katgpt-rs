@@ -96,3 +96,4 @@ mmorpg-remaster       50                 0
 # repaired `99064c5`, floored at 50). The class the sweep exists for, caught
 # by its own first workspace run: a repo that joins after the landing
 # measurement arrives with the defect and no gate the day it appears.
+riir-reflex                   4                 0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)

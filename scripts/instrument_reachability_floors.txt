@@ -93,3 +93,4 @@ mmorpg-remake                      7          3                7  # Issue 842: f
 # run, alongside the same four rows owed by platform_dead_code_drift_floors,
 # subprocess_encoding_drift_floors, orphaned_attr_drift_floors,
 # wasm32_surface_drift_floors and len_derived_drift_floors.
+riir-reflex                       0          1                0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)

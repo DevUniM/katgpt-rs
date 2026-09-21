@@ -77,3 +77,4 @@ riir-viewbridge                    0            0              0
 # regression takes files to ~0 with the classifier intact, a masker or regex
 # regression takes regions to 0 over an unchanged walk.
 TOTALS                          1800         1000              0
+riir-reflex                          1            1              0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)

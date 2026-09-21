@@ -91,3 +91,4 @@ TOTALS                       115           16               0
 # correctly 0.
 #
 # ⚠ Read this list as a MEASUREMENT RECORD, not as a second set of pins.
+riir-reflex                      0            0               0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
