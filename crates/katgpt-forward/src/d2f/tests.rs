@@ -804,6 +804,82 @@ mod probe_guidance_tests {
         assert_eq!(plain.total_steps, guided.total_steps);
     }
 
+    #[test]
+    fn pipeline_guidance_below_one_is_not_vacuous() {
+        // Issue 865 T1 fix (found by T2): decode_all's own loop never called
+        // apply_probe_guidance — set_guidance was dead on the pipeline path
+        // and the λ = 1 test above passed vacuously. This test FAILS on that
+        // build: an opposing probe at λ = 0.5 must actually move the decode.
+        let config = Config::micro_dllm();
+        let vocab = config.vocab_size;
+        let decode_config = D2fDecodeConfig::with_block_size(4);
+        let weights = TransformerWeights::new(&config, &mut Rng::new(42));
+        let strong_pick = 15usize;
+        let other = (strong_pick + 7) % (vocab - 1); // mask_token = vocab−1, never propose it
+        struct OpposingProbe {
+            token: usize,
+            boost: f32,
+        }
+        impl WeakLogitProbe for OpposingProbe {
+            fn probe(&mut self, input: crate::d2f_context::ProbeCtx<'_>, out: &mut [f32]) {
+                let count = input.seq_len - input.block_start;
+                for p in 0..count {
+                    for t in 0..input.vocab {
+                        out[p * input.vocab + t] = if t == self.token { self.boost } else { 0.0 };
+                    }
+                }
+            }
+        }
+
+        let plain = D2fPipeline::with_prompt(&config, decode_config, 4, &[0, 1])
+            .decode_all(&weights, &NoPruner, &NoScreeningPruner, &mut Rng::new(42));
+        let guided = D2fPipeline::with_prompt(&config, decode_config, 4, &[0, 1])
+            .set_guidance(0.5, Box::new(OpposingProbe { token: other, boost: 1000.0 }))
+            .decode_all(&weights, &NoPruner, &NoScreeningPruner, &mut Rng::new(42));
+
+        assert_ne!(
+            plain.tokens, guided.tokens,
+            "pipeline guidance at λ=0.5 must move the decode (non-vacuous wiring)"
+        );
+    }
+
+    #[test]
+    fn tap_capture_never_moves_logits() {
+        // The T2 tap is a pure COPY inside the forward KERNEL: a capture-on
+        // forward must be bit-identical to capture off, and the taps must
+        // actually be written. (Kernel level — the decode cores arm capture
+        // themselves when guidance is live, by design.)
+        let config = Config::micro_dllm();
+        let weights = TransformerWeights::new(&config, &mut Rng::new(42));
+        let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9];
+
+        let mut off_ctx = D2fContext::new(&config);
+        forward_block_causal_with(&mut off_ctx, &weights, &tokens, &config, 4);
+
+        let mut on_ctx = D2fContext::new(&config);
+        on_ctx.probe_tap_capture = true;
+        forward_block_causal_with(&mut on_ctx, &weights, &tokens, &config, 4);
+
+        assert_eq!(
+            off_ctx.logits_flat,
+            on_ctx.logits_flat,
+            "capture is a pure copy — logits must be bit-identical"
+        );
+        let n = config.n_embd;
+        let any_written = (0..tokens.len())
+            .any(|p| on_ctx.probe_tap_flat[p * n..(p + 1) * n].iter().any(|&v| v != 0.0));
+        assert!(any_written, "armed capture must populate probe_tap_flat");
+        // And the capture must differ from the pre-layer input residual (it
+        // carries the attention output) at least somewhere.
+        let differs_from_xr = (0..tokens.len()).any(|p| {
+            on_ctx.probe_tap_flat[p * n..(p + 1) * n] != off_ctx.xr[p * n..(p + 1) * n]
+        });
+        assert!(
+            differs_from_xr,
+            "the tap (post-attention) must differ from xr (pre-attention) somewhere"
+        );
+    }
+
     // ── Issue 865 T2: the trained artifact path ──────────────────────
 
     use katgpt_speculative::belief_drafter::LatentDynamicsMLP;

@@ -701,6 +701,14 @@ fn d2f_decode_block_prompt_q_core(
     let mut sample_exp_buf: Vec<f32> = Vec::with_capacity(vocab);
 
     for step in 0..max_steps {
+        // Issue 865 T2: arm the early-layer tap capture exactly when guidance
+        // is live (λ ≠ 1 AND a probe installed) — before the forward, since
+        // the capture happens inside it. The G1 path (λ = 1, or no probe)
+        // pays nothing.
+        #[cfg(feature = "probe_guidance")]
+        {
+            dctx.probe_tap_capture = dctx.guidance_lambda != 1.0 && dctx.weak_probe.is_some();
+        }
         // Zero-alloc forward pass with block-causal attention
         let _seq_len_actual =
             forward_block_causal_with(dctx, weights, &tokens[..seq_len], config, block_size);
@@ -1647,12 +1655,35 @@ impl<'a> D2fPipeline<'a> {
             let mut converged_step = max_steps;
 
             for step in 0..max_steps {
+                // Issue 865 T2: arm the early-layer tap capture exactly when
+                // guidance is live, before the forward (same contract as the
+                // prompt_q core; the G1 path pays nothing).
+                #[cfg(feature = "probe_guidance")]
+                {
+                    ctx.probe_tap_capture = ctx.guidance_lambda != 1.0 && ctx.weak_probe.is_some();
+                }
                 let _seq_len_actual = forward_block_causal_with(
                     &mut ctx,
                     weights,
                     &seq_tokens[..seq_len],
                     self.config,
                     block_size,
+                );
+
+                // Issue 865 T1 fix (found by T2): the pipeline path never
+                // applied guidance — set_guidance copied the probe into the
+                // context and the combine never fired here, so the T1
+                // pipeline test passed vacuously at λ = 1. Apply after the
+                // forward, before sampling, exactly like the prompt_q core.
+                #[cfg(feature = "probe_guidance")]
+                apply_probe_guidance(
+                    &mut ctx,
+                    &seq_tokens[..seq_len],
+                    block_start,
+                    seq_len,
+                    vocab,
+                    self.config.n_embd,
+                    step,
                 );
 
                 let mut n_confident = 0usize;

@@ -45,14 +45,15 @@ impl MlpWeakProbe {
     ///
     /// Fails loudly when the artifact declares a tap the D2F kernel does not
     /// provide: the current single-layer kernel taps ONLY layer 0 (the
-    /// pre-layer input residual), so an artifact trained against a deeper tap
-    /// would silently misread — that must be a construction error, never a
-    /// decode-time surprise.
+    /// POST-ATTENTION residual — attention output + input residual, pre-MLP
+    /// refinement; the earliest context-carrying point), so an artifact
+    /// trained against a different tap would silently misread — that must be
+    /// a construction error, never a decode-time surprise.
     pub fn new(artifact: ProbeArtifact) -> Result<Self, ProbeArtifactError> {
         if artifact.tap_layer != 0 {
             return Err(ProbeArtifactError::InvalidShape(format!(
                 "artifact declares tap_layer {} but the D2F kernel provides only the layer-0 tap \
-                 (pre-layer input residual); deeper taps need the multi-layer kernel extension",
+                 (post-attention residual); deeper taps need the multi-layer kernel extension",
                 artifact.tap_layer
             )));
         }

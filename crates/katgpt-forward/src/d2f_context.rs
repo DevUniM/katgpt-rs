@@ -119,6 +119,22 @@ pub struct D2fContext {
     /// Installed weak-side probe, if any.
     #[cfg(feature = "probe_guidance")]
     pub weak_probe: Option<Box<dyn WeakLogitProbe>>,
+    /// Early-layer tap capture (Issue 865 T2): the post-ATTENTION residual
+    /// per position, `[max_seq * n_embd]` — attention output + input
+    /// residual, BEFORE the MLP refinement. This is the earliest
+    /// context-carrying point of the single-layer kernel: at masked positions
+    /// the pre-layer input residual (`xr`) is just the mask-token embedding
+    /// plus position — no context — so the weak probe reads HERE.
+    /// Written only when [`D2fContext::probe_tap_capture`] is armed (the
+    /// decode core arms it exactly when guidance is active); a pure copy, so
+    /// arming never moves a logit.
+    #[cfg(feature = "probe_guidance")]
+    pub probe_tap_flat: Vec<f32>,
+    /// Arm the per-position tap copy in the forward kernel. Off by default;
+    /// the decode core sets it before the forward when guidance is live, so
+    /// the G1 (λ = 1) path pays nothing.
+    #[cfg(feature = "probe_guidance")]
+    pub probe_tap_capture: bool,
     // usize fields after all Vec<f32> fields to eliminate inter-field padding.
     /// Number of positions with committed KV cache entries.
     /// Positions `[0..committed_len)` are valid and won't be recomputed.
@@ -165,6 +181,10 @@ impl D2fContext {
             guidance_lambda: 1.0,
             #[cfg(feature = "probe_guidance")]
             weak_probe: None,
+            #[cfg(feature = "probe_guidance")]
+            probe_tap_flat: vec![0.0f32; max_seq * n],
+            #[cfg(feature = "probe_guidance")]
+            probe_tap_capture: false,
             committed_len: 0,
         }
     }
@@ -374,6 +394,15 @@ pub fn forward_block_causal_with(
         matmul(&mut ctx.x_proj_buf, &layer.attn_wo, &ctx.attn_out_buf, n, n);
         simd::simd_add_inplace(&mut ctx.x_proj_buf, &ctx.xr[p * n..(p + 1) * n]);
 
+        // Issue 865 T2: early-layer tap capture — the post-attention residual
+        // (context via attention values, pre-MLP refinement), the point the
+        // weak-side probe reads. A pure copy: arming it never moves a logit,
+        // so the G1 (λ = 1) decode path stays bit-identical with or without.
+        #[cfg(feature = "probe_guidance")]
+        if ctx.probe_tap_capture {
+            ctx.probe_tap_flat[p * n..(p + 1) * n].copy_from_slice(&ctx.x_proj_buf);
+        }
+
         // Save residual before rmsnorm by reusing x_buf (no longer needed this iteration)
         ctx.x_buf.copy_from_slice(&ctx.x_proj_buf);
 
@@ -451,16 +480,20 @@ pub fn denoising_accuracy(predicted: &[usize], target: &[usize]) -> f32 {
 #[cfg(feature = "probe_guidance")]
 pub struct ProbeCtx<'a> {
     /// Input residual embeddings (the layer-0 residual stream the kernel
-    /// writes in Phase A), `[seq_len * n_embd]` (per position). This is the
-    /// same buffer the single-layer kernel's tap aliases (see `tap`).
+    /// writes in Phase A), `[seq_len * n_embd]` (per position). NOT the tap
+    /// point — at masked positions this carries no context (see `tap`).
     pub xr: &'a [f32],
     /// Normalized embeddings, `[seq_len * n_embd]` (per position).
     pub x_norm: &'a [f32],
     /// Early-layer hidden states at the tap point the trunk kernel provides:
     /// `[seq_len * n_embd]`, row `p` at `[p * n_embd..]` (Issue 865 T2). The
     /// current D2F kernel (single-layer mini trunk) provides exactly ONE tap
-    /// — layer 0, the pre-layer input residual — which this field aliases via
-    /// `xr`. Artifacts declaring a deeper tap are rejected at probe
+    /// — layer 0, the POST-ATTENTION residual (attention output + input
+    /// residual, pre-MLP refinement): the earliest context-carrying point.
+    /// At masked positions the pre-layer input residual (`xr`) is just the
+    /// mask-token embedding plus position — no context — so the probe reads
+    /// HERE. Populated only when the decode core arms capture (guidance
+    /// active); artifacts declaring a deeper tap are rejected at probe
     /// construction (`MlpWeakProbe::new`), never silently misread.
     pub tap: &'a [f32],
     /// Current token state (prompt + block; uncommitted positions hold the
@@ -550,11 +583,13 @@ pub(crate) fn apply_probe_guidance(
             xr: &dctx.xr,
             x_norm: &dctx.x_norm,
             // Issue 865 T2: the kernel's single tap point is the layer-0
-            // input residual. Deeper taps need the multi-layer kernel
-            // extension (tracked in the issue) — until then the artifact's
-            // `tap_layer` is validated against this constant at probe
-            // construction, so the probe never reads a mismatched buffer.
-            tap: &dctx.xr,
+            // POST-ATTENTION residual (captured by the forward when the
+            // decode core armed `probe_tap_capture`). Deeper taps need the
+            // multi-layer kernel extension (tracked in the issue) — until
+            // then the artifact's `tap_layer` is validated against this
+            // constant at probe construction, so the probe never reads a
+            // mismatched buffer.
+            tap: &dctx.probe_tap_flat,
             tokens,
             committed_len: dctx.committed_len,
             block_start,
