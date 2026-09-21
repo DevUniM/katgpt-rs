@@ -68,6 +68,13 @@ canon_mask = ["canon"]
 # (Proposal 010 self-assesses HIGHLY SPECULATIVE); setup-time only.
 canon_source_features = ["dep:syn"]
 
+# Forwards katgpt-core's alloc_tracking (Issue 741 convention, same shape as
+# katgpt-forward's row): compiles katgpt-core's `alloc` module in RELEASE so
+# the G4 alloc-check test binary (source_adapter_alloc_check) can be read in
+# the optimized profile too. Without it the alloc module exists only under
+# debug_assertions and the release reading is compile-to-nothing.
+alloc_tracking = ["katgpt-core/alloc_tracking"]
+
 # ─── Bench 562 — GOAT G1/G2/G4 gates (ProcrustesAdapter + SubspaceAdapter
 # + MaskAdapter). std::time::Instant + inlined CountingAllocator (matches
 # the procrustes_bench convention; criterion is not a dep). Runs all three
@@ -96,4 +103,16 @@ required-features = ["canon_subspace"]
 # green in a bare clone).
 [[test]]
 name = "source_features_corpus"
+required-features = ["canon_source_features"]
+
+# ─── Issue 867 T2 G4 — SourceFeatureAdapter zero-alloc apply gate. Separate
+# binary so the counting allocator is binary-unique (bench_811 convention).
+# The file's own #![cfg] additionally carries the alloc tracker's profile
+# gate (any(debug_assertions, alloc_tracking)): a release build without that
+# feature compiles this target to an empty binary BY DESIGN — required-features
+# (not the cfg alone) is what keeps plain `cargo test` from reporting a green
+# zero; run it at DEV profile:
+#   cargo test -p katgpt-canon --features canon_source_features --test source_adapter_alloc_check
+[[test]]
+name = "source_adapter_alloc_check"
 required-features = ["canon_source_features"]

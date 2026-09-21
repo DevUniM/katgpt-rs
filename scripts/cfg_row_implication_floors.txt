@@ -57,7 +57,26 @@ max_empty_at_row = 0
 #    Do NOT raise this pin for a third `any(...)` row without the same
 #    three-configuration measurement. The pin is 2 because two rows were
 #    measured, not because `any()` is generically acceptable.
-max_unresolved = 2
+#
+# ── 2026-09-22 (Issue 867 T2): 2 -> 3, same shape, same three-configuration
+#    measurement:
+#
+#      katgpt-canon:test:source_adapter_alloc_check
+#        #![cfg(all(feature = "canon_source_features",
+#                   any(debug_assertions, feature = "alloc_tracking")))]
+#
+#    The third G4 zero-alloc gate (Issue 741's pattern, third instance):
+#    measured 2026-09-22 in every configuration —
+#
+#      canon_source_features only, DEV                          -> BUILDS, 1 passed
+#      canon_source_features only, RELEASE                      -> empty binary, `ok. 0 passed`
+#      canon_source_features + alloc_tracking, RELEASE          -> BUILDS, 1 passed
+#
+#    The profile axis is owned by the same instruments as the first two rows
+#    (the canon manifest carries its own `alloc_tracking` forward for exactly
+#    this); the row itself compiles and asserts at the feature set it is
+#    exercised in. `max_empty_at_row` stays a WALL at 0.
+max_unresolved = 3
 
 # FLOORS, with slack below the measured value. Both ceilings above are green
 # over whatever the instrument can NAME, so a manifest-walk or source-scanner

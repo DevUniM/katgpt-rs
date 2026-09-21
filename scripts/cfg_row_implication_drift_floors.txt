@@ -99,6 +99,11 @@
 #                              same class as the two above — the profile note governs)
 #      riir-train     1 -> 3   +nora_phase2_g4_alloc_probe,
 #                              +probe_684_topology_hotpath_alloc
+#      katgpt-rs      2 -> 3   +katgpt-canon:source_adapter_alloc_check
+#                              (Issue 867 T2, measured 2026-09-22 in all three
+#                              configurations; same G4 class as the Issue-741
+#                              pair — canon carries its own alloc_tracking
+#                              forward; see cfg_row_implication_floors.txt)
 #
 #    Each was measured in all three configurations before its pin moved (dev /
 #    release-off / release+feature), and all now PASS in release. Details:
@@ -180,7 +185,7 @@
 #    #![cfg] / 0 EMPTY-AT-ROW across 17 repos after ~200 rows landed in seven
 #    repos on 2026-09-09.
 # repo                  min_rows  min_with_cfg  max_empty  max_unresolved
-katgpt-rs                      620           400          0               2
+katgpt-rs                      620           400          0               3
 katgpt-web                       0             0          0               0
 riir-ai                        540           360          0               3
 riir-auth                        0             0          0               0
