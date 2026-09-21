@@ -8306,3 +8306,39 @@ the issue, file removed at close, this row + the Bench-844 follow-up section
 are the record). README showcase section landed with this row (the
 float_order surface set: README + HISTORY; ungated primitives take no
 catalog row).
+
+## Issue 865 T3 (2026-09-21) — the probe_guidance λ-sweep GOAT gate ran NEGATIVE; the negative verdict is the pinned gate: OPEN (lane re-opens at Bonsai scale)
+
+The gate (Bench 847, `9c2acbfaa` + `3ebc51944` for the T4 scoping): the
+trained-probe guided front vs the unguided temperature front on the
+mini-dLLM lane, with two controls that carried the verdict — a ZERO-logit
+probe (with which the λ combine is EXACTLY temperature scaling
+`λ·logits = logits/(T/λ)`: the no-information null, not an RNG re-roll — the
+first calibration draft mislabeled it and the arithmetic corrected it) and a
+mean-zero token-0 directionality control (monotone −1.17 pts: the harness
+can see a followed direction). Measured: the guided best (λ=1.25, +0.21 pts
+at lower resample diversity) is DOMINATED by unguided T=1.0 at matched
+diversity (100.00% at the same 3.2171 nats), and the trained probe loses to
+the null at every λ ≥ 1.5 (−2.11 pts at λ=2). Root cause measured, not
+argued: the T2b trunk is saturated (loss 0.0000, one-hot) — the weak side
+(side: the trained probe, held-out CE 0.2166, G-health PASS) carries no
+disagreement the extrapolation can exploit. G1 PASS (λ=1 bit-identity,
+pipeline level, real artifact) and G4 PASS (1,000 probe calls, 0
+allocations) — the MACHINERY is qualified; the MECHANISM verdict needs a
+non-saturated trunk.
+
+Three lessons encoded in the pinned gate (`tests/probe_guidance_goat.rs`,
+deterministic, fixture-pairing canary G0 < 0.5 CE against trunk drift):
+(1) pooled unigram entropy is polarity-inverted on deterministic-structure
+lanes — a CORRECT decoder maximizes it (the ground truth is itself
+high-entropy) — per-position resample entropy is the working form;
+(2) the zero-logit null gives every λ sweep a free no-signal reference —
+read the trained arm AGAINST it before believing any small bump (the
+apparent λ=1.25 win is +0.21 over the null's +0.00, and gone by λ=1.5);
+(3) G2a/G2b are INVERTED into regression pins that red the day guidance
+genuinely wins — the promotion decider is pre-wired, so the Bonsai-scale
+re-open (multi-layer kernel extension + a trunk with headroom; T4's AR arm
+folds into the same scope, both prerequisites shared) needs only to run it.
+The feature stays opt-in; the dropout-autoguidance arm deferred (no kernel
+dropout exists; moot post-verdict; owner scope at re-open). Full data +
+box state: `.benchmarks/847_probe_guidance_lambda_sweep_goat.md`.
