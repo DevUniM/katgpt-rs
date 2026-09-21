@@ -36,7 +36,10 @@ impl core::error::Error for TernaryPackError {}
 /// - both zero → weight = 0 (implicit skip, no storage needed)
 ///
 /// `row_scale[r]` rescales the accumulated sum back toward original float magnitudes.
-/// Memory: ~1.58 bits/weight (log₂3), plus one f32 per row for scale.
+/// Memory: 2 bits/weight (two bit-planes — the log₂3 ≈ 1.585 figure is the
+/// information-theoretic floor for ternary symbols, not this layout's rate;
+/// see ternary_trit.rs for the container that approaches it), plus one f32
+/// per row for scale.
 #[cfg(feature = "plasma_path")]
 #[derive(Clone, Debug)]
 pub struct TernaryWeights {
