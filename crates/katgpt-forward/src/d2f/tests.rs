@@ -803,4 +803,42 @@ mod probe_guidance_tests {
         assert_eq!(plain.tokens, guided.tokens);
         assert_eq!(plain.total_steps, guided.total_steps);
     }
+
+    // ── Issue 865 T2: the trained artifact path ──────────────────────
+
+    use katgpt_speculative::belief_drafter::LatentDynamicsMLP;
+    use katgpt_speculative::probe_artifact::ProbeArtifact;
+    use crate::weak_probe_mlp::MlpWeakProbe;
+
+    fn artifact_probe() -> MlpWeakProbe {
+        let config = Config::micro_dllm();
+        let mlp = LatentDynamicsMLP::random_init(config.n_embd);
+        let lm_head: Vec<f32> = (0..config.vocab_size * config.n_embd)
+            .map(|i| ((i % 23) as f32) * 0.1 - 1.0)
+            .collect();
+        let artifact = ProbeArtifact::from_parts(mlp, lm_head, 0, 1).expect("artifact");
+        MlpWeakProbe::new(artifact).expect("wrap")
+    }
+
+    #[test]
+    fn artifact_probe_lambda_one_is_bit_identical_end_to_end() {
+        // G1 through the T2 path: a real artifact probe at λ = 1.0 must be a
+        // full no-op (the combine is skipped, the probe never invoked), not
+        // merely numerically neutral.
+        let (unguided, guided) = decode_pair(Some((1.0, Box::new(artifact_probe()))));
+        assert!(results_equal(&unguided, &guided));
+    }
+
+    #[test]
+    fn artifact_probe_below_one_engages_the_weak_side() {
+        // A random-init artifact differs from the trunk's own head, so a λ
+        // below 1 must engage the weak side — the decode diverges from
+        // unguided somewhere. (The paper's quality claim is T3's λ-sweep
+        // gate; this test only proves the artifact path is LIVE end to end.)
+        let (unguided, guided) = decode_pair(Some((0.5, Box::new(artifact_probe()))));
+        assert!(
+            !results_equal(&unguided, &guided),
+            "λ=0.5 with a divergent artifact must move the decode somewhere"
+        );
+    }
 }

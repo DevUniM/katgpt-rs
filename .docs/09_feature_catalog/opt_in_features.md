@@ -4296,11 +4296,28 @@ G1 (bit-identity) PROVEN by test: λ = 1.0 skips all work — the probe is never
 invoked (poison-probe test) and guided decode is byte-identical to unguided
 end-to-end; absent probe + λ ≠ 1 is likewise a no-op. Kernel tests pin the
 affine formula at λ ∈ {0, 0.5} and the probe==logits fixed point (bit-exact
-only at λ = 1, f32-rounded at λ ≠ 1). T2 (the trained probe artifact,
-riir-train `nextlat_*` lane pattern, freeze/thaw wire) and the T3 λ-sweep
-GOAT gate (quality-vs-diversity Pareto vs unguided + dropout-autoguidance
-arm) are OPEN — OPT-IN until the GOAT passes, promotion modelless-only. The
-micro_dllm fixture collapses to a point mass (confidence 1.0 at step 0),
-which is why the behavioral test proves OVERRIDE (a probe favoring a
-different token at λ = 0.5 diverges the decode) rather than sharpening.
-Zero deps; zero cost unless the feature is on and a probe is installed.
+only at λ = 1, f32-rounded at λ ≠ 1). **T2 (2026-09-21) — the trained probe
+ARTIFACT half landed:** `katgpt-speculative::probe_artifact` (feature
+`probe_artifact`, implies `belief_drafter`) — a versioned, BLAKE3-committed
+freeze/thaw wire (magic `NLPA` v1: header + connector-MLP weights + shared
+`lm_head` + tap metadata, commitment over every preceding byte, re-verified on
+load with `CommitmentMismatch` on any tamper) around a `LatentDynamicsMLP`
+connector (Plan 217 class, now `Clone`) + the trunk's shared head — and
+`katgpt_forward::weak_probe_mlp::MlpWeakProbe` (gated `probe_guidance`, which
+now forwards to `katgpt-speculative/probe_artifact`): per block position the
+tapped early-layer hidden goes through the connector (zero `next_emb` — the
+training convention; block positions are mask tokens whose embeddings carry no
+per-position signal) then the shared head. The single-layer D2F kernel taps
+ONLY layer 0 (the pre-layer input residual — `ProbeCtx.tap` aliases `xr`);
+an artifact declaring a deeper tap is REJECTED at `MlpWeakProbe::new`, never
+silently misread (deeper taps need the multi-layer kernel extension). 15 new
+tests (8 artifact wire: commitment/roundtrip/tamper/truncation/shape; 5 probe
+consumer: tap rejection/direct-math/offset/roundtrip/purity; 2 end-to-end:
+λ=1 bit-identity + λ=0.5 engagement). The TRAINING half (riir-train
+`nextlat_*` lane pattern) and the T3 λ-sweep GOAT gate (quality-vs-diversity
+Pareto vs unguided + dropout-autoguidance arm) are OPEN — OPT-IN until the
+GOAT passes, promotion modelless-only. The micro_dllm fixture collapses to a
+point mass (confidence 1.0 at step 0), which is why the behavioral test proves
+OVERRIDE (a probe favoring a different token at λ = 0.5 diverges the decode)
+rather than sharpening. Zero new deps (blake3 rides belief_drafter); zero cost
+unless the feature is on and a probe is installed.

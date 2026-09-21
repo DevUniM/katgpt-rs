@@ -176,6 +176,12 @@ acceptance_forecast = []
 # NextLat Belief-State Speculative Drafter (Plan 217). Forwards to katgpt-core
 # so BeliefDrafterConfig/traits resolve + pulls papaya (belief_cache) + fastrand.
 belief_drafter = ["katgpt-core/belief_drafter", "dep:papaya", "dep:blake3", "fastrand", "dep:bytemuck"]
+# Weak-side probe artifact (Issue 865 T2): the BLAKE3-committed freeze/thaw
+# wire (`probe_artifact` module) around a LatentDynamicsMLP connector + shared
+# trunk lm_head + tap metadata, consumed by katgpt-forward's `probe_guidance`
+# lane (which forwards this feature). Implies `belief_drafter` — the connector
+# IS that class. blake3 arrives transitively via belief_drafter.
+probe_artifact = ["belief_drafter"]
 # Best Buddies Drafting — mutual NN filter (Plan 199). Zero deps beyond katgpt-core traits.
 best_buddies = []
 # Bigram Markov head — the modelless sequential drafter (Issue 659, Research

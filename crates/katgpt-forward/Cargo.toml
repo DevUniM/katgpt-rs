@@ -361,11 +361,13 @@ decode_order_metrics = ["katgpt-core/decode_order_metrics"]
 # probe_logits_flat, guidance_lambda, weak_probe}`, `apply_probe_guidance`,
 # and `D2fPipeline::set_guidance`. λ = 1.0 (default) is bit-identical to
 # unguided decode (G1: the combine is skipped, the probe never invoked).
-# The trained probe artifact is T2 (riir-train `nextlat_*` lane pattern,
-# freeze/thaw wire); OPT-IN until the T3 λ-sweep GOAT gate passes.
+# Issue 865 T2: also gates `weak_probe_mlp::MlpWeakProbe` (the trained
+# artifact consumer) and forwards to katgpt-speculative/probe_artifact — the
+# BLAKE3-committed freeze/thaw wire the riir-train nextlat_* lane trains.
+# OPT-IN until the T3 λ-sweep GOAT gate passes.
 # Implies `dllm` — the combine lives inside the dllm-gated d2f module, so a
 # probe_guidance build without dllm would compile the feature to nothing.
-probe_guidance = ["dllm"]
+probe_guidance = ["dllm", "katgpt-speculative/probe_artifact"]
 
 # Weaver inference-only logit corrector (Issue 131, Plan 433). Gates the
 # `dflash_predict_with_weaver` wrapper that combines DFlash predict + Weaver

@@ -446,14 +446,23 @@ pub fn denoising_accuracy(predicted: &[usize], target: &[usize]) -> f32 {
 /// T1). Field slices, not a whole-context borrow: the probe contract names
 /// exactly what it may read, and disjoint field borrows are what let the
 /// caller hand these out while writing the probe's own scratch buffer.
-/// T2 may extend this with tap-point fields (early-layer hidden states)
-/// without breaking probe call sites.
+/// T2 extended this with the tap-point field (`tap`) — the early-layer hidden
+/// state the trained connector reads — without breaking probe call sites.
 #[cfg(feature = "probe_guidance")]
 pub struct ProbeCtx<'a> {
-    /// Final-layer residual embeddings, `[seq_len * n_embd]` (per position).
+    /// Input residual embeddings (the layer-0 residual stream the kernel
+    /// writes in Phase A), `[seq_len * n_embd]` (per position). This is the
+    /// same buffer the single-layer kernel's tap aliases (see `tap`).
     pub xr: &'a [f32],
     /// Normalized embeddings, `[seq_len * n_embd]` (per position).
     pub x_norm: &'a [f32],
+    /// Early-layer hidden states at the tap point the trunk kernel provides:
+    /// `[seq_len * n_embd]`, row `p` at `[p * n_embd..]` (Issue 865 T2). The
+    /// current D2F kernel (single-layer mini trunk) provides exactly ONE tap
+    /// — layer 0, the pre-layer input residual — which this field aliases via
+    /// `xr`. Artifacts declaring a deeper tap are rejected at probe
+    /// construction (`MlpWeakProbe::new`), never silently misread.
+    pub tap: &'a [f32],
     /// Current token state (prompt + block; uncommitted positions hold the
     /// mask token).
     pub tokens: &'a [usize],
@@ -540,6 +549,12 @@ pub(crate) fn apply_probe_guidance(
         let input = ProbeCtx {
             xr: &dctx.xr,
             x_norm: &dctx.x_norm,
+            // Issue 865 T2: the kernel's single tap point is the layer-0
+            // input residual. Deeper taps need the multi-layer kernel
+            // extension (tracked in the issue) — until then the artifact's
+            // `tap_layer` is validated against this constant at probe
+            // construction, so the probe never reads a mismatched buffer.
+            tap: &dctx.xr,
             tokens,
             committed_len: dctx.committed_len,
             block_start,

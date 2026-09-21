@@ -660,6 +660,18 @@ pub use d2f_context::{
     D2fContext, attention_forward_safe_into, denoising_accuracy, forward_block_causal_with,
 };
 
+// Trained weak-side probe consumption (Issue 865 T2): `MlpWeakProbe` wraps a
+// BLAKE3-committed `ProbeArtifact` (katgpt-speculative `probe_artifact` — the
+// LatentDynamicsMLP connector + shared trunk lm_head + tap metadata, trained
+// by the riir-train nextlat_* lane pattern) and implements the `WeakLogitProbe`
+// seam above. Gated `probe_guidance` — the seam it implements lives in the
+// same feature, and the feature forwards to katgpt-speculative/probe_artifact
+// so the artifact module always compiles alongside its consumer.
+#[cfg(feature = "probe_guidance")]
+pub mod weak_probe_mlp;
+#[cfg(feature = "probe_guidance")]
+pub use weak_probe_mlp::MlpWeakProbe;
+
 // ── Plan 399 (2026-07-05): D2F wrapper cluster ──
 // `d2f.rs`, `d2f_verifier.rs`, `diffusion_sampler.rs` moved from root
 // `src/speculative/`. Root's copies are now thin re-export shims. The 8
