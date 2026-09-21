@@ -360,7 +360,9 @@ If §4 surfaces rich landscape, use web search for deeper exploration of specifi
 
 ### 5. Final verdict — Claude ping-pong (MANDATORY before any commit)
 
-**A verdict is not DONE until the Claude reviewer has seen it.** The gates above (§1.5 / §1.55 / §1.6) are your self-grade. Before anything commits, negotiate the verdict against the Claude reviewer sub-agent via the `request_verdict` tool (the claude-sub-agent-verdict reviewer, Proposal 001). This is the research-side merge gate and it operationalizes the standing owner rule — *ask Claude for verdict and make decision for any owner gated*. A self-graded verdict that never met the reviewer is the research analogue of an unreviewed merge.
+**A verdict is not DONE until the Claude reviewer has seen it.** The gates above (§1.5 / §1.55 / §1.6) are your self-grade. Before anything commits, negotiate the verdict against the Claude reviewer sub-agent. This is the research-side merge gate and it operationalizes the standing owner rule — *ask Claude for verdict and make decision for any owner gated*. A self-graded verdict that never met the reviewer is the research analogue of an unreviewed merge.
+
+**Availability premise (measured, not assumed):** the reviewer rides the harness tool `request_verdict` (the claude-sub-agent-verdict reviewer; round cap `agent.verdict_max_rounds`, default 3) — present in the Zed agent toolset this skill was written in, and deliberately NOT cited to any repo document: it is a harness capability, not repo substrate (a workspace grep finds this file as the only hit). A harness without the tool does NOT skip the gate — it takes the sub-agent path below, a first-class route to the same binding verdict, never a degraded one. The note records which path ran.
 
 **Protocol** (the tool enforces the mechanics; the Summary is YOUR job):
 
@@ -373,7 +375,7 @@ If §4 surfaces rich landscape, use web search for deeper exploration of specifi
 **Scope — mandatory vs optional:**
 
 - **Mandatory:** Super-GOAT and GOAT verdicts · every `riir-train` Plan filing (Path 0.5) · every verdict that creates or rewrites a `.research/` note, `.plans/` file, or architectural guide · every advocate-finding discard (§3.5) · every "already ships"/parity claim granted without the PoC (§3.6 exemptions) · every owner-gated call (feature promotion/demotion, default-on flips, §1.6 tier re-routing).
-- **Optional (encouraged):** a plain PASS with zero files and no PASS-Redirects edits; a routing call the owner already made in-conversation this session.
+- **Optional (encouraged):** a plain PASS whose §4 sweep found zero redirect-worthy cousins — a checkable claim, since the searches are in the Summary and auditable next round; a routing call the owner already made in-conversation this session.
 
 **What the reviewer checks — hand it the hooks:** novelty claim vs the §4 searches actually cited (never asserted) · §3.6 signal-diffs on every coverage dismissal · routing vs the MOAT table + fusion priority ladder · per-track separation (no cascade from a training-track kill) · discard reasons surviving mechanism-level scrutiny (§3.5) · file hygiene (numbers from `.highwater`, PASS-Redirects lines present, no "candidate" escape-hatch wording).
 
@@ -382,7 +384,7 @@ If §4 surfaces rich landscape, use web search for deeper exploration of specifi
 - **Self-AGREE drift** — summarizing your way to AGREE by omitting the weak axis. The Summary must name the weakest point explicitly; an omission voids the verdict, and a re-opened verdict after files shipped costs a renumber + citation rewrite (the exact cost the numbering rules exist to price).
 - **Cap-racing** — burning rounds re-arguing instead of producing evidence. Each REVISE round must ADD something checkable; a round that adds nothing is a round the user now has to arbitrate.
 - **Post-AGREE drift** — editing a verdict-bearing section after AGREE without re-running the gate. A material post-AGREE edit re-opens the negotiation on the SAME `session_id` before the next commit; the commit after a `final_round` close is byte-frozen to what was agreed.
-- **Reviewer-unavailable** — if `request_verdict` is not in the toolset, fall back to `spawn_agent` with the same Summary + the same `#Verdict:` reply contract, and record in the note that the verdict rode the fallback (weaker evidence; the next session touching the note re-runs the gate).
+- **Reviewer-unavailable** — no `request_verdict` in the toolset? Run the SAME negotiation through a generic sub-agent reviewer (`spawn_agent` in this harness; `Agent`/`SendMessage` in Claude Code — the capability is a fresh reviewer that cannot see your context, whatever the local spelling) with the same Summary + the same `#Verdict:` reply contract. It is an equal verdict, not a weaker one — record which path ran, and never label a fallback verdict provisional (a permanently-provisional gate is an unexecutable mandatory, this file's own most-repeated shape).
 
 ## Constraints (non-negotiable)
 
