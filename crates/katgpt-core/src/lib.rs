@@ -755,6 +755,21 @@ pub use renoise_ce::{
 #[cfg(feature = "freedom_selection")]
 pub use renoise_ce::best_of_n_freedom;
 
+// horizon_weights (Issue 875 T1 / Research 582, arXiv:2605.09071): the PFD
+// (T−t) Fubini accumulation law + the exact w(t) = ½(T−t)g²c² closed form
+// (c = exp(−∫a)), with the BLAKE3-committed fixed-grid table form (the
+// static_cal pattern, exact — no calibration pass). Future-looking
+// remaining-horizon weighting — mechanism-distinct from
+// tether::horizon_decay's past-looking staleness fading. OPT-IN pending
+// the T2 consumer GOAT ((T−t)-weighted renoise_ce averaging).
+#[cfg(feature = "horizon_weights")]
+pub mod horizon_weights;
+#[cfg(feature = "horizon_weights")]
+pub use horizon_weights::{
+    HorizonWeightTable, HORIZON_WEIGHT_GRID, pfd_horizon_weight_at, pfd_horizon_weights,
+    remaining_horizon_weight, remaining_horizon_weights,
+};
+
 #[cfg(feature = "dual_leo")]
 pub use traits::{
     ActingMode, AlphaSchedule, AutocurriculumSampler, BcConfig, BcTarget, DualLeoMixer,
