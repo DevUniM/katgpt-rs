@@ -1,6 +1,6 @@
 # Issue 874 — G8 (`bench_271_attn_match_goat::g8_simd_vs_scalar`) is inert: the "scalar" arm routes through the same `dot_8wide` kernel
 
-Status: **OPEN — T3 (the workspace census) LANDED 2026-09-22 (see the T3 section below): the consolidation trap exists in exactly ONE gate workspace-wide — this issue's own founding specimen; one adjacent by-catch class found (a vacuous correctness assert + a wasm32 test target broken since the Plan 008 Step 7 wrapper removal — both riir-ai, both filed for repair); T1 remains owner-gated (GOAT gate semantics), and the T3 population gives the owner the full scope for that call: repairing ONE gate, not a family.**
+Status: **OPEN — T3 (the workspace census) LANDED 2026-09-22 (see the T3 section below): the consolidation trap exists in exactly ONE gate workspace-wide — this issue's own founding specimen; the adjacent by-catch class (a vacuous correctness assert + a wasm32 test target broken since the Plan 008 Step 7 wrapper removal — both riir-ai) is REPAIRED at `f04df9241` and compile-verified 2026-09-22 (worktree-verified while a sibling's manifest edit blocks live riir-ai loads); T1 remains owner-gated (GOAT gate semantics), and the T3 population gives the owner the full scope for that call: repairing ONE gate, not a family.**
 
 Branch: `develop` · Evidence: [Bench 871](../.benchmarks/871_algebraic_dot_ab.md) §Addendum (in-crate codegen) · Filed: 2026-09-22
 
@@ -71,8 +71,12 @@ Vocabulary: `vs_scalar|simd_vs|scalar_speedup|vs scalar` over tracked `*.rs` acr
    specimen, and the ONLY one. No other gate workspace-wide shares the trap.
 
 **BY-CATCH (different defect classes, found by the census reads — repair LANDED
-riir-ai-side at `f04df9241`, compile-verification owed until the sibling's in-flight
-riir-train manifest unblocks riir-ai workspace loads):**
+riir-ai-side at `f04df9241`; compile-verification COMPLETE 2026-09-22, worktree-
+verified at the `f04df9241` tree while a sibling's in-flight riir-train manifest edit
+still blocks live riir-ai workspace loads: `cargo check -p riir-engine --target
+wasm32-unknown-unknown --test wasm_simd_bench` Finishes clean, and the bench's own
+`verify_correctness()` (T6 scalar-vs-dispatcher + T7 matvec) passes under criterion
+`--test` — both green on the exact landed bytes):**
 
 2. `riir-ai/crates/riir-engine/benches/bench_286_simd.rs::verify_correctness` T6 arm —
    `expected` and `reference` BOTH computed by `scalar_project_ternary` on the same
