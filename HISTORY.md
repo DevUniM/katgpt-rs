@@ -1,3 +1,44 @@
+## 2026-09-22 — Issue 872: SIMD bitstream whitespace splitter for `encode_into_pretok` (the bitcannon-class port) — scan 1.60×/1.69× measured, bit-identity by differential, four live bugs caught by the harness
+
+The deferred item from Bench 191 §Phase 3 ("SIMD pretokenization — a
+meaningful project"), unblocked by prior art: HF `tokenizers` v1's
+"bitcannon" blog post (2026-09-21) demonstrated the bit-parallel splitter
+technique class on **stable** Rust — the exact blocker Bench 191 cited was
+upstream's nightly `portable_simd`, and v1 showed it isn't needed.
+
+Landed in `katgpt-tokenizer` behind the existing opt-in `fast_bpe` feature:
+
+- `fast_bpe/simd_split.rs` — `WhitespaceSplitter` iterator (zero-alloc,
+  word events borrow byte ranges from the input; the per-char
+  `pretoken_bytes` accumulation buffer is deleted). 16B SSE2 (x86_64
+  baseline) / 32B AVX2 (**runtime-probed** `#[target_feature(enable)]`
+  kernel — the `shipped_target_feature_gate` law) / 16B NEON (aarch64,
+  u64-lane SWAR movemask) / scalar elsewhere through the same iterator.
+  Bytes ≥ 0x80 classify via the exact scalar `char::is_whitespace`
+  predicate — full Unicode `White_Space` bit-identity by construction.
+  Identical-byte ASCII ws runs coalesce to one vocab lookup per run.
+- Measured (loaded i7-13700K, median of 9 interleaved rounds): **avx2 1.60×
+  vs the scalar-mask level, 1.69× vs the old per-char loop shape**,
+  scan-only. NEON execution belongs to the M3 lane (same differential unit
+  tests); the aarch64 NEON arm typechecks via cross `cargo check`.
+- The differential harness caught **four live bugs** before any green run:
+  (1) `u8::is_ascii_whitespace` excludes vertical tab — Unicode `White_Space`
+  on ASCII is SIX bytes; (2) `cmpgt(v^0x80, 0)` misses exactly `b == 0x80`
+  (bx == 0) — non-ASCII is "the raw byte is negative as i8"; (3) `1u32 <<
+  32` release-wraps to a zero all-ones mask (AVX2 width) making every
+  non-matching ws chunk read as all-matching; (4) a multibyte ws char at
+  word end was swallowed by the advance-past-decode. All four are pinned by
+  tests now. Full record: Bench 872, Research 580.
+- Gates: lib 25/25; `fast_bpe_goat_simd_split` 3/3 (new); pretok GOAT +
+  hypothesis + **G4 zero-alloc audit** all green (the rewrite removed an
+  allocation site); clippy clean at default/`fast_bpe`/all-features;
+  wasm32 + aarch64 cross-checks pass. Pre-existing, NOT this change:
+  `fast_bpe_goat::g2_perf_smoke_per_call_short_input_documented_regression`
+  fails on this box at clean HEAD too (isolated-worktree verified —
+  box-sensitive 16MB-per-call allocation gate, M3-calibrated).
+- fast_bpe stays opt-in (Bench 191's Phase 3 deferral stands). Issue file
+  removed per the noise rule.
+
 ## 2026-09-22 — Issue 870 closed: distance_abstain's rationale-free sigmoid copy → exact_sigmoid delegation, measured 3-ULP envelope, bench_845 GOAT re-run identical
 
 The 09-22 substrate-first Mode 2 audit (detection commit `683d06d8`) found

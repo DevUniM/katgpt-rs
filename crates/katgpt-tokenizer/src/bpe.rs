@@ -203,10 +203,6 @@ pub struct FastBpeEncoder<'tok> {
     /// (< 0.1% of natural-language pretokens), so the SipHash overhead is
     /// immaterial here. The fast path is [`Self::short_cache`].
     long_pretokens: HashMap<Vec<u8>, Box<[u32]>>,
-    /// Reused across [`Self::encode_into_pretok`] calls — accumulates the bytes
-    /// of the current non-whitespace run. v1 allocated a fresh `Vec` per call
-    /// and regrew it from zero on every call.
-    pretoken_bytes: Vec<u8>,
     /// Reused across [`Self::encode_pretoken_tokens`] calls — the merged token
     /// IDs for the current pretoken. v1 returned a freshly allocated
     /// `Vec<u32>` on every short-cache miss.
@@ -247,7 +243,6 @@ impl<'tok> FastBpeEncoder<'tok> {
             short_cache: crate::fast_bpe::ShortPretokenCache::with_pow2_capacity(256),
             long_values: Vec::new(),
             long_pretokens: HashMap::new(),
-            pretoken_bytes: Vec::new(),
             pretok_tokens: Vec::new(),
         }
     }
@@ -316,7 +311,12 @@ impl<'tok> FastBpeEncoder<'tok> {
     /// Issue 191 Phase 2.6 (2026-07-25) shipped whitespace pretokenization
     /// with a HashMap cache. Phase 2.7 (2026-07-25, same day) replaced the
     /// HashMap stand-in with the vendored `ShortPretokenCache` substrate
-    /// (open-addressed + 2 MiB-aligned + prefetched).
+    /// (open-addressed + 2 MiB-aligned + prefetched). Issue 872 (2026-09-22)
+    /// replaced the scalar per-char scan with the SIMD bitstream splitter
+    /// ([`crate::fast_bpe::WhitespaceSplitter`] — SSE2/AVX2/NEON masks with a
+    /// scalar per-char fallback for multibyte chars), removing the per-char
+    /// accumulation buffer entirely: word events borrow their byte ranges
+    /// straight from the input.
     ///
     /// **Bit-identical to [`BpeTokenizerImpl::encode`] + [`Self::encode`] +
     /// [`Self::encode_into`]** for any tokenizer trained by [`BpeTrainer`].
@@ -325,8 +325,8 @@ impl<'tok> FastBpeEncoder<'tok> {
     /// crosses a whitespace boundary or contains a whitespace char. Therefore
     /// encoding each non-whitespace run independently and emitting whitespace
     /// chars as inert single-char tokens produces the exact same sequence as
-    /// whole-text encode. See `tests/fast_bpe_pretok_hypothesis.rs` for the
-    /// regression guard.
+    /// whole-text encode. See `tests/fast_bpe_pretok_hypothesis.rs` +
+    /// `tests/fast_bpe_goat_simd_split.rs` for the regression guards.
     ///
     /// # Wins vs [`Self::encode_into`]
     ///
@@ -374,55 +374,35 @@ impl<'tok> FastBpeEncoder<'tok> {
         let unk = self.tokenizer.unk_id();
         let mut buf = [0u8; 4];
 
-        // Iterate the text classifying each char as whitespace or not. A
-        // non-whitespace run accumulates into `pretoken_bytes` (reused
-        // across pretokens). A whitespace char is emitted directly as a
-        // single token (it can never be part of any merge rule, per the
-        // trainer's `split_whitespace()` construction).
-        //
-        // `char::is_whitespace()` matches Unicode `White_Space` + `​`...
-        // — same predicate Rust's `str::split_whitespace` uses, so the
-        // pretoken boundaries here exactly match the trainer's word
-        // boundaries. That's what makes the result bit-identical.
-        //
-        // The buffer lives on `self` and is reused across calls; `take` moves
-        // it out for the duration so `flush_pretoken(&mut self, ..)` can borrow
-        // `self` mutably, and it is put back before returning (all early
-        // returns happen above this point).
-        let mut pretoken_bytes: Vec<u8> = std::mem::take(&mut self.pretoken_bytes);
-        pretoken_bytes.clear();
-
-        // Helper: flush the current non-ws run through the cache + merge
-        // loop, appending to `out`. Inlined by hand because the borrow
-        // checker doesn't like closing over `&mut self` fields.
-        macro_rules! flush_run {
-            () => {{
-                if !pretoken_bytes.is_empty() {
-                    self.flush_pretoken(&pretoken_bytes, out, &mut buf, unk);
-                    pretoken_bytes.clear();
+        // SIMD bitstream scan (Issue 872): maximal non-ws runs arrive as
+        // borrowed byte slices (no per-char accumulation), identical-byte
+        // ASCII whitespace runs amortize the vocab lookup to one per run,
+        // and multibyte whitespace chars are classified by the scalar
+        // per-char path using the exact `char::is_whitespace` predicate.
+        // Event semantics == the previous scalar `chars()` loop; see the
+        // `simd_split` module docs for the correctness contract.
+        for event in crate::fast_bpe::WhitespaceSplitter::new(text) {
+            match event {
+                crate::fast_bpe::SplitEvent::Word(run) => {
+                    self.flush_pretoken(run, out, &mut buf, unk);
                 }
-            }};
-        }
-
-        for c in text.chars() {
-            if c.is_whitespace() {
-                // Flush the current non-ws run (if any).
-                flush_run!();
-                // Emit the whitespace char as its own token (same as
-                // `encode` — it can never merge with anything).
-                let s = c.encode_utf8(&mut buf);
-                let id = self.tokenizer.vocab_to_id.get(s).copied().unwrap_or(unk);
-                out.push(id);
-            } else {
-                // Accumulate into the current non-ws run.
-                let s = c.encode_utf8(&mut buf);
-                pretoken_bytes.extend_from_slice(s.as_bytes());
+                crate::fast_bpe::SplitEvent::AsciiWsRun { byte, count } => {
+                    // `byte < 0x80`, so `byte as char` encodes to exactly
+                    // that one byte — the same single-char token the scalar
+                    // loop emitted, with one lookup for the whole run.
+                    let s = (byte as char).encode_utf8(&mut buf);
+                    let id = self.tokenizer.vocab_to_id.get(s).copied().unwrap_or(unk);
+                    for _ in 0..count {
+                        out.push(id);
+                    }
+                }
+                crate::fast_bpe::SplitEvent::MultibyteWs(c) => {
+                    let s = c.encode_utf8(&mut buf);
+                    let id = self.tokenizer.vocab_to_id.get(s).copied().unwrap_or(unk);
+                    out.push(id);
+                }
             }
         }
-        // Flush any trailing non-ws run.
-        flush_run!();
-        // Hand the (now grown) scratch buffer back for the next call.
-        self.pretoken_bytes = pretoken_bytes;
     }
 
     /// Encode one non-whitespace pretoken through the two-tier cache.
