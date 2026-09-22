@@ -248,6 +248,96 @@ fn run_argmax_retention() -> (usize, usize, usize, usize) {
     (TRIALS, near_ties, flips, flips_near)
 }
 
+/// G1 ill-conditioned arm (Issue 871 T4 (a′) landing condition — the
+/// f978a20b class): near-zero dots and rank-deficient structure, where the
+/// mixed-magnitude LCG "algebraic is MORE accurate" result does not
+/// automatically transfer. Printed, NEVER asserted — recorded either way;
+/// consumer selection reads this before adopting anywhere.
+///
+/// Two classes, 512 trials each, d = 512:
+/// - **ortho** (catastrophic cancellation): `b` orthogonalized against `a`
+///   in f64, so the true dot of the STORED f32 values sits at rounding
+///   scale. The pivot-flip analogue: count SIGN disagreements of each f32
+///   kernel vs the f64 truth.
+/// - **dup** (rank-deficient, the Cholesky duplicate-column shape): `a`
+///   repeats 8-element blocks exactly, `b` alternates ±v in matching blocks
+///   — exact-cancellation structure with large partial sums.
+///
+/// Metric: scale-relative error `|kernel − f64 truth| / (‖a‖·‖b‖)` (the
+/// plain relative error degenerates when truth ≈ 0).
+fn run_ill_conditioned() {
+    const D: usize = 512;
+    const TRIALS: usize = 512;
+
+    /// Fixture factory: (rng, d) → (a, b) pair for one trial.
+    type MkPair<'a> = &'a dyn Fn(&mut Lcg, usize) -> (Vec<f32>, Vec<f32>);
+
+    let worst = |name: &str, mk: MkPair<'_>| {
+        let mut max_s = 0.0f64;
+        let mut max_g = 0.0f64;
+        let mut sum_s = 0.0f64;
+        let mut sum_g = 0.0f64;
+        let mut sign_s = 0usize;
+        let mut sign_g = 0usize;
+        for t in 0..TRIALS {
+            let mut rng = Lcg(0x0871_1CC0 + t as u64);
+            let (a, b) = mk(&mut rng, D);
+            let truth = dot_strict_f64(&a, &b);
+            let s = dot_strict(&a, &b);
+            let g = dot_algebraic(&a, &b);
+            let na: f64 = a.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
+            let nb: f64 = b.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
+            let scale = (na * nb).max(1e-30);
+            let es = (f64::from(s) - truth).abs() / scale;
+            let eg = (f64::from(g) - truth).abs() / scale;
+            max_s = max_s.max(es);
+            max_g = max_g.max(eg);
+            sum_s += es;
+            sum_g += eg;
+            // Sign disagreement vs the f64 truth — only meaningful when the
+            // truth is small relative to scale (near-cancellation trials).
+            if truth.abs() < 1e-6 * scale {
+                if s != 0.0 && (s < 0.0) != (truth < 0.0) {
+                    sign_s += 1;
+                }
+                if g != 0.0 && (g < 0.0) != (truth < 0.0) {
+                    sign_g += 1;
+                }
+            }
+        }
+        println!(
+            "  {name}: scale-rel err — strict mean {:.3e} max {:.3e} | algebraic mean {:.3e} max {:.3e} | sign-flips vs f64 truth: strict {sign_s}, algebraic {sign_g} (of {TRIALS} trials)",
+            sum_s / TRIALS as f64,
+            max_s,
+            sum_g / TRIALS as f64,
+            max_g,
+        );
+    };
+
+    println!("\nG1 ill-conditioned arm (d={D}, {TRIALS} trials/class; recorded either way, no bar):");
+    worst("ortho (near-zero dot)", &|rng, d| {
+        let a: Vec<f32> = (0..d).map(|_| rng.next_f32()).collect();
+        let y: Vec<f32> = (0..d).map(|_| rng.next_f32()).collect();
+        let xy = dot_strict_f64(&a, &y);
+        let xx = dot_strict_f64(&a, &a);
+        let b: Vec<f32> = y
+            .iter()
+            .zip(&a)
+            .map(|(&yy, &xx_)| (f64::from(yy) - (xy / xx) * f64::from(xx_)) as f32)
+            .collect();
+        (a, b)
+    });
+    worst("dup   (rank-deficient)", &|rng, d| {
+        let block: Vec<f32> = (0..8).map(|_| rng.next_f32()).collect();
+        let v: Vec<f32> = (0..8).map(|_| rng.next_f32()).collect();
+        let a: Vec<f32> = (0..d).map(|i| block[i % 8]).collect();
+        let b: Vec<f32> = (0..d)
+            .map(|i| if (i / 8) % 2 == 0 { v[i % 8] } else { -v[i % 8] })
+            .collect();
+        (a, b)
+    });
+}
+
 fn main() {
     println!("bench_871 — strict IEEE ordered-reduction dot vs Rust 1.98 algebraic_* (Issue 871)");
     println!(
@@ -295,4 +385,6 @@ fn main() {
     } else {
         println!("  zero flips on this fixture (64-key, forced near-ties) — retention clean at this scale");
     }
+
+    run_ill_conditioned();
 }

@@ -83,7 +83,8 @@ pub(crate) fn build_reconstruction_report(
         let row = &full_attn[i * t_len..(i + 1) * t_len];
         // zip the accumulator against the pre-sliced row: identical j order
         // (bit-identical accumulation) with the per-element bounds checks
-        // hoisted out, so the FMA chain auto-vectorizes.
+        // hoisted out. Strict ordered reduction — scalar adds on x86_64
+        // (Issue 871); the aarch64 backend vectorizes the mul half only.
         for (acc, &a) in per_key_sum_sq.iter_mut().zip(row.iter()) {
             *acc += a * a;
         }
@@ -265,9 +266,9 @@ pub fn compact_with_router(
     trace.mass_features_backend = Some(router.pick_backend(t.max(1), t_len, gpu_available));
     let mut a_mass = vec![0.0f32; n * t];
     let inv_sqrt_d = 1.0f32 / (d as f32).sqrt();
-    // Reuse the SIMD `dot_8wide` kernel (8-wide FMA on AVX2/NEON) instead of
-    // the prior scalar dot loop. For d=64 this is ~8× fewer add/mul ops in the
-    // inner loop after auto-vectorization.
+    // Reuse the strict `dot_8wide` kernel instead of the prior scalar dot
+    // loop (same serial add order everywhere — bit-stable; on x86_64 it IS
+    // the scalar loop, Issue 871).
     use crate::score_matrix_simd::dot_8wide;
     for i in 0..n {
         let q_row = &queries[i * d..(i + 1) * d];
@@ -402,8 +403,8 @@ fn dispatch_score_matrix(
 ) {
     match backend {
         SolverBackend::CpuScalar | SolverBackend::CpuSimd | SolverBackend::Ane => {
-            // Scalar and SIMD share the same kernel — LLVM auto-vectorizes
-            // in release mode. The router distinguishes them for future
+            // Scalar and SIMD share the same strict kernel (scalar adds on
+            // x86_64 — Issue 871). The router distinguishes them for future
             // tighter kernel specialization.
             compute_score_matrix(queries, keys, n, t_len, d, out);
         }

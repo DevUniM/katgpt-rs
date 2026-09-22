@@ -81,9 +81,10 @@ pub fn fit_cv_least_squares(
         for j in 0..t {
             let x_ij = x_row[j];
             // Pre-slice the accumulator rows so the per-element bounds checks
-            // hoist out of the inner loops (and the FMA chains auto-vectorize).
-            // The k-walk order is unchanged for both accumulators, so every
-            // partial sum is formed in the same order → bit-identical.
+            // hoist out of the inner loops. The k-walk order is unchanged for
+            // both accumulators, so every partial sum is formed in the same
+            // order → bit-identical (strict ordered adds — scalar on x86_64,
+            // Issue 871).
             // X^T Y: full column (all d dims needed downstream).
             let xty_row = &mut xty[j * d..(j + 1) * d];
             for (acc, &y_k) in xty_row.iter_mut().zip(y_row.iter()) {
@@ -327,9 +328,10 @@ fn cholesky_decompose_unblocked(a: &[f32], t: usize) -> Option<Vec<f32>> {
 ///   2. Solve the off-diagonal strip via forward substitution.
 ///   3. Symmetric rank-k update of the trailing sub-matrix into `a_red`.
 ///
-/// The blocked variant is cache-aware: the inner GEMM-like rank-k update is
-/// amenable to SIMD auto-vectorization because it operates on contiguous
-/// rectangular blocks rather than triangular strided access.
+/// The blocked variant is cache-aware: the inner GEMM-like rank-k update
+/// operates on contiguous rectangular blocks rather than triangular
+/// strided access (friendlier to the backend's scheduler; strict adds stay
+/// scalar on x86_64 — Issue 871).
 ///
 /// Per AGENTS.md: the only allocations are the output buffer `l`, a single
 /// `a_red` scratch the size of `a`, and one `diag_block` scratch reused
@@ -440,7 +442,7 @@ pub fn compute_compact_attention(
         let out_row = &mut x_out[i * t..(i + 1) * t];
         for j in 0..t {
             let k_row = &compact_keys[j * d..(j + 1) * d];
-            // 8-wide chunked dot product auto-vectorizes on AVX2/NEON.
+            // Strict ordered dot — scalar on x86_64 (Issue 871).
             let dot = dot_8wide(q_row, k_row, d);
             out_row[j] = dot * inv_sqrt_d + beta[j];
         }

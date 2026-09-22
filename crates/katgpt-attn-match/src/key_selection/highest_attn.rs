@@ -86,7 +86,8 @@ pub fn select_highest_attn_keys(
     // Queries are the outer loop so reads from `scratch_attn` are sequential
     // (row-major) and writes to `per_key_score` are sequential — cache-friendly
     // for large `t_len`. The iterator form (`chunks_exact` + `zip`) lets LLVM
-    // elide bounds checks and auto-vectorize the FMA inner loop.
+    // elide bounds checks. Strict ordered accumulation — scalar adds on
+    // x86_64 (Issue 871).
     let mut per_key_score = vec![0.0f32; t_len];
     let inv_n = 1.0f32 / (n as f32);
     match score_method {
@@ -103,7 +104,8 @@ pub fn select_highest_attn_keys(
         ScoreMethod::Rms => {
             for row in scratch_attn.chunks_exact(t_len) {
                 for (acc, &val) in per_key_score.iter_mut().zip(row) {
-                    // FMA pattern: acc += val * val — auto-vectorizes to SIMD.
+                    // Strict ordered reduction (`acc += val * val`) — scalar
+                    // adds on x86_64 (Issue 871); bit-stable by add order.
                     *acc += val * val;
                 }
             }

@@ -104,8 +104,8 @@ pub fn select_omp_keys(
         // Correlation scores: c = Φ^T residual, computed in one cache-friendly
         // pass. The i-outer form reads phi row-by-row (sequential) and writes
         // corr_all sequentially. The iterator form (`zip`) lets LLVM elide
-        // bounds checks and auto-vectorize the FMA inner loop with the broadcast
-        // scalar `r`.
+        // bounds checks. Strict ordered accumulation — scalar adds on x86_64
+        // (Issue 871); aarch64 vectorizes the mul half only.
         corr_all.fill(0.0);
         for (r, phi_row) in residual.iter().zip(phi.chunks_exact(t_len)) {
             for (corr, &pv) in corr_all.iter_mut().zip(phi_row) {
