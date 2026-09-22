@@ -178,6 +178,24 @@ decode_order_metrics = []
 # (one repo per commit) as follow-ups. OPT-IN.
 graph_stable_pool = []
 
+# pool_admission (Issue 873 primitive A, 2026-09-22): hysteresis admission
+# policy for a fixed-capacity resident set — the admission complement of
+# kv_eviction's keep-side usage-rate scoring (Research 581 mechanism rows
+# #6/#7/#8, distilled from volotat/mini-AGI paged.py:569-714 @ 96784b7, MIT).
+# Candidate displaces the weakest EVICTABLE resident only when beating it by
+# multiplicative margin (source-pinned 1.10); newborn un-evictable for `dwell`
+# ticks measured from the ADMISSION tick (the row carries no last-use field —
+# the clock law, by construction); terminating fair-turn sweep for cold-start
+# anti-starvation (one never-admitted item per cycle, index order, re-arms
+# only on universe growth); apply-by-identity readout so load count = true
+# set delta. Want-scores are CALLER-SUPPLIED (the suspect_indices house
+# pattern — kv_eviction::score is the natural producer); slot allocation is
+# graph_stable_pool's concern, not re-implemented here. Zero steady-state
+# allocs, deterministic, pure std. Consumers (file their own wiring):
+# riir-ai working sets / PagedKVCache, riir-neuron-db zone_cache. OPT-IN
+# pending first consumer GOAT.
+pool_admission = []
+
 # jsd_topk (Issue 802 item 2, 2026-09-16): NaN-safe bounded top-K Jensen–
 # Shannon divergence kernel — JSD = H(M) − ½H(P) − ½H(Q) over renormalized
 # top-K slices; disjoint supports → EXACTLY ln 2 (never the KL +∞/NaN trap
@@ -3512,6 +3530,16 @@ required-features = ["set_admission"]
 name = "bench_lthash"
 harness = false
 required-features = ["lthash"]
+
+# Issue 873 primitive A — pool_admission GOAT G2: steady-state ns/cycle of
+# consider + 2×update_want at K=32/256, update_want alone, and the O(1)
+# terminated fair_turn rejection. best-of-chunks absolute budgets with
+# regression fences; required-features so a default build skips it (the
+# green-zero law).
+[[bench]]
+name = "bench_873_pool_admission_goat"
+harness = false
+required-features = ["pool_admission"]
 
 # Bench 847 (Issue 847) — are `simd_lut_dequant`'s and `bf16_convert`'s AVX2
 # arms REACHED on an ordinary x86_64 build? Each dispatcher is compared against

@@ -46,7 +46,7 @@ The 09-22 substrate-first Mode 2 audit (detection commit `683d06d8`) found
 `1.0/(1.0+(-x).exp())` with no rationale and no pin — in the same crate as
 three sanctioned patterns (`closure/bridge.rs` and `d2f` delegate to
 `fast_sigmoid` with rationale; six modules consume `exact_sigmoid`). The
-copy-class family (ndb Issue 611 / chain Issue 156 precedent).
+copy-class family (riir-neuron-db Issue 611 / riir-chain Issue 156 precedent).
 
 The fix (this commit) is the Issue-156 permanent-pin pattern:
 
@@ -106,7 +106,7 @@ now the explicit `set_decode_layers(1)` truncated-trunk posture).
   single-layer math). Fix: `last && !is_masked[p]` — at `n_layer == 1` the
   only layer is the readout, semantics bit-identical.
 
-- **Bench 602's calibration is model-class-specific** (the honest negative):
+- **`bench_602_ar_ness_cross_tab`'s calibration is model-class-specific** (the honest negative):
   post-honest-depth, the gap-predictor's AR-drag DIRECTION is within
   training-seed noise at the micro scale (seeds 42-45: AR−UNI ΔALR swings
   ±0.13 around ~+0.03, 2/4 invert; the pre-T5 PASS was one seed's coin

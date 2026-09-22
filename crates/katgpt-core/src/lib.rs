@@ -3330,6 +3330,18 @@ pub mod slt;
 #[cfg(feature = "graph_stable_pool")]
 pub mod graph_stable_pool;
 
+// pool_admission — hysteresis admission policy for a fixed-capacity resident
+// set (Issue 873 primitive A; Research 581 rows #6/#7/#8): margin ×1.10 over
+// caller-supplied want-scores, dwell-from-ADMISSION-tick newborn immunity
+// (no last-use field by construction — the clock law), terminating
+// fair-turn sweep, apply-by-identity readout. The admission complement of
+// kv_eviction (which scores whom to KEEP); want-scores caller-supplied, slot
+// allocation stays graph_stable_pool's concern. Zero steady-state allocs,
+// pure std. OPT-IN pending first consumer GOAT (riir-ai working sets /
+// PagedKVCache, riir-neuron-db zone_cache).
+#[cfg(feature = "pool_admission")]
+pub mod pool_admission;
+
 // lthash — incremental homomorphic multiset hash (Issue 807): LtHash
 // [u16; N] (default 1024 lanes, wrapping add mod 2^16) with insert=add,
 // remove=subtract, merge=sum, checksum=BLAKE3(state). Order-independent
