@@ -70,8 +70,9 @@ Vocabulary: `vs_scalar|simd_vs|scalar_speedup|vs scalar` over tracked `*.rs` acr
 1. `katgpt-rs/tests/bench_271_attn_match_goat.rs::g8_simd_vs_scalar` — the founding
    specimen, and the ONLY one. No other gate workspace-wide shares the trap.
 
-**BY-CATCH (different defect classes, found by the census reads — repair filed
-riir-ai-side):**
+**BY-CATCH (different defect classes, found by the census reads — repair LANDED
+riir-ai-side at `f04df9241`, compile-verification owed until the sibling's in-flight
+riir-train manifest unblocks riir-ai workspace loads):**
 
 2. `riir-ai/crates/riir-engine/benches/bench_286_simd.rs::verify_correctness` T6 arm —
    `expected` and `reference` BOTH computed by `scalar_project_ternary` on the same
