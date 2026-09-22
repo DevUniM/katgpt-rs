@@ -4348,6 +4348,27 @@ different token at λ = 0.5 diverges the decode) rather than sharpening. Zero
 new deps (blake3 rides belief_drafter); zero cost unless the feature is on
 and a probe is installed.
 
+**T3 follow-up (2026-09-22, [Bench
+850](../../.benchmarks/850_probe_guidance_headroom_study.md)): arm (b)
+unblocked + the negative EXTENDED.** `weak_probe_mlp::DropoutHeadProbe`
+ships as the modelless weak side — the frozen trunk head over a
+deterministically 50%-dropout-masked TAP (fixed LCG stream keyed by
+`(position, denoise step)`, zero runtime RNG, zero-alloc, +3 lib tests) —
+dissolving Bench 847's "Not run" reason for the dropout arm (masking the
+tap needs no kernel dropout). The headroom rerun Bench 847's root cause
+named was run under its own methodology (per-position resample entropy,
+zero-logit null, temperature front) across THREE regimes — high-data
+12-epoch trunk (2048 seqs), low-data 12-epoch trunk (96 seqs), and the
+strict-decode cell (τ_conf 0.7 / 8 steps, the decode-uncertainty regime
+where the unguided front spans 82–99%): **the dropout arm never beats the
+zero-logit null — at no λ, in no regime** (beyond-sharpening deltas −0.13
+… −1.42 pts). The mini lane is structurally incapable of a modelless
+guidance win (training-time headroom does not survive the decode loop; the
+strict-config decode uncertainty is unstructured). Study test:
+`tests/probe_guidance_headroom_study.rs` (asserts λ=1 identity per regime;
+prints the fronts). The Bonsai-scale re-open stands as the only path;
+`probe_guidance` stays opt-in.
+
 ### `decision_wire` — the Jev/laya decision wire contract (Plan 603 T1.2, 2026-09-21)
 
 `katgpt_core::decision_wire` — the public wire contract both Proposal 014 arena

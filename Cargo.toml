@@ -3519,6 +3519,18 @@ name = "probe_guidance_goat"
 path = "tests/probe_guidance_goat.rs"
 required-features = ["probe_guidance"]
 
+# Issue 865 T3 follow-up — the headroom-trunk STUDY (Bench 850): the same
+# methodology as the gate above (per-position resample entropy, zero-logit
+# null, temperature front) rerun on a 12-epoch trunk with headroom, with the
+# modelless DropoutHeadProbe as the weak side (the Bench-847-deferred arm
+# (b), unblocked tap-level). A study, not a gate — asserts structural
+# invariants only (λ=1 identity, null monotonicity); the verdict lives in
+# .benchmarks/850_probe_guidance_headroom_study.md.
+[[test]]
+name = "probe_guidance_headroom_study"
+path = "tests/probe_guidance_headroom_study.rs"
+required-features = ["probe_guidance"]
+
 [[test]]
 name = "probe_guidance_alloc_gate"
 path = "tests/probe_guidance_alloc_gate.rs"

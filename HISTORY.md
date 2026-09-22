@@ -8431,3 +8431,42 @@ therefore pure noise; removed with no content change. Re-open path
 unchanged: the Bonsai-scale re-open (multi-layer kernel extension + a trunk
 with headroom) files its own issue where G2a/G2b are the pre-wired promotion
 decider.
+
+
+## Issue 865 follow-up (2026-09-22) — arm (b) unblocked (DropoutHeadProbe) + the headroom study: the negative EXTENDED to every mini-lane regime (Bench 850)
+
+The sibling-session T3 record (Bench 847) deferred the dropout-autoguidance arm for lack of a
+kernel-dropout substrate and named the saturated trunk as the negative's root cause ("the
+mechanism verdict needs a trunk with headroom"). Both halves were closed by this follow-up:
+
+- **`DropoutHeadProbe` ships** (`katgpt-forward/src/weak_probe_mlp.rs`, +3 lib tests): the
+  frozen trunk head over a deterministically 50%-dropout-masked TAP — fixed LCG stream keyed
+  by `(position, denoise step)`, zero runtime RNG, zero-alloc. Masking the tap needs no
+  inference-time kernel dropout, so the deferral reason is dissolved. The weak side stays a
+  noisy version of the SAME function (the correlated-dynamics requirement), unlike the
+  structurally-damaged truncation class.
+- **The headroom rerun ran under Bench 847's own methodology** (per-position resample
+  entropy, the zero-logit null `λ·logits ≡ logits/(T/λ)`, the temperature front, 256 prompts
+  × 8 resamples) across THREE regimes: high-data 12-epoch trunk (2048 seqs), low-data
+  12-epoch trunk (96 seqs), and the strict-decode cell (τ_conf 0.7 / 8 steps — the
+  decode-uncertainty regime where the unguided front spans 82–99%). **The dropout arm never
+  beats the null — at no λ, in no regime** (beyond-sharpening deltas −0.13 … −1.42 pts; at
+  matched diversity vs the temperature front, every point negative except two inside the
+  pinned noise envelope).
+- **A preliminary positive was retracted with cause**: an in-session run of the strict-decode
+  cell on the POOLED unigram-entropy axis (Bench 847's refuted metric — on
+  deterministic-structure lanes the axis measures correctness-collapse with inverted
+  polarity) had read "+2.7 pts at matched entropy" for the same dropout arm. Under the
+  resample axis + the null it is entirely explained as redistribution along the axis the
+  pooled metric secretly measures. Second measured instance of the axis lesson.
+- **The re-open condition is sharpened**: the mini lane is structurally incapable of a
+  modelless guidance win (three trunk/decode regimes; training-time headroom does not
+  survive the decode loop; the strict-config decode uncertainty is unstructured — which
+  pattern tokens commit late, carrying nothing a weak side knows better than the trunk).
+  The Bonsai-scale lane (multi-layer kernel + natural-text uncertainty + riir-train recipe
+  row B) remains the only path; Bench 847's inverted G2a/G2b bars remain the promotion
+  decider. Study instrument committed as `tests/probe_guidance_headroom_study.rs` (asserts
+  λ=1 identity per regime; prints the fronts). Full data + box state:
+  `.benchmarks/850_probe_guidance_headroom_study.md`.
+
+Session: katgpt-rs-865-followup, 2026-09-22

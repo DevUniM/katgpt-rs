@@ -1,6 +1,7 @@
-//! Trained weak-side probe consumption (Issue 865 T2) — [`MlpWeakProbe`].
+//! Weak-side probe consumption (Issue 865) — [`MlpWeakProbe`] +
+//! [`DropoutHeadProbe`].
 //!
-//! Wraps a BLAKE3-committed
+//! [`MlpWeakProbe`] wraps a BLAKE3-committed
 //! [`ProbeArtifact`](katgpt_speculative::probe_artifact::ProbeArtifact) (the
 //! `LatentDynamicsMLP` connector + shared trunk `lm_head`, trained by the
 //! riir-train `nextlat_*` lane pattern) and implements the
@@ -10,6 +11,18 @@
 //! mask tokens whose embeddings carry no per-position signal) and then the
 //! shared head, producing the weak logits the affine combine extrapolates
 //! against.
+//!
+//! [`DropoutHeadProbe`] is the MODELLESS weak side (Bench 847's deferred
+//! arm (b), unblocked WITHOUT kernel work): the shared trunk head reading a
+//! deterministically dropout-masked tap — autoguidance's cheap sibling
+//! (arXiv:2609.19356 "cheap-weak": the weak side is the SAME function with
+//! input noise, not a different damaged function — the correlated-dynamics
+//! requirement the Bench-847 identity-truncation refutation measured from
+//! the other side). The mask is a fixed LCG stream keyed by `(position,
+//! denoise step)`, so decode is reproducible and consumes no runtime RNG.
+//! No artifact, no training — the weak side that makes `probe_guidance`
+//! usable without the riir-train lane, and the instrument of the
+//! headroom-trunk study (Bench 850).
 //!
 //! Zero-alloc on the hot path: the connector's scratch buffers, the latent
 //! row, and the zero embedding are allocated once at construction and reused
@@ -101,6 +114,89 @@ impl WeakLogitProbe for MlpWeakProbe {
                 &mut out[row_off..row_off + vocab],
                 &self.artifact.lm_head,
                 &self.latent,
+                vocab,
+                n,
+            );
+        }
+    }
+}
+
+/// Modelless dropout-autoguidance weak side (Issue 865 T3 arm (b), the
+/// Bench-847-deferred substrate): the shared trunk head reading a
+/// deterministically dropout-masked tap.
+///
+/// The weak side stays a NOISY VERSION OF THE SAME FUNCTION — the paper's
+/// correlated-dynamics requirement — unlike a structurally damaged weak side
+/// (the identity-truncation refutation in Bench 847 measured that class
+/// failing). Masking happens at the TAP level, so no inference-time kernel
+/// dropout is needed (the reason Bench 847 deferred this arm is gone).
+///
+/// Deterministic: the mask is a fixed LCG stream keyed by `(position,
+/// denoise step)` — reproducible decode, no runtime RNG consumed. Zero-alloc:
+/// the masked row is a pre-allocated scratch, reused per position.
+pub struct DropoutHeadProbe {
+    /// Shared trunk head `[vocab * n_embd]`, row-major.
+    head: Vec<f32>,
+    vocab: usize,
+    n: usize,
+    /// Drop fraction in `[0, 1)` — 0.5 is the Bench-850-swept default.
+    drop_rate: f32,
+    /// Masked tap row `[n_embd]`, reused per position.
+    masked: Vec<f32>,
+}
+
+impl DropoutHeadProbe {
+    /// Build from the shared trunk head. `drop_rate = 0.5` is the swept
+    /// default; `0.0` degenerates to `head · tap` (the truncation weak side).
+    pub fn new(vocab: usize, n_embd: usize, lm_head: Vec<f32>, drop_rate: f32) -> Self {
+        assert_eq!(
+            lm_head.len(),
+            vocab * n_embd,
+            "lm_head must be [vocab, n_embd] row-major"
+        );
+        Self {
+            head: lm_head,
+            vocab,
+            n: n_embd,
+            drop_rate: drop_rate.clamp(0.0, 0.95),
+            masked: vec![0.0f32; n_embd],
+        }
+    }
+}
+
+impl WeakLogitProbe for DropoutHeadProbe {
+    fn probe(&mut self, input: ProbeCtx<'_>, out: &mut [f32]) {
+        let (n, vocab) = (self.n, self.vocab);
+        debug_assert_eq!(input.n_embd, n);
+        debug_assert_eq!(
+            out.len(),
+            (input.seq_len - input.block_start) * vocab,
+            "probe out must hold exactly the block's logits"
+        );
+        for p in input.block_start..input.seq_len {
+            // Fixed LCG mask per (position, denoise step) — same stream shape
+            // as the study runner, reproducible across runs and boxes.
+            let mut state = (p as u64)
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                ^ (input.step as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9)
+                ^ 0xDEAD_BEEF_CAFE_F00D;
+            for i in 0..n {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                // Top 31 bits → uniform in [0, 1); drop when below the rate.
+                let r = ((state >> 33) as f32) / (1u64 << 31) as f32;
+                self.masked[i] = if r < self.drop_rate {
+                    0.0
+                } else {
+                    input.tap[p * n + i]
+                };
+            }
+            let row_off = (p - input.block_start) * vocab;
+            matmul(
+                &mut out[row_off..row_off + vocab],
+                &self.head,
+                &self.masked,
                 vocab,
                 n,
             );
@@ -230,6 +326,69 @@ mod tests {
         assert!(
             b.iter().all(|&v| v != 9.5),
             "every output slot must be written (no poison survives)"
+        );
+    }
+
+    // ── DropoutHeadProbe (Issue 865 arm (b) substrate) ──
+
+    #[test]
+    fn dropout_probe_is_deterministic_and_step_sensitive() {
+        let (vocab, n) = (6usize, 8usize);
+        let head: Vec<f32> = (0..vocab * n).map(|i| (i as f32) * 0.3 - 1.0).collect();
+        let tap: Vec<f32> = (0..4 * n).map(|i| ((i % 17) as f32) * 0.2 - 1.2).collect();
+        let run = |step: usize| -> Vec<f32> {
+            let mut probe = DropoutHeadProbe::new(vocab, n, head.clone(), 0.5);
+            let mut out = vec![f32::NAN; 2 * vocab];
+            let mut ctx = probe_ctx(&tap, 2, 4, vocab, n);
+            ctx.step = step;
+            probe.probe(ctx, &mut out);
+            out
+        };
+        // Same (position, step) → same mask → identical logits, run to run.
+        assert_eq!(run(2), run(2), "the mask must be a fixed stream");
+        // A different step re-keys the mask → observably different logits.
+        assert_ne!(run(2), run(3), "step must re-key the dropout mask");
+    }
+
+    #[test]
+    fn dropout_probe_zero_rate_is_head_on_tap() {
+        // drop_rate = 0 degenerates to `head · tap` — the anchor between this
+        // probe and the plain linear readout.
+        let (vocab, n) = (6usize, 8usize);
+        let head: Vec<f32> = (0..vocab * n).map(|i| (i as f32) * 0.25).collect();
+        let tap: Vec<f32> = (0..4 * n).map(|i| (i as f32) * 0.15).collect();
+        let mut probe = DropoutHeadProbe::new(vocab, n, head.clone(), 0.0);
+        let mut out = vec![f32::NAN; 4 * vocab];
+        probe.probe(probe_ctx(&tap, 0, 4, vocab, n), &mut out);
+        for p in 0..4 {
+            let mut expected = vec![0.0f32; vocab];
+            matmul(&mut expected, &head, &tap[p * n..(p + 1) * n], vocab, n);
+            assert_eq!(
+                out[p * vocab..(p + 1) * vocab],
+                expected,
+                "zero-rate row {p} must equal head·tap"
+            );
+        }
+    }
+
+    #[test]
+    fn dropout_probe_overwrites_every_slot_and_purifies_noise() {
+        // Every output slot written (pre-poisoned buffer) + the mask actually
+        // drops a nonzero fraction of the tap at rate 0.5.
+        let (vocab, n) = (5usize, 8usize);
+        let head: Vec<f32> = vec![0.5; vocab * n];
+        let tap: Vec<f32> = vec![2.0; 4 * n];
+        let mut probe = DropoutHeadProbe::new(vocab, n, head, 0.5);
+        let mut out = vec![9.5f32; 4 * vocab];
+        probe.probe(probe_ctx(&tap, 0, 4, vocab, n), &mut out);
+        assert!(out.iter().all(|&v| v != 9.5), "every slot must be written");
+        // With head=0.5 rows, logits = 0.5 · Σ masked[i]; a full mask row
+        // (none dropped) would give 0.5·(8·2.0)=8.0, all-dropped 0.0 — the
+        // observed spread proves the per-position masks differ.
+        let rows: Vec<f32> = (0..4).map(|p| out[p * vocab]).collect();
+        assert!(
+            rows.iter().any(|&r| r != rows[0]),
+            "mask must vary across positions, got uniform {rows:?}"
         );
     }
 }
