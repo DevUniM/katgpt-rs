@@ -1,6 +1,6 @@
 # Issue 874 — G8 (`bench_271_attn_match_goat::g8_simd_vs_scalar`) is inert: the "scalar" arm routes through the same `dot_8wide` kernel
 
-Status: **OPEN — T3 (the workspace census) LANDED 2026-09-22 (see the T3 section below): the consolidation trap exists in exactly ONE gate workspace-wide — this issue's own founding specimen; the adjacent by-catch class (a vacuous correctness assert + a wasm32 test target broken since the Plan 008 Step 7 wrapper removal — both riir-ai) is REPAIRED at `f04df9241` and compile-verified 2026-09-22 (worktree-verified while a sibling's manifest edit blocks live riir-ai loads); T1 remains owner-gated (GOAT gate semantics), and the T3 population gives the owner the full scope for that call: repairing ONE gate, not a family.**
+Status: **CLOSED 2026-09-22 — T1 decided via verdict ping-pong (3 rounds, final AGREE): Option 3 — retire the relative-speedup claim (G8a bit-contract pin + G8b relocated executing floor); T2 implemented + validated in the same commit (bench_271 10/10 release — G8a bit-identical over 16384 outputs, G8b 50.3 µs vs 5 ms; clippy clean both surfaces; timed_region_guard PASSED; x86_64 matrix cell verified selecting bench_271 via default-features attn_match). T3 census landed by the sibling session (ec345a8c/e880d97c/6c2d8b04/27b48552; riir-ai by-catches repaired at f04df9241). Full record: HISTORY.md entry + Plan 271 addendum. File CLOSED IN PLACE — removal deferred to the next backlog-clear pass (the census sibling was still appending at close-out time; its full census table stays in this file and git history).**
 
 Branch: `develop` · Evidence: [Bench 871](../.benchmarks/871_algebraic_dot_ab.md) §Addendum (in-crate codegen) · Filed: 2026-09-22
 
@@ -52,8 +52,8 @@ target-dependent (state the target in any new bar).
 
 ## Tasks
 
-- [ ] T1 — Decide the repair option (1/2/3 above) — owner-gated (GOAT gate semantics).
-- [ ] T2 — Implement + re-run the full `bench_271_attn_match_goat` gate; record the new
+- [x] T1 — Decide the repair option (1/2/3 above) — owner-gated (GOAT gate semantics). DECIDED 2026-09-22 via verdict ping-pong (3 rounds, final AGREE): **Option 3** — retire the relative-speedup claim. Option 1 refuted on crate-independent ground (a strict ordered f32 reduction cannot vectorize without changing the bits — "there is no strict vectorized add"); Option 2 substitutes a different claim (a rayon gate would be its own item; the real speed contrast strict-vs-`algebraic_dot` has its own lane — feature + Bench 871).
+- [x] T2 — Implement + re-run the full `bench_271_attn_match_goat` gate; record the new G8 posture in the Plan 271 record's addendum. DONE (this commit): `g8_route_bit_agreement` (exact to_bits pin, both-cause failure message) + `g8_throughput_floor` (the in-crate test_simd_throughput_smoke relocated onto this executing lane, best_of_us defence, in-crate duplicate deleted); Plan 271 addendum landed; bench_271 10/10 release.
   G8 posture in the Plan 271 record's addendum.
 - [x] T3 — Grep the workspace for OTHER `*_vs_scalar`-style A/B gates whose "scalar" arm
   routes through the same kernel as the "SIMD" arm (the same consolidation trap may exist

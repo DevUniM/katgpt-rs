@@ -180,7 +180,6 @@ pub fn dot_8wide(a: &[f32], b: &[f32], d: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
 
     /// SIMD kernel must match the scalar reference within 1e-6.
     #[test]
@@ -267,90 +266,17 @@ mod tests {
         }
     }
 
-    /// GOAT G8: SIMD kernel must be ≥4× faster than scalar at t=512.
-    /// Throughput smoke test (release-only). Documents the actual ns/call of
-    /// `compute_score_matrix_simd` at the Plan 271 reference size (`n=8, t=512,
-    /// d=64`). Skipped under `debug_assertions` (debug SIMD is not representative).
-    ///
-    /// Historical note: this was originally `test_simd_4x_speedup` which asserted
-    /// ≥1.5× speedup of the (then manually-unrolled) `dot_8wide` kernel over a
-    /// scalar reference. The assertion was empirically refuted on Apple Silicon
-    /// M3 Max (2026-07-29): the manual 8-accumulator pattern ran 1.26× SLOWER
-    /// than the simple loop. The kernel was simplified; the speedup comparison
-    /// is now meaningless (both paths use the same strict inner loop — and on
-    /// x86_64 both compile scalar-only, Issue 871). This test now serves as a
-    /// throughput smoke guard — it documents the absolute perf without asserting
-    /// a false relative-speedup gate. The GOAT-level gate lives in
-    /// `bench_271_attn_match_goat.rs::g8_simd_vs_scalar` (which SKIPs on <1.5×).
-    #[test]
-    fn test_simd_throughput_smoke() {
-        if cfg!(debug_assertions) {
-            eprintln!("skipping simd throughput test in debug build");
-            return;
-        }
-        let n = 8;
-        let t = 512;
-        let d = 64;
-        let mut seed = 98765u32;
-        let mut rng = || {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-            (seed as f32) / (u32::MAX as f32) * 2.0 - 1.0
-        };
-        let queries: Vec<f32> = (0..n * d).map(|_| rng()).collect();
-        let keys: Vec<f32> = (0..t * d).map(|_| rng()).collect();
-        let inv_sqrt_d = 1.0f32 / (d as f32).sqrt();
-
-        let mut simd_buf = vec![0.0f32; n * t];
-
-        // Use black_box to prevent the compiler from eliminating the loop.
-        use std::hint::black_box;
-
-        // Warmup.
-        for _ in 0..3 {
-            compute_score_matrix_simd(
-                black_box(&queries),
-                black_box(&keys),
-                n,
-                t,
-                d,
-                inv_sqrt_d,
-                &mut simd_buf,
-                false,
-            );
-        }
-
-        let iters = 200;
-        let start = Instant::now();
-        for _ in 0..iters {
-            compute_score_matrix_simd(
-                black_box(&queries),
-                black_box(&keys),
-                n,
-                t,
-                d,
-                inv_sqrt_d,
-                &mut simd_buf,
-                false,
-            );
-        }
-        let _: f32 = black_box(simd_buf[0]);
-        let total_ns = start.elapsed().as_nanos();
-        let per_call_ns = total_ns / iters as u128;
-        eprintln!(
-            "simd_throughput: n={n}, t={t}, d={d}, {iters} iters, {total_ns} ns total, {per_call_ns} ns/call"
-        );
-        // Throughput guard: each call must complete in under 5 ms at this size
-        // (n=8, t=512, d=64 = 262K multiply-adds + the max-shift pass). This is a
-        // generous ceiling — the kernel typically runs in ~50-90 µs/call on
-        // Apple Silicon (packed muls + scalar adds; scalar-only on x86_64 —
-        // Issue 871). The guard catches catastrophic
-        // regressions (e.g., accidental debug-mode emission, a broken unroll)
-        // without asserting a false speedup claim.
-        assert!(
-            per_call_ns < 5_000_000,
-            "simd throughput regression: {per_call_ns} ns/call > 5 ms ceiling"
-        );
-    }
+    // (Issue 874, 2026-09-22) The throughput smoke that lived here was
+    // RELOCATED to `tests/bench_271_attn_match_goat.rs::g8_throughput_floor`:
+    // this in-crate copy was executed by NO lane — `katgpt-attn-match` has no
+    // test_gate row and no x86_64-matrix floors row (the `katgpt-attn` row is
+    // a different package), and the `cfg!(debug_assertions)` skip bypassed
+    // even dev lib runs — while the bench_271 binary executes in the x86_64
+    // execution matrix integration cell (release). Same size (n=8, t=512,
+    // d=64), same 5 ms/call ceiling, upgraded timing defence (best_of_us
+    // min-of-200 + result consumption instead of a sequential 200-iteration
+    // window). The old `g8_simd_vs_scalar` relative-speedup gate it pointed
+    // at is retired the same day — see Issue 874 / Bench 871 §Addendum.
 
     /// Scalar reference for cross-checking correctness (used by
     /// `test_simd_matches_scalar`). Uses a simple `for k in 0..d` dot product —

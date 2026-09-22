@@ -387,3 +387,43 @@ tests/
 Seven-phase plan to distill AM paper into `katgpt-rs/src/attn_match/`. Phase 1 = unblocking skeleton (compiling, tested). Phase 2 = adaptive router. Phase 3 = head budgets. Phase 4 = chunked. Phase 5 = online. Phase 6 = adaptive CoT. Phase 7 = GOAT gate + promotion.
 
 **Immediate next step**: Phase 1 (T1.1–T1.13) — get the skeleton compiling and tested.
+
+---
+
+## Addendum — 2026-09-22: G8 re-founded (Issue 874)
+
+**G8's original claim ("SIMD ≥ 1.5× scalar") became unmeasurable at the
+kernel consolidation and was retired today.** Both `compute_score_matrix`
+and `compute_score_matrix_simd` route through the same `dot_8wide`
+strict-ordered kernel (DRY, bit-identity-preserving — correct for
+correctness, fatal for an A/B speedup gate), and Issue 871 T5 measured
+that kernel scalar-only on x86_64 (0 packed float-math crate-wide at both
+compile arms) and mul-only-vectorized on aarch64. The timed "SIMD" arm
+additionally ran the stabilize pass, making the ratio structurally <1: the
+old gate deterministically SKIPped on every platform — dead in both
+directions. **Historical readings stand as history**: the 2026-06-14 G8
+PASS (3.01×, Apple NEON) predates the consolidation and was real (the
+paths were different implementations then); post-consolidation SKIPs were
+the gate going blind, not scalar being "unusually well-optimized".
+
+**The re-founded gate** (Issue 874, verdict ping-pong Option 3):
+
+- **G8a — `g8_route_bit_agreement`**: the two public routes must stay
+  bit-identical (exact `to_bits` equality at n=32, t=512, d=64). Pins the
+  documented "bit-identical by construction" contract; a red means either
+  (1) one route's summation order changed, or (2) the internal
+  `inv_sqrt_d` derivation changed (the routes derive it differently —
+  internally vs as a parameter).
+- **G8b — `g8_throughput_floor`**: absolute throughput floor (release-only,
+  < 5 ms/call at n=8, t=512, d=64; measured 50.3 µs/call on the 4090 box,
+  2026-09-22), RELOCATED from the in-crate
+  `score_matrix_simd::tests::test_simd_throughput_smoke` which was
+  executed by NO lane — this bench binary runs in the x86_64 execution
+  matrix integration cell. Defence upgraded to `best_of_us` min-of-200 +
+  argument+result black_box (the sequential 200-iteration window was both
+  the Issue-723 sequential class and the weakest loud-zero defence).
+
+The only real speed contrast in this crate is strict-vs-`algebraic_dot` —
+that lives in its own lane (feature `algebraic_dot`, Bench 871), not in
+G8. Validation: bench_271 10/10 in release; crate lib 121; clippy clean
+both surfaces; `timed_region_guard_gate` PASSED.

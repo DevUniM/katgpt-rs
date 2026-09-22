@@ -1,3 +1,66 @@
+## 2026-09-22 — Issue 874 closed: G8 re-founded on real claims — the dead speedup gate became a bit-contract pin + a relocated, executing throughput floor (two sessions, one issue)
+
+The Issue-871 T5 fallout, closed in one evening by two complementary
+sessions: the census session (T3, `ec345a8c`+`e880d97c`+`6c2d8b04`) read
+all 16 workspace `*_vs_scalar` gate/bench sites one by one and proved the
+consolidation trap is ONE gate — g8 itself — repairing two unrelated
+riir-ai by-catches on the way (`f04df9241`); the repair session (this
+entry) took T1 through the verdict ping-pong (round 2 REVISE folded in)
+and landed T2.
+
+- **Why the old gate was dead in both directions**: G8 asserted ≥1.5×
+  "SIMD vs scalar" speedup, but both routes run the identical double loop
+  through the same `dot_8wide` (the Plan-271-era DRY consolidation), a
+  strict ordered kernel with no SIMD left on any target (Issue 871 T5:
+  0 packed float-math crate-wide on x86_64 at both compile arms; aarch64 =
+  packed muls + ordered scalar adds — "there is no strict vectorized
+  add"). The timed "SIMD" arm additionally ran the stabilize pass, so the
+  ratio was structurally <1 and the gate deterministically SKIPped
+  (returned Ok). Pre-consolidation PASS entries (3.01× NEON, 2026-06-14)
+  were real; post-consolidation ones were timer noise between identical
+  binaries.
+- **The verdict** (3 rounds, final AGREE): Option 3 — retire the relative
+  claim. Option 1 (naive scalar arm) is refuted on crate-independent
+  ground: a strict ordered f32 reduction cannot vectorize without
+  changing the bits, so a naive-vs-dot_8wide gate compares identical
+  codegen — a third fake contrast. Option 2 (re-point at serial-vs-rayon)
+  substitutes a different claim; the only real speed contrast in this
+  crate is strict-vs-`algebraic_dot`, which has its own lane (feature
+  `algebraic_dot`, Bench 871).
+- **G8a — `g8_route_bit_agreement`** (new): exact `to_bits` equality over
+  16 384 outputs between the two public routes — pins the documented
+  "bit-identical by construction" contract; the failure message names BOTH
+  red causes (one route's summation order changed, or the internal
+  `inv_sqrt_d` derivation moved — the routes derive it differently).
+- **G8b — `g8_throughput_floor`** (new): the absolute floor RELOCATED from
+  the in-crate `test_simd_throughput_smoke` — same size (n=8, t=512, d=64),
+  same 5 ms ceiling, but on a lane that actually executes (bench_271 runs
+  in the x86_64 execution matrix integration cell; the in-crate copy had
+  no test_gate row, no matrix floors row, and a debug-skip that bypassed
+  dev lib runs). Defence upgraded to `best_of_us` min-of-200 +
+  argument+result black_box. Measured 50.3 µs/call on this box — the bar
+  is a regression floor (100× headroom), not a speedup claim. The in-crate
+  duplicate is deleted in the same commit (one claim, one home).
+- **Validation**: bench_271 10/10 in release (G1–G7 untouched, PASS);
+  crate lib 121 (smoke removed); clippy clean on both surfaces;
+  `timed_region_guard_gate` PASSED (the new region carries the best_of_us
+  defence — no new unguarded row); no test_gate/matrix pins referenced
+  bench_271 or the crate's counts.
+
+Adjacent observation recorded, out of scope: G7's release fallback prints
+"100000 calls in 0ns" — constant-folded work in a print-only sanity path
+(the load-bearing G7 alloc gate is the debug TrackingAllocator one).
+
+Issue file CLOSED IN PLACE (status CLOSED, all tasks terminal) — removal
+deferred to the next backlog-clear pass rather than racing the census
+sibling, which was still appending at close-out time (its `27b48552`
+T3 addendum landed mid-rebase: a second census pass converging on the
+one-gate verdict + bench_256's stale pre-808 "SIMD (ns/call)" report
+labels repaired). The file keeps the full 16-site census table; durable
+summary: trap = ONE gate; healthy population defended three independent
+ways (bench_148's anti-vectorization assert, fast_bpe's fallback-catch
+floor, bench_578's same-code-aware loud skip).
+
 ## 2026-09-22 — Issue 873 primitive B landed twice in one evening: the twin-duplicate resolution (third of the class)
 
 The 873-handoff context-overflow relay produced the exact Issue-825 shape:
