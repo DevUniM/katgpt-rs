@@ -43,9 +43,19 @@ fn unit<const D: usize>(v: [f32; D]) -> [f32; D] {
     }
 }
 
+/// Sigmoid projection for the gate — delegates to [`crate::exact_sigmoid`]
+/// (the libm two-branch reference form, Issue 870). Bit-identical to the
+/// original single-branch body for x ≥ 0 (same expression); ≤ 3 ULP for
+/// x < 0 across [−20, 20] (MEASURED at 0.001 step: max 3 ULPs — at
+/// x = −4.851 inside the gate's validated domain and x = −16.743 in the
+/// margin; a relative error ≲5e-7 on values at or below the gate's
+/// decision region). The envelope is pinned by
+/// `sigmoid_delegation_matches_frozen_legacy_body` so a future form change
+/// cannot silently move gate outputs; the bench_845 GOAT gates were re-run
+/// at this form (Issue 870 closeout).
 #[inline]
 fn sigmoid(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
+    crate::exact_sigmoid(x)
 }
 
 /// Abstain gate over corpus distance. `D` is the latent width; `K` is
@@ -222,6 +232,31 @@ mod tests {
                 let fused = gate.fused_should_abstain(&q, 0.5, st, dt);
                 let expect = 0.5 < st || gate.should_abstain(&q, dt);
                 assert_eq!(fused, expect, "fused must be the OR at ({st}, {dt})");
+            }
+        }
+    }
+
+    #[test]
+    fn sigmoid_delegation_matches_frozen_legacy_body() {
+        // Issue 870: the module originally carried a local single-branch
+        // `1.0 / (1.0 + (-x).exp())`. The delegation to `exact_sigmoid` must
+        // not move gate outputs: bit-identical for x ≥ 0, ≤ 3 ULP for x < 0
+        // across the gate's reachable domain plus margin (the bench geometry
+        // is scale 8 / mid 0.35 ⇒ arg ∈ [−10.8, 5.2]; this sweep covers
+        // [−20, 20], all finite-exp territory for both forms; measured max
+        // 3 ULPs — x = −4.851 in-domain, x = −16.743 in-margin, 0.001 step).
+        // The legacy body is frozen HERE so any future form drift reds this
+        // pin.
+        let legacy = |x: f32| 1.0f32 / (1.0 + (-x).exp());
+        for i in 0..=4_000i32 {
+            let x = -20.0f32 + (i as f32) * 0.01;
+            let got = sigmoid(x);
+            let want = legacy(x);
+            if x >= 0.0 {
+                assert_eq!(got.to_bits(), want.to_bits(), "x={x} must be bit-identical");
+            } else {
+                let ulps = (got.to_bits() as i64 - want.to_bits() as i64).abs();
+                assert!(ulps <= 3, "x={x} drifted {ulps} ULPs (got {got}, want {want})");
             }
         }
     }

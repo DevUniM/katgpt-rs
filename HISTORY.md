@@ -1,3 +1,37 @@
+## 2026-09-22 — Issue 870 closed: distance_abstain's rationale-free sigmoid copy → exact_sigmoid delegation, measured 3-ULP envelope, bench_845 GOAT re-run identical
+
+The 09-22 substrate-first Mode 2 audit (detection commit `683d06d8`) found
+`distance_abstain.rs:47` carrying a local single-branch
+`1.0/(1.0+(-x).exp())` with no rationale and no pin — in the same crate as
+three sanctioned patterns (`closure/bridge.rs` and `d2f` delegate to
+`fast_sigmoid` with rationale; six modules consume `exact_sigmoid`). The
+copy-class family (ndb Issue 611 / chain Issue 156 precedent).
+
+The fix (this commit) is the Issue-156 permanent-pin pattern:
+
+- **Delegation**: the local `fn sigmoid` now calls `crate::exact_sigmoid`
+  (the libm two-branch reference form), with the divergence envelope
+  documented in-source.
+- **Measured, not assumed**: the first pin draft asserted ≤1 ULP and RED —
+  the honest re-measure (0.001-step sweep, standalone probe) found **max
+  3 ULPs for x<0** across [−20, 20] (x=−4.851 inside the gate's validated
+domain, x=−16.743 in margin); bit-identical for x≥0. The pin
+  (`sigmoid_delegation_matches_frozen_legacy_body`) freezes the legacy body
+  inline and bounds at the measured 3 ULPs — future form drift reds it.
+- **GOAT re-run**: bench_845 at the delegated form — G1–G5 ALL PASS with
+  readings numerically identical to the recorded baseline (W1 fused AURC
+  0.1894 vs score 0.2289, Δ(ρ=30%) +0.0097, 8/8 replicates positive;
+  G3 negative control vanishes as designed). 3 ULPs on values ≲5e-7
+  relative move nothing at the bench's printed precision.
+- The bench's own `sigmoid` (the W1 world-model formula,
+  `sigmoid(1.2·logit p − 0.2)` from Research 576 §2.1) is the synthetic
+  world definition, not the gate — untouched.
+
+Validation: `cargo test -p katgpt-core --features distance_abstain --lib
+distance_abstain` 8/8; `cargo clippy -p katgpt-core --features
+distance_abstain --lib` clean; bench_845 GATES PASSED. Issue file removed
+per the noise rule (content recoverable from `683d06d8`).
+
 ## 2026-09-22 — Issue 869 T5: the mini dllm lane goes per-layer honest end-to-end — the gradient check caught a live backward bug the loss-decreases gates never could
 
 The same-day follow-up landing closing Issue 869: training, eval, and decode
