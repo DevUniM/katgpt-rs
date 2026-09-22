@@ -126,14 +126,17 @@ statrs = "0.17"
 # weights + the exact closed form w(t) = ½(T−t)·g(t)²·c(t,0)² with
 # c = exp(−∫a), over a discrete uniform grid; the table form freezes the
 # closed form into a BLAKE3-committed [f32; 64] (the static_cal committed-
-# table pattern, exact — no calibration pass) for O(1) nearest-grid lookup.
-# Nothing in the workspace weighted time-averaged accumulation by remaining
+# table pattern, exact — no calibration pass) for O(1) nearest-grid lookup;
+# remaining_horizon_t_sample is the law's exact inverse-CDF sampler. Nothing
+# in the workspace weighted time-averaged accumulation by remaining
 # horizon before (twist_step_into is span-normalized β-budget; renoise_ce
 # k_draws average flat; dllm_solver switching is entropy-driven — Research
 # 582 §2 coverage table). Mechanism-distinct from tether::horizon_decay
 # (past-looking staleness fading). Pure math, zero new deps, zero allocs,
-# wasm32-clean. OPT-IN pending the T2 consumer GOAT ((T−t)-weighted
-# renoise_ce averaging) — no-default-consumer rule.
+# wasm32-clean. T2 consumer SHIPPED as the combined-gate
+# renoise_ce_score_horizon (Bench 877: precision@k 1.000 vs incumbent
+# 0.906 at −0.8% latency); the feature itself stays OPT-IN — promotion is
+# T5's verdict on the recorded GOATs.
 horizon_weights = []
 
 # lthash (Issue 807, 2026-09-16): incremental homomorphic multiset hash

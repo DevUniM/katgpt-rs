@@ -766,19 +766,27 @@ pub use renoise_ce::{
 #[cfg(feature = "freedom_selection")]
 pub use renoise_ce::best_of_n_freedom;
 
+// Issue 875 T2 / Research 582: the (T−t)-weighted renoise-CE draw schedule —
+// k_draws sampled over [floor·L, cap·L] from the remaining-horizon density
+// instead of one fixed level. Combined-gate surface: needs both features
+// (renoise_ce is default-on; horizon_weights is the opt-in arm).
+#[cfg(all(feature = "renoise_ce", feature = "horizon_weights"))]
+pub use renoise_ce::{RenoiseCeHorizon, renoise_ce_score_horizon};
+
 // horizon_weights (Issue 875 T1 / Research 582, arXiv:2605.09071): the PFD
 // (T−t) Fubini accumulation law + the exact w(t) = ½(T−t)g²c² closed form
 // (c = exp(−∫a)), with the BLAKE3-committed fixed-grid table form (the
 // static_cal pattern, exact — no calibration pass). Future-looking
 // remaining-horizon weighting — mechanism-distinct from
-// tether::horizon_decay's past-looking staleness fading. OPT-IN pending
-// the T2 consumer GOAT ((T−t)-weighted renoise_ce averaging).
+// tether::horizon_decay's past-looking staleness fading. T2 consumer
+// shipped as the combined-gate renoise_ce_score_horizon (Bench 877);
+// the feature itself stays OPT-IN per the T5 promotion rule.
 #[cfg(feature = "horizon_weights")]
 pub mod horizon_weights;
 #[cfg(feature = "horizon_weights")]
 pub use horizon_weights::{
     HorizonWeightTable, HORIZON_WEIGHT_GRID, pfd_horizon_weight_at, pfd_horizon_weights,
-    remaining_horizon_weight, remaining_horizon_weights,
+    remaining_horizon_t_sample, remaining_horizon_weight, remaining_horizon_weights,
 };
 
 #[cfg(feature = "dual_leo")]

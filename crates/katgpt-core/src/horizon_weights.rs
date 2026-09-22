@@ -35,6 +35,9 @@
 //!
 //! - [`remaining_horizon_weight`] / [`remaining_horizon_weights`]: the
 //!   normalized `(T−t)/T` generic law (pure arithmetic, any horizon).
+//! - [`remaining_horizon_t_sample`]: the SAMPLING realization of the same
+//!   law — the exact inverse CDF of the density `∝ (T−t)` on a sub-range
+//!   (Issue 875 T2's draw schedule; one `sqrt`, zero alloc).
 //! - [`pfd_horizon_weight_at`] / [`pfd_horizon_weights`]: the exact closed
 //!   form over a discrete uniform grid (cumulative trapezoid of `a`, one
 //!   `exp` per grid point — the offline computation).
@@ -100,6 +103,49 @@ pub fn remaining_horizon_weights(out: &mut [f32]) {
     // Exact-zero terminal weight (+0.0, never −0.0): the truncation
     // corollary's anchor.
     out[n - 1] = 0.0;
+}
+
+/// Inverse-CDF sample from the remaining-horizon law (Issue 875 T2): given
+/// a uniform `u ∈ [0, 1]`, return `t` drawn from the density
+/// `p(t) ∝ (horizon − t)` on `[t_min, t_max]` — the sampling realization of
+/// the law [`remaining_horizon_weight`] weights by. Low-noise draws are
+/// the most likely; the terminal point the least (`w(T) = 0`).
+///
+/// Exact inverse of the law's CDF
+/// `F(t) = [(T−t_min)² − (T−t)²] / [(T−t_min)² − (T−t_max)²]`:
+///
+/// ```text
+/// t = T − sqrt((1−u)·(T−t_min)² + u·(T−t_max)²)
+/// ```
+///
+/// One `sqrt` plus a handful of multiplies — zero allocation, deterministic
+/// under the caller's RNG stream. `u = 0` returns `t_min` (the density
+/// maximum), `u = 1` returns `t_max`.
+///
+/// Degenerate inputs fall back to uniform interpolation (total function,
+/// never NaN): a collapsed/inverted range (`t_max ≤ t_min`), or a horizon
+/// that does not strictly contain the range (`horizon < t_max`), lerp at
+/// `u`. Non-finite `u` is treated as `0.0` (→ `t_min`); finite `u` outside
+/// `[0, 1]` clamps. Same NaN policy as the weight fns: this is a schedule,
+/// not a sync-boundary value.
+#[inline]
+pub fn remaining_horizon_t_sample(u: f32, t_min: f32, t_max: f32, horizon: f32) -> f32 {
+    let u = if u.is_finite() { u.clamp(0.0, 1.0) } else { 0.0 };
+    // Fallback (uniform lerp) on any degenerate/incomparable input — the
+    // partial_cmp form keeps the function total under NaN (None → fallback).
+    let range_ok = matches!(t_max.partial_cmp(&t_min), Some(core::cmp::Ordering::Greater));
+    let horizon_ok = matches!(
+        horizon.partial_cmp(&t_max),
+        Some(core::cmp::Ordering::Greater) | Some(core::cmp::Ordering::Equal)
+    );
+    if !range_ok || !horizon_ok {
+        return t_min + u * (t_max - t_min);
+    }
+    let lo = horizon - t_min;
+    let hi = horizon - t_max;
+    let t = horizon - ((1.0 - u) * lo * lo + u * hi * hi).sqrt();
+    // Rounding at the endpoints can land 1 ulp outside; clamp home.
+    t.clamp(t_min, t_max)
 }
 
 /// The PFD closed form at a single point, given the caller-held cumulative
@@ -452,5 +498,118 @@ mod tests {
         let (count, _bytes) = crate::alloc::get_alloc_stats();
         assert_eq!(count, 0, "G4: build + 1024 lookups allocated {count} times");
         assert!(sink.is_finite(), "sink must be consumed: {sink}");
+    }
+
+    // ---- remaining_horizon_t_sample (Issue 875 T2) ----
+
+    const T_SAMPLE_MIN: f32 = 0.02 * T;
+    const T_SAMPLE_MAX: f32 = 0.98 * T;
+
+    #[test]
+    fn t_sample_endpoints_and_monotone() {
+        let lo = remaining_horizon_t_sample(0.0, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
+        let hi = remaining_horizon_t_sample(1.0, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
+        assert!((lo - T_SAMPLE_MIN).abs() < 1e-4 * T, "u=0 -> t_min, got {lo}");
+        assert!((hi - T_SAMPLE_MAX).abs() < 1e-4 * T, "u=1 -> t_max, got {hi}");
+        // Monotone in u across a dense sweep (non-decreasing).
+        let mut prev = f32::NEG_INFINITY;
+        for i in 0..=256 {
+            let u = i as f32 / 256.0;
+            let t = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
+            assert!(t >= prev, "not monotone at u={u}: {t} < {prev}");
+            prev = t;
+        }
+        // All draws land inside the range.
+        for i in 0..=64 {
+            let u = i as f32 / 64.0;
+            let t = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
+            assert!((T_SAMPLE_MIN..=T_SAMPLE_MAX).contains(&t), "out of range: {t}");
+        }
+    }
+
+    #[test]
+    fn t_sample_empirical_distribution_matches_cdf() {
+        // Chi-square-style bucket check: 10 equal-CDF buckets, 8192 draws,
+        // each bucket within ±20% of its expected count. Deterministic seed.
+        let mut rng = fastrand::Rng::with_seed(8752);
+        let n = 8192usize;
+        let buckets = 10usize;
+        let mut counts = [0usize; 10];
+        for _ in 0..n {
+            let u = rng.f32();
+            let t = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
+            // Invert through the CDF to find the bucket.
+            let lo = T - T_SAMPLE_MIN;
+            let hi2 = T - T_SAMPLE_MAX;
+            let f = (lo * lo - (T - t) * (T - t)) / (lo * lo - hi2 * hi2);
+            let b = (f * buckets as f32).floor() as usize;
+            let b = b.min(buckets - 1);
+            counts[b] += 1;
+        }
+        let expected = n / buckets;
+        for (b, &c) in counts.iter().enumerate() {
+            let dev = (c as isize - expected as isize).abs() as f32 / expected as f32;
+            assert!(dev < 0.20, "bucket {b}: {c} vs expected {expected} (dev {:.3})", dev);
+        }
+        // And the law's shape: the bottom decile of the RANGE (low noise)
+        // must hold more mass than the top decile.
+        let mut low = 0usize;
+        let mut high = 0usize;
+        for _ in 0..n {
+            let u = rng.f32();
+            let t = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
+            let span = T_SAMPLE_MAX - T_SAMPLE_MIN;
+            if t < T_SAMPLE_MIN + 0.1 * span {
+                low += 1;
+            }
+            if t > T_SAMPLE_MAX - 0.1 * span {
+                high += 1;
+            }
+        }
+        assert!(
+            low > high,
+            "remaining-horizon law must favor low noise: low decile {low} vs top decile {high}"
+        );
+    }
+
+    #[test]
+    fn t_sample_degenerate_fallbacks() {
+        // Collapsed range -> constant t_min.
+        let t = remaining_horizon_t_sample(0.7, 0.5, 0.5, 1.0);
+        assert_eq!(t, 0.5);
+        // Inverted range -> lerp can go below t_min (documented total-fn
+        // behavior; callers validate).
+        let t = remaining_horizon_t_sample(0.5, 0.8, 0.2, 1.0);
+        assert_eq!(t, 0.5); // lerp midpoint of [0.2, 0.8]
+        // Horizon not containing the range -> lerp.
+        let t = remaining_horizon_t_sample(0.5, 0.3, 0.8, 0.7);
+        assert_eq!(t, 0.55); // lerp midpoint
+        // Horizon exactly t_max is legal (zero terminal weight).
+        let t = remaining_horizon_t_sample(1.0, 0.1, 0.8, 0.8);
+        assert!((t - 0.8).abs() < 1e-6);
+        // Non-finite u -> t_min (density maximum, the safe low-noise end;
+        // endpoints land within 1 ulp of the exact inverse — the clamp
+        // home can round either way).
+        let t = remaining_horizon_t_sample(f32::NAN, 0.1, 0.8, 1.0);
+        assert!((t - 0.1).abs() < 1e-6);
+        // Out-of-range u clamps.
+        let t = remaining_horizon_t_sample(-5.0, 0.1, 0.8, 1.0);
+        assert!((t - 0.1).abs() < 1e-6);
+        let t = remaining_horizon_t_sample(5.0, 0.1, 0.8, 1.0);
+        assert!((t - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn t_sample_f64_oracle() {
+        // Independent f64 recomputation of the inverse CDF, u sweep.
+        for i in 0..=128 {
+            let u = i as f32 / 128.0;
+            let got = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T) as f64;
+            let lo = (T as f64) - T_SAMPLE_MIN as f64;
+            let hi = (T as f64) - T_SAMPLE_MAX as f64;
+            let want = (T as f64)
+                - ((1.0 - u as f64) * lo * lo + u as f64 * hi * hi).sqrt();
+            assert!((got - want).abs() < 1e-5 * T as f64, "u={u}: {got} vs {want}");
+        }
     }
 }

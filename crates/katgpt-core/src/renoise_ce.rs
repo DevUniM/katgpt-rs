@@ -21,6 +21,11 @@
 //! - CoE asks "is the trajectory shape committed"
 //! - Renoise-CE asks "is the output a stable fixed point under perturbation"
 //!
+//! With `horizon_weights` also enabled, the opt-in
+//! [`renoise_ce_score_horizon`] reallocates the k-draw budget over a RANGE
+//! of levels under the (T−t) remaining-horizon law (Issue 875 T2 / Research
+//! 582 — low-noise draws weighted up, terminal draws ~skipped).
+//!
 //! # What this is NOT
 //!
 //! - **NOT a UQ primitive.** Returns a raw drift score (lower = more stable),
@@ -165,6 +170,127 @@ pub fn renoise_ce_score<O: RenoiseCeProbe>(
     for slot in &mut per_draw[..k] {
         let mut perturbed = candidate.clone();
         operator.perturb(&mut perturbed, config.perturbation_level, rng);
+        let re_resolved = operator.re_resolve(&perturbed);
+        let drift = O::drift_ce(candidate, &re_resolved);
+        *slot = drift;
+        sum += drift;
+    }
+
+    let drift = sum / k as f32;
+    RenoiseCeScore {
+        drift,
+        per_draw,
+        accepted: drift < config.tau,
+    }
+}
+
+/// Opt-in (T−t)-weighted draw schedule for [`renoise_ce_score_horizon`]
+/// (Issue 875 T2 / Research 582 — the PFD remaining-horizon law applied to
+/// the renoise-CE probe).
+///
+/// The incumbent [`renoise_ce_score`] spends every draw at ONE fixed
+/// `perturbation_level`. The law reallocates the SAME k-draw budget over a
+/// RANGE of levels `[floor_frac·L, cap_frac·L]` (L = the config's
+/// `perturbation_level`, playing the role of the horizon T), sampled
+/// inverse-CDF from the density `∝ (L − t)` via
+/// [`horizon_weights::remaining_horizon_t_sample`](crate::horizon_weights::remaining_horizon_t_sample):
+/// low-noise draws most often, near-terminal draws almost never
+/// (`w(T) = 0` — the zero-terminal-weight truncation corollary; `cap_frac <
+/// 1` honors it by construction).
+///
+/// Defaults mirror the PFD anneal grid fractions: floor 0.02, cap 0.98.
+/// Invalid fractions (non-finite, `floor ≤ 0`, `cap ∉ (floor, 1]`) fall
+/// back to the defaults — the probe stays total, never NaN.
+#[cfg(feature = "horizon_weights")]
+#[derive(Clone, Copy, Debug)]
+pub struct RenoiseCeHorizon {
+    /// Lowest sampled level, as a fraction of `perturbation_level` (the
+    /// horizon). Clamped to the default when not in `(0, 1)`.
+    pub floor_frac: f32,
+    /// Highest sampled level, as a fraction of `perturbation_level`.
+    /// Clamped to the default when not in `(floor_frac, 1]`.
+    pub cap_frac: f32,
+}
+
+#[cfg(feature = "horizon_weights")]
+impl RenoiseCeHorizon {
+    /// PFD-grid fractions: sample over `[0.02·L, 0.98·L]`.
+    pub const DEFAULT: Self = Self {
+        floor_frac: 0.02,
+        cap_frac: 0.98,
+    };
+}
+
+#[cfg(feature = "horizon_weights")]
+impl Default for RenoiseCeHorizon {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
+/// Compute the renoise-CE score under the (T−t) remaining-horizon law
+/// (Issue 875 T2 / Research 582).
+///
+/// Identical loop shape and NFE budget to [`renoise_ce_score`] — k draws,
+/// one clone + perturb + re-resolve + drift each, flat mean over
+/// `per_draw` — except each draw's perturbation level is SAMPLED from the
+/// remaining-horizon density `∝ (L − t)` on `[floor_frac·L, cap_frac·L]`
+/// (L = `config.perturbation_level`), so the average implicitly carries
+/// the (T−t) Fubini weighting instead of spending the whole budget at the
+/// single noisiest admissible point. Averaging under implicit
+/// importance-sampling weights (not explicit per-draw weights + flat
+/// draws — that would double-apply the law).
+///
+/// Measured effect (Bench 877, the planted-drift selectivity oracle):
+/// low-noise emphasis cuts the stable-class noise floor ~5.8× vs the
+/// fixed-level incumbent at L = 0.40 — precision@k of 0.97 vs 0.83 on a
+/// 32+32 synthetic mixture, at an unchanged latency class (the sampler
+/// adds one `sqrt` + FMAs per draw).
+///
+/// # What changes semantically
+///
+/// The score estimates the (T−t)-weighted average drift, not the
+/// fixed-level drift — a `tau` calibrated for [`renoise_ce_score`] does
+/// NOT transfer (low-noise draws carry smaller floors, so scores sit
+/// lower). Calibrate `tau` per mode.
+///
+/// # Allocation
+///
+/// Same as the incumbent: one `candidate.clone()` per draw; no other heap
+/// allocation.
+#[cfg(feature = "horizon_weights")]
+pub fn renoise_ce_score_horizon<O: RenoiseCeProbe>(
+    operator: &O,
+    candidate: &O::State,
+    config: &RenoiseCeConfig,
+    horizon: &RenoiseCeHorizon,
+    rng: &mut Rng,
+) -> RenoiseCeScore {
+    let level = config.perturbation_level;
+    let floor = if horizon.floor_frac.is_finite() && horizon.floor_frac > 0.0 {
+        horizon.floor_frac
+    } else {
+        RenoiseCeHorizon::DEFAULT.floor_frac
+    };
+    let cap = if horizon.cap_frac.is_finite() && horizon.cap_frac > floor && horizon.cap_frac <= 1.0
+    {
+        horizon.cap_frac
+    } else {
+        RenoiseCeHorizon::DEFAULT.cap_frac
+    };
+    let t_min = floor * level;
+    let t_max = cap * level;
+
+    let mut per_draw = [0.0f32; 8];
+    let mut sum = 0.0f32;
+    let k = config.k_draws.clamp(1, 8) as usize;
+
+    for slot in &mut per_draw[..k] {
+        let u = rng.f32();
+        let t =
+            crate::horizon_weights::remaining_horizon_t_sample(u, t_min, t_max, level);
+        let mut perturbed = candidate.clone();
+        operator.perturb(&mut perturbed, t, rng);
         let re_resolved = operator.re_resolve(&perturbed);
         let drift = O::drift_ce(candidate, &re_resolved);
         *slot = drift;
@@ -823,6 +949,243 @@ mod tests {
                 &mut rng,
             );
             assert_eq!(out, Some(CellCand { cell: 3, loss: 1.4 }));
+        }
+    }
+
+    // ---- renoise_ce_score_horizon (Issue 875 T2, combined-gate) ----
+
+    #[cfg(feature = "horizon_weights")]
+    mod horizon {
+        use super::*;
+
+        /// A probe whose State is a fixed array (zero heap on clone) and
+        /// which RECORDS the perturbation levels it was fed.
+        struct RecordingProbe {
+            levels: std::sync::Mutex<Vec<f32>>,
+        }
+
+        impl RecordingProbe {
+            fn new() -> Self {
+                Self {
+                    levels: std::sync::Mutex::new(Vec::new()),
+                }
+            }
+
+            fn take_levels(&self) -> Vec<f32> {
+                std::mem::take(&mut *self.levels.lock().unwrap())
+            }
+        }
+
+        impl RenoiseCeProbe for RecordingProbe {
+            type State = [f32; 8];
+
+            fn re_resolve(&self, state: &Self::State) -> Self::State {
+                *state
+            }
+
+            fn perturb(&self, _state: &mut Self::State, level: f32, _rng: &mut Rng) {
+                self.levels.lock().unwrap().push(level);
+            }
+
+            fn drift_ce(_candidate: &Self::State, _re_resolved: &Self::State) -> f32 {
+                0.0
+            }
+        }
+
+        fn h_config() -> RenoiseCeConfig {
+            RenoiseCeConfig {
+                perturbation_level: 0.40,
+                k_draws: 8,
+                tau: f32::INFINITY,
+            }
+        }
+
+        #[test]
+        fn horizon_is_deterministic_per_seed() {
+            let op = RecordingProbe::new();
+            let candidate = [0.5f32; 8];
+            let cfg = h_config();
+            let h = RenoiseCeHorizon::DEFAULT;
+            let a = renoise_ce_score_horizon(&op, &candidate, &cfg, &h, &mut Rng::with_seed(42));
+            let b = renoise_ce_score_horizon(&op, &candidate, &cfg, &h, &mut Rng::with_seed(42));
+            assert_eq!(a.drift.to_bits(), b.drift.to_bits());
+            assert_eq!(a.per_draw, b.per_draw);
+            assert_eq!(a.accepted, b.accepted);
+        }
+
+        #[test]
+        fn horizon_levels_stay_in_the_law_range() {
+            let op = RecordingProbe::new();
+            let candidate = [0.0f32; 8];
+            let cfg = h_config();
+            let h = RenoiseCeHorizon::DEFAULT;
+            let _ = renoise_ce_score_horizon(&op, &candidate, &cfg, &h, &mut Rng::with_seed(7));
+            let levels = op.take_levels();
+            assert_eq!(levels.len(), 8, "k_draws = 8 draws");
+            let (t_min, t_max) = (0.02 * 0.40_f32, 0.98 * 0.40_f32);
+            for (i, &l) in levels.iter().enumerate() {
+                assert!(
+                    l >= t_min * 0.999 && l <= t_max * 1.001,
+                    "level {i} outside [{t_min}, {t_max}]: {l}"
+                );
+            }
+            // The law's shape must show up in the sample: not all levels
+            // equal (it is a schedule, not the fixed incumbent), and with
+            // 8 tilted draws at least one lands in the low half of the
+            // range (per-draw P(low half) ≈ 0.74 under the tilted density —
+            // all-8-in-high-half ≈ 5e-5; deterministic seed, verified once).
+            assert!(levels.iter().any(|&l| l < (t_min + t_max) * 0.5));
+        }
+
+        #[test]
+        fn horizon_invalid_fractions_fall_back_to_default() {
+            let candidate = [0.0f32; 8];
+            let cfg = h_config();
+            // NaN floor, cap below floor, cap > 1, negative floor — all
+            // fall back to the DEFAULT fractions.
+            for h in [
+                RenoiseCeHorizon { floor_frac: f32::NAN, cap_frac: 0.98 },
+                RenoiseCeHorizon { floor_frac: 0.5, cap_frac: 0.1 },
+                RenoiseCeHorizon { floor_frac: 0.02, cap_frac: 1.5 },
+                RenoiseCeHorizon { floor_frac: -0.1, cap_frac: 0.98 },
+            ] {
+                let op = RecordingProbe::new();
+                let _ =
+                    renoise_ce_score_horizon(&op, &candidate, &cfg, &h, &mut Rng::with_seed(3));
+                let levels = op.take_levels();
+                assert!(!levels.is_empty());
+                let (t_min, t_max) = (0.02 * 0.40_f32, 0.98 * 0.40_f32);
+                for &l in &levels {
+                    assert!(
+                        l >= t_min * 0.999 && l <= t_max * 1.001,
+                        "fallback level outside default range: {l}"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn horizon_k_clamps_match_incumbent() {
+            let op = RecordingProbe::new();
+            let candidate = [0.0f32; 8];
+            let mut cfg = h_config();
+            cfg.k_draws = 0; // clamps to 1
+            let s = renoise_ce_score_horizon(
+                &op,
+                &candidate,
+                &cfg,
+                &RenoiseCeHorizon::DEFAULT,
+                &mut Rng::with_seed(1),
+            );
+            assert_eq!(op.take_levels().len(), 1);
+            assert!(s.per_draw.iter().filter(|&&d| d != 0.0).count() <= 1);
+
+            let op = RecordingProbe::new();
+            let mut cfg = h_config();
+            cfg.k_draws = 200; // clamps to 8
+            let _ = renoise_ce_score_horizon(
+                &op,
+                &candidate,
+                &cfg,
+                &RenoiseCeHorizon::DEFAULT,
+                &mut Rng::with_seed(1),
+            );
+            assert_eq!(op.take_levels().len(), 8);
+        }
+
+        #[test]
+        fn horizon_candidate_is_not_mutated() {
+            let op = RecordingProbe::new();
+            let candidate = [1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+            let original = candidate;
+            let _ = renoise_ce_score_horizon(
+                &op,
+                &candidate,
+                &h_config(),
+                &RenoiseCeHorizon::DEFAULT,
+                &mut Rng::with_seed(9),
+            );
+            assert_eq!(candidate, original, "candidate must not be mutated");
+        }
+
+        #[test]
+        fn horizon_acceptance_gate_is_strict_lt_like_incumbent() {
+            // A probe whose drift is a KNOWN constant per draw: re_resolve
+            // adds a fixed offset, drift = offset². With offset 0.2 →
+            // drift 0.04 < tau 0.05 → accepted; tau 0.04 → not accepted.
+            struct OffsetProbe;
+            impl RenoiseCeProbe for OffsetProbe {
+                type State = [f32; 8];
+                fn re_resolve(&self, s: &Self::State) -> Self::State {
+                    let mut o = *s;
+                    for v in &mut o {
+                        *v += 0.2;
+                    }
+                    o
+                }
+                fn perturb(&self, _s: &mut Self::State, _level: f32, _rng: &mut Rng) {}
+                fn drift_ce(c: &Self::State, r: &Self::State) -> f32 {
+                    c.iter().zip(r.iter()).map(|(a, b)| (a - b) * (a - b)).sum::<f32>() / 8.0
+                }
+            }
+            let cand = [0.0f32; 8];
+            for (tau, want) in [(0.05, true), (0.04, false)] {
+                let mut cfg = h_config();
+                cfg.tau = tau;
+                let s = renoise_ce_score_horizon(
+                    &OffsetProbe,
+                    &cand,
+                    &cfg,
+                    &RenoiseCeHorizon::DEFAULT,
+                    &mut Rng::with_seed(2),
+                );
+                assert_eq!(s.accepted, want, "tau={tau}");
+                assert!((s.drift - 0.04).abs() < 1e-6, "drift={}", s.drift);
+            }
+        }
+
+        #[cfg(all(test, any(debug_assertions, feature = "alloc_tracking")))]
+        #[test]
+        fn horizon_score_is_alloc_free_with_fixed_array_state() {
+            use std::hint::black_box;
+            // A flat fixed-array probe: no recording (a Vec push would
+            // allocate), no heap anywhere — isolates the score path.
+            struct FlatProbe;
+            impl RenoiseCeProbe for FlatProbe {
+                type State = [f32; 8];
+                fn re_resolve(&self, s: &Self::State) -> Self::State {
+                    *s
+                }
+                fn perturb(&self, s: &mut Self::State, level: f32, _rng: &mut Rng) {
+                    for (i, v) in s.iter_mut().enumerate() {
+                        *v += level * (i as f32 + 1.0) * 0.01;
+                    }
+                }
+                fn drift_ce(c: &Self::State, r: &Self::State) -> f32 {
+                    c.iter().zip(r.iter()).map(|(a, b)| (a - b) * (a - b)).sum::<f32>() / 8.0
+                }
+            }
+            let candidate = [0.25f32; 8];
+            let cfg = h_config();
+            let h = RenoiseCeHorizon::DEFAULT;
+            crate::alloc::reset_alloc_stats();
+            let mut sink = 0.0f32;
+            for i in 0..64usize {
+                let s = black_box(renoise_ce_score_horizon(
+                    black_box(&FlatProbe),
+                    black_box(&candidate),
+                    black_box(&cfg),
+                    black_box(&h),
+                    &mut Rng::with_seed(i as u64),
+                ));
+                sink += s.drift;
+            }
+            let (count, _bytes) = crate::alloc::get_alloc_stats();
+            assert_eq!(
+                count, 0,
+                "G4: horizon score path allocated {count} times (fixed-array State → none expected)"
+            );
+            assert!(sink.is_finite(), "sink must be consumed: {sink}");
         }
     }
 }
