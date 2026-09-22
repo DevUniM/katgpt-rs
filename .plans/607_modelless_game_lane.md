@@ -220,6 +220,9 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   distill from Jev) with the SAME typed wire as our `decision_wire`
   (choice/boolean/noul/score). Validates the market direction; its
   per-task-bundle model is the opposite of our shared-engine stance.
+  **The one steal is filed**: its threshold-recommendation pattern
+  (train-time cutoff as model metadata, null on thin data, runtime
+  returns everything) → riir-reflex Issue 009 (`b41bc7b`).
 - **laya rust-vs-python compare: already done** (Plan 603/606): G5 parity
   green both lanes (top-1 1.000, drift ≤ 3.1e-6); Bench 001 interleaved
   latency — torch MPS 30.3 ms ≈ candle Metal 31.1 ms (torch ~1.3–1.5×
