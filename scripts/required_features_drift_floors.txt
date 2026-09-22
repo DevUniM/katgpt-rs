@@ -69,3 +69,4 @@ mmorpg-editor                 30     0        0
 mmorpg-remaster           13     2        0  # observed 2026-09-12: 24 manifests / 3 rows
 mmorpg-remake                       3     6        0
 riir-reflex                         1     2        0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth); rows re-pinned 6->2 same session from the sweep's own population — parse_rows counts [[test]]/[[bench]]/[[example]] rows carrying required-features, NOT [[bin]] (2 = engine_gates + decision_set_goat)
+riir-infer                          1     2        0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 996 / reflex Issue 008 carve — Proposal 041 T-B fired)
