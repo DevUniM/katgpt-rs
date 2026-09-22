@@ -1,6 +1,6 @@
 # Plan 607 — Modelless game-decision lane (the laya game arenas)
 
-**Status:** IN PROGRESS — owner-accepted 2026-09-22 ("607 accepted").
+**Status:** COMPLETE — owner-accepted 2026-09-22 ("607 accepted").
 T0a + T4a + T0b + T1 + T4 LANDED 2026-09-22 (substrate gate clean, the
 state enumerator + `laya-tetris-v2` grammar pinned, the G1-oracle fixture
 committed with airtight provenance, the `state_option_scoring` primitive
@@ -28,7 +28,10 @@ the bottleneck — render-side work item, not tuned here). New opt-in
 `template_decode` primitive (closed-grammar template tables, loud
 Unknown/Ambiguous, `verify_closed` full-space proof, zero-alloc decode);
 the width-genericized fit recipe reproduces all three published anchors
-bit-identically. Next: T6/T7 at plan close.
+bit-identically. **T6 + T7 CLOSED 2026-09-23 — ALL TASKS DONE; the plan
+is COMPLETE** (PUCT/MCTS note stays DEFERRED per its row). Follow-up
+filed: Issue 876 (flappy render widening — the only open lane item,
+render-side).
 - Lane priority: **co-developed ordering** (T0a → T4a → T0b → T1+T4 →
   first GOAT reading → T5 → {T2,T3} evidence-gated → T6 → T7).
 - T2 Gate A: **approved in principle, build deferred, lapses on the first
@@ -403,10 +406,49 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   Anchors: head `65409c14…`, decisions `04644b0c…`; test-gate rows
   `katgpt-core:2085:state_option_scoring` (re-measured, was 2079) +
   `katgpt-core:1:state_option_head_alloc_check:state_option_scoring`.
-- [ ] **T6 — bench doc + GOAT verdict**; the numbers become citable by
+- [x] **T6 — bench doc + GOAT verdict**; the numbers become citable by
   the reflex arena book (numbers only; the reflex repo itself untouched).
-- [ ] **T7 — doc-sync**: AGENTS.md feature-table rows for the new flags;
+  **Record (2026-09-23):** the four bench records carry the consolidated
+  GOAT verdict — [876](../.benchmarks/876_state_option_scoring_goat.md)
+  (T1 primitive: G1a 200/200, G1b distinct 34, G2 p99 per decision SET
+  1.1–4.1 µs at K=9/17/34 D=64, G4 0 allocs, determinism bit-identical;
+  arena G1 then open) · [878](../.benchmarks/878_state_option_head_goat.md)
+  (T3 head: G1 HOLDS 36/35 vs constant 13, G2 42–167 ns per decision SET
+  D=12, G4 0 allocs) · [880](../.benchmarks/880_micro_arena_goat.md)
+  (T5: G1 HOLDS both arenas 96/84, zero primitive widening, G2 42 ns per
+  decision SET D=9) · [881](../.benchmarks/881_template_decode_losslessness.md)
+  (T2: decode layer exact, losslessness delta −19/0/+8; G1 HOLDS on the
+  decoded arm for tetris, FAILS for flappy — the render's fault, Issue
+  876). **Matched-units restatement (the T6 precondition):** every G2 row
+  across all four benches is stated on ONE basis — p99 per decision SET
+  with the option count (K) and design width (D) printed beside it
+  (1.1–4.1 µs D=64 cosine · 42–167 ns D=12 head · 42 ns D=9 micro heads) —
+  all µs/ns-scale against the 1 ms bar; the decode path adds ZERO
+  decision-latency cost (decode is intake/measurement, never in the
+  decision loop). The lane's GOAT verdict: **HOLDS — the corpus-fitted
+  head over frozen features is the scorer (T3/T5), cosine is the T1
+  baseline, decode is the traffic/intake arm; every flag stays OPT-IN
+  (default-off) — no promotion claimed.** The numbers are citable as-is
+  (self-contained G1 baselines + per-SET units + anchors in each doc).
+- [x] **T7 — doc-sync**: AGENTS.md feature-table rows for the new flags;
   arena book citation.
+  **Record (2026-09-23):** katgpt-rs AGENTS.md carries no per-feature
+  table (boundary context only, by design) — the feature-table rows live
+  where the repo's gates pin them, and all landed at T1/T2/T5 commit time:
+  README + examples/README flag-count claims re-pinned per landing
+  (count_features green; 640→641 at T2) · catalog §122
+  (`state_option_scoring`, incl. the T3 addendum) + §125
+  (`template_decode`; renumbered from §123 at the rebase — origin took
+  §123/§124 for the Issue-875 pair) · test-gate rows
+  `katgpt-core:2085:state_option_scoring`,
+  `katgpt-core:2074:template_decode`, the two alloc-check PERF_ROWS ·
+  docs gate 35/35 green at close. Arena book citation: the numbers are
+  published in the four bench docs in citable form (per-SET units,
+  baselines, anchors); riir-reflex untouched per the T6 law — if the
+  reflex arena book cites them, it points at Bench 876/878/880/881.
+  History: the plan-close record lives in this file + the bench docs;
+  HISTORY.md entry not required (no boundary/gate narrative beyond what
+  the benches record).
 - [-] **PUCT/MCTS research note — DEFERRED** (verdict round 1): Dellacherie-class
   heuristics settle Tetris; PUCT over a modelless policy prior is
   modelless-legal (search is not learning) but low value-per-effort. File
