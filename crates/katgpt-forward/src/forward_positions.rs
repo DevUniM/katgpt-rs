@@ -54,12 +54,22 @@ pub struct BidirectionalContext {
     pub attn_out_buf: Vec<f32>,
     pub attn_weights_buf: Vec<f32>,
     pub scores_buf: Vec<f32>,
-    // Cross-position buffers (resized per call, reused across calls)
+    // Cross-position buffers (resized per call, reused across calls).
+    // Issue 869 T5: k_cache/v_cache carry `n_layer` `block_size`-capacity
+    // planes (plane `l` at `l * bs * kvd`, mirroring the decode kernel);
+    // `x_norm_rest`/`xr_rest` carry the layer-l≥1 input norms / residual
+    // streams (`(L-1)` planes each). Plane 0's layout is byte-identical to
+    // the pre-869 single-plane buffers, so `n_layer == 1` configs are
+    // unchanged bit-for-bit.
     pub k_cache: Vec<f32>,
     pub v_cache: Vec<f32>,
     pub x_norm2_all: Vec<f32>,
     pub xr_all: Vec<f32>,
-    // Output buffers (pre-allocated to max capacity, sliced per call)
+    pub x_norm_rest: Vec<f32>,
+    pub xr_rest: Vec<f32>,
+    // Output buffers (pre-allocated to max capacity, sliced per call).
+    // `all_attn_weights` carries the LAST layer's weights (the layer that
+    // produces the logits — the attention that generated the readout).
     pub all_logits: Vec<f32>,
     pub all_attn_weights: Vec<f32>,
     /// RCD residual embedding override for masked positions: `[block_size * n_embd]`.
@@ -92,6 +102,8 @@ impl BidirectionalContext {
         let n = config.n_embd;
         let kvd = kv_dim(config);
         let bs = config.block_size;
+        let l = config.n_layer;
+        assert!(l >= 1, "n_layer must be at least 1, got {l}");
         Self {
             x: vec![0.0f32; n],
             q: vec![0.0f32; n],
@@ -105,10 +117,12 @@ impl BidirectionalContext {
             attn_out_buf: vec![0.0f32; n],
             attn_weights_buf: vec![0.0f32; config.n_head * bs],
             scores_buf: vec![0.0f32; bs],
-            k_cache: vec![0.0f32; bs * kvd],
-            v_cache: vec![0.0f32; bs * kvd],
+            k_cache: vec![0.0f32; l * bs * kvd],
+            v_cache: vec![0.0f32; l * bs * kvd],
             x_norm2_all: vec![0.0f32; bs * n],
             xr_all: vec![0.0f32; bs * n],
+            x_norm_rest: vec![0.0f32; (l - 1) * bs * n],
+            xr_rest: vec![0.0f32; (l - 1) * bs * n],
             all_logits: vec![0.0f32; bs * config.vocab_size],
             all_attn_weights: vec![0.0f32; bs * config.n_head * bs],
             #[cfg(feature = "rcd_residual")]
@@ -148,6 +162,13 @@ pub fn forward_bidirectional_positions(
 /// Writes results into `bctx.all_logits` and `bctx.all_attn_weights` and returns
 /// `(logits_len, attn_len)` so the caller can index the context buffers directly.
 /// This avoids lifetime issues when the caller needs to reuse other fields from `bctx`.
+///
+/// Issue 869 T5: honors `config.n_layer` — the per-layer loop chains the
+/// residual stream exactly as the decode kernel does (`h_0 =
+/// rmsnorm(embedding)` — the lane's double-norm quirk; `h_{l+1} = h_l +
+/// MLP_l(rmsnorm(h_l + Attn_l(rmsnorm(h_l))))`), each layer reading its own
+/// KV plane. `all_attn_weights` carries the LAST layer's weights. At
+/// `n_layer == 1` the op sequence is the pre-869 one, bit for bit.
 pub fn forward_bidirectional_positions_into(
     weights: &TransformerWeights,
     tokens: &[usize],
@@ -159,119 +180,160 @@ pub fn forward_bidirectional_positions_into(
     let kvd = kv_dim(config);
     let seq_len = tokens.len().min(config.block_size);
     let scale = 1.0 / (hd as f32).sqrt();
+    let l_total = config.n_layer;
+    let bs = config.block_size;
+    let kv_stride = bs * kvd;
+    let n_stride = bs * n;
 
-    // Phase A: Compute K/V for all positions.
-    // (k_cache, v_cache, x_norm2_all, xr_all are fully overwritten for [0..seq_len)
-    // inside the loop, so no pre-zero is needed.)
-    for (p, &token) in tokens.iter().enumerate().take(seq_len) {
-        // RCD / 3SR: when an embedding override is active and this position is
-        // still masked, use the override buffer instead of `wte[mask_token]`.
-        // 3SR warm-start takes precedence — it pre-composes the RCD residual
-        // (which serves as `h_pre_t`) with the prior step's solved state via
-        // `warm_start_lerp`. When 3SR is inactive, the RCD residual is used.
-        //
-        // This is a single branch per position — does not touch the inner matmul loops.
-        #[cfg(feature = "d2f_3sr_warm_start")]
-        let emb = if bctx.tsr_active && token == config.mask_token {
-            &bctx.tsr_warm_start_embeddings[p * n..(p + 1) * n]
-        } else if bctx.rcd_active && token == config.mask_token {
-            &bctx.rcd_residual_embeddings[p * n..(p + 1) * n]
-        } else {
-            &weights.wte[token * n..(token + 1) * n]
-        };
-        #[cfg(all(feature = "rcd_residual", not(feature = "d2f_3sr_warm_start")))]
-        let emb = if bctx.rcd_active && token == config.mask_token {
-            &bctx.rcd_residual_embeddings[p * n..(p + 1) * n]
-        } else {
-            &weights.wte[token * n..(token + 1) * n]
-        };
-        #[cfg(not(feature = "rcd_residual"))]
-        let emb = &weights.wte[token * n..(token + 1) * n];
-        simd::simd_add_into(&mut bctx.x, emb, &weights.wpe[p * n..(p + 1) * n]);
-        rmsnorm(&mut bctx.x);
-        bctx.xr_all[p * n..(p + 1) * n].copy_from_slice(&bctx.x);
-        rmsnorm(&mut bctx.x);
-        bctx.x_norm2_all[p * n..(p + 1) * n].copy_from_slice(&bctx.x);
-
+    // Phase A(0): Compute K/V for all positions (the embedding + double-norm
+    // layer-0 sequence — identical to the pre-869 Phase A).
+    // (k_cache/v_cache plane 0, x_norm2_all, xr_all are fully overwritten for
+    // [0..seq_len) inside the loop, so no pre-zero is needed.)
+    {
         let layer = &weights.layers[0];
-        // matmul overwrites all `kvd` rows of bctx.k / bctx.v, so no pre-zero needed.
-        matmul(&mut bctx.k, &layer.attn_wk, &bctx.x, kvd, n);
-        matmul(&mut bctx.v, &layer.attn_wv, &bctx.x, kvd, n);
-        bctx.k_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&bctx.k);
-        bctx.v_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&bctx.v);
+        for (p, &token) in tokens.iter().enumerate().take(seq_len) {
+            // RCD / 3SR: when an embedding override is active and this position is
+            // still masked, use the override buffer instead of `wte[mask_token]`.
+            // 3SR warm-start takes precedence — it pre-composes the RCD residual
+            // (which serves as `h_pre_t`) with the prior step's solved state via
+            // `warm_start_lerp`. When 3SR is inactive, the RCD residual is used.
+            //
+            // This is a single branch per position — does not touch the inner matmul loops.
+            #[cfg(feature = "d2f_3sr_warm_start")]
+            let emb = if bctx.tsr_active && token == config.mask_token {
+                &bctx.tsr_warm_start_embeddings[p * n..(p + 1) * n]
+            } else if bctx.rcd_active && token == config.mask_token {
+                &bctx.rcd_residual_embeddings[p * n..(p + 1) * n]
+            } else {
+                &weights.wte[token * n..(token + 1) * n]
+            };
+            #[cfg(all(feature = "rcd_residual", not(feature = "d2f_3sr_warm_start")))]
+            let emb = if bctx.rcd_active && token == config.mask_token {
+                &bctx.rcd_residual_embeddings[p * n..(p + 1) * n]
+            } else {
+                &weights.wte[token * n..(token + 1) * n]
+            };
+            #[cfg(not(feature = "rcd_residual"))]
+            let emb = &weights.wte[token * n..(token + 1) * n];
+            simd::simd_add_into(&mut bctx.x, emb, &weights.wpe[p * n..(p + 1) * n]);
+            rmsnorm(&mut bctx.x);
+            bctx.xr_all[p * n..(p + 1) * n].copy_from_slice(&bctx.x);
+            rmsnorm(&mut bctx.x);
+            bctx.x_norm2_all[p * n..(p + 1) * n].copy_from_slice(&bctx.x);
+
+            // matmul overwrites all `kvd` rows of bctx.k / bctx.v, so no pre-zero needed.
+            matmul(&mut bctx.k, &layer.attn_wk, &bctx.x, kvd, n);
+            matmul(&mut bctx.v, &layer.attn_wv, &bctx.x, kvd, n);
+            bctx.k_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&bctx.k);
+            bctx.v_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&bctx.v);
+        }
     }
 
-    // Phase B: Bidirectional attention for all positions
-    let vocab = config.vocab_size;
-    let n_heads = config.n_head;
-    let logits_len = seq_len * vocab;
-    let attn_len = seq_len * n_heads * seq_len;
-    // (all_logits[..logits_len] and all_attn_weights[..attn_len] are fully
-    // overwritten inside the loop, so no pre-zero is needed.)
-    let layer = &weights.layers[0];
+    for (l, layer) in weights.layers.iter().take(l_total).enumerate() {
+        let kv_base = l * kv_stride;
+        let last = l + 1 == l_total;
 
-    for p in 0..seq_len {
-        bctx.x
-            .copy_from_slice(&bctx.x_norm2_all[p * n..(p + 1) * n]);
+        // Phase A(l ≥ 1): K/V for all positions from rmsnorm(h_l) — the
+        // residual stream h_l is layer l-1's output (xr_rest plane l-1).
+        if l > 0 {
+            let h_base = (l - 1) * n_stride;
+            for p in 0..seq_len {
+                bctx.x.copy_from_slice(&bctx.xr_rest[h_base + p * n..h_base + (p + 1) * n]);
+                rmsnorm(&mut bctx.x);
+                bctx.x_norm_rest[h_base + p * n..h_base + (p + 1) * n].copy_from_slice(&bctx.x);
+                matmul(&mut bctx.k, &layer.attn_wk, &bctx.x, kvd, n);
+                matmul(&mut bctx.v, &layer.attn_wv, &bctx.x, kvd, n);
+                bctx.k_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&bctx.k);
+                bctx.v_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&bctx.v);
+            }
+        }
 
-        // matmul overwrites all `n` rows of bctx.q, so no pre-zero needed.
-        matmul(&mut bctx.q, &layer.attn_wq, &bctx.x, n, n);
+        // Phase B(l): Bidirectional attention + MLP for all positions.
+        // (all_logits and all_attn_weights rows are fully overwritten inside
+        // the loop when `last`, so no pre-zero is needed.)
+        let vocab = config.vocab_size;
+        let n_heads = config.n_head;
+        for p in 0..seq_len {
+            if l == 0 {
+                bctx.x.copy_from_slice(&bctx.x_norm2_all[p * n..(p + 1) * n]);
+            } else {
+                let h_base = (l - 1) * n_stride;
+                bctx.x.copy_from_slice(&bctx.x_norm_rest[h_base + p * n..h_base + (p + 1) * n]);
+            }
 
-        attention_forward_safe_into(
-            &bctx.q,
-            &bctx.k_cache,
-            &bctx.v_cache,
-            config.n_head,
-            config.n_kv_head,
-            hd,
-            kvd,
-            seq_len,
-            scale,
-            &mut bctx.attn_out_buf,
-            &mut bctx.attn_weights_buf,
-            &mut bctx.scores_buf,
-        );
+            // matmul overwrites all `n` rows of bctx.q, so no pre-zero needed.
+            matmul(&mut bctx.q, &layer.attn_wq, &bctx.x, n, n);
 
-        // `matmul` overwrites all n rows of x_proj (output[r] = dot(...)), so no
-        // pre-zero is needed — matches the sibling q/k/v/hidden/x_mlp buffers.
-        matmul(&mut bctx.x_proj, &layer.attn_wo, &bctx.attn_out_buf, n, n);
-        simd::simd_add_inplace(&mut bctx.x_proj, &bctx.xr_all[p * n..(p + 1) * n]);
+            attention_forward_safe_into(
+                &bctx.q,
+                &bctx.k_cache[kv_base..],
+                &bctx.v_cache[kv_base..],
+                config.n_head,
+                config.n_kv_head,
+                hd,
+                kvd,
+                seq_len,
+                scale,
+                &mut bctx.attn_out_buf,
+                &mut bctx.attn_weights_buf,
+                &mut bctx.scores_buf,
+            );
 
-        // MLP
-        bctx.xr2.copy_from_slice(&bctx.x_proj);
-        rmsnorm(&mut bctx.x_proj);
-        // matmul_relu overwrites all `mlp_hidden` rows of bctx.hidden.
-        matmul_relu(
-            &mut bctx.hidden,
-            &layer.mlp_w1,
-            &bctx.x_proj,
-            config.mlp_hidden,
-            n,
-        );
-        // matmul overwrites all `n` rows of bctx.x_mlp.
-        matmul(
-            &mut bctx.x_mlp,
-            &layer.mlp_w2,
-            &bctx.hidden,
-            n,
-            config.mlp_hidden,
-        );
-        simd::simd_add_inplace(&mut bctx.x_mlp, &bctx.xr2);
+            // `matmul` overwrites all n rows of x_proj (output[r] = dot(...)), so no
+            // pre-zero is needed — matches the sibling q/k/v/hidden/x_mlp buffers.
+            matmul(&mut bctx.x_proj, &layer.attn_wo, &bctx.attn_out_buf, n, n);
+            if l == 0 {
+                simd::simd_add_inplace(&mut bctx.x_proj, &bctx.xr_all[p * n..(p + 1) * n]);
+            } else {
+                let h_base = (l - 1) * n_stride;
+                simd::simd_add_inplace(
+                    &mut bctx.x_proj,
+                    &bctx.xr_rest[h_base + p * n..h_base + (p + 1) * n],
+                );
+            }
 
-        // matmul overwrites all `vocab_size` rows of bctx.logits.
-        matmul(
-            &mut bctx.logits,
-            &weights.lm_head,
-            &bctx.x_mlp,
-            config.vocab_size,
-            n,
-        );
-        bctx.all_logits[p * vocab..(p + 1) * vocab].copy_from_slice(&bctx.logits);
-        bctx.all_attn_weights[p * n_heads * seq_len..(p + 1) * n_heads * seq_len]
-            .copy_from_slice(&bctx.attn_weights_buf[..n_heads * seq_len]);
+            // MLP
+            bctx.xr2.copy_from_slice(&bctx.x_proj);
+            rmsnorm(&mut bctx.x_proj);
+            // matmul_relu overwrites all `mlp_hidden` rows of bctx.hidden.
+            matmul_relu(
+                &mut bctx.hidden,
+                &layer.mlp_w1,
+                &bctx.x_proj,
+                config.mlp_hidden,
+                n,
+            );
+            // matmul overwrites all `n` rows of bctx.x_mlp.
+            matmul(
+                &mut bctx.x_mlp,
+                &layer.mlp_w2,
+                &bctx.hidden,
+                n,
+                config.mlp_hidden,
+            );
+            simd::simd_add_inplace(&mut bctx.x_mlp, &bctx.xr2);
+
+            if last {
+                // matmul overwrites all `vocab_size` rows of bctx.logits.
+                matmul(
+                    &mut bctx.logits,
+                    &weights.lm_head,
+                    &bctx.x_mlp,
+                    config.vocab_size,
+                    n,
+                );
+                bctx.all_logits[p * vocab..(p + 1) * vocab].copy_from_slice(&bctx.logits);
+                bctx.all_attn_weights[p * n_heads * seq_len..(p + 1) * n_heads * seq_len]
+                    .copy_from_slice(&bctx.attn_weights_buf[..n_heads * seq_len]);
+            } else {
+                // The stream handed to layer l+1: h_{l+1} = x_mlp.
+                let h_base = l * n_stride;
+                bctx.xr_rest[h_base + p * n..h_base + (p + 1) * n].copy_from_slice(&bctx.x_mlp);
+            }
+        }
     }
 
-    (logits_len, attn_len)
+    (seq_len * config.vocab_size, seq_len * config.n_head * seq_len)
 }
 
 /// Safe bidirectional attention for one query position.
@@ -332,33 +394,42 @@ pub fn forward_block_causal_positions(
     let kvd = kv_dim(config);
     let seq_len = tokens.len().min(config.block_size);
     let scale = 1.0 / (hd as f32).sqrt();
-    let layer = &weights.layers[0];
+    let l_total = config.n_layer;
 
-    // Phase A: K/V for all positions
-    let mut k_cache = vec![0.0f32; seq_len * kvd];
-    let mut v_cache = vec![0.0f32; seq_len * kvd];
+    // Phase A(0): K/V for all positions (the embedding + double-norm layer-0
+    // sequence — identical to the pre-869 Phase A). Issue 869 T5: the caches
+    // carry one `seq_len * kvd` plane per layer.
+    let kv_stride = seq_len * kvd;
+    let n_stride = seq_len * n;
+    let mut k_cache = vec![0.0f32; l_total * kv_stride];
+    let mut v_cache = vec![0.0f32; l_total * kv_stride];
     let mut x_norm2_all = vec![0.0f32; seq_len * n];
     let mut xr_all = vec![0.0f32; seq_len * n];
+    let mut x_norm_rest = vec![0.0f32; (l_total - 1) * n_stride];
+    let mut xr_rest = vec![0.0f32; (l_total - 1) * n_stride];
 
     // Pre-allocate scratch buffers (reused across positions)
     let mut x_buf = vec![0.0f32; n];
     let mut k_buf = vec![0.0f32; kvd];
     let mut v_buf = vec![0.0f32; kvd];
 
-    for (p, &token) in tokens.iter().enumerate().take(seq_len) {
-        simd::simd_add_into(
-            &mut x_buf,
-            &weights.wte[token * n..(token + 1) * n],
-            &weights.wpe[p * n..(p + 1) * n],
-        );
-        rmsnorm(&mut x_buf);
-        xr_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
-        rmsnorm(&mut x_buf);
-        x_norm2_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
-        matmul(&mut k_buf, &layer.attn_wk, &x_buf, kvd, n);
-        matmul(&mut v_buf, &layer.attn_wv, &x_buf, kvd, n);
-        k_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&k_buf);
-        v_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&v_buf);
+    {
+        let layer = &weights.layers[0];
+        for (p, &token) in tokens.iter().enumerate().take(seq_len) {
+            simd::simd_add_into(
+                &mut x_buf,
+                &weights.wte[token * n..(token + 1) * n],
+                &weights.wpe[p * n..(p + 1) * n],
+            );
+            rmsnorm(&mut x_buf);
+            xr_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
+            rmsnorm(&mut x_buf);
+            x_norm2_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
+            matmul(&mut k_buf, &layer.attn_wk, &x_buf, kvd, n);
+            matmul(&mut v_buf, &layer.attn_wv, &x_buf, kvd, n);
+            k_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&k_buf);
+            v_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&v_buf);
+        }
     }
 
     // Phase B: Block-causal attention
@@ -379,60 +450,95 @@ pub fn forward_block_causal_positions(
     let mut x_mlp = vec![0.0f32; n];
     let mut xr2_buf = vec![0.0f32; n];
 
-    for p in 0..seq_len {
-        x_buf.copy_from_slice(&x_norm2_all[p * n..(p + 1) * n]);
-        matmul(&mut q_buf, &layer.attn_wq, &x_buf, n, n);
+    for (l, layer) in weights.layers.iter().take(l_total).enumerate() {
+        let kv_base = l * kv_stride;
+        let last = l + 1 == l_total;
 
-        // Block-causal: attend to positions [0..end_of_current_block]
-        let block_end = (p / causal_block_size + 1) * causal_block_size;
-        let t_n = block_end.min(seq_len);
-
-        attention_forward_safe_into(
-            &q_buf,
-            &k_cache,
-            &v_cache,
-            config.n_head,
-            config.n_kv_head,
-            hd,
-            kvd,
-            t_n,
-            scale,
-            &mut attn_out_buf,
-            &mut attn_w_buf,
-            &mut scores_buf,
-        );
-
-        // Pad attn_w to seq_len for consistent output. No zero-fill needed:
-        // `all_attn_weights` was freshly allocated zeroed above and each `p`
-        // touches the disjoint row `[p * attn_row_stride, (p+1) * attn_row_stride)`
-        // exactly once, so the `[t_n..seq_len)` tail of every head is still the
-        // original 0.0. Pre-slicing the row also drops one bounds check per head.
-        let attn_base = p * attn_row_stride;
-        let attn_row = &mut all_attn_weights[attn_base..attn_base + attn_row_stride];
-        for (h, w_src) in attn_w_buf[..config.n_head * t_n]
-            .chunks_exact(t_n)
-            .enumerate()
-        {
-            attn_row[h * seq_len..h * seq_len + t_n].copy_from_slice(w_src);
+        // Phase A(l ≥ 1): K/V from rmsnorm(h_l).
+        if l > 0 {
+            let h_base = (l - 1) * n_stride;
+            for p in 0..seq_len {
+                x_buf.copy_from_slice(&xr_rest[h_base + p * n..h_base + (p + 1) * n]);
+                rmsnorm(&mut x_buf);
+                x_norm_rest[h_base + p * n..h_base + (p + 1) * n].copy_from_slice(&x_buf);
+                matmul(&mut k_buf, &layer.attn_wk, &x_buf, kvd, n);
+                matmul(&mut v_buf, &layer.attn_wv, &x_buf, kvd, n);
+                k_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&k_buf);
+                v_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&v_buf);
+            }
         }
 
-        matmul(&mut x_proj, &layer.attn_wo, &attn_out_buf, n, n);
-        simd::simd_add_inplace(&mut x_proj, &xr_all[p * n..(p + 1) * n]);
+        for p in 0..seq_len {
+            if l == 0 {
+                x_buf.copy_from_slice(&x_norm2_all[p * n..(p + 1) * n]);
+            } else {
+                let h_base = (l - 1) * n_stride;
+                x_buf.copy_from_slice(&x_norm_rest[h_base + p * n..h_base + (p + 1) * n]);
+            }
+            matmul(&mut q_buf, &layer.attn_wq, &x_buf, n, n);
 
-        xr2_buf[..n].copy_from_slice(&x_proj[..n]);
-        rmsnorm(&mut x_proj);
-        matmul_relu(&mut hidden, &layer.mlp_w1, &x_proj, config.mlp_hidden, n);
-        matmul(&mut x_mlp, &layer.mlp_w2, &hidden, n, config.mlp_hidden);
-        simd::simd_add_inplace(&mut x_mlp[..n], &xr2_buf[..n]);
+            // Block-causal: attend to positions [0..end_of_current_block]
+            let block_end = (p / causal_block_size + 1) * causal_block_size;
+            let t_n = block_end.min(seq_len);
 
-        let logit_base = p * vocab;
-        matmul(
-            &mut all_logits[logit_base..logit_base + vocab],
-            &weights.lm_head,
-            &x_mlp,
-            vocab,
-            n,
-        );
+            attention_forward_safe_into(
+                &q_buf,
+                &k_cache[kv_base..],
+                &v_cache[kv_base..],
+                config.n_head,
+                config.n_kv_head,
+                hd,
+                kvd,
+                t_n,
+                scale,
+                &mut attn_out_buf,
+                &mut attn_w_buf,
+                &mut scores_buf,
+            );
+
+            matmul(&mut x_proj, &layer.attn_wo, &attn_out_buf, n, n);
+            if l == 0 {
+                simd::simd_add_inplace(&mut x_proj, &xr_all[p * n..(p + 1) * n]);
+            } else {
+                let h_base = (l - 1) * n_stride;
+                simd::simd_add_inplace(&mut x_proj, &xr_rest[h_base + p * n..h_base + (p + 1) * n]);
+            }
+
+            xr2_buf[..n].copy_from_slice(&x_proj[..n]);
+            rmsnorm(&mut x_proj);
+            matmul_relu(&mut hidden, &layer.mlp_w1, &x_proj, config.mlp_hidden, n);
+            matmul(&mut x_mlp, &layer.mlp_w2, &hidden, n, config.mlp_hidden);
+            simd::simd_add_inplace(&mut x_mlp[..n], &xr2_buf[..n]);
+
+            if last {
+                // Pad attn_w to seq_len for consistent output. No zero-fill needed:
+                // `all_attn_weights` was freshly allocated zeroed above and each `p`
+                // touches the disjoint row `[p * attn_row_stride, (p+1) * attn_row_stride`
+                // exactly once, so the `[t_n..seq_len)` tail of every head is still the
+                // original 0.0. Pre-slicing the row also drops one bounds check per head.
+                let attn_base = p * attn_row_stride;
+                let attn_row = &mut all_attn_weights[attn_base..attn_base + attn_row_stride];
+                for (h, w_src) in attn_w_buf[..config.n_head * t_n]
+                    .chunks_exact(t_n)
+                    .enumerate()
+                {
+                    attn_row[h * seq_len..h * seq_len + t_n].copy_from_slice(w_src);
+                }
+
+                let logit_base = p * vocab;
+                matmul(
+                    &mut all_logits[logit_base..logit_base + vocab],
+                    &weights.lm_head,
+                    &x_mlp,
+                    vocab,
+                    n,
+                );
+            } else {
+                // The stream handed to layer l+1: h_{l+1} = x_mlp.
+                let h_base = l * n_stride;
+                xr_rest[h_base + p * n..h_base + (p + 1) * n].copy_from_slice(&x_mlp);
+            }
+        }
     }
 
     (all_logits, all_attn_weights)

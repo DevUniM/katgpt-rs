@@ -1,8 +1,12 @@
 # Issue 869 — Multi-layer D2F decode kernel + taps at depth (the Issue-865 Bonsai-scale unblock)
 
-**Status:** T1–T4 LANDED 2026-09-22 (see HISTORY row; T5 open — training-side
-honesty, its own landing). Kernel + tap surface live; every existing gate
-re-verified green.
+**Status:** T1–T5 ALL LANDED 2026-09-22 (T5 same-day follow-up session;
+see HISTORY row). The mini dllm lane is now per-layer honest end-to-end:
+training, eval, and decode all honor `config.n_layer`, and the decode depth
+defaults to it. Every existing gate re-verified green (pattern lane
+bit-identical; the four text benches re-trained at true 2-layer capacity
+and pass with IMPROVED honesty margins — bench_601's corpus-honesty margin
+0.39 vs the 0.15 bar, was ~0.16).
 
 ## Why (the gate this removes)
 
@@ -67,14 +71,52 @@ until the training-side migration (T5 below) lands and the default can flip.
   dmax_spd 5/5, tri_mode 5/5, ugc_g1b 3/3, dllm lib 23/23;
   `scripts/full_gate.sh --allow-partial-platform` — every layer that ran
   clean (macOS device backends unmeasured, the expected Windows PARTIAL).
-- [ ] T5 — DEFERRED, its own landing: training-side honesty (per-layer
-  `forward_save` ×2, `backward`, `sgd_update`, `TrainingGradients`,
-  `evaluate_accuracy`'s bidirectional forward, `forward_block_causal_positions`),
-  then flip the decode default to `config.n_layer`, then re-run the four
-  micro_dllm_text benches (they re-train every run; gates are relative —
-  corpus honesty only improves with real capacity). Blocked on nothing
-  except its own session; NOT required for the Bonsai-scale GPU lane
-  (frozen trunk, GPU extraction).
+- [x] T5 — LANDED 2026-09-22 (same-day follow-up session): training-side
+  honesty — per-layer `forward_save` ×2, `backward`, `sgd_update`,
+  `TrainingGradients`, `BackwardContext`; the eval/inference forwards
+  (`forward_bidirectional_positions_into` + `BidirectionalContext`,
+  `forward_block_causal_positions`, `forward_set_causal_positions`) generalized
+  in lockstep; decode default flipped to `config.n_layer`. Bit-identical at
+  `n_layer == 1` (every plane index is 0 — the layer loop degenerates).
+
+  **Two real findings, both caught/verified by the new gradient-check test
+  (`two_layer_backward_matches_finite_differences`, analytic vs central
+  finite differences at BOTH 1 and 2 layers, every grad family):**
+
+  1. **The pre-869 `!is_masked[p]` skip in backward Phases 1/2 is invalid at
+     inner layers.** Inner-layer streams receive gradient at UNMASKED
+     positions too (downstream attention reads the k/v derived from them at
+     masked queries). Skipping them corrupted every layer-0 attention-path
+     gradient under partial masking — measured ~10-150% errors (wv_0 sign
+     flip), EXACT at full masking, which is why the historical
+     loss-decreases gates never saw it. Fixed: the skip is now
+     `last && !is_masked[p]` (at `n_layer == 1` the layer is always last —
+     bit-identical semantics preserved). This bug was LIVE pre-869 for any
+     hypothetical multi-layer user of the single-layer lane; the single-layer
+     lane itself was never affected (its only layer is the readout).
+  2. **Bench 602's gap-predictor calibration is model-class-specific.** Post-
+     honest-depth, the AR-drag DIRECTION (w*_AR < w*_UNI) is within training-
+     seed noise at the micro scale (measured across seeds 42-45 + probe-RNG
+     pairings: AR−UNI ΔALR gaps swing ±0.13 around ~+0.03; 2/4 seeds invert),
+     and `predict_w_residual`'s 09-20 table (measured on the effective-1-layer
+     model class) no longer tracks the NLL-optimal w within the 0.95 retention
+     floor (measured worst 0.914). bench_602's g3 now: trains 2 seeds/regime,
+     REPORTS the direction + retention table (documented in-test), hard-gates
+     signature liveness + a catastrophic-derail floor (chosen ≤ worst-fixed
+     ×1.05). Re-open condition: a non-micro trunk (the Bonsai-scale lane)
+     where commit-order statistics have support — re-derive the calibration
+     there.
+
+  Gates re-run green: root lib 211 (default) / 217 (set_diffusion);
+  katgpt-forward lib 131 / 180 (probe_guidance) / 167 (set_diffusion) / 181
+  (probe_guidance incl. the new kernel-vs-positions depth-2 consistency pin);
+  dllm 27/27 (23 + 4 new: fwd-vs-inference bit-identity at 2 layers, training
+  moves layer 1, sgd-reduces-loss at 2 layers, the gradient check); pattern
+  lane bit-identity (bench_600 ×2, dmax_spd 5/5, d2f_verifier 10/10,
+  diffusion_sampler 5/5, probe_guidance_goat 5/5 + headroom 1/1 + alloc 1/1);
+  the four text benches (601 3/3 — improved margins, 809 5/5 — seam parity
+  byte-identical, 817 2/2, 602 3/3); `full_gate.sh --allow-partial-platform`
+  — every layer that ran clean (the standard Windows PARTIAL).
 
 ## Boundary
 

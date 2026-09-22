@@ -1,3 +1,65 @@
+## 2026-09-22 — Issue 869 T5: the mini dllm lane goes per-layer honest end-to-end — the gradient check caught a live backward bug the loss-decreases gates never could
+
+The same-day follow-up landing closing Issue 869: training, eval, and decode
+now all honor `config.n_layer`, and `D2fContext`'s decode depth defaults to
+it (the pre-T5 default of 1 — the lane's accidental effective semantics — is
+now the explicit `set_decode_layers(1)` truncated-trunk posture).
+
+- **Training lane** (`src/dllm/mod.rs`): `ForwardSaveContext`/
+  `ForwardActivations`/`TrainingGradients`/`BackwardContext` carry
+  `n_layer` × `block_size`-capacity planes (mirroring the decode kernel's KV
+  layout); `forward_save`, `forward_save_set_causal`, `backward` (three-phase
+  per layer, reverse order, `d_h_next` stream handoff), `sgd_update` all
+  per-layer. Eval/inference forwards generalized in lockstep
+  (`forward_bidirectional_positions_into` + `BidirectionalContext`,
+  `forward_block_causal_positions`, `forward_set_causal_positions` — the
+  last one feeds bench_602's `CpuSetCausalForward`). All bit-identical at
+  `n_layer == 1` (every plane index 0; the layer loop degenerates) — proven
+  by the full pattern-lane battery re-running green.
+
+- **THE FINDING — a real backward bug the historical gates could not see**:
+  the pre-869 `!is_masked[p]` skip in backward Phases 1/2 is valid ONLY at
+  the readout layer. Inner-layer streams receive gradient at UNMASKED
+  positions (downstream attention reads the k/v derived from them at masked
+  queries); skipping them corrupted every layer-0 attention-path gradient
+  under partial masking — measured ~10-150% per-element error (attn_wv sign
+  flip), EXACT under full masking, which is exactly why every historical
+  loss-decreases/non-zero-grads gate passed. Caught by the new
+  `two_layer_backward_matches_finite_differences` (analytic vs central
+  finite differences, every grad family, at BOTH 1 and 2 layers — 1-layer
+  arm passes at <0.7%, proving the rewrite preserves the verified
+  single-layer math). Fix: `last && !is_masked[p]` — at `n_layer == 1` the
+  only layer is the readout, semantics bit-identical.
+
+- **Bench 602's calibration is model-class-specific** (the honest negative):
+  post-honest-depth, the gap-predictor's AR-drag DIRECTION is within
+  training-seed noise at the micro scale (seeds 42-45: AR−UNI ΔALR swings
+  ±0.13 around ~+0.03, 2/4 invert; the pre-T5 PASS was one seed's coin
+  flip), and the 09-20 `ORDER_STATS_TO_W_TABLE` (measured on the effective-
+  1-layer class) no longer tracks NLL-optimal w within the 0.95 retention
+  floor (worst 0.914). bench_602 g3 now trains 2 seeds/regime, REPORTS
+  direction + retention with the caveat inline, and hard-gates liveness +
+  a catastrophic-derail floor (chosen ≤ worst-fixed ×1.05). Re-open at the
+  Bonsai-scale trunk.
+
+- **Text-lane dividends**: bench_601's corpus-honesty margin widened to
+  0.39 (NLL 2.499 vs unigram 2.888, bar 0.15 — the 2-layer-honest model
+  genuinely learned more bigram structure); 809's seam-parity pin
+  byte-identical through BOTH generalized set-causal forwards; 817 2/2;
+  602 3/3. New pins: fwd-vs-inference bit-identity at depth, training-moves-
+  layer-1, kernel-vs-positions-forward consistency at depth 2, the gradient
+  check (both depths), decode-default = n_layer.
+
+Gates: root lib 211/217 (default/set_diffusion); katgpt-forward 131/167/
+180/181 (default/set_diffusion/probe_guidance/+new pin); dllm 27/27;
+pattern lane bit-identity (bench_600 ×2, dmax_spd, d2f_verifier,
+diffusion_sampler, probe_guidance_goat + headroom + alloc); four text
+benches green; `full_gate.sh --allow-partial-platform` — every layer that
+ran clean (standard Windows PARTIAL). Files: `src/dllm/mod.rs`,
+`src/dllm/tests.rs`, `crates/katgpt-forward/src/{forward_positions,
+forward_set_causal,d2f_context}.rs`, `d2f/tests.rs`, `tests/
+bench_602_ar_ness_cross_tab.rs`, `.issues/869_multi_layer_d2f_taps.md`.
+
 ## 2026-09-22 — Issue 869: multi-layer D2F decode + taps at depth — the Issue-865 Bonsai-scale unblock lands; bitcos x86_64-lane clippy debt repaired in passing
 
 Executed the riir-train recipe row's mandate ("Bonsai-scale probe training is gated on the

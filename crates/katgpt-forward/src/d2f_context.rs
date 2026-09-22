@@ -156,13 +156,12 @@ pub struct D2fContext {
     /// (Issue 869).
     pub n_layer_total: usize,
     /// How many trunk layers the decode kernel actually runs (Issue 869 T1).
-    /// **Defaults to 1, not `n_layer_total`** — the whole mini dllm lane
-    /// (training, eval, decode) is single-layer end-to-end (Issue 869's
-    /// finding: `micro_dllm_text`'s declared `n_layer = 2` is not its
-    /// effective capacity), so depth 1 preserves every existing lane's
-    /// behavior exactly. Multi-layer decode is an explicit opt-in via
-    /// [`D2fContext::set_decode_layers`] until the training-side migration
-    /// (Issue 869 T5) lands and the default can flip to `n_layer_total`.
+    /// **Defaults to `n_layer_total`** since Issue 869 T5 (the training-side
+    /// per-layer migration landed — every layer of a `train_mini_dllm`
+    /// trained model is trained, so decoding through all of them is the
+    /// consistent semantics; the pre-T5 lane was single-layer end-to-end and
+    /// defaulted to 1). Shrink explicitly with [`D2fContext::set_decode_layers`]
+    /// for a truncated-trunk decode.
     pub decode_n_layer: usize,
     /// Number of positions with committed KV cache entries.
     /// Positions `[0..committed_len)` are valid and won't be recomputed.
@@ -180,10 +179,11 @@ impl D2fContext {
 
         Self {
             // Issue 869: per-layer KV planes — `layers[l]`'s plane lives at
-            // `l * (block_size * kvd)`. For the default depth-1 decode only
-            // plane 0 is read/written, and plane 0's layout is byte-identical
+            // `l * (block_size * kvd)`. Plane 0's layout is byte-identical
             // to the pre-869 single-plane cache (bit-identity pinned by the
-            // Issue-865 gates, which re-run on this change).
+            // Issue-865 gates, which re-ran on that change); T5 made the
+            // decode depth default to `n_layer`, so all planes are live for
+            // multi-layer configs.
             k_cache: vec![0.0f32; config.n_layer * max_seq * kvd],
             v_cache: vec![0.0f32; config.n_layer * max_seq * kvd],
             x_norm: vec![0.0f32; max_seq * n],
@@ -223,7 +223,7 @@ impl D2fContext {
             #[cfg(feature = "probe_guidance")]
             probe_tap_plane: max_seq * n,
             n_layer_total: config.n_layer,
-            decode_n_layer: 1,
+            decode_n_layer: config.n_layer,
             committed_len: 0,
         }
     }

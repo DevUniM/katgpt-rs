@@ -943,13 +943,18 @@ mod multi_layer_tests {
     }
 
     #[test]
-    fn default_decode_depth_is_one_and_layered_kv_allocates() {
-        // The Issue-869 finding, pinned: a 2-layer config's context decodes
-        // ONE layer by default (the lane's effective historical semantics),
-        // while the KV planes exist for the full depth.
+    fn default_decode_depth_is_n_layer_and_layered_kv_allocates() {
+        // Issue 869 T5, pinned: a multi-layer config's context decodes ALL its
+        // layers by default (the training-side per-layer migration landed —
+        // decode depth and trained depth must agree), and the KV planes exist
+        // for the full depth. Pre-T5 the default was 1 (the lane's historical
+        // effective semantics while training was single-layer).
         let config = two_layer_config();
         let ctx = D2fContext::new(&config);
-        assert_eq!(ctx.decode_n_layer, 1, "depth must default to 1 (Issue 869)");
+        assert_eq!(
+            ctx.decode_n_layer, 2,
+            "depth must default to n_layer (Issue 869 T5)"
+        );
         assert_eq!(ctx.n_layer_total, 2);
         let kvd = katgpt_core::types::kv_dim(&config);
         assert_eq!(
@@ -988,6 +993,7 @@ mod multi_layer_tests {
         let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9, 1, 2];
 
         let mut shallow = D2fContext::new(&config);
+        shallow.set_decode_layers(1); // the truncated-trunk arm (pre-T5 default)
         forward_block_causal_with(&mut shallow, &weights, &tokens, &config, 4);
 
         let mut deep = D2fContext::new(&config);
@@ -1012,15 +1018,17 @@ mod multi_layer_tests {
     #[test]
     fn depth_one_forward_is_bit_identical_to_the_pre869_semantics() {
         // The pinned bit-identity, made local: a 2-layer config decoded at
-        // the default depth 1 must produce exactly the same logits as a
+        // EXPLICIT depth 1 must produce exactly the same logits as a
         // 1-layer config carrying layer 0's weights — the multi-layer loop
         // degenerates to the old op sequence. (The Issue-865 gates re-run
-        // this on the committed fixture; this is the structural pin.)
+        // this on the committed fixture; this is the structural pin. Post-T5
+        // the default depth is n_layer, so the depth-1 arm is explicit.)
         let config = two_layer_config();
         let weights = seeded_weights(&config);
         let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9, 1, 2];
 
         let mut ctx = D2fContext::new(&config);
+        ctx.set_decode_layers(1);
         forward_block_causal_with(&mut ctx, &weights, &tokens, &config, 4);
         let deep_default = ctx.logits_flat.clone();
 
@@ -1071,6 +1079,33 @@ mod multi_layer_tests {
             assert!(row.iter().all(|l| l.is_finite()), "block pos {p} must be finite");
         }
     }
+
+    #[test]
+    fn kernel_matches_positions_forward_at_full_depth() {
+        // Issue 869 T5 consistency: the decode kernel (D2fContext, committed-
+        // prefix aware) and the reference `forward_block_causal_positions`
+        // (now also honoring n_layer) must agree BIT-IDENTICALLY on a fresh
+        // context — the same layer loop, the same per-position op sequence.
+        // Train/serve consistency is the lane's law; this pins it at depth.
+        let config = two_layer_config();
+        let weights = seeded_weights(&config);
+        let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9, 1, 2];
+        let vocab = config.vocab_size;
+
+        let mut ctx = D2fContext::new(&config); // default depth = n_layer (T5)
+        assert_eq!(ctx.decode_n_layer, 2);
+        let seq = forward_block_causal_with(&mut ctx, &weights, &tokens, &config, 4);
+
+        let (ref_logits, _ref_attn) =
+            crate::forward_positions::forward_block_causal_positions(&weights, &tokens, &config, 4);
+
+        assert_eq!(seq, tokens.len());
+        assert_eq!(
+            &ctx.logits_flat[..seq * vocab],
+            &ref_logits[..],
+            "decode kernel and positions forward must be bit-identical at n_layer=2"
+        );
+    }
 }
 
 #[cfg(feature = "probe_guidance")]
@@ -1112,7 +1147,8 @@ mod multi_layer_tap_tests {
         // panic (it would orphan the tap).
         let r1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ctx = D2fContext::new(&two_layer_config());
-            ctx.set_probe_tap_layers(&[1]); // depth still 1
+            ctx.set_decode_layers(1); // truncated trunk — tap 1 is now out of reach
+            ctx.set_probe_tap_layers(&[1]);
         }));
         assert!(r1.is_err(), "tap beyond the decode depth must panic");
         let r2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
