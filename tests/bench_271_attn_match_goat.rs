@@ -15,7 +15,7 @@
 //! so when tests run in parallel, allocations from *other* tests bleed into
 //! G7's counter. Always run with `--test-threads=1` for accurate G7 numbers.
 //! In release builds G7 falls back to a timing-based sanity check that's
-//! parallel-safe.
+//! parallel-safe, defended against constant-folding (black_box both ends).
 //!
 //! # Gate Summary
 //!
@@ -60,9 +60,6 @@ fn assert_alloc_tracking_live() {
     );
     katgpt_core::alloc::reset_alloc_stats();
 }
-
-#[cfg(not(debug_assertions))]
-fn assert_alloc_tracking_live() {}
 
 use katgpt_attn_match::{
     beta_fitter::{BetaFitConfig, fit_beta_nnls},
@@ -441,14 +438,23 @@ fn g7_no_allocation_in_hot_loops() {
         // Release build: TrackingAllocator is compiled out, so we fall back
         // to a timing sanity check — `pick_backend` should be sub-microsecond
         // (it's a pure function with no allocation).
+        // Issue-855 defence (mirrors G8b): black_box the varying args AND
+        // consume the result inside the timed region -- a bare `let _ =`
+        // let LLVM delete the loop and print "100000 calls in 0ns".
+        use std::hint::black_box;
         let n_calls = 100_000usize;
         let start = std::time::Instant::now();
         for i in 0..n_calls {
             let t = 64 + (i % 256);
-            let _ = pick_backend(t, 1024, i % 2 == 0, &cfg);
+            let backend = pick_backend(black_box(t), 1024, black_box(i % 2 == 0), &cfg);
+            black_box(&backend);
         }
         let elapsed = start.elapsed();
         let per_call_ns = elapsed.as_nanos() as f64 / n_calls as f64;
+        assert!(
+            elapsed.as_nanos() > 0,
+            "G7 FAIL (release timing): 0 ns over {n_calls} calls -- work eliminated, fix the harness (Issue 855 class)"
+        );
         println!(
             "  release build (no TrackingAllocator): {n_calls} calls in {elapsed:?} ({per_call_ns:.1} ns/call)"
         );

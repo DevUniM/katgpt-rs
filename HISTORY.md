@@ -98,6 +98,10 @@ Adjacent observation recorded, out of scope: G7's release fallback prints
 "100000 calls in 0ns" — constant-folded work in a print-only sanity path
 (the load-bearing G7 alloc gate is the debug TrackingAllocator one).
 
+Fixed in the follow-up commit (2026-09-22): the fallback consumes the result
+inside the timed region (black_box both ends, the G8b defence stack) and
+asserts a loud zero -- the print reports real work.
+
 Issue file CLOSED IN PLACE (status CLOSED, all tasks terminal) — removal
 deferred to the next backlog-clear pass rather than racing the census
 sibling, which was still appending at close-out time (its `27b48552`
