@@ -338,18 +338,18 @@ pub(crate) use katgpt_forward::attention_forward_safe_into;
 struct ForwardActivations<'a> {
     embeddings: &'a [f32],     // [seq_len * n]
     after_norm1: &'a [f32],    // [seq_len * n] — residual stream h_0 (rmsnorm(embeddings))
-    after_norm2: &'a [f32],    // [seq_len * n] — layer 0's QKV input (rmsnorm(h_0): double-norm quirk)
-    x_norm_rest: &'a [f32],    // [(L-1) * bs * n] — layer l≥1 QKV inputs, rmsnorm(h_l), plane l-1
-    q: &'a [f32],              // [L * bs * n]
-    k: &'a [f32],              // [L * bs * kvd]
-    v: &'a [f32],              // [L * bs * kvd]
-    attn_weights: &'a [f32],   // [L * bs * n_head * bs]
-    attn_out: &'a [f32],       // [L * bs * n]
+    after_norm2: &'a [f32], // [seq_len * n] — layer 0's QKV input (rmsnorm(h_0): double-norm quirk)
+    x_norm_rest: &'a [f32], // [(L-1) * bs * n] — layer l≥1 QKV inputs, rmsnorm(h_l), plane l-1
+    q: &'a [f32],           // [L * bs * n]
+    k: &'a [f32],           // [L * bs * kvd]
+    v: &'a [f32],           // [L * bs * kvd]
+    attn_weights: &'a [f32], // [L * bs * n_head * bs]
+    attn_out: &'a [f32],    // [L * bs * n]
     after_attn_res: &'a [f32], // [L * bs * n]
     after_mlp_norm: &'a [f32], // [L * bs * n]
-    mlp_hidden: &'a [f32],     // [L * bs * mlp_hidden]
-    hidden_all: &'a [f32],     // [L * bs * n] — h_{l+1} planes; the last plane feeds lm_head
-    logits: &'a [f32],         // [seq_len * vocab_size]
+    mlp_hidden: &'a [f32],  // [L * bs * mlp_hidden]
+    hidden_all: &'a [f32],  // [L * bs * n] — h_{l+1} planes; the last plane feeds lm_head
+    logits: &'a [f32],      // [seq_len * vocab_size]
     seq_len: usize,
     n_layer: usize,
 }
@@ -490,12 +490,12 @@ struct TrainingGradients {
     wte: Vec<f32>,
     wpe: Vec<f32>,
     lm_head: Vec<f32>,
-    attn_wq: Vec<f32>,  // [L * n * n]
-    attn_wk: Vec<f32>,  // [L * kvd * n]
-    attn_wv: Vec<f32>,  // [L * kvd * n]
-    attn_wo: Vec<f32>,  // [L * n * n]
-    mlp_w1: Vec<f32>,   // [L * mlp_hidden * n]
-    mlp_w2: Vec<f32>,   // [L * n * mlp_hidden]
+    attn_wq: Vec<f32>, // [L * n * n]
+    attn_wk: Vec<f32>, // [L * kvd * n]
+    attn_wv: Vec<f32>, // [L * kvd * n]
+    attn_wo: Vec<f32>, // [L * n * n]
+    mlp_w1: Vec<f32>,  // [L * mlp_hidden * n]
+    mlp_w2: Vec<f32>,  // [L * n * mlp_hidden]
 }
 
 impl TrainingGradients {
@@ -540,7 +540,7 @@ struct BackwardContext {
     /// Scratch buffer for softmax_backward (avoids per-call allocation)
     d_softmax_buf: Vec<f32>,
     /// Pre-allocated intermediate gradient buffers (Issue 109; Issue 869 T5 planes)
-    d_attn_out: Vec<f32>,  // [L * bs * n]
+    d_attn_out: Vec<f32>, // [L * bs * n]
     d_q: Vec<f32>,         // [L * bs * n]
     d_k: Vec<f32>,         // [L * bs * kvd]
     d_v: Vec<f32>,         // [L * bs * kvd]
@@ -646,7 +646,8 @@ fn forward_save<'a>(
                 ctx.x_buf[..n].copy_from_slice(&ctx.after_norm2[p * n..(p + 1) * n]);
             } else {
                 let h_prev = (l - 1) * q_stride;
-                ctx.x_buf[..n].copy_from_slice(&ctx.hidden_all[h_prev + p * n..h_prev + (p + 1) * n]);
+                ctx.x_buf[..n]
+                    .copy_from_slice(&ctx.hidden_all[h_prev + p * n..h_prev + (p + 1) * n]);
                 rmsnorm(&mut ctx.x_buf);
                 let xn = (l - 1) * q_stride;
                 ctx.x_norm_rest[xn + p * n..xn + (p + 1) * n].copy_from_slice(&ctx.x_buf[..n]);
@@ -861,7 +862,8 @@ fn forward_save_set_causal<'a>(
                 ctx.x_buf[..n].copy_from_slice(&ctx.after_norm2[p * n..(p + 1) * n]);
             } else {
                 let h_prev = (l - 1) * q_stride;
-                ctx.x_buf[..n].copy_from_slice(&ctx.hidden_all[h_prev + p * n..h_prev + (p + 1) * n]);
+                ctx.x_buf[..n]
+                    .copy_from_slice(&ctx.hidden_all[h_prev + p * n..h_prev + (p + 1) * n]);
                 rmsnorm(&mut ctx.x_buf);
                 let xn = (l - 1) * q_stride;
                 ctx.x_norm_rest[xn + p * n..xn + (p + 1) * n].copy_from_slice(&ctx.x_buf[..n]);
@@ -993,7 +995,8 @@ fn forward_save_set_causal<'a>(
 
             ctx.x_buf[..n].copy_from_slice(&ctx.x_proj_buf[..n]);
             rmsnorm(&mut ctx.x_proj_buf);
-            ctx.after_mlp_norm[q_base + p * n..q_base + (p + 1) * n].copy_from_slice(&ctx.x_proj_buf);
+            ctx.after_mlp_norm[q_base + p * n..q_base + (p + 1) * n]
+                .copy_from_slice(&ctx.x_proj_buf);
             matmul_relu(
                 &mut ctx.mlp_hidden_all[mh_base + p * mlp_h..mh_base + (p + 1) * mlp_h],
                 &layer.mlp_w1,
@@ -1286,7 +1289,8 @@ fn backward(
             katgpt_core::simd::simd_add_inplace(&mut bctx.d_an1[..n], &bctx.d_rmsnorm_buf[..n]); // d_after_attn_res = d_hf + d_aar_from_mlp
 
             // Save d_after_attn_res for Phase 3
-            bctx.d_aar_saved[q_base + p * n..q_base + (p + 1) * n].copy_from_slice(&bctx.d_an1[..n]);
+            bctx.d_aar_saved[q_base + p * n..q_base + (p + 1) * n]
+                .copy_from_slice(&bctx.d_an1[..n]);
 
             // Attention output projection: d_wo += outer(d_after_attn_res, attn_out)
             let ao = &act.attn_out[q_base + p * n..q_base + (p + 1) * n];
@@ -1317,7 +1321,8 @@ fn backward(
                 continue;
             }
             let d_ao = &bctx.d_attn_out[q_base + p * n..q_base + (p + 1) * n];
-            let aw = &act.attn_weights[aw_base + p * n_head * seq_len..aw_base + (p + 1) * n_head * seq_len];
+            let aw = &act.attn_weights
+                [aw_base + p * n_head * seq_len..aw_base + (p + 1) * n_head * seq_len];
 
             for h in 0..n_head {
                 let kv_group = h * n_kv / n_head;

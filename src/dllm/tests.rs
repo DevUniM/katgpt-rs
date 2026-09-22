@@ -1177,7 +1177,7 @@ mod multi_layer_training_tests {
     }
 
     /// Reference loss: SUM of per-masked-position cross-entropy in f64 — the
-    /// quantity `backward` differentiates (its d_logits carries no 1/count
+    /// quantity `backward` differentiates (its `d_logits` carries no 1/count
     /// factor; `masked_loss_into` divides only for reporting).
     fn reference_sum_loss(
         weights: &TransformerWeights,
@@ -1219,13 +1219,15 @@ mod multi_layer_training_tests {
         let act = forward_save(&weights, &tokens, &config, &mut fwd_ctx);
 
         let mut bctx = katgpt_forward::forward_positions::BidirectionalContext::new(&config);
-        let (logits_len, _) = katgpt_forward::forward_positions::forward_bidirectional_positions_into(
-            &weights, &tokens, &config, &mut bctx,
-        );
+        let (logits_len, _) =
+            katgpt_forward::forward_positions::forward_bidirectional_positions_into(
+                &weights, &tokens, &config, &mut bctx,
+            );
 
         assert_eq!(act.logits.len(), logits_len);
         assert_eq!(
-            act.logits, &bctx.all_logits[..logits_len],
+            act.logits,
+            &bctx.all_logits[..logits_len],
             "training forward and inference forward must be bit-identical at n_layer=2"
         );
     }
@@ -1297,10 +1299,10 @@ mod multi_layer_training_tests {
         let tokens = vec![2, 9, 14, 4];
         let is_masked = vec![false, true, true, false];
 
-        let mut fwd_ctx = ForwardSaveContext::new(&config);
-        let mut bwd_ctx = BackwardContext::new(&config);
-        let act = forward_save(&weights, &tokens, &config, &mut fwd_ctx);
-        backward(&act, &weights, &tokens, &is_masked, &config, &mut bwd_ctx);
+        let mut fwd_ctx = ForwardSaveContext::new(config);
+        let mut bwd_ctx = BackwardContext::new(config);
+        let act = forward_save(&weights, &tokens, config, &mut fwd_ctx);
+        backward(&act, &weights, &tokens, &is_masked, config, &mut bwd_ctx);
         let grads = &bwd_ctx.grads;
 
         // Perturbation scale: h = 1e-3 keeps the f32 noise floor
@@ -1330,9 +1332,11 @@ mod multi_layer_training_tests {
                     Family::Wte => &grads.wte[idx_in_plane],
                     Family::Wpe => &grads.wpe[idx_in_plane],
                     Family::LmHead => &grads.lm_head[idx_in_plane],
-                    Family::Wq => &grads.attn_wq[l * (config.n_embd * config.n_embd) + idx_in_plane],
+                    Family::Wq => {
+                        &grads.attn_wq[l * (config.n_embd * config.n_embd) + idx_in_plane]
+                    }
                     Family::Wk | Family::Wv => {
-                        let stride = kv_dim(&config) * config.n_embd;
+                        let stride = kv_dim(config) * config.n_embd;
                         let g_plane = if matches!(family, Family::Wk) {
                             &grads.attn_wk
                         } else {
@@ -1340,11 +1344,15 @@ mod multi_layer_training_tests {
                         };
                         &g_plane[l * stride + idx_in_plane]
                     }
-                    Family::Wo => &grads.attn_wo[l * (config.n_embd * config.n_embd) + idx_in_plane],
+                    Family::Wo => {
+                        &grads.attn_wo[l * (config.n_embd * config.n_embd) + idx_in_plane]
+                    }
                     Family::W1 => {
                         &grads.mlp_w1[l * (config.mlp_hidden * config.n_embd) + idx_in_plane]
                     }
-                    Family::W2 => &grads.mlp_w2[l * (config.n_embd * config.mlp_hidden) + idx_in_plane],
+                    Family::W2 => {
+                        &grads.mlp_w2[l * (config.n_embd * config.mlp_hidden) + idx_in_plane]
+                    }
                 };
                 let mut get_set = |delta: f32| -> f64 {
                     // Scoped borrows: the mutable slot borrow must END before
@@ -1365,7 +1373,8 @@ mod multi_layer_training_tests {
                         orig = slot[idx_in_plane];
                         slot[idx_in_plane] = orig + delta;
                     }
-                    let loss = reference_sum_loss(&weights, &tokens, &is_masked, &config, &mut fwd_ctx);
+                    let loss =
+                        reference_sum_loss(&weights, &tokens, &is_masked, config, &mut fwd_ctx);
                     {
                         let slot: &mut Vec<f32> = match family {
                             Family::Wte => &mut weights.wte,
@@ -1400,8 +1409,11 @@ mod multi_layer_training_tests {
                 Family::W1 => "mlp_w1",
                 Family::W2 => "mlp_w2",
             };
-            let _ = write!(&
-                mut name, "[n_layer={}] layer{l}.{fam}[{idx_in_plane}]", config.n_layer);
+            let _ = write!(
+                &mut name,
+                "[n_layer={}] layer{l}.{fam}[{idx_in_plane}]",
+                config.n_layer
+            );
             assert!(
                 rel < 0.05,
                 "{name}: analytic {analytic:.6} vs numeric {numeric:.6} (rel {rel:.4})"
@@ -1416,7 +1428,7 @@ mod multi_layer_training_tests {
 
         // Per-layer matrices: layer 0 AND layer 1 (the new math), each family.
         let n = config.n_embd;
-        let kvd = kv_dim(&config);
+        let kvd = kv_dim(config);
         let mh = config.mlp_hidden;
         let strides: &[(Family, usize)] = &[
             (Family::Wq, n * n),

@@ -386,14 +386,14 @@ fn g3_gap_predictor_matches_or_beats_fixed_on_both_regimes() {
             let best_fixed = fixed_nlls.iter().copied().fold(f32::INFINITY, f32::min);
             let chosen = eval_nll(weights, w_star);
             let retention = best_fixed / chosen;
+            let fixed_summary = fixed
+                .iter()
+                .zip(fixed_nlls.iter())
+                .map(|(w, n)| format!("w={w}:{n:.3}"))
+                .collect::<Vec<_>>();
             println!(
                 "{:>18}#{} {:>7.2} {:>10.4} {:>10.4}  (fixed: {:?})",
-                label,
-                k,
-                w_star,
-                chosen,
-                retention,
-                fixed.iter().zip(fixed_nlls.iter()).map(|(w, n)| format!("w={w}:{n:.3}")).collect::<Vec<_>>()
+                label, k, w_star, chosen, retention, fixed_summary
             );
             // G3 no-regression floor (T3.3) — REPORTED post-T5 (2026-09-22):
             // the retention floor was calibrated against

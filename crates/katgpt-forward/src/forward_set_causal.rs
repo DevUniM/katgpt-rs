@@ -263,7 +263,8 @@ pub fn forward_set_causal_positions(
                 for &t in &eligible {
                     let s = scores_buf[t];
                     if s > 0.0 {
-                        let v_row = &v_cache[kv_base + t * kvd + kv_off..kv_base + t * kvd + kv_off + hd];
+                        let v_row =
+                            &v_cache[kv_base + t * kvd + kv_off..kv_base + t * kvd + kv_off + hd];
                         simd::simd_fused_scale_acc(out_head, v_row, s, hd);
                     }
                 }

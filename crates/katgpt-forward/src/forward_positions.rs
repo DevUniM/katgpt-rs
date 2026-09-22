@@ -238,7 +238,8 @@ pub fn forward_bidirectional_positions_into(
         if l > 0 {
             let h_base = (l - 1) * n_stride;
             for p in 0..seq_len {
-                bctx.x.copy_from_slice(&bctx.xr_rest[h_base + p * n..h_base + (p + 1) * n]);
+                bctx.x
+                    .copy_from_slice(&bctx.xr_rest[h_base + p * n..h_base + (p + 1) * n]);
                 rmsnorm(&mut bctx.x);
                 bctx.x_norm_rest[h_base + p * n..h_base + (p + 1) * n].copy_from_slice(&bctx.x);
                 matmul(&mut bctx.k, &layer.attn_wk, &bctx.x, kvd, n);
@@ -255,10 +256,12 @@ pub fn forward_bidirectional_positions_into(
         let n_heads = config.n_head;
         for p in 0..seq_len {
             if l == 0 {
-                bctx.x.copy_from_slice(&bctx.x_norm2_all[p * n..(p + 1) * n]);
+                bctx.x
+                    .copy_from_slice(&bctx.x_norm2_all[p * n..(p + 1) * n]);
             } else {
                 let h_base = (l - 1) * n_stride;
-                bctx.x.copy_from_slice(&bctx.x_norm_rest[h_base + p * n..h_base + (p + 1) * n]);
+                bctx.x
+                    .copy_from_slice(&bctx.x_norm_rest[h_base + p * n..h_base + (p + 1) * n]);
             }
 
             // matmul overwrites all `n` rows of bctx.q, so no pre-zero needed.
@@ -333,7 +336,10 @@ pub fn forward_bidirectional_positions_into(
         }
     }
 
-    (seq_len * config.vocab_size, seq_len * config.n_head * seq_len)
+    (
+        seq_len * config.vocab_size,
+        seq_len * config.n_head * seq_len,
+    )
 }
 
 /// Safe bidirectional attention for one query position.
