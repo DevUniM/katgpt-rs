@@ -7,6 +7,7 @@
 > **Related Plans:** Plan 340 (ConformalIntervalCalibrator, default-on)
 > **Cross-ref (riir-ai / riir-chain / riir-neuron-db):** riir-ai `arg_runtime/pipeline.rs` (ActionBridge ABSTAIN), `integrity/injection.rs` (5 affect scalars), `.proofs/RiirAiProof/Hla/Bounded.lean`
 > **Classification:** Public
+> **Harness follow-up (2026-09-22):** [Research 579](579_Jev_Harness_Engineering_Coding_Agents.md) — the coding-agent-harness synthesis of the same design notes (no-KV-cache thought experiment, six symptoms, six per-turn decision points, visibility ladder, priced-per-rebuild routing); decision-model coverage stands, consumer map filed as riir-reflex Issue 004.
 
 ---
 
