@@ -3500,6 +3500,14 @@ path = "benches/bench_841_legal_token_set_goat.rs"
 required-features = ["legal_token_set"]
 harness = false
 
+# Issue 871 — strict IEEE ordered-reduction dot vs Rust 1.98 algebraic_*
+# reassociated dot: interleaved A/B (ab_timing) + ulp/argmax-flip retention.
+# Record bench, no feature gate, no perf bar — the issue carries the verdict.
+[[bench]]
+name = "bench_871_algebraic_dot_ab"
+path = "benches/bench_871_algebraic_dot_ab.rs"
+harness = false
+
 # Issue 859 T5 — the entropy-gated re-read policy arm (M3), measured on the
 # micro_dllm_text trained fixture: agreement bars (sample_label_index, N=4,
 # temperature 1 — the reference's protocol) vs single-read entropy/maxprob
