@@ -316,7 +316,10 @@ pub mod evidence_tripwire;
 // (R4): (state vector, option matrix) in, decision out — nothing
 // arena-specific. Consumes exact_sigmoid + cmp_for_max + distance_abstain's
 // unit normalize (feature implication, not a fork of a bit-parity-critical
-// helper). Opt-in pending the Plan 607 GOAT (bench_876).
+// helper). T3 adds `head::FittedHead` — the corpus-fitted linear head
+// (closed-form ridge LS over frozen features) consuming `linalg::
+// ridge_solve`'s f64 path (KARC Plan 308's fit math). Opt-in pending the
+// Plan 607 GOAT (bench_876 T1 + bench_878 T3).
 #[cfg(feature = "state_option_scoring")]
 pub mod state_option_scoring;
 #[cfg(feature = "conformal_predictive_intervals")]
@@ -2379,7 +2382,11 @@ pub use katgpt_types::depth_invariance::{
     feature = "mb_value",
     // Issue 839: `linalg::kron_tile` IS a linalg submodule, so it gates this
     // `pub mod` too — joined at birth per the same rule.
-    feature = "kron_tile"
+    feature = "kron_tile",
+    // Plan 607 T3: `state_option_scoring::head` consumes
+    // `ridge_solve_direct_f64` for the corpus-fitted linear head (the KARC
+    // Plan-308 fit math) — joined at birth per the same rule.
+    feature = "state_option_scoring"
 ))]
 pub mod linalg;
 

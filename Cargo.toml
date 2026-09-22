@@ -495,7 +495,7 @@ clr = ["katgpt-claim/clr"]  # CLR Claim-Level Reliability runtime — sigmoid pr
 clr_calibration = ["katgpt-claim/clr_calibration"]  # CLR verdict calibration — the first sigmoid_calibration consumer (riir-ai Issue 964 C1; substrate Issue 810, GOAT Bench 807). CalibratedVerifier wraps any ClaimVerifier: observe (sigmoid_output, outcome) pairs, refit off-hot-path, apply in front of the reliability gate. Cold start bit-identical; fitted transform strictly monotone. Opt-in per the no-default-consumer rule.
 kron_tile = ["katgpt-core/kron_tile"]  # Issue 839 — Kronecker-factored tile apply `(A ⊗ B) · x = A Z Bᵀ` as two small GEMMs (2n³ MACs / 2n² params against n⁴ / n⁴), batched, zero-alloc, with a delegating Walsh–Hadamard fast path. Research 569 (Cactus Needle 3). Passthrough only — the primitive lives in katgpt-core::linalg::kron_tile; this row exists so Bench 839 can name it in required-features. Opt-in per the no-default-consumer rule.
 kpt_archive = ["katgpt-core/kpt_archive"]  # Issue 841 / Research 568 fusion 2 (owner call 2026-09-19) — .kpt single-file weight-archive POC: nameless positional layer-major file × BLAKE3/Merkle integrity × atomic file-replacement hot-swap, over packed ternary layers. Passthrough only — the POC module lives in katgpt-core::kpt_archive; examples/kpt_archive_poc.rs (poc + perf) and tests/kpt_archive_sec_injection.rs (bad-injection arms) name this row in required-features. Opt-in POC, NOT promoted: the format+engine lift waits for a NeuronShard-Merkle consumer wanting single-file mmap hot-swap.
-horizon_weights = ["katgpt-core/horizon_weights"]  # Issue 875 T1 / Research 582 (arXiv:2605.09071) — PFD (T−t) remaining-horizon weighting: the Fubini-law (T−t)/T weights + the exact closed form w(t) = ½(T−t)g²c², c = exp(−∫a), frozen into a BLAKE3-committed fixed-grid table (the static_cal pattern, exact — no calibration pass) + the law's exact inverse-CDF sampler (T2). Pure math, zero new deps, zero-alloc. Passthrough only — the primitive lives in katgpt-core::horizon_weights; this row exists so tests/bench_875_horizon_weights_goat.rs + tests/bench_875_renoise_horizon_goat.rs can name it in required-features. T2 consumer shipped as the combined-gate renoise_ce_score_horizon (Bench 877 GOAT); the feature stays opt-in — promotion is Issue 875 T5's verdict.
+horizon_weights = ["katgpt-core/horizon_weights"]  # Issue 875 T1 / Research 582 (arXiv:2605.09071) — PFD (T−t) remaining-horizon weighting: the Fubini-law (T−t)/T weights + the exact closed form w(t) = ½(T−t)g²c², c = exp(−∫a), frozen into a BLAKE3-committed fixed-grid table (the static_cal pattern, exact — no calibration pass) + the law's exact inverse-CDF sampler (T2). Pure math, zero new deps, zero-alloc. Passthrough only — the primitive lives in katgpt-core::horizon_weights; this row exists so tests/bench_875_horizon_weights_goat.rs + tests/bench_875_renoise_horizon_goat.rs can name it in required-features. T2 consumer shipped as the combined-gate renoise_ce_score_horizon (Bench 878 GOAT); the feature stays opt-in — promotion is Issue 875 T5's verdict.
 claim_rubric = ["katgpt-claim/claim_rubric"]  # Claim Rubric Runtime — L1/L2/L3 evidence ladder validator (Plan 307, Research 287). Phase 11 (2026-07-04): module moved to katgpt-claim; root forwards.
 bandit_top_p = ["bandit", "katgpt-pruners/bandit_top_p"]  # Adaptive top-p bandit arm selection (Plan 181, default ON candidate)
 curvature_alloc = ["bandit", "katgpt-pruners/curvature_alloc"]  # Curvature-influence allocation — EoS proxy budget control (Plan 183)
@@ -3572,4 +3572,10 @@ required-features = ["probe_guidance"]
 # Issue-004 batch class).
 [[example]]
 name = "tetris_02_option_arena"
+required-features = ["state_option_scoring"]
+
+# T3's reading (Plan 607): the corpus-fitted head over the fixture's frozen
+# features — same feature gate, same required-features shape.
+[[example]]
+name = "tetris_03_head_fit"
 required-features = ["state_option_scoring"]

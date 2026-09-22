@@ -54,8 +54,9 @@ fn slot_of(w: &[u8]) -> usize {
     (x % EMBED_DIM as u64) as usize
 }
 
-#[cfg(test)]
-fn embed(text: &str) -> [f32; EMBED_DIM] {
+/// Convenience wrapper: embed `text` into a fresh vector (the arena's
+/// per-sentence call shape).
+pub fn embed(text: &str) -> [f32; EMBED_DIM] {
     let mut out = [0.0f32; EMBED_DIM];
     embed_into(text, &mut out);
     out

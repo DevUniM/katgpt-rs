@@ -40,21 +40,16 @@
 //! `bench_876_state_option_scoring_goat`, and the G4 alloc gate in
 //! katgpt-core's `state_option_scoring_alloc_check`.
 
-use serde::Deserialize;
 use std::path::PathBuf;
 
-#[path = "common/tetris_sim.rs"]
-mod tetris_sim;
-#[path = "common/hash_embed.rs"]
-mod hash_embed;
-
-use hash_embed::{embed_into, EMBED_DIM};
-use tetris_sim::{
-    dellacherie_score, landing_options, outcome_features, render_spot_sentence,
-    render_state_sentence, Board, Piece,
-};
+#[path = "common/tetris_fixture.rs"]
+mod tetris_fixture;
 
 use katgpt_core::state_option_scoring::CentroidTable;
+use tetris_fixture::{
+    EMBED_DIM, FixtureState, Piece, Recomputed, default_fixture, dellacherie_pick, embed,
+    load_fixture_states, play_game,
+};
 
 /// The substrate's route scale (riir-reflex `ROUTE_SCALE`). The argmax is
 /// scale-invariant for scale > 0 (exact_sigmoid is strictly monotone); the
@@ -67,140 +62,7 @@ use katgpt_core::state_option_scoring::CentroidTable;
 #[allow(dead_code)]
 const SCALE: f32 = 8.0;
 
-fn default_fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/tetris_oracle_laya_en_v2.jsonl")
-}
-
-// ── Fixture schema ───────────────────────────────────────────────────────
-
-#[derive(Deserialize)]
-struct FixtureState {
-    state_id: String,
-    #[allow(dead_code)]
-    grammar: String,
-    state_sentence: String,
-    board: Vec<String>,
-    piece: String,
-    options: Vec<FixtureOption>,
-    argmax: usize,
-}
-
-#[derive(Deserialize)]
-struct FixtureOption {
-    rot: usize,
-    col: usize,
-    row: usize,
-    cells: Vec<(usize, usize)>,
-    features: FixtureFeatures,
-    sentence: String,
-    #[serde(default)]
-    p_clean: Option<f64>,
-}
-
-#[derive(Deserialize)]
-struct FixtureFeatures {
-    lines_cleared: u32,
-    holes: u32,
-    holes_delta: i32,
-    bumpiness: u32,
-    max_height: u32,
-    aggregate_height: u32,
-    landing_height: f32,
-    row_transitions: u32,
-    col_transitions: u32,
-    cumulative_wells: u32,
-    eroded_cells: u32,
-}
-
-impl FixtureFeatures {
-    fn matches(&self, f: &tetris_sim::OutcomeFeatures) -> bool {
-        self.lines_cleared == f.lines_cleared
-            && self.holes == f.holes
-            && self.holes_delta == f.holes_delta
-            && self.bumpiness == f.bumpiness
-            && self.max_height == f.max_height
-            && self.aggregate_height == f.aggregate_height
-            && self.landing_height == f.landing_height
-            && self.row_transitions == f.row_transitions
-            && self.col_transitions == f.col_transitions
-            && self.cumulative_wells == f.cumulative_wells
-            && self.eroded_cells == f.eroded_cells
-    }
-}
-
-fn piece_from_id(id: &str) -> Piece {
-    *Piece::ALL
-        .iter()
-        .find(|p| p.id() == id)
-        .unwrap_or_else(|| panic!("unknown piece id {id:?}"))
-}
-
-/// The drift detector: recompute EVERYTHING the arena consumes from
-/// (board, piece) and demand byte-identity with the fixture — options
-/// (pinned order: rot/col/row/cells), outcome features (exact), and both
-/// sentence layers (the closed grammar). Returns the recomputed state.
-fn recompute_and_verify(st: &FixtureState) -> Result<Recomputed, String> {
-    let board = Board::from_strings(&st.board.iter().map(String::as_str).collect::<Vec<_>>());
-    let piece = piece_from_id(&st.piece);
-    let options = landing_options(&board, piece);
-    if options.len() != st.options.len() {
-        return Err(format!(
-            "{}: option count drifted (fixture {}, recomputed {})",
-            st.state_id,
-            st.options.len(),
-            options.len()
-        ));
-    }
-    let mut spot_sentences = Vec::with_capacity(options.len());
-    for (p, fo) in options.iter().zip(&st.options) {
-        if p.rot != fo.rot || p.col != fo.col || p.row != fo.row || p.cells != fo.cells {
-            return Err(format!(
-                "{}: placement drifted at rot {} col {}",
-                st.state_id, fo.rot, fo.col
-            ));
-        }
-        let f = outcome_features(&board, p);
-        if !fo.features.matches(&f) {
-            return Err(format!("{}: outcome features drifted", st.state_id));
-        }
-        let sentence = render_spot_sentence(&board, p, &f);
-        if sentence != fo.sentence {
-            return Err(format!(
-                "{}: spot sentence drifted\n  fixture:   {:?}\n  recomputed: {:?}",
-                st.state_id, fo.sentence, sentence
-            ));
-        }
-        spot_sentences.push(sentence);
-    }
-    let state_sentence = render_state_sentence(&board, piece);
-    if state_sentence != st.state_sentence {
-        return Err(format!(
-            "{}: state sentence drifted\n  fixture:    {:?}\n  recomputed: {:?}",
-            st.state_id, st.state_sentence, state_sentence
-        ));
-    }
-    Ok(Recomputed {
-        board,
-        options,
-        spot_sentences,
-        state_sentence,
-    })
-}
-
-struct Recomputed {
-    board: Board,
-    options: Vec<tetris_sim::Placement>,
-    spot_sentences: Vec<String>,
-    state_sentence: String,
-}
-
 // ── T1 scoring over embedded sentences ─────────────────────────────
-
-fn embed(text: &str) -> [f32; EMBED_DIM] {
-    let mut v = [0.0f32; EMBED_DIM];
-    embed_into(text, &mut v);
-    v
-}
 
 /// The fixture's decision sets are exactly {9, 17, 34} wide, but LIVE
 /// games reach any width (blocked columns shrink a piece's landing set),
@@ -229,55 +91,9 @@ fn decide(re: &Recomputed) -> usize {
     t1_pick(&state_vec, &vecs, re.options.len())
 }
 
-/// The classic heuristic's decision (the pinned lowest-index tie-break,
-/// same shape as tetris_01's greedy_pick).
-fn dellacherie_pick(re: &Recomputed) -> usize {
-    let mut best = 0usize;
-    let mut best_score = f32::NEG_INFINITY;
-    for (i, p) in re.options.iter().enumerate() {
-        let s = dellacherie_score(&outcome_features(&re.board, p));
-        if s > best_score {
-            best_score = s;
-            best = i;
-        }
-    }
-    best
-}
-
 // ── Seeded lines-cleared games (shared piece streams) ────────────────────
-
-/// One game under `policy` over a pre-generated piece stream; returns
-/// (lines cleared, placements). Top-out or stream exhaustion ends it.
-fn play_game(policy: &dyn Fn(&Recomputed) -> usize, pieces: &[Piece]) -> (u32, usize) {
-    let mut board = Board::empty();
-    let mut cleared = 0u32;
-    for (n, &piece) in pieces.iter().enumerate() {
-        let options = landing_options(&board, piece);
-        if options.is_empty() {
-            return (cleared, n); // top-out
-        }
-        let mut spot_sentences = Vec::with_capacity(options.len());
-        for p in &options {
-            let f = outcome_features(&board, p);
-            spot_sentences.push(render_spot_sentence(&board, p, &f));
-        }
-        let re = Recomputed {
-            state_sentence: render_state_sentence(&board, piece),
-            board,
-            options,
-            spot_sentences,
-        };
-        let pick = policy(&re);
-        let mut after = re.board.clone();
-        let cells = re.options[pick].cells.clone();
-        after.place(&cells);
-        let full = after.full_rows();
-        cleared += full.len() as u32;
-        after.clear_rows(&full);
-        board = after;
-    }
-    (cleared, pieces.len())
-}
+// play_game + dellacherie_pick live in the shared `tetris_fixture` module —
+// the T3 fitted-head arena consumes the identical loop and policy.
 
 // ── The reading ──────────────────────────────────────────────────────────
 
@@ -384,7 +200,9 @@ fn main() {
                 seed = args[i].parse().expect("--seed <u64>");
             }
             other => {
-                eprintln!("Unknown arg: {other}. Usage: [--fixture <path>] [--games <n>] [--seed <u64>]");
+                eprintln!(
+                    "Unknown arg: {other}. Usage: [--fixture <path>] [--games <n>] [--seed <u64>]"
+                );
                 std::process::exit(1);
             }
         }
@@ -394,20 +212,8 @@ fn main() {
     println!("== Plan 607 T4 — Tetris decision arena (first GOAT reading) ==");
     println!("fixture: {}", fixture_path.display());
 
-    // ── Parse + drift-check ──────────────────────────────────────────────
-    let raw = std::fs::read_to_string(&fixture_path).expect("read fixture");
-    let mut states = Vec::new();
-    for (ln, line) in raw.lines().enumerate() {
-        let value: serde_json::Value =
-            serde_json::from_str(line).unwrap_or_else(|e| panic!("fixture line {}: {e}", ln + 1));
-        if value["state_id"] == "_meta" {
-            continue; // the provenance record — not a state
-        }
-        let f: FixtureState = serde_json::from_value(value)
-            .unwrap_or_else(|e| panic!("fixture line {}: {e}", ln + 1));
-        let re = recompute_and_verify(&f).unwrap_or_else(|e| panic!("DRIFT: {e}"));
-        states.push((f, re));
-    }
+    // ── Parse + drift-check ──────────────────────────────────────────
+    let states = load_fixture_states(&fixture_path);
     let n_options: usize = states.iter().map(|(f, _)| f.options.len()).sum();
     println!(
         "drift check: PASS — {} states / {n_options} options recompute byte-identically",
@@ -450,7 +256,11 @@ fn main() {
         "  distinct picks: {} of {} states [floor ≥ 2] {}",
         r.distinct_picks,
         r.n_states,
-        if r.distinct_picks >= 2 { "PASS" } else { "FAIL" }
+        if r.distinct_picks >= 2 {
+            "PASS"
+        } else {
+            "FAIL"
+        }
     );
     let g1_holds =
         r.raw_agree > r.constant_agree && (r.raw_agree as f64) > r.chance * r.n_states as f64;
@@ -503,20 +313,33 @@ fn main() {
     let d2 = pass_digest();
     println!(
         "determinism: two passes {} (blake3 {d1})",
-        if d1 == d2 { "byte-identical ✓" } else { "DIVERGED ✗" }
+        if d1 == d2 {
+            "byte-identical ✓"
+        } else {
+            "DIVERGED ✗"
+        }
     );
     assert_eq!(d1, d2, "same corpus → bit-identical scoring state");
 
     // ── Lines-cleared games: Dellacherie vs the T1 sentence policy ──────
-    println!("\nlines cleared ({games} seeded games/policy, shared piece streams, cap {placements_cap} placements):");
+    println!(
+        "\nlines cleared ({games} seeded games/policy, shared piece streams, cap {placements_cap} placements):"
+    );
     // One rng generates ALL games' streams up front; both policies consume
     // the SAME streams (a fair paired comparison).
     let mut rng = fastrand::Rng::with_seed(seed);
     let streams: Vec<Vec<Piece>> = (0..games)
-        .map(|_| (0..placements_cap).map(|_| Piece::ALL[rng.usize(0..7)]).collect())
+        .map(|_| {
+            (0..placements_cap)
+                .map(|_| Piece::ALL[rng.usize(0..7)])
+                .collect()
+        })
         .collect();
     for (name, policy) in [
-        ("dellacherie", &dellacherie_pick as &dyn Fn(&Recomputed) -> usize),
+        (
+            "dellacherie",
+            &dellacherie_pick as &dyn Fn(&Recomputed) -> usize,
+        ),
         ("t1_sentence", &(decide as fn(&Recomputed) -> usize)),
     ] {
         let mut total = 0u32;
@@ -537,7 +360,9 @@ fn main() {
         );
     }
 
-    println!("\nGate pointers: G2 = katgpt-core bench_876_state_option_scoring_goat · G4 = katgpt-core state_option_scoring_alloc_check · this run's agreement = the .benchmarks/876 G1 row");
+    println!(
+        "\nGate pointers: G2 = katgpt-core bench_876_state_option_scoring_goat · G4 = katgpt-core state_option_scoring_alloc_check · this run's agreement = the .benchmarks/876 G1 row"
+    );
 }
 
 // ── Tests (the drift detector + determinism as executing lanes) ──────────
@@ -547,18 +372,7 @@ mod tests {
     use super::*;
 
     fn load_states() -> Vec<(FixtureState, Recomputed)> {
-        let raw = std::fs::read_to_string(default_fixture()).expect("read fixture");
-        let mut states = Vec::new();
-        for line in raw.lines() {
-            let value: serde_json::Value = serde_json::from_str(line).expect("parse fixture");
-            if value["state_id"] == "_meta" {
-                continue;
-            }
-            let f: FixtureState = serde_json::from_value(value).expect("parse fixture state");
-            let re = recompute_and_verify(&f)
-                .unwrap_or_else(|e| panic!("fixture drift: {e}"));
-            states.push((f, re));
-        }
+        let states = load_fixture_states(&default_fixture());
         assert_eq!(states.len(), 120, "fixture carries 120 states");
         states
     }

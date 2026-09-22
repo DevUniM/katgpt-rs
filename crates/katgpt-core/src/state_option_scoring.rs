@@ -148,6 +148,322 @@ fn argmax_lowest_index_tie<const K: usize>(scores: &[f32; K]) -> usize {
     best
 }
 
+/// Plan 607 T3 — the corpus-fitted head, determinism-constrained.
+///
+/// Bench 876's first reading showed the untuned sentence-cosine scorer
+/// discriminates but is not accurate (10.8%, tying the constant-pick
+/// baseline); this module is the plan's designated lever: a **linear head
+/// fitted over frozen per-option features** by closed-form ridge least
+/// squares, imitating the oracle corpus (p_clean per option) — the plan's
+/// "80–90% corpus-viable" candidate.
+///
+/// # The determinism line (Plan 607 T3 — held, not argued)
+///
+/// Fixed recipe, no RNG, no iterations, no gradient descent on base
+/// weights: Gram `XᵀX + λI` and covariance `Xᵀy` accumulate in f64 over
+/// the rows in corpus order, then ONE [`ridge_solve_direct_f64`] solve
+/// closes the fit. The f64 path is scalar `mul_add` + IEEE `sqrt` — both
+/// exactly rounded, so the head is reconstructible from the corpus alone
+/// and bit-identical across boxes (the GOAT digests the weights; two
+/// runs / two boxes must agree).
+///
+/// # Substrate
+///
+/// The solve CONSUMES [`crate::linalg::ridge_solve`]'s f64 path — KARC
+/// Plan 308's fit math (the T0a substrate-first finding: the fitters are
+/// precedent to consume, never re-implement; attn-match's beta_fitter is
+/// the pattern, and this repo's own `linalg` is the dependency-legal
+/// copy). `λ > 0` is that module's hard precondition and is what makes
+/// the Gram positive-definite by construction.
+///
+/// # Scale contract
+///
+/// Ridge is scale-sensitive: callers should standardize feature columns
+/// corpus-side (deterministic: corpus mean/std, fixed order) and put the
+/// intercept in the design matrix (a constant-1 column) — the first
+/// consumer does exactly that. The head itself stays raw: one math, no
+/// embedded policy.
+pub mod head {
+    use crate::float_order::cmp_for_max_f64;
+    use crate::linalg::ridge_solve::ridge_solve_direct_f64;
+
+    /// A fitted linear head: `score(x) = w·x` over `D` design columns
+    /// (standardized features + intercept, by caller convention). The
+    /// weights ARE the determinism-committed artifact — digest them for
+    /// the two-box claim. The decision path ([`Self::score`] /
+    /// [`Self::pick`]) is a stack-local f64 fold: zero-alloc.
+    #[derive(Debug, Clone)]
+    pub struct FittedHead<const D: usize> {
+        w: [f64; D],
+    }
+
+    /// Scratch owner for (repeated) fits — the `D×D` Gram and Cholesky
+    /// buffers cannot be stack arrays under a plain const-generic `D`
+    /// (stable Rust: `[0.0; D * D]` is rejected), so they live here,
+    /// allocated ONCE and reused across every [`Self::fit_into`] call.
+    /// The LOO protocol (fit per held-out state) reuses one fitter for
+    /// all refits; the hot decision path never touches this.
+    pub struct HeadFitter<const D: usize> {
+        gram: Vec<f64>,
+        l: Vec<f64>,
+        cov: Vec<f64>,
+        z: Vec<f64>,
+        w: Vec<f64>,
+    }
+
+    impl<const D: usize> Default for HeadFitter<D> {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl<const D: usize> HeadFitter<D> {
+        /// Allocate the scratch (the only allocation in the fit path;
+        /// cold — once per corpus/protocol, not per decision).
+        pub fn new() -> Self {
+            Self {
+                gram: vec![0.0; D * D],
+                l: vec![0.0; D * D],
+                cov: vec![0.0; D],
+                z: vec![0.0; D],
+                w: vec![0.0; D],
+            }
+        }
+
+        /// Closed-form ridge least squares into a fresh [`FittedHead`]:
+        /// `argmin_w ‖Xw − y‖² + λ‖w‖²`. Panics on empty input, a length
+        /// mismatch, a non-finite `λ`, or `λ ≤ 0` (the substrate's PD
+        /// precondition). Reuses this fitter's scratch — no allocation.
+        pub fn fit_into(&mut self, rows: &[[f64; D]], target: &[f64], ridge: f64) -> FittedHead<D> {
+            assert!(!rows.is_empty(), "head fit needs at least one row");
+            assert_eq!(rows.len(), target.len(), "design/target length mismatch");
+            assert!(
+                ridge > 0.0 && ridge.is_finite(),
+                "ridge λ must be finite and > 0"
+            );
+            self.gram.fill(0.0);
+            self.cov.fill(0.0);
+            for (x, &y) in rows.iter().zip(target.iter()) {
+                for i in 0..D {
+                    self.cov[i] = x[i].mul_add(y, self.cov[i]);
+                    let g_row = i * D;
+                    for j in 0..D {
+                        self.gram[g_row + j] = x[i].mul_add(x[j], self.gram[g_row + j]);
+                    }
+                }
+            }
+            for i in 0..D {
+                self.gram[i * D + i] += ridge;
+            }
+            ridge_solve_direct_f64(
+                &mut self.w,
+                &mut self.l,
+                &mut self.z,
+                &self.gram,
+                &self.cov,
+                D,
+                1,
+            );
+            let mut w = [0.0f64; D];
+            w.copy_from_slice(&self.w);
+            FittedHead { w }
+        }
+    }
+
+    impl<const D: usize> FittedHead<D> {
+        /// One-shot convenience: [`HeadFitter::new`] + [`HeadFitter::fit_into`].
+        /// Cold path (the fitter's scratch is allocated and dropped here);
+        /// loop callers should own a [`HeadFitter`] instead.
+        pub fn fit(rows: &[[f64; D]], target: &[f64], ridge: f64) -> Self {
+            HeadFitter::<D>::new().fit_into(rows, target, ridge)
+        }
+
+        /// The fitted weights (digest these bytes for the determinism
+        /// row — LE f64, fixed order).
+        pub fn weights(&self) -> &[f64; D] {
+            &self.w
+        }
+
+        /// `w·x` — sequential f64 fold, no SIMD reordering.
+        pub fn score(&self, x: &[f64; D]) -> f64 {
+            let mut s = 0.0f64;
+            for (wi, &xi) in self.w.iter().zip(x.iter()) {
+                s = wi.mul_add(xi, s);
+            }
+            s
+        }
+
+        /// Argmax over the FIRST `k` rows of a decision set (ties → the
+        /// lowest index, [`cmp_for_max_f64`] + strict-greater fold — the
+        /// pinned oracle tie-break). Zero-alloc: no score buffer, the
+        /// running max is enough. The exact option set needs no padding
+        /// (unlike the padded const-K table path).
+        pub fn pick(&self, rows: &[[f64; D]], k: usize) -> usize {
+            assert!(
+                k > 0 && k <= rows.len(),
+                "pick needs 1..={} rows, got {k}",
+                rows.len()
+            );
+            let mut best = 0usize;
+            let mut best_s = f64::NEG_INFINITY;
+            for (i, row) in rows.iter().take(k).enumerate() {
+                let s = self.score(row);
+                if cmp_for_max_f64(s, best_s) == core::cmp::Ordering::Greater {
+                    best = i;
+                    best_s = s;
+                }
+            }
+            best
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        const RIDGE: f64 = 1e-2;
+
+        /// Deterministic row factory (seeded LCG — no global RNG).
+        fn lcg_row<const D: usize>(seed: u64) -> [f64; D] {
+            let mut s = seed;
+            let mut v = [0.0f64; D];
+            for x in v.iter_mut() {
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                *x = ((s >> 40) as f64) / (1u64 << 24) as f64 * 2.0 - 1.0;
+            }
+            v
+        }
+
+        #[test]
+        fn fit_recovers_a_planted_linear_head() {
+            // Planted w (with intercept); y = Xw. The fit must rank the
+            // same option best on held queries — closed-form LS on
+            // well-conditioned data recovers the direction.
+            const D: usize = 4;
+            let planted = [0.5, -1.0, 2.0, 0.25];
+            let mut rows = Vec::new();
+            let mut y = Vec::new();
+            for i in 0..64 {
+                let x = lcg_row(0x0670_0001 + i);
+                let t: f64 = planted.iter().zip(x.iter()).map(|(w, v)| w * v).sum();
+                rows.push(x);
+                y.push(t);
+            }
+            let head = FittedHead::<D>::fit(&rows, &y, RIDGE);
+            for q in 0..16 {
+                let a = lcg_row(0x0670_a000 + q * 2);
+                let b = lcg_row(0x0670_a000 + q * 2 + 1);
+                let oracle = if planted
+                    .iter()
+                    .zip(a.iter())
+                    .map(|(w, v)| w * v)
+                    .sum::<f64>()
+                    >= planted
+                        .iter()
+                        .zip(b.iter())
+                        .map(|(w, v)| w * v)
+                        .sum::<f64>()
+                {
+                    0
+                } else {
+                    1
+                };
+                assert_eq!(
+                    head.pick(&[a, b], 2),
+                    oracle,
+                    "planted ranking lost at q={q}"
+                );
+            }
+        }
+
+        #[test]
+        fn fit_is_bit_deterministic() {
+            const D: usize = 6;
+            let rows: Vec<[f64; D]> = (0..40).map(|i| lcg_row(0x0670_b000 + i)).collect();
+            let y: Vec<f64> = rows.iter().map(|x| x.iter().sum::<f64>()).collect();
+            let a = FittedHead::<D>::fit(&rows, &y, RIDGE);
+            let b = FittedHead::<D>::fit(&rows, &y, RIDGE);
+            let ba: Vec<u8> = a.weights().iter().flat_map(|f| f.to_le_bytes()).collect();
+            let bb: Vec<u8> = b.weights().iter().flat_map(|f| f.to_le_bytes()).collect();
+            assert_eq!(ba, bb, "same corpus → bit-identical head");
+        }
+
+        #[test]
+        fn pick_ties_break_to_lowest_index() {
+            // Two identical rows (plus intercept) → equal scores → pick 0.
+            const D: usize = 2;
+            let rows = [[1.0, 3.0], [1.0, 3.0], [1.0, -3.0]];
+            let y = [1.0, 1.0, -1.0];
+            let head = FittedHead::<D>::fit(&rows, &y, RIDGE);
+            assert_eq!(head.pick(&rows, 3), 0);
+            // Restricted to the third row only — picks it.
+            assert_eq!(head.pick(&rows[2..], 1), 0);
+        }
+
+        #[test]
+        fn ridge_shrinks_but_keeps_the_direction() {
+            // A huge λ shrinks w toward 0 but the RANKING (argmax) must
+            // survive — the decision, not the magnitude, is the contract.
+            const D: usize = 3;
+            let planted = [1.0, -2.0, 0.5];
+            let mut rows = Vec::new();
+            let mut y = Vec::new();
+            for i in 0..64 {
+                let x = lcg_row(0x0670_c000 + i);
+                rows.push(x);
+                y.push(
+                    planted
+                        .iter()
+                        .zip(x.iter())
+                        .map(|(w, v)| w * v)
+                        .sum::<f64>(),
+                );
+            }
+            let head = FittedHead::<D>::fit(&rows, &y, 1e6);
+            let norm: f64 = head.weights().iter().map(|w| w * w).sum::<f64>().sqrt();
+            assert!(norm < 1.0, "λ=1e6 must shrink the head (norm {norm})");
+            let a = lcg_row(0x0670_d001);
+            let b = lcg_row(0x0670_d002);
+            let oracle = if planted
+                .iter()
+                .zip(a.iter())
+                .map(|(w, v)| w * v)
+                .sum::<f64>()
+                >= planted
+                    .iter()
+                    .zip(b.iter())
+                    .map(|(w, v)| w * v)
+                    .sum::<f64>()
+            {
+                0
+            } else {
+                1
+            };
+            assert_eq!(
+                head.pick(&[a, b], 2),
+                oracle,
+                "shrunk head keeps the ranking"
+            );
+        }
+
+        #[test]
+        #[should_panic(expected = "ridge λ must be finite and > 0")]
+        fn zero_ridge_is_refused() {
+            let rows = [[1.0, 2.0]];
+            let _ = FittedHead::<2>::fit(&rows, &[1.0], 0.0);
+        }
+
+        #[test]
+        #[should_panic(expected = "design/target length mismatch")]
+        fn length_mismatch_is_refused() {
+            let rows = [[1.0, 2.0], [3.0, 4.0]];
+            let _ = FittedHead::<2>::fit(&rows, &[1.0], RIDGE);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,7 +473,10 @@ mod tests {
     #[test]
     fn unit_idiom_zero_vector_passes_through() {
         let v = crate::distance_abstain::unit([0.0f32; 4]);
-        assert_eq!(v, [0.0; 4], "zero vector must not NaN — cosine 0 pass-through");
+        assert_eq!(
+            v, [0.0; 4],
+            "zero vector must not NaN — cosine 0 pass-through"
+        );
         let u = crate::distance_abstain::unit([3.0, 4.0, 0.0, 0.0]);
         assert_eq!(u, [0.6, 0.8, 0.0, 0.0]);
     }
@@ -167,8 +486,16 @@ mod tests {
         // state along +x; options 0 and 2 identical (cos 1), option 1 off-axis.
         let options: [[f32; 2]; 3] = [[4.0, 0.0], [0.6, 1.0], [9.0, 0.0]];
         let table = CentroidTable::<2, 3>::new(&options);
-        assert_eq!(table.pick(&[2.0, 0.0]), 0, "tie between 0 and 2 → lowest index");
-        assert_eq!(table.pick(&[0.0, 5.0]), 1, "aligned with option 1's direction");
+        assert_eq!(
+            table.pick(&[2.0, 0.0]),
+            0,
+            "tie between 0 and 2 → lowest index"
+        );
+        assert_eq!(
+            table.pick(&[0.0, 5.0]),
+            1,
+            "aligned with option 1's direction"
+        );
     }
 
     #[test]
@@ -185,7 +512,10 @@ mod tests {
         let best_scored = table.score_into(&state, S, &mut scores);
         assert_eq!(best_scored, table.pick(&state));
         for s in scores {
-            assert!(s > 0.0 && s < 1.0, "exact sigmoid is bounded (0, 1), got {s}");
+            assert!(
+                s > 0.0 && s < 1.0,
+                "exact sigmoid is bounded (0, 1), got {s}"
+            );
         }
     }
 
@@ -243,13 +573,25 @@ mod tests {
             state[i] = 1.0;
             picks.insert(table.pick(&state));
         }
-        assert_eq!(picks.len(), K, "rotated planted index → every pick distinct");
+        assert_eq!(
+            picks.len(),
+            K,
+            "rotated planted index → every pick distinct"
+        );
     }
 
     #[test]
     fn zero_state_reads_as_no_direction_not_nan() {
-        let options: [[f32; 4]; 3] = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]];
+        let options: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ];
         let table = CentroidTable::<4, 3>::new(&options);
-        assert_eq!(table.pick(&[0.0, 0.0, 0.0, 0.0]), 0, "all cosines 0 → tie → lowest index");
+        assert_eq!(
+            table.pick(&[0.0, 0.0, 0.0, 0.0]),
+            0,
+            "all cosines 0 → tie → lowest index"
+        );
     }
 }

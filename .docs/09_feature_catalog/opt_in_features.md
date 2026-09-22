@@ -4478,8 +4478,26 @@ implication, not a fork).
 fixture-replay arena. T5 (second arena family) is the precondition for
 any default-on consideration.
 
+**T3 (2026-09-23, Bench 878) — the corpus-fitted head.**
+`head::FittedHead<D>` + `HeadFitter<D>`: closed-form ridge least squares
+over frozen per-option features, CONSUMING `linalg::ridge_solve`'s f64
+path (KARC Plan 308's fit math; `state_option_scoring` joined linalg's
+gate list at birth). No RNG / no iterations / no gradient descent —
+determinism by construction (exactly-rounded f64 ops → two-box
+portable). First consumer reads **in-corpus 30.0% / LOO 29.2% agreement
+vs the oracle's 10.8% constant-pick baseline — G1 HOLDS** where the T1
+sentence-cosine path tied constant-pick (Bench 876); the 0.8 pp
+corpus/LOO gap is the honest-generalization reading at n=120. The fit
+path's D×D scratch lives in the fitter (allocated once, reused across
+refits); the decision path stays zero-alloc (its own
+`state_option_head_alloc_check` G4 binary).
+
 📖 Plan: [607](../../.plans/607_modelless_game_lane.md) ·
-Bench: [876](../../.benchmarks/876_state_option_scoring_goat.md) —
+Bench: [876](../../.benchmarks/876_state_option_scoring_goat.md) (T1 —
 G1a planted 200/200 · G1b distinct 34 · G2 p99 1.1–4.1 µs (≤1 ms bar,
-option count printed) · G4 0 allocs · determinism bit-identical ·
-test-gate row `katgpt-core:2079:state_option_scoring`.
+option count printed) · G4 0 allocs · determinism bit-identical) ·
+[878](../../.benchmarks/878_state_option_head_goat.md) (T3 head — G1
+HOLDS: in-corpus 30.0% / LOO 29.2% vs constant-pick 10.8% · G2 p99
+42–167 ns · G4 0 allocs) · test-gate rows
+`katgpt-core:2085:state_option_scoring` +
+`katgpt-core:1:state_option_head_alloc_check:state_option_scoring`.

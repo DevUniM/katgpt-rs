@@ -134,7 +134,7 @@ statrs = "0.17"
 # 582 §2 coverage table). Mechanism-distinct from tether::horizon_decay
 # (past-looking staleness fading). Pure math, zero new deps, zero allocs,
 # wasm32-clean. T2 consumer SHIPPED as the combined-gate
-# renoise_ce_score_horizon (Bench 877: precision@k 1.000 vs incumbent
+# renoise_ce_score_horizon (Bench 878: precision@k 1.000 vs incumbent
 # 0.906 at −0.8% latency); the feature itself stays OPT-IN — promotion is
 # T5's verdict on the recorded GOATs.
 horizon_weights = []
@@ -862,6 +862,11 @@ distance_abstain = []
 # 870) + cmp_for_max + distance_abstain's unit normalize — the implication
 # below is the DRY form (one bit-parity-critical helper, one implementation);
 # zero-cost-unless-invoked, zero deps. Implies distance_abstain.
+# T3 (2026-09-22): `head::FittedHead` — the corpus-fitted linear head
+# (closed-form ridge LS over frozen per-option features, Bench 876's
+# evidence-directed lever) — CONSUMES `linalg::ridge_solve`'s f64 path
+# (KARC Plan 308's fit math; no iterations, no RNG — determinism-constrained
+# per the plan), so the feature joins linalg's gate list at birth.
 state_option_scoring = ["distance_abstain"]
 
 # decision_wire (Plan 603 T1.2): the Jev/laya-compatible decision wire
@@ -3708,4 +3713,24 @@ required-features = ["state_option_scoring"]
 # tests share the global counting allocator).
 [[test]]
 name = "state_option_scoring_alloc_check"
+required-features = ["state_option_scoring"]
+
+# Plan 607 T3 — the corpus-fitted head GOAT gate (G1a planted-fit ranking
+# with the near-tie redraw, G1b reflex floors, G2 p99-per-decision-SET with
+# the OPTION COUNT printed beside it, determinism digest over the WEIGHT
+# bytes — the two-box anchor). Same split as T1: the fixture-replay
+# agreement arena lives in the ROOT package
+# (examples/tetris_03_head_fit.rs), the G4 alloc gate in the separate
+# state_option_head_alloc_check binary.
+[[bench]]
+name = "bench_878_state_option_head_goat"
+harness = false
+required-features = ["state_option_scoring"]
+
+# Plan 607 T3 G4 — zero-alloc steady state for the head's DECISION path
+# (pick + score). HeadFitter's one-time scratch construction is the cold
+# fit path and deliberately OUTSIDE the measured window (documented in the
+# binary).
+[[test]]
+name = "state_option_head_alloc_check"
 required-features = ["state_option_scoring"]

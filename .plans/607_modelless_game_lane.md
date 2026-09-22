@@ -1,17 +1,20 @@
 # Plan 607 — Modelless game-decision lane (the laya game arenas)
 
 **Status:** IN PROGRESS — owner-accepted 2026-09-22 ("607 accepted").
-T0a + T4a + T0b + T1 + T4 LANDED (same day): substrate gate clean, the
+T0a + T4a + T0b + T1 + T4 LANDED 2026-09-22 (substrate gate clean, the
 state enumerator + `laya-tetris-v2` grammar pinned, the G1-oracle fixture
 committed with airtight provenance, the `state_option_scoring` primitive
-shipped (GOAT: G1a/G1b/G2/G4/determinism ALL PASS — Bench 876), and the
-Tetris arena replayed the fixture. **First GOAT reading: G1 (agreement)
-DOES NOT HOLD** — raw 10.8% ties the constant-pick baseline; the reading
-gates {T2, T3} OPEN (both now evidence-directed). Next: T5 (Flappy/lanes,
-the default-on precondition) and/or the {T2, T3} levers; T2 build stays
-deferred behind Gate A's lapse condition (the reading must show decode
-buys agreement or a second consumer — for T3 the analogous reading is
-whether plain corpus scoring fell short, which it did).
+shipped — Bench 876, and the Tetris arena replayed the fixture; first
+GOAT reading: G1 (agreement) DID NOT HOLD — raw 10.8% tied the
+constant-pick baseline; {T2, T3} gated OPEN). **T3 LANDED 2026-09-23 and
+G1 NOW HOLDS** — the corpus-fitted head (closed-form ridge LS over the
+frozen features, consuming `linalg::ridge_solve`'s f64 path) reads
+**in-corpus 30.0% / LOO 29.2% vs constant-pick 10.8%** (Bench 878; the
+in-corpus ≈ LOO gap is 0.8 pp — the fit generalizes at n=120). Next: T5
+(Flappy/lanes, the default-on precondition) and T2 (Gate A intact: the
+876 reading never measured decode, so the approval did NOT lapse — the
+build deferral is simply over; the losslessness arm measures the
+sentence-vs-structured agreement delta the 876 left unknown).
 - Lane priority: **co-developed ordering** (T0a → T4a → T0b → T1+T4 →
   first GOAT reading → T5 → {T2,T3} evidence-gated → T6 → T7).
 - T2 Gate A: **approved in principle, build deferred, lapses on the first
@@ -264,7 +267,7 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   Provenance per Proposal 014 §Fusion: **Lz4FlexDrafter lineage** (pattern;
   `quest_grammar` is riir-ai's wrapper and is never a dep). Decode-only,
   corpus-limited. Run substrate-first on T0a findings before writing.
-- [ ] **T3 — the corpus-fitted head, determinism-constrained** (NOT an
+- [x] **T3 — the corpus-fitted head, determinism-constrained** (NOT an
   owner gate — closed-form/NNLS corpus fitting is admitted precedent in
   THIS repo: `katgpt-attn-match/src/beta_fitter.rs` warm-starts projected
   gradient from a clamped closed-form LS solution, in the public
@@ -278,6 +281,39 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   Calibration point: jimothy's TF-IDF 82% on banking77 — a TRAINED
   baseline, cited as the bar to beat modellessly, never as a method to
   adopt.
+  **Record (2026-09-23):** LANDED — `state_option_scoring::head` (same
+  feature, no new flag): `FittedHead<D>` (zero-alloc score/pick; weights
+  are the determinism-committed artifact) + `HeadFitter<D>` (the D×D
+  scratch owned once and reused across refits — stable Rust rejects
+  `[0.0; D * D]` under a plain const-generic; the cold fit path owns the
+  heap scratch, OUT of the G4 window, documented). The fit CONSUMES
+  `linalg::ridge_solve`'s f64 path (KARC Plan 308's fit math — T0a's
+  consume-not-fork rule; `state_option_scoring` joined linalg's gate list
+  at birth). No RNG / no iterations / no gradient descent — determinism
+  held by construction (scalar f64 `mul_add` + IEEE `sqrt` are exactly
+  rounded → two-box portable). Arena: `examples/tetris_03_head_fit.rs` +
+  the shared `examples/common/tetris_fixture.rs` extraction (fixture
+  schema + drift detector + play loop + Dellacherie policy — one copy
+  behind the tetris_02/tetris_03 pair; tetris_02's anchors byte-identical
+  post-extraction). Method: corpus-side standardization (fixed column
+  order), intercept in-matrix (D=12), y = oracle p_clean; **λ selected by
+  state-level LOO MSE over the pinned grid — the agreement number is
+  never selected on**; the reading reports in-corpus AND
+  leave-one-STATE-out. **GOAT (Bench 878): G1 HOLDS — in-corpus 36/120
+  (30.0%) · LOO 35/120 (29.2%) vs constant-pick 13/120 (10.8%) and chance
+  5.5%;** the 0.8 pp in-corpus/LOO gap says the fit generalizes at n=120
+  (ridge + 11 features keep it honest) — the corpus-viable claim and the
+  generalization claim are nearly the same number, which is what makes
+  the HOLD honest rather than circular. G1a planted-fit 200/200 (near-tie
+  pairs redrawn deterministically); G2 p99 42/84/167 ns at K=9/17/34
+  (D=12, ≤1 ms bar); G4 0 allocs (separate
+  `state_option_head_alloc_check` binary; HeadFitter's one-time scratch
+  construction deliberately outside the window). Lines-cleared 60.75 mean
+  vs T1-sentence's 3.4 (Dellacherie 195.6 context — the head imitates
+  LAYA's p_clean, and laya agrees with Dellacherie on only 7/120).
+  Anchors: head `65409c14…`, decisions `04644b0c…`; test-gate rows
+  `katgpt-core:2085:state_option_scoring` (re-measured, was 2079) +
+  `katgpt-core:1:state_option_head_alloc_check:state_option_scoring`.
 - [ ] **T6 — bench doc + GOAT verdict**; the numbers become citable by
   the reflex arena book (numbers only; the reflex repo itself untouched).
 - [ ] **T7 — doc-sync**: AGENTS.md feature-table rows for the new flags;
