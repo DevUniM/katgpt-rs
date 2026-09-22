@@ -43,6 +43,16 @@
 //! λ-time catching up). A one-off spike fails the second observation and is
 //! discarded with a [`Note::RegimeJumpDiscarded`].
 //!
+//! # Sign convention (caller-facing)
+//!
+//! `val` RISES when things IMPROVE: a rising trend raises `v`, `v ≥ T_MID`
+//! nudges the factor UP, and a confirmed regime jump is a sudden RISE
+//! (`residual > k·σ`) stepping the factor ×2 with both fits re-baselined.
+//! This is the OPPOSITE of mini-AGI's falling-loss convention: a consumer
+//! feeding a raw LOSS series gets every verdict inverted (improvement
+//! reads as deterioration and the factor is nudged DOWN). Feed a
+//! higher-is-better series — accuracy, reward, or `-loss`.
+//!
 //! # Report-first posture (B2)
 //!
 //! Constants are PINNED (the Issue-033 adaptive-blend negative law: knobs

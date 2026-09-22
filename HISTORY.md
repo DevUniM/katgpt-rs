@@ -26,12 +26,17 @@ pinned at first landing with provenance stated).
   winner (its tests, its bench, its docs surfaces) rather than walking
   away; the disagreement between two independent ports of one source is
   the cheapest oracle either session gets.
-- **Standing follow-up (minor, on-record):** the landed module's
-  caller-facing sign convention (rising `val` = improving, `e = +slope/σ` —
-  the OPPOSITE of mini-AGI's falling-loss convention) is pinned by test
-  fixtures but not stated in the module doc's caller terms; the first
-  consumer (riir-train Plan 416 Phase 2) should pin the doc line in the
-  same commit that decides its own feed direction.
+- **Standing follow-up (minor, on-record) — RESOLVED same day:** the
+  landed module's caller-facing sign convention (rising `val` = improving,
+  `e = +slope/σ` — the OPPOSITE of mini-AGI's falling-loss convention) is
+  pinned by test fixtures and now stated in the module doc's caller terms
+  (a "Sign convention" section naming the raw-loss trap and the `-loss`
+  fix). Originally to ride the first consumer's commit; landed early
+  because the convention is already fixed by the shipped API and the
+  first consumer (riir-train Plan 416 Phase 2) is QUEUED behind a quiet
+  4090 window — a documented caller-facing trap should not wait on an
+  unscheduled plan. The consumer still decides its own feed direction;
+  it just reads the doc instead of the fixtures.
 
 ## 2026-09-22 — Issue 871 closed: the `algebraic_*` A/B measured end-to-end — feature-gated `algebraic_dot` ADOPTED (owner verdict a′), the in-crate codegen truth repaired, T6/T7 deferred on-record
 
