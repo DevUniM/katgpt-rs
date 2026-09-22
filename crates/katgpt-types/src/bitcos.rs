@@ -72,7 +72,7 @@ fn extract_bits(src: u64, mask: u64) -> u64 {
     let mut bit = 0u32;
     let mut m = mask;
     while m != 0 {
-        let lsb = m & m.wrapping_neg();
+        let lsb = m.isolate_lowest_one();
         m ^= lsb;
         if src & lsb != 0 {
             out |= 1 << bit;
@@ -96,7 +96,7 @@ pub(crate) fn scatter_bits(src: u64, mask: u64) -> u64 {
     let mut s = src;
     let mut m = mask;
     while m != 0 {
-        let lsb = m & m.wrapping_neg();
+        let lsb = m.isolate_lowest_one();
         m ^= lsb;
         if s & 1 != 0 {
             out |= lsb;
@@ -408,16 +408,14 @@ impl BitcosWeights {
             let c_end = (c0 + 64).min(self.cols);
             let live = p.count_ones() as usize;
             if live == 0 {
-                for c in c0..c_end {
-                    out[c] = 0;
-                }
+                out[c0..c_end].fill(0);
                 continue;
             }
             let window = self.sign_window(cursor);
             let neg = scatter_bits(window, p);
             let mut m = p;
             while m != 0 {
-                let lsb = m & m.wrapping_neg();
+                let lsb = m.isolate_lowest_one();
                 let c = c0 + lsb.trailing_zeros() as usize;
                 out[c] = if (neg & lsb) != 0 { -1 } else { 1 };
                 m ^= lsb;
@@ -427,7 +425,7 @@ impl BitcosWeights {
                 let absent = !p;
                 let mut z = absent;
                 while z != 0 {
-                    let lsb = z & z.wrapping_neg();
+                    let lsb = z.isolate_lowest_one();
                     let c = c0 + lsb.trailing_zeros() as usize;
                     if c < c_end {
                         out[c] = 0;
@@ -530,8 +528,8 @@ impl BitcosWeights {
                 let w_start = g * GROUP_SIZE;
                 let w_end = (w_start + GROUP_SIZE).min(self.cols);
                 let mut sum: i32 = 0;
-                for c in w_start..w_end {
-                    sum += row_vals[c] as i32;
+                for &v in &row_vals[w_start..w_end] {
+                    sum += v as i32;
                 }
                 total += self.group_scale[group_base + g].to_f32() * sum as f32;
             }
@@ -632,8 +630,8 @@ mod tests {
         for r in 0..2 {
             let mut out = vec![7i8; 130];
             bc.unpack_row_into(r, &mut out);
-            for c in 0..130 {
-                assert_eq!(out[c], bc.get(r, c), "row {r} col {c}");
+            for (c, &v) in out.iter().enumerate() {
+                assert_eq!(v, bc.get(r, c), "row {r} col {c}");
             }
         }
     }

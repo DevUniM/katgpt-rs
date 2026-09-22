@@ -361,7 +361,7 @@ mod tests {
         for r in 0..rows {
             for c in 0..cols {
                 s = s.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
-                if (s >> 33) % keep_mod == 0 {
+                if (s >> 33).is_multiple_of(keep_mod) {
                     gw.set(r, c, if (s >> 20) & 1 == 0 { 1 } else { -1 });
                 }
             }

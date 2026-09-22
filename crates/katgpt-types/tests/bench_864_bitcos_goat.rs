@@ -106,7 +106,7 @@ fn planes_at_density(rows: usize, cols: usize, seed: u64, zero_m: u64, zero_k: u
             for k in 0..64 {
                 let d = pseudo(&mut s) % zero_m;
                 if d >= zero_k {
-                    if pseudo(&mut s) % 2 == 0 {
+                    if pseudo(&mut s).is_multiple_of(2) {
                         pos |= 1 << k;
                     } else {
                         neg |= 1 << k;
