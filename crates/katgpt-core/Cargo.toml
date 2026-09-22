@@ -210,6 +210,29 @@ pool_admission = []
 # belief GC. OPT-IN pending first consumer GOAT.
 dying = ["usage_rate_eviction"]
 
+# rate_control (Issue 873 primitive B, 2026-09-22): dual-EWLS effect-size
+# rate controller (Research 581 — mini-AGI `plasticity.py:63-358`, MIT).
+# Closed-form multiplicative nudge exp(gain·tanh((v−T_MID)/width)) with
+# v = min(t_slow, EFFECT·e_slow, EFFECT·e_fast) from two exponentially-
+# weighted least-squares fits kept as 7 running quantities — no window, so
+# no edge-jump artifacts (windowed controllers staircase on rollover; the
+# recovery-envelope arm pins its absence). The deciding quantity is the
+# EFFECT SIZE e = slope/σ_resid (a t-statistic measures watch-time, not
+# progress); asymmetric gains AND widths (up 0.005/0.75 = slow probe, down
+# 0.025/6.0 = magnitude-proportional deterioration response); confirmed
+# regime-jump step (jump > max(4·σ, floor), still > 2·σ next obs → ×2 +
+# fit reset; a one-off spike is discarded). Rolling-origin recenter every
+# 256 ticks — an exact algebraic shift keeping the quadratic sums f32-
+# precise over unbounded runs. Constants PINNED (Issue-033 never-adaptive
+# law); report-first (R135/Bench 047 — gates nothing until evidence volume
+# exists). CONSTRAINT: MIN_WEIGHT (5.0) must stay strictly below the fast
+# fit's steady-state ceiling 1/(1−0.85) = 6.67 — above it the fast arm is
+# gated cold forever and the controller deadlocks at factor 1.0 (found by
+# probe on landing). First consumer A/B: riir-train Plan 416 Phase 2.
+# Zero-alloc observe, deterministic, pure std. OPT-IN pending first
+# consumer GOAT.
+rate_control = []
+
 # jsd_topk (Issue 802 item 2, 2026-09-16): NaN-safe bounded top-K Jensen–
 # Shannon divergence kernel — JSD = H(M) − ½H(P) − ½H(Q) over renormalized
 # top-K slices; disjoint supports → EXACTLY ln 2 (never the KL +∞/NaN trap
@@ -3626,3 +3649,12 @@ required-features = ["bridge_certified"]
 [[test]]
 name = "compression_drafter_alloc_gate"
 required-features = ["compression_drafter"]
+
+# Issue 873 primitive B — the rate_control GOAT gate (G2 ns/observe; the
+# G1 signal-series suite is the in-module #[cfg(test)] suite, run via the
+# katgpt-core:<n>:rate_control test-gate row; G4 is the in-module
+# TrackingAllocator suite).
+[[bench]]
+name = "bench_875_rate_control_goat"
+harness = false
+required-features = ["rate_control"]

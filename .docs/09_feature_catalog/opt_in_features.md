@@ -4426,3 +4426,31 @@ binary, and the harness reads it for every published number. The
 consumes the drafter/routing/calibration substrate, never `structured_read`
 (its recorded re-arm trigger — "one line when a consumer appears" — stays
 armed).
+
+## 121. rate_control — dual-EWLS effect-size rate controller (Research 581 / Issue 873)
+
+Distilled from mini-AGI (`plasticity.py:63-358`): a closed-form
+multiplicative nudge `exp(gain·tanh((v−T_MID)/width))` with
+`v = min(t_slow, EFFECT·e_slow, EFFECT·e_fast)` from two exponentially-
+weighted least-squares fits kept as 7 running quantities — no window, so
+no edge-jump artifacts (windowed controllers staircase on rollover; the
+recovery-envelope arm pins its absence). The deciding quantity is the
+EFFECT SIZE `e = slope/σ_resid` (a t-statistic measures watch-time, not
+progress); asymmetric gains AND widths (up 0.005/0.75 slow probe, down
+0.025/6.0 magnitude-proportional deterioration response); confirmed
+regime-jump step (×2 + fit reset; single spikes discarded). Constants
+PINNED (Issue-033 never-adaptive law); report-first (R135/Bench 047).
+`observe` 42.0 ns, zero-alloc. Landed constraint: `MIN_WEIGHT` (5.0) must
+stay below the fast fit's steady-state ceiling `1/(1−0.85) = 6.67` — above
+it the fast arm is gated cold forever and the controller deadlocks at
+factor 1.0 (found by probe on landing). Companion features:
+`pool_admission` (107-Bench 873) and `dying` (Bench 874) landed
+separately.
+
+🔧 Feature flag: `rate_control = []` (katgpt-core) — opt-in; first
+consumer A/B is riir-train Plan 416 Phase 2 (vs cosine at fixed budget +
+regime-change arm).
+
+📖 Research: [581](../../.research/581_Mini_AGI_Governed_Pool_Modelless.md) ·
+Issue: 873 · Bench: [875](../../.benchmarks/875_rate_control_goat.md) —
+G1/G2/G4 ALL PASS · test-gate row `katgpt-core:2076:rate_control`.

@@ -149,6 +149,9 @@ katgpt-rs:203
 katgpt-core:2060
 katgpt-core:2074:decision_wire
 katgpt-core:2074:compression_drafter
+katgpt-core:2076:rate_control
+katgpt-core:2079:pool_admission
+katgpt-core:2097:dying
 katgpt-dec:249:pca_global
 katgpt-types:139
 "
