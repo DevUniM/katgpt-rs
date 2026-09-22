@@ -79,6 +79,14 @@ kv_eviction tree too). There: `cargo clippy --all-targets -- -D warnings`
 clean, `cargo test` fully green (26 lib incl. 9 new + all integration
 targets). Commit `a732bcf6a` staged the three named files only.
 
+**Re-verified 2026-09-22 21:07 +07 against the MOVED katgpt-core** (the
+871-T4/T5 + 873-primitive-C landings post-`c6f767d5c` — no lane had
+compiled reflex HEAD × katgpt HEAD): fresh adjacent-worktree rig, reflex
+`a732bcf` × katgpt `cb32f3f40`, `CARGO_TARGET_DIR` isolated, box quiet.
+`cargo clippy --all-targets -- -D warnings` clean (15.25s) · `cargo test`
+green — 26 lib (incl. the 9 threshold gates) + 3+8+7+24+7 integration,
+0 failed. The T1 surface carries no compat debt into T2.
+
 ## Non-goals
 
 - No TRAINED calibration — jimothy's method is the adjacent baseline named
