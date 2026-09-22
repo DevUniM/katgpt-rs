@@ -4369,6 +4369,24 @@ strict-config decode uncertainty is unstructured). Study test:
 prints the fronts). The Bonsai-scale re-open stands as the only path;
 `probe_guidance` stays opt-in.
 
+**The multi-layer kernel extension LANDED (2026-09-22, Issue 869 T1–T4) —
+the Bonsai-scale gate is open.** `forward_block_causal_with` generalized
+over `D2fContext::decode_n_layer` (per-layer KV planes, chained residual
+stream; **depth defaults to 1** — the mini lane is single-layer end-to-end
+regardless of config, Issue 869's finding, so depth 1 preserves every pinned
+gate's world; `set_decode_layers(n)` is the explicit opt-in), taps at ANY
+depth via `set_probe_tap_layers(&[usize])` (layered `probe_tap_flat`, sorted
++ validated against the decode depth), `ProbeCtx { tap_layers, tap_plane }`
++ `WeakLogitProbe::tap_layer()` + install-time validation in `set_guidance`
+(the constructor-time `tap_layer != 0` rejection is REMOVED — deeper-tap
+artifacts now load and read their own plane; that was the Bonsai-scale
+blocker). Default tap set `[0]`: every existing artifact/gate
+byte-compatible. Bit-identity at depth 1 proven by re-running every pinned
+gate (fixture G0 still pairs through the NEW kernel; bench_601/809/817/602/
+600/dmax/tri/ugc/dllm all green) + 10 new tests. T5 (training-side
+per-layer honesty + flipping the decode default to `n_layer`) open in the
+issue — not required for the scale lane (frozen trunk, GPU extraction).
+
 ### `decision_wire` — the Jev/laya decision wire contract (Plan 603 T1.2, 2026-09-21)
 
 `katgpt_core::decision_wire` — the public wire contract both Proposal 014 arena

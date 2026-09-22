@@ -91,6 +91,9 @@ impl WeakLogitProbe for ZeroProbe {
     }
 }
 
+// A study harness row-runner: the arm's knobs are its protocol — bundling
+// them into a config struct would hide the per-arm deltas the record quotes.
+#[allow(clippy::too_many_arguments)]
 fn run_arm(
     label: &str,
     config: &Config,
@@ -196,13 +199,13 @@ fn print_arm(arm: &ArmResult) {
 #[test]
 fn headroom_lambda_sweep_study() {
     println!("## Bench 850 — headroom-trunk study, regime 1: high-data 12-epoch trunk (2048 seqs, 2-token prompt, T0 = {T0})");
-    study_fronts(&workspace(), T0, PROMPT_LEN, 0.3, 16);
+    study_fronts(workspace(), T0, PROMPT_LEN, 0.3, 16);
 
     println!("## Bench 850 — regime 2: LOW-DATA 12-epoch trunk (96 seqs, 8-token prompt, T0 = {T0})");
-    study_fronts(&low_data_workspace(), T0, LOW_DATA_PROMPT_LEN, 0.3, 16);
+    study_fronts(low_data_workspace(), T0, LOW_DATA_PROMPT_LEN, 0.3, 16);
 
     println!("## Bench 850 — regime 3: low-data trunk + STRICT decode config (τ_conf 0.7, 8 steps — the decode-uncertainty cell)");
-    study_fronts(&low_data_workspace(), T0, LOW_DATA_PROMPT_LEN, 0.7, 8);
+    study_fronts(low_data_workspace(), T0, LOW_DATA_PROMPT_LEN, 0.7, 8);
 }
 
 /// Regime 2: the decode-disagreement regime. 96 sequences × 12 epochs —

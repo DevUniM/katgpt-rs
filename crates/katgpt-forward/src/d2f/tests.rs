@@ -918,3 +918,374 @@ mod probe_guidance_tests {
         );
     }
 }
+
+// ═══════════════════════════════════════════════════════════
+// Multi-layer decode + taps at depth (Issue 869 T1/T2). The kernel
+// half is ungated (correctness); the tap half is feature-gated like
+// the rest of the guidance surface.
+// ═══════════════════════════════════════════════════════════
+mod multi_layer_tests {
+    use super::*;
+    use crate::d2f_context::forward_block_causal_with;
+
+    /// A 2-layer pattern-lane config: micro_dllm's shape with one extra
+    /// layer (the same construction style as `micro_dllm_text`, kept local so
+    /// the test does not reach into katgpt-types for a fixture it owns).
+    fn two_layer_config() -> Config {
+        Config {
+            n_layer: 2,
+            ..Config::micro_dllm()
+        }
+    }
+
+    fn seeded_weights(config: &Config) -> TransformerWeights {
+        TransformerWeights::new(config, &mut Rng::new(869))
+    }
+
+    #[test]
+    fn default_decode_depth_is_one_and_layered_kv_allocates() {
+        // The Issue-869 finding, pinned: a 2-layer config's context decodes
+        // ONE layer by default (the lane's effective historical semantics),
+        // while the KV planes exist for the full depth.
+        let config = two_layer_config();
+        let ctx = D2fContext::new(&config);
+        assert_eq!(ctx.decode_n_layer, 1, "depth must default to 1 (Issue 869)");
+        assert_eq!(ctx.n_layer_total, 2);
+        let kvd = katgpt_core::types::kv_dim(&config);
+        assert_eq!(
+            ctx.k_cache.len(),
+            2 * config.block_size * kvd,
+            "KV planes must cover the full layer count"
+        );
+    }
+
+    #[test]
+    fn set_decode_layers_validates_the_range() {
+        let config = two_layer_config();
+        let mut ctx = D2fContext::new(&config);
+        ctx.set_decode_layers(2);
+        assert_eq!(ctx.decode_n_layer, 2);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut ctx = D2fContext::new(&two_layer_config());
+            ctx.set_decode_layers(3);
+        }));
+        assert!(result.is_err(), "depth beyond n_layer_total must panic loudly");
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut ctx = D2fContext::new(&two_layer_config());
+            ctx.set_decode_layers(0);
+        }));
+        assert!(result.is_err(), "depth 0 must panic loudly");
+    }
+
+    #[test]
+    fn multi_layer_forward_produces_finite_logits_and_differs_from_depth_one() {
+        // Depth 2 runs layer 1 too: finite logits everywhere, and — random
+        // weights, same seed — observably different logits from the depth-1
+        // forward on the same weights (the stream actually flows through
+        // layer 1).
+        let config = two_layer_config();
+        let weights = seeded_weights(&config);
+        let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9, 1, 2];
+
+        let mut shallow = D2fContext::new(&config);
+        forward_block_causal_with(&mut shallow, &weights, &tokens, &config, 4);
+
+        let mut deep = D2fContext::new(&config);
+        deep.set_decode_layers(2);
+        forward_block_causal_with(&mut deep, &weights, &tokens, &config, 4);
+
+        let vocab = config.vocab_size;
+        for p in 0..tokens.len() {
+            for i in 0..vocab {
+                assert!(
+                    deep.logits_flat[p * vocab + i].is_finite(),
+                    "depth-2 logit must be finite (pos {p}, vocab {i})"
+                );
+            }
+        }
+        assert_ne!(
+            shallow.logits_flat, deep.logits_flat,
+            "depth 2 must consume layer 1 — logits must move"
+        );
+    }
+
+    #[test]
+    fn depth_one_forward_is_bit_identical_to_the_pre869_semantics() {
+        // The pinned bit-identity, made local: a 2-layer config decoded at
+        // the default depth 1 must produce exactly the same logits as a
+        // 1-layer config carrying layer 0's weights — the multi-layer loop
+        // degenerates to the old op sequence. (The Issue-865 gates re-run
+        // this on the committed fixture; this is the structural pin.)
+        let config = two_layer_config();
+        let weights = seeded_weights(&config);
+        let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9, 1, 2];
+
+        let mut ctx = D2fContext::new(&config);
+        forward_block_causal_with(&mut ctx, &weights, &tokens, &config, 4);
+        let deep_default = ctx.logits_flat.clone();
+
+        let mut one_layer_config = two_layer_config();
+        one_layer_config.n_layer = 1;
+        // Same seed, different layer count: the shared weights (wte/wpe/
+        // lm_head) come from the same RNG prefix, but do not rely on that —
+        // copy them explicitly so the ONLY variable is the layer count.
+        let mut one_layer_weights = seeded_weights(&one_layer_config);
+        one_layer_weights.layers[0] = weights.layers[0].clone();
+        one_layer_weights.wte = weights.wte.clone();
+        one_layer_weights.wpe = weights.wpe.clone();
+        one_layer_weights.lm_head = weights.lm_head.clone();
+        let mut one_ctx = D2fContext::new(&one_layer_config);
+        forward_block_causal_with(&mut one_ctx, &one_layer_weights, &tokens, &one_layer_config, 4);
+
+        assert_eq!(
+            deep_default, one_ctx.logits_flat,
+            "depth-1 decode of a 2-layer config must equal the 1-layer decode of layer 0"
+        );
+    }
+
+    #[test]
+    fn multi_layer_forward_supports_committed_prefix() {
+        // The pipeline path's contract: committed positions keep their KV
+        // (per-layer planes), and a follow-on block decodes through all
+        // layers without touching the committed prefix's logits.
+        let config = two_layer_config();
+        let weights = seeded_weights(&config);
+        let first: Vec<usize> = vec![0, 5, 3, 7];
+
+        let mut ctx = D2fContext::new(&config);
+        ctx.set_decode_layers(2);
+        forward_block_causal_with(&mut ctx, &weights, &first, &config, 4);
+        let committed_logits = ctx.logits_flat[..first.len() * config.vocab_size].to_vec();
+        ctx.commit(first.len());
+
+        let second: Vec<usize> = [first.clone(), vec![config.mask_token; 4]].concat();
+        forward_block_causal_with(&mut ctx, &weights, &second, &config, 4);
+
+        assert_eq!(
+            &ctx.logits_flat[..first.len() * config.vocab_size],
+            &committed_logits[..],
+            "committed logits must be untouched by the follow-on block"
+        );
+        for p in first.len()..second.len() {
+            let row = &ctx.logits_flat[p * config.vocab_size..(p + 1) * config.vocab_size];
+            assert!(row.iter().all(|l| l.is_finite()), "block pos {p} must be finite");
+        }
+    }
+}
+
+#[cfg(feature = "probe_guidance")]
+mod multi_layer_tap_tests {
+    use super::*;
+    use crate::d2f_context::WeakLogitProbe;
+    use crate::d2f_context::forward_block_causal_with;
+    use katgpt_speculative::belief_drafter::LatentDynamicsMLP;
+    use katgpt_speculative::probe_artifact::ProbeArtifact;
+
+    fn two_layer_config() -> Config {
+        Config {
+            n_layer: 2,
+            ..Config::micro_dllm()
+        }
+    }
+
+    fn seeded_weights(config: &Config) -> TransformerWeights {
+        TransformerWeights::new(config, &mut Rng::new(869))
+    }
+
+    fn layer1_tap_artifact(config: &Config) -> crate::weak_probe_mlp::MlpWeakProbe {
+        artifact_probe_at(config, 1)
+    }
+
+    fn artifact_probe_at(config: &Config, tap_layer: usize) -> crate::weak_probe_mlp::MlpWeakProbe {
+        let mlp = LatentDynamicsMLP::random_init(config.n_embd);
+        let lm_head: Vec<f32> = (0..config.vocab_size * config.n_embd)
+            .map(|i| ((i % 29) as f32) * 0.1 - 1.0)
+            .collect();
+        let artifact = ProbeArtifact::from_parts(mlp, lm_head, tap_layer, 1).expect("artifact");
+        crate::weak_probe_mlp::MlpWeakProbe::new(artifact).expect("wrap")
+    }
+
+    #[test]
+    fn tap_set_validation_is_loud_both_ways() {
+        // Tap layers at/beyond the decode depth must panic (they could never
+        // be written); and shrinking the depth over an existing tap must
+        // panic (it would orphan the tap).
+        let r1 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut ctx = D2fContext::new(&two_layer_config());
+            ctx.set_probe_tap_layers(&[1]); // depth still 1
+        }));
+        assert!(r1.is_err(), "tap beyond the decode depth must panic");
+        let r2 = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut ctx = D2fContext::new(&two_layer_config());
+            ctx.set_decode_layers(2);
+            ctx.set_probe_tap_layers(&[0, 1]);
+            ctx.set_decode_layers(1); // would orphan tap 1
+        }));
+        assert!(r2.is_err(), "shrinking depth over a live tap must panic");
+    }
+
+    #[test]
+    fn layered_taps_capture_every_requested_plane() {
+        // With taps [0, 1] and depth 2, both planes hold the POST-ATTENTION
+        // residual of their layer: each is populated, the two planes differ
+        // from each other, plane 0 equals the pre-869 single-tap capture
+        // byte-for-byte, and arming capture never moves a logit.
+        let config = two_layer_config();
+        let weights = seeded_weights(&config);
+        let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3, 7, 9, 1, 2];
+
+        let mut ctx = D2fContext::new(&config);
+        ctx.set_decode_layers(2);
+        ctx.set_probe_tap_layers(&[0, 1]);
+        ctx.probe_tap_capture = true;
+        forward_block_causal_with(&mut ctx, &weights, &tokens, &config, 4);
+
+        let n = config.n_embd;
+        let plane = ctx.probe_tap_plane;
+        assert_eq!(ctx.probe_tap_layers.as_slice(), &[0, 1], "tap set is sorted");
+        assert_eq!(ctx.probe_tap_flat.len(), 2 * plane);
+
+        // Both planes written with finite nonzero values somewhere.
+        for s in 0..2 {
+            let any = (0..tokens.len())
+                .any(|p| ctx.probe_tap_flat[s * plane + p * n..s * plane + (p + 1) * n]
+                    .iter()
+                    .any(|v| v.is_finite() && *v != 0.0));
+            assert!(any, "plane {s} must be populated");
+        }
+        // The planes differ (layer 1's post-attention residual ≠ layer 0's).
+        let planes_differ = (0..tokens.len()).any(|p| {
+            ctx.probe_tap_flat[p * n..(p + 1) * n]
+                != ctx.probe_tap_flat[plane + p * n..plane + (p + 1) * n]
+        });
+        assert!(planes_differ, "layer-1 tap must differ from layer-0 tap");
+
+        // Plane 0 == the single-tap capture of the identical depth-2 forward,
+        // and the logits never moved (capture is a pure copy at any depth).
+        let mut single = D2fContext::new(&config);
+        single.set_decode_layers(2);
+        single.probe_tap_capture = true; // default tap set [0]
+        forward_block_causal_with(&mut single, &weights, &tokens, &config, 4);
+        assert_eq!(
+            &ctx.probe_tap_flat[..plane],
+            &single.probe_tap_flat[..],
+            "plane 0 must equal the default single-tap capture byte-for-byte"
+        );
+        assert_eq!(ctx.logits_flat, single.logits_flat);
+    }
+
+    #[test]
+    fn deeper_tap_artifact_install_validation_and_read() {
+        // THE unblock, end to end: an artifact pinned to tap_layer 1 wraps,
+        // installing it against a context not capturing layer 1 panics with
+        // the remedy, and against a capturing context the probe reads
+        // EXACTLY plane 1 (verified by hand-feeding the captured plane to
+        // the same probe and comparing logits).
+        let config = two_layer_config();
+        let weights = seeded_weights(&config);
+
+        // Install-time validation: tap set [0] cannot serve a layer-1 artifact.
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut ctx = D2fContext::new(&config);
+            ctx.set_decode_layers(2);
+            ctx.set_guidance(1.5, Box::new(layer1_tap_artifact(&config)));
+        }));
+        assert!(r.is_err(), "install must panic when the tap layer is not captured");
+
+        // Capture layer 1 and decode once with capture armed.
+        let tokens: Vec<usize> = vec![0, 5, config.mask_token, 3];
+        let mut armed = D2fContext::new(&config);
+        armed.set_decode_layers(2);
+        armed.set_probe_tap_layers(&[1]);
+        armed.probe_tap_capture = true;
+        forward_block_causal_with(&mut armed, &weights, &tokens, &config, 4);
+
+        let vocab = config.vocab_size;
+        let n = config.n_embd;
+        let seq_len = tokens.len();
+        let plane = armed.probe_tap_plane;
+
+        // (a) Read through the layered ProbeCtx (slot 0 of tap_layers=[1]).
+        let mut via_ctx = vec![0.0f32; seq_len * vocab];
+        {
+            let input = crate::d2f_context::ProbeCtx {
+                xr: &armed.xr,
+                x_norm: &armed.x_norm,
+                tap: &armed.probe_tap_flat,
+                tap_layers: &armed.probe_tap_layers,
+                tap_plane: armed.probe_tap_plane,
+                tokens: &tokens,
+                committed_len: 0,
+                block_start: 0,
+                seq_len,
+                vocab,
+                n_embd: n,
+                step: 3,
+            };
+            let mut p1 = layer1_tap_artifact(&config);
+            p1.probe(input, &mut via_ctx);
+        }
+
+        // (b) Hand-feed plane 0's content as a single-plane tap — the same
+        // bytes the kernel wrote for layer 1 — DECLARED as layer 1 (it is
+        // the only captured layer, so it is also slot 0).
+        let mut alone = vec![0.0f32; seq_len * vocab];
+        {
+            let only_plane = armed.probe_tap_flat[..plane].to_vec();
+            let input = crate::d2f_context::ProbeCtx {
+                xr: &armed.xr,
+                x_norm: &armed.x_norm,
+                tap: &only_plane,
+                tap_layers: &[1],
+                tap_plane: plane,
+                tokens: &tokens,
+                committed_len: 0,
+                block_start: 0,
+                seq_len,
+                vocab,
+                n_embd: n,
+                step: 3,
+            };
+            let mut p2 = layer1_tap_artifact(&config);
+            p2.probe(input, &mut alone);
+        }
+        assert_eq!(
+            via_ctx, alone,
+            "the layer-1 artifact must read plane 0 of tap_layers=[1] exactly"
+        );
+    }
+
+    #[test]
+    fn lambda_one_identity_holds_at_depth_two() {
+        // G1's structural pin at depth: a guided decode with a multi-layer
+        // trunk and a deeper-tap artifact installed at λ = 1 must be
+        // bit-identical to unguided (the probe is never invoked).
+        let config = two_layer_config();
+        let decode_config = D2fDecodeConfig::with_block_size(4);
+        let weights = seeded_weights(&config);
+
+        let run = |guidance: bool| {
+            let mut ctx = D2fContext::new(&config);
+            ctx.set_decode_layers(2);
+            if guidance {
+                ctx.set_probe_tap_layers(&[1]);
+                ctx.set_guidance(1.0, Box::new(layer1_tap_artifact(&config)));
+            }
+            d2f_decode_block_with_prompt_with(
+                &mut ctx,
+                &weights,
+                &config,
+                &decode_config,
+                &[],
+                &NoPruner,
+                &NoScreeningPruner,
+                &mut Rng::new(42),
+            )
+        };
+        let unguided = run(false);
+        let guided = run(true);
+        assert_eq!(unguided.tokens, guided.tokens);
+        assert_eq!(unguided.confidence_history, guided.confidence_history);
+        assert_eq!(unguided.steps_used, guided.steps_used);
+    }
+}

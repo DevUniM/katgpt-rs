@@ -56,20 +56,14 @@ pub struct MlpWeakProbe {
 impl MlpWeakProbe {
     /// Wrap a verified artifact.
     ///
-    /// Fails loudly when the artifact declares a tap the D2F kernel does not
-    /// provide: the current single-layer kernel taps ONLY layer 0 (the
-    /// POST-ATTENTION residual — attention output + input residual, pre-MLP
-    /// refinement; the earliest context-carrying point), so an artifact
-    /// trained against a different tap would silently misread — that must be
-    /// a construction error, never a decode-time surprise.
+    /// The artifact's `tap_layer` may be ANY layer index (Issue 869 T2
+    /// unblocked deeper taps — the wire has carried the field since Issue
+    /// 865 T2; the kernel now captures any configured set). Validation is
+    /// deferred to the one place both sides are known: `D2fContext::set_guidance`
+    /// panics loudly when the decode context does not capture the artifact's
+    /// layer (with the `set_probe_tap_layers` / `set_decode_layers` remedy),
+    /// so a mismatched artifact can never silently misread the wrong plane.
     pub fn new(artifact: ProbeArtifact) -> Result<Self, ProbeArtifactError> {
-        if artifact.tap_layer != 0 {
-            return Err(ProbeArtifactError::InvalidShape(format!(
-                "artifact declares tap_layer {} but the D2F kernel provides only the layer-0 tap \
-                 (post-attention residual); deeper taps need the multi-layer kernel extension",
-                artifact.tap_layer
-            )));
-        }
         let n = artifact.mlp.n_embd;
         Ok(Self {
             scratch: MlpForwardScratch::new(n),
@@ -95,8 +89,7 @@ impl WeakLogitProbe for MlpWeakProbe {
         let n = self.artifact.mlp.n_embd;
         let vocab = self.artifact.vocab;
         debug_assert_eq!(
-            input.n_embd,
-            n,
+            input.n_embd, n,
             "probe artifact n_embd must match the decode context"
         );
         debug_assert_eq!(
@@ -104,8 +97,17 @@ impl WeakLogitProbe for MlpWeakProbe {
             (input.seq_len - input.block_start) * vocab,
             "probe out must hold exactly the block's logits"
         );
+        // Issue 869 T2: locate THIS artifact's plane in the layered tap. The
+        // install-time validation in `set_guidance` is what guarantees the
+        // layer is captured; the expect is the belt to that braces.
+        let slot = input
+            .tap_layers
+            .iter()
+            .position(|&l| l == self.artifact.tap_layer)
+            .expect("tap layer validated at guidance install (D2fContext::set_guidance)");
+        let base = slot * input.tap_plane;
         for p in input.block_start..input.seq_len {
-            let h = &input.tap[p * n..(p + 1) * n];
+            let h = &input.tap[base + p * n..base + (p + 1) * n];
             self.artifact
                 .mlp
                 .forward_into(h, &self.zeros, &mut self.scratch, &mut self.latent);
@@ -119,6 +121,10 @@ impl WeakLogitProbe for MlpWeakProbe {
             );
         }
     }
+
+    fn tap_layer(&self) -> Option<usize> {
+        Some(self.artifact.tap_layer)
+    }
 }
 
 /// Modelless dropout-autoguidance weak side (Issue 865 T3 arm (b), the
@@ -130,6 +136,10 @@ impl WeakLogitProbe for MlpWeakProbe {
 /// (the identity-truncation refutation in Bench 847 measured that class
 /// failing). Masking happens at the TAP level, so no inference-time kernel
 /// dropout is needed (the reason Bench 847 deferred this arm is gone).
+///
+/// Layer-agnostic (Issue 869 T2): reads SLOT 0 of the layered tap — whatever
+/// layer the context captures first — and declares `tap_layer() = None`, so
+/// it installs against any tap set without validation friction.
 ///
 /// Deterministic: the mask is a fixed LCG stream keyed by `(position,
 /// denoise step)` — reproducible decode, no runtime RNG consumed. Zero-alloc:
@@ -220,6 +230,10 @@ mod tests {
             xr: tap,
             x_norm: tap,
             tap,
+            // Single-plane layout (slot 0 = layer 0) — the default tap set's
+            // shape; the multi-plane reads are covered by the d2f kernel tests.
+            tap_layers: &[0],
+            tap_plane: tap.len(),
             tokens: &[],
             committed_len: 0,
             block_start,
@@ -231,15 +245,53 @@ mod tests {
     }
 
     #[test]
-    fn new_rejects_deeper_tap_loudly() {
-        let artifact = fixture(9, 8, 1);
-        let err = match MlpWeakProbe::new(artifact) {
-            Err(e) => e,
-            Ok(_) => panic!("deeper tap must be rejected"),
+    fn new_accepts_deeper_tap_layers() {
+        // Issue 869 T2: the constructor-time `tap_layer != 0` rejection is
+        // GONE — deeper taps are legal artifacts, validated at guidance
+        // install (the d2f tests pin that panic). Wrapping must succeed for
+        // any layer index, and the probe must DECLARE its layer.
+        for tap_layer in [0usize, 1, 5] {
+            let artifact = fixture(9, 8, tap_layer);
+            let probe = MlpWeakProbe::new(artifact).expect("any tap_layer wraps");
+            assert_eq!(probe.tap_layer(), Some(tap_layer));
+        }
+    }
+
+    #[test]
+    fn probe_reads_its_own_plane_in_a_layered_tap() {
+        // A two-plane tap (layers [0, 1], stride = 6 rows): an artifact pinned
+        // to layer 1 must read the SECOND plane, byte-identical to feeding
+        // that plane alone as a single-plane tap.
+        let artifact = fixture(7, 8, 1);
+        let vocab = artifact.vocab;
+        let n = artifact.mlp.n_embd;
+        let mut probe = MlpWeakProbe::new(artifact).expect("valid artifact");
+
+        let plane: Vec<f32> = (0..6 * n).map(|i| ((i % 19) as f32) * 0.2 - 1.5).collect();
+        let mut layered = vec![0.0f32; 2 * 6 * n];
+        layered[6 * n..].copy_from_slice(&plane); // slot 1 = layer 1
+        let mut layered_out = vec![0.0f32; 2 * vocab];
+        let ctx = ProbeCtx {
+            tap: &layered,
+            tap_layers: &[0, 1],
+            tap_plane: 6 * n,
+            ..probe_ctx(&plane, 2, 4, vocab, n)
         };
-        assert!(
-            err.to_string().contains("tap_layer"),
-            "rejection must name the tap mismatch: {err}"
+        probe.probe(ctx, &mut layered_out);
+
+        let mut alone_out = vec![0.0f32; 2 * vocab];
+        // The "alone" feed presents the same bytes as layer 1's plane — so
+        // it must be DECLARED as layer 1 (a single-plane tap whose layer is
+        // 1), not as the default layer-0 slot.
+        let alone = ProbeCtx {
+            tap_layers: &[1],
+            ..probe_ctx(&plane, 2, 4, vocab, n)
+        };
+        probe.probe(alone, &mut alone_out);
+
+        assert_eq!(
+            layered_out, alone_out,
+            "layer-1 artifact must read plane 1 of the layered tap, ignoring plane 0"
         );
     }
 

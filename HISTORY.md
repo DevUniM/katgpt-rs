@@ -1,3 +1,61 @@
+## 2026-09-22 — Issue 869: multi-layer D2F decode + taps at depth — the Issue-865 Bonsai-scale unblock lands; bitcos x86_64-lane clippy debt repaired in passing
+
+Executed the riir-train recipe row's mandate ("Bonsai-scale probe training is gated on the
+katgpt-rs multi-layer D2F kernel extension — file there first"; Issue 865's re-open condition,
+Bench 847/850):
+
+- **Kernel (T1)**: `forward_block_causal_with` generalized over
+  `D2fContext::decode_n_layer` — per-layer KV planes (`l * block_size * kvd`),
+  chained residual stream (`h_0 = rmsnorm(emb)` preserving the lane's
+  double-norm quirk at layer 0; single-norm inputs above), logits only at the
+  final layer. **Depth defaults to 1, not `n_layer`** — the finding (below)
+  is that the whole mini lane trains/evals/decodes single-layer regardless of
+  config, so depth 1 preserves every pinned gate's world exactly; multi-layer
+  decode is an explicit `set_decode_layers(n)` opt-in.
+- **Taps at depth (T2)**: `set_probe_tap_layers(&[usize])` (sorted, deduped,
+  validated against the decode depth — a tap deeper than the decode can
+  never be written, so asking for one is a loud panic), layered
+  `probe_tap_flat` (`[slot][pos][dim]`), `ProbeCtx { tap_layers, tap_plane }`,
+  `WeakLogitProbe::tap_layer()` default method, and `set_guidance`
+  install-time validation (a probe declaring a layer the context does not
+  capture panics with the remedy — the old constructor-time `tap_layer != 0`
+  rejection is REMOVED; that is the unblock: artifacts pinned to any layer
+  now load, and `MlpWeakProbe` reads its own plane). Default tap set `[0]`
+  keeps every existing artifact/gate byte-compatible (slot 0 at offset 0).
+- **The finding, recorded in the issue**: `micro_dllm_text()` declares
+  `n_layer = 2` ("the smallest capacity that learns English bigram structure")
+  but the ENTIRE mini dllm lane is single-layer end-to-end — training
+  (`forward_save` ×2, `backward`, `sgd_update`, `TrainingGradients`), eval
+  (`evaluate_accuracy`'s bidirectional forward), and decode all index
+  `layers[0]` only. Layer 1 is allocated, never trained, never read. The
+  T5 follow-up (open, its own landing) migrates training/eval per-layer,
+  then flips the decode default to `n_layer`, then re-runs the four
+  micro_dllm_text benches. NOT required for the Bonsai-scale GPU lane
+  (frozen trunk, GPU extraction — the artifact consumer + kernel contract
+  were what that lane needed).
+- **Verification**: bit-identity at depth 1 proven by re-run of every pinned
+  gate (fixture G0 + goat 5/5 — the committed fixture still pairs with the
+  trunk through the NEW kernel; headroom study verdicts unchanged; bench_601
+  3/3, bench_809/817/602, bench_600 ×2, dmax_spd, tri_mode sampler, ugc_g1b,
+  dllm lib 23/23) + 10 new tests (kernel-level ungated + tap-level gated:
+  planes-differ, capture bit-identity at depth, λ=1 identity at depth with a
+  deeper-tap artifact, install/depth/tap-set validation panics, exact plane
+  reads, pre-869 structural bit-identity pin, committed-prefix at depth).
+  `scripts/full_gate.sh --allow-partial-platform`: every layer that ran
+  clean.
+- **Rider — pre-existing bitcos x86_64-lane clippy debt repaired**: the full
+  gate's first run red on `katgpt-types/bitcos.rs` + `simd/bitcos.rs` +
+  `bench_864_bitcos_goat.rs` (Issue 864's landing, 9 findings, ALL
+  arch-gated — invisible to every lane this box's default clippy runs, the
+  Issue-819 class): `manual_isolate_lowest_one` ×4 → `.isolate_lowest_one()`,
+  `needless_range_loop` ×2 → slice iteration/`fill`, `manual_is_multiple_of`
+  ×2 → `.is_multiple_of()`. Behavior-identical mechanical rewrites;
+  bitcos tests 13/13 green on the avx2 lane post-repair.
+
+Issue: [`.issues/869_multi_layer_d2f_taps.md`](.issues/869_multi_layer_d2f_taps.md) (T1–T4
+landed; T5 open). No bench — no perf claim (depth 1 is the exact old op sequence; the GOAT/perf
+question belongs to the scale lane's own gate, pre-wired as Bench 847's inverted bars).
+
 ## 2026-09-21 — Issue 864 closed: BITCOS tier ships opt-in — footprint PASS, latency honestly LOSES on this host (Bench 846)
 
 Executed `Issue 864` (filed from

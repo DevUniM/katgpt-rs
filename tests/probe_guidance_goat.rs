@@ -347,6 +347,8 @@ fn g0_fixture_probe_matches_this_trunk() {
                 xr: &ctx.xr,
                 x_norm: &ctx.x_norm,
                 tap: &ctx.probe_tap_flat,
+                tap_layers: &ctx.probe_tap_layers,
+                tap_plane: ctx.probe_tap_plane,
                 tokens: &corrupted,
                 committed_len: ctx.committed_len,
                 block_start: p,
