@@ -153,6 +153,7 @@ katgpt-core:2076:rate_control
 katgpt-core:2079:pool_admission
 katgpt-core:2097:dying
 katgpt-core:2085:state_option_scoring
+katgpt-core:2074:template_decode
 katgpt-dec:249:pca_global
 katgpt-types:139
 "

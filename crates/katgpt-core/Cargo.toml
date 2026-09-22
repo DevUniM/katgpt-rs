@@ -885,6 +885,20 @@ distance_abstain = []
 # per the plan), so the feature joins linalg's gate list at birth.
 state_option_scoring = ["distance_abstain"]
 
+# template_decode (Plan 607 T2, 2026-09-23): bounded template decode over
+# CLOSED sentence grammars — a table of literal/slot templates with closed
+# fill vocabularies; decode returns (template, fill indices) and REFUSES
+# anything else (Unknown / Ambiguous — never a guess). The game-decision
+# lane's losslessness-measurement arm (sentence-arm vs structured-arm
+# agreement delta) + the third-party laya-format traffic intake consumer
+# (R6: the sentence is the reference model's input requirement, not the
+# task's). Decode-only, corpus-limited per protocol version; verify_closed
+# proves each table ambiguity-free over its full fill product. Lz4FlexDrafter
+# lineage (Plan 285 — corpus-limited, bounded, loud-refusal). Zero deps,
+# zero-alloc decode; independent of state_option_scoring (a decode consumer
+# need not score).
+template_decode = []
+
 # decision_wire (Plan 603 T1.2): the Jev/laya-compatible decision wire
 # contract — DecisionRequest/DecisionResponse over the choice/score/noul
 # vocabulary (Research 562/574/576), with abstention as a first-class

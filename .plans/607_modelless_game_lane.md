@@ -17,10 +17,18 @@ Flappy v2 96/100 (LOO 96, constant-pick 77, chance 50) + three-lanes
 (the T1/T3 surface transferred as-is); the flappy v1 grammar's motion
 clause was a measured wording confound (85/100 oracle flap-bias pinning
 every scorer at constant-pick) and is recorded with its structural v2 fix.
-Next: T2 (Gate A intact: the 876 reading never measured decode, so the
-approval did NOT lapse — the build deferral is simply over; the
-losslessness arm measures the sentence-vs-structured agreement delta the
-876 left unknown), then T6/T7 at plan close.
+**T2 LANDED 2026-09-23 (Bench 881) — the losslessness arm splits the
+arenas three ways**: lanes EXACTLY lossless (Δ0, 0/100 flips, identical
+head digest) · tetris decoded BEATS structured (+8/+9 → 44/120 — laya's
+read is a function of the sentence, and the side/position band the
+render carries beats the numerics that lack it) · flappy decoded
+DEGENERATES to constant-pick (Δ−19, distinct picks 1 — the v2 band-only
+render dropped exact post_rel/post_v; the render, not the decoder, is
+the bottleneck — render-side work item, not tuned here). New opt-in
+`template_decode` primitive (closed-grammar template tables, loud
+Unknown/Ambiguous, `verify_closed` full-space proof, zero-alloc decode);
+the width-genericized fit recipe reproduces all three published anchors
+bit-identically. Next: T6/T7 at plan close.
 - Lane priority: **co-developed ordering** (T0a → T4a → T0b → T1+T4 →
   first GOAT reading → T5 → {T2,T3} evidence-gated → T6 → T7).
 - T2 Gate A: **approved in principle, build deferred, lapses on the first
@@ -289,7 +297,7 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   with the sibling's `879_renoise_surprise_goat` (landed mid-flight on
   origin) resolved by renumbering MINE to 880 — theirs is committed and
   keeps the number, dual_allocation_gate green post-move.
-- [ ] **T2 — bounded template decode** (katgpt-core, feature-gated).
+- [x] **T2 — bounded template decode** (katgpt-core, feature-gated).
   **OWNER GATE A — APPROVED IN PRINCIPLE (verdict round 2), build DEFERRED
   until after T4's first GOAT reading; the approval LAPSES if that reading
   shows decode buys neither agreement nor a second consumer — re-approval
@@ -310,6 +318,44 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   Provenance per Proposal 014 §Fusion: **Lz4FlexDrafter lineage** (pattern;
   `quest_grammar` is riir-ai's wrapper and is never a dep). Decode-only,
   corpus-limited. Run substrate-first on T0a findings before writing.
+  **Record (2026-09-23, Bench 881):** LANDED — new katgpt-core module
+  `template_decode` (opt-in `template_decode = []`, independent of
+  `state_option_scoring`): closed template tables (`Seg::Lit`/`Seg::Slot`,
+  closed fill vocabularies), `decode` → (template, fill indices) with LOUD
+  `Unknown`/`Ambiguous` refusals (a >1-derivation sentence is refused,
+  never guessed), `verify_closed` walking every template's full fill
+  product (render → decode identity over the WHOLE closed space — the
+  bounded claim is checked, not assumed), zero-alloc backtracking decode,
+  `u8` fills / ≤ `MAX_SLOTS`=8 slots / ≤ 256 vocabs asserted at build.
+  Substrate-first re-run: no grammar→slot decoder exists in-tree (the
+  `decode` hits are latent decoders, byte codecs, tokenizers);
+  `Lz4FlexDrafter` is the recorded pattern lineage. Tables + fill→feature
+  mappers in `examples/common/grammar_tables.rs` (vocabulary order =
+  feature ordinal, contract; forward mappers mirror the renderers' matches,
+  corpus round-trip is the drift detector); measurement in
+  `examples/decode_01_losslessness.rs` (required-features both flags).
+  **The decode layer is asserted before any scoring**: 5/5 closed-space
+  proofs PASS; tetris 2660/2660 + 120/120 state sentences, flappy
+  200/200 + 100/100 (v/h recover EXACTLY), lanes 300/300 — all re-renders
+  byte-identical, all fills == the semantic forward. **The agreement
+  delta splits three ways:** lanes Δ0 (lossless anchor: 300/300 decoded
+  rows bit-identical to structured rows → identical head digest, 0/100
+  flips) · tetris Δ+8/+9 (decoded 44/120 = 44/120 LOO vs structured
+  36/35 — laya's read is a function of the SENTENCE, so the decoded head
+  tracks it better than numerics lacking the side/position band; G1
+  HOLDS on the decoded arm, distinct picks 23) · flappy Δ−19 (decoded
+  77/100 ties constant-pick 77 with ONE distinct pick — discrimination
+  FAIL; the v2 band-only render dropped exact post_rel/post_v the
+  structured head reads: the RENDER is the bottleneck, recorded as a
+  render-side work item, never tuned here). The width-genericized fit
+  recipe (`micro_fit`: `Standardizer<F>`, `HeadCorpus<D>`, method-level
+  `design<const D>`) reproduces all three published structured anchors
+  bit-identically (tetris head `65409c14…` FULL match; flappy
+  `4ac0a13c…`/lanes `7d3f1d8e…` prefixes; `flappy_02_arena`,
+  `lanes_02_arena`, `tetris_03_head_fit` re-run byte-identical — G3 held
+  by digest). Test-gate row `katgpt-core:2074:template_decode`; catalog
+  §125 (renumbered at the rebase — origin took §123/§124 for the Issue-875
+  pair); README/examples flag counts re-pinned 640→641.
 - [x] **T3 — the corpus-fitted head, determinism-constrained** (NOT an
   owner gate — closed-form/NNLS corpus fitting is admitted precedent in
   THIS repo: `katgpt-attn-match/src/beta_fitter.rs` warm-starts projected

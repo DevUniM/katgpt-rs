@@ -4571,3 +4571,45 @@ consumer wiring up.
 
 📖 Bench: [879](../../.benchmarks/879_renoise_surprise_goat.md) ·
 Issue: [875](../../.issues/875_pfd_horizon_weighting_target_anchored_probe.md).
+
+## 125. template_decode — bounded template decode over closed sentence grammars (Plan 607 T2)
+
+A closed grammar is a fixed table of templates — literal segments
+alternating with slots, every slot drawing from a closed fill vocabulary.
+`Grammar::decode` parses a sentence back into (template, fill indices);
+anything else is a LOUD refusal (`Unknown` / `Ambiguous` — never a
+guess). `verify_closed` walks every template's whole fill product
+(render → decode must return the identical fills for EVERY combination,
+capped by the caller) — the ambiguity-free guarantee is CHECKED over the
+full closed space, never assumed. Fill indices are `u8`, ≤ 8 slots per
+template, ≤ 256 vocabularies — asserted at build; decode itself is a
+zero-alloc backtracking segment walk (vocab order IS match order).
+
+Scope (Plan 607 R6): the sentence is the reference model's input
+requirement, not the task's — the module has exactly two jobs: (a) the
+**losslessness measurement arm** — decode the fixtures' sentences, score
+the decoded arm vs the structured arm through the SAME fit recipe, report
+the AGREEMENT DELTA (a non-zero delta is a finding about the RENDER, not
+automatically a decode bug); (b) **third-party laya-format traffic
+intake** — the durable consumer justification. Decode-only,
+corpus-limited per protocol version; provenance: `Lz4FlexDrafter`
+lineage (Plan 285 — corpus-limited, bounded, loud-refusal).
+
+First reading (Bench 881, all three arenas): **lanes delta exactly 0**
+(the render is lossless — decoded rows bit-identical to structured rows,
+identical head digest, 0/100 flips) · **tetris delta +8 in-corpus / +9
+LOO** (44/120 vs 36/120 — the sentence carries MORE laya-relevant
+decision info than the Dellacherie-class numerics: the oracle reads the
+sentence, so the decoded head tracks it better) · **flappy delta −19
+with a discrimination FAIL** (77/100 ties constant-pick with ONE
+distinct pick — the v2 band-only render dropped the exact post_rel and
+post_v the structured head reads; the render is the bottleneck, recorded
+as the render-side finding the plan asked for).
+
+🔧 Feature flag: `template_decode = []` (katgpt-core) — opt-in,
+independent of `state_option_scoring` (a decode consumer need not
+score); root forward for the `decode_01_losslessness` example (both
+features). Test-gate row `katgpt-core:2074:template_decode`.
+
+📖 Plan: [607](../../.plans/607_modelless_game_lane.md) ·
+Bench: [881](../../.benchmarks/881_template_decode_losslessness.md).

@@ -322,6 +322,16 @@ pub mod evidence_tripwire;
 // Plan 607 GOAT (bench_876 T1 + bench_878 T3).
 #[cfg(feature = "state_option_scoring")]
 pub mod state_option_scoring;
+// template_decode — bounded template decode over CLOSED sentence grammars
+// (Plan 607 T2). A table of literal/slot templates with closed fill
+// vocabularies; decode returns (template, fill indices) and REFUSES
+// anything else (Unknown / Ambiguous — never a guess). Decode-only,
+// corpus-limited per protocol version; `verify_closed` proves each table
+// ambiguity-free over its full fill product. The losslessness-measurement
+// + laya-traffic-intake arm of the game-decision lane (Lz4FlexDrafter
+// lineage, Plan 285). Opt-in; zero deps; zero-alloc decode.
+#[cfg(feature = "template_decode")]
+pub mod template_decode;
 #[cfg(feature = "conformal_predictive_intervals")]
 pub use conformal::metrics::{
     crps, crps_interval, empirical_coverage, mean_crps_interval, mean_winkler, winkler_score,

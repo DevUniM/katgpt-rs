@@ -1,13 +1,18 @@
-//! Shared micro-arena fit/scoring helpers — katgpt-rs Plan 607 T5. The
-//! tetris_03 recipe (corpus build → standardization → λ by state-level LOO
-//! MSE → in-corpus + LOO readings), made reusable across the micro arenas,
-//! plus the T1 sentence-cosine pick (the tetris_02 arm).
+//! Shared arena fit/scoring helpers — katgpt-rs Plan 607 T5. The tetris_03
+//! recipe (corpus build → standardization → λ by state-level LOO MSE →
+//! in-corpus + LOO readings), made reusable across the micro arenas, plus
+//! the T1 sentence-cosine pick (the tetris_02 arm). T2 genericized it over
+//! the feature/design widths (`Standardizer<F>` / `HeadCorpus<D>`) so the
+//! decode_01 losslessness arm runs ALL its widths (structured 8/11,
+//! decoded 4/5/8) through this ONE recipe — the structured-arm digests it
+//! reproduces (Bench 878/880 anchors) are the proof the genericization is
+//! arithmetic-identical.
 //!
-//! Compiled ONLY by the T5 arena binaries (required-features =
+//! Compiled ONLY by the gated arena binaries (required-features =
 //! `state_option_scoring`) — the 01 enumerators stay ungated and never see
-//! this module. Both micro games freeze exactly 8 feature columns, so the
-//! design width is a plain const (stable Rust rejects `{ F + 1 }` in type
-//! position — the tetris_03 precedent of two named consts).
+//! this module. The micro arenas freeze exactly 8 feature columns (the F/D
+//! consts below); stable Rust rejects `{ F + 1 }` in type position (the
+//! tetris_03 precedent of two named consts).
 
 #[path = "hash_embed.rs"]
 pub mod hash_embed;
@@ -44,14 +49,14 @@ pub fn t1_pick(state_sentence: &str, option_sentences: &[String]) -> usize {
     CentroidTable::<EMBED_DIM, T1_K>::new(&mat).pick(&state_vec)
 }
 
-// ── Corpus + standardization (the tetris_03 recipe) ──────────────────────
+// ── Corpus + standardization (the tetris_03 recipe, width-generic) ─────
 
-pub struct Standardizer {
+pub struct Standardizer<const F: usize> {
     pub mean: [f64; F],
     pub inv_std: [f64; F],
 }
 
-impl Standardizer {
+impl<const F: usize> Standardizer<F> {
     /// Corpus-side stats in fixed column order (part of the committed
     /// recipe); std == 0 → the column carries no signal, map to 0.
     pub fn fit(rows: &[[f64; F]]) -> Self {
@@ -80,8 +85,10 @@ impl Standardizer {
         Self { mean, inv_std }
     }
 
-    /// A live option's design row: standardized features + intercept.
-    pub fn design(&self, raw: &[f64; F]) -> [f64; D] {
+    /// A live option's design row: standardized features + intercept. The
+    /// design width is a METHOD-level const parameter (an impl-level `D`
+    /// would be unconstrained — E0207), inferred at every call site.
+    pub fn design<const D: usize>(&self, raw: &[f64; F]) -> [f64; D] {
         let mut row = [0.0f64; D];
         for i in 0..F {
             row[i] = (raw[i] - self.mean[i]) * self.inv_std[i];
@@ -91,7 +98,7 @@ impl Standardizer {
     }
 }
 
-pub struct HeadCorpus {
+pub struct HeadCorpus<const D: usize> {
     /// Rows in corpus order: state 0's options, state 1's options, ...
     pub rows: Vec<[f64; D]>,
     /// y = the oracle's per-option p_clean.
@@ -100,10 +107,10 @@ pub struct HeadCorpus {
     pub offsets: Vec<usize>,
 }
 
-pub fn build_corpus<R>(
+pub fn build_corpus<R, const F: usize, const D: usize>(
     states: &[(MicroStateFixture, R)],
     feature_row: impl Fn(&MicroOptionFixture) -> [f64; F],
-) -> (HeadCorpus, Standardizer) {
+) -> (HeadCorpus<D>, Standardizer<F>) {
     let mut raws: Vec<[f64; F]> = Vec::new();
     let mut targets: Vec<f64> = Vec::new();
     let mut offsets = vec![0usize];
@@ -145,9 +152,9 @@ pub struct LamRow {
 /// options never leak. MSE selects λ; agreement is REPORTED at the chosen
 /// λ (selection never sees the agreement number). Returns
 /// (chosen λ, LOO picks at the chosen λ, per-λ rows for printing).
-pub fn loo_select(
+pub fn loo_select<const D: usize>(
     fitter: &mut HeadFitter<D>,
-    corpus: &HeadCorpus,
+    corpus: &HeadCorpus<D>,
     argmaxes: &[usize],
 ) -> (f64, Vec<usize>, Vec<LamRow>) {
     let n_states = argmaxes.len();
@@ -196,7 +203,7 @@ pub fn loo_select(
 }
 
 /// BLAKE3 over the head weights (f64 LE) — the determinism anchor.
-pub fn head_digest(h: &FittedHead<D>) -> blake3::Hash {
+pub fn head_digest<const D: usize>(h: &FittedHead<D>) -> blake3::Hash {
     let mut bytes = Vec::with_capacity(D * 8);
     for w in h.weights() {
         bytes.extend_from_slice(&w.to_le_bytes());
