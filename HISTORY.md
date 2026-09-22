@@ -1,3 +1,68 @@
+## 2026-09-22 — Issue 871 closed: the `algebraic_*` A/B measured end-to-end — feature-gated `algebraic_dot` ADOPTED (owner verdict a′), the in-crate codegen truth repaired, T6/T7 deferred on-record
+
+The full arc, three sessions, one issue: T1–T3 measured (`e2f77e70`), T4
+decided by verdict ping-pong (3 rounds, final AGREE — the (a′)
+mechanism-only GO), the adoption lane landed (`c108f2fe` + `fbe86280`),
+and T5's in-crate codegen verification closed the loop (`2331961c`).
+
+- **What shipped (T4, `c108f2fe`/`fbe86280`):** `katgpt-attn-match`'s opt-in
+  `algebraic_dot` — the Bench-871-measured twin of `dot_8wide` (1.77×–8.8×
+  at both x86_64 compile arms, G1 accuracy IMPROVED vs strict on
+  cancellation-realistic data) behind a feature flag with zero consumers
+  wired; strict stays the sole default and every correctness gate still
+  exercises it. Six module tests pin the lane, incl.
+  accuracy-not-worse-than-strict and NaN no-poison (the `algebraic_*`
+  contract deliberately omits `nnan`/`ninf`). The wiring precondition rides
+  the feature row itself: the first argmax-bearing consumer requires the
+  real-logits retention walk (the Issue-750-T3 shape) — the issue's own
+  1024-trial fixture walk was low-power (9 near-tie events).
+- **The mechanical ban (`c108f2fe`):** `algebraic_div`/`algebraic_rem` are
+  banned outright — `arcp`/remainder semantics are a far larger numerics
+  change than add/mul reassociation. Enforcement is the tracked
+  `scripts/algebraic_op_ban_gate.py` (docs_gate CHECKS row, ceiling 0 over
+  a floored walk, planted-source predicate arms, masker imported from
+  `platform_dead_code_audit`) — a prose ban is not enforcement.
+- **T5's codegen truth (`2331961c`):** 0 packed float-math instructions
+  crate-wide at BOTH x86_64 arms (SSE2 baseline and `+avx2,+fma`; 122
+  scalar `mulss`/`addss`) — every "auto-vectorizes" doc claim was false on
+  x86_64-windows. The aarch64 cross-emit twin: packed `fmul.4s` products +
+  an ordered scalar `fadd` chain, bit-identical, NO `fmla` — the 2026-07-29
+  M3 "optimal fmla sequence" story was never codegen-true, and the 1.26×
+  8-accumulator refutation stands with its mechanism attribution corrected
+  (bounds-check confound, not accumulator count). Nine claim sites repaired
+  across the crate. The strict-side repair is REFUTED: the serial add order
+  IS the cross-arch bit-equality — there is no strict vectorized add to
+  build.
+- **The ill-conditioned G1 arm (T4's landing precondition, `2331961c`):**
+  algebraic ≥ strict on BOTH data classes (ortho: 4.58e-9 vs 8.25e-9 mean
+  err, 191 vs 256 sign-flips; rank-deficient dup: 6.6e-18 vs 5.4e-9, 0 vs
+  245) — the f978a20b Cholesky reassociation counterexample does not
+  reproduce for the plain dot kernel.
+- **Issue 874 stays OPEN** (filed from the T5 verification):
+  `g8_simd_vs_scalar` compares two routes that BOTH go through `dot_8wide`
+  — a standing GOAT-gate inertness on a DEFAULT-ON feature, live
+  independent of this lane.
+- **Deferred on-record:** T6 (re-run Bench 871 on the M3/aarch64 arm when a
+  lane exists — this box cannot reach the M3) and T7 (the riir-clippy
+  `rust_perf` suggest-only rule lands with the FIRST real consumer, not
+  before — the healer must not emit numerics-changing rewrites with no
+  consumer to retain against).
+- **The three-way session collision** (one lane of this issue's history):
+  the T4/T5 sibling's duplicate `algebraic_dot` implementation was yielded
+  to the landing lane after a TOML duplicate-feature-key error caught it at
+  manifest load (Issue-665 discipline); its issue-file note records the
+  yield explicitly (recoverable at `2331961c`).
+
+Validation at the adoption lane: clippy `-D warnings` at both feature
+states, 6/6 module tests, the ban gate green over 2533 tracked files,
+`count_features`/`docs_gate_checks_sync`/`check_validation_gate`/
+`cargo_comment_audit`/`bench_doc_audit` green. Close-out validated:
+`numbering_gate` + `issue_citation_gate` (citations to "Issue 871"
+resolve through git history — `removed_by_number()`'s majority case).
+
+Issue file removed per the noise rule (content recoverable from
+`2331961c`). The measured record is [Bench 871](.benchmarks/871_algebraic_dot_ab.md).
+
 ## 2026-09-22 — Issue 872: SIMD bitstream whitespace splitter for `encode_into_pretok` (the bitcannon-class port) — scan 1.60×/1.69× measured, bit-identity by differential, four live bugs caught by the harness
 
 The deferred item from Bench 191 §Phase 3 ("SIMD pretokenization — a
