@@ -34,7 +34,7 @@ Python mirror sweep (`k875t4_sim.py` v7, 200 seeds): surprise 1.000±0.002 (min 
 
 **G4:** zero allocs on the score path with fixed-array State (TrackingAllocator, 64 runs) — pinned in-module.
 
-**G3 no-regression:** default lib 2063/0 (count unchanged), `bench_406_renoise_ce_goat` 5/5, `--no-default-features` clean (bare + feature), wasm32 clean (bare + feature), clippy `-D warnings` clean at default / `horizon_weights,renoice_ce_surprise` / the new test target.
+**G3 no-regression:** default lib 2063/0 (count unchanged), `bench_406_renoise_ce_goat` 5/5, `--no-default-features` clean (bare + feature), wasm32 clean (bare + feature), clippy `-D warnings` clean at default / `horizon_weights,renoise_ce_surprise` / the new test target.
 
 ## Honest regime boundary
 
@@ -44,4 +44,4 @@ The shell world isolates the mechanism the mode exists for. Sim sweeps of NEARBY
 
 ## Verdict
 
-Stays **OPT-IN** (`renoice_ce_surprise`, implies `renoise_ce`) per the no-default-consumer rule; promotion is Issue 875 T5's verdict. T4 CLOSED.
+Stays **OPT-IN** (`renoise_ce_surprise`, implies `renoise_ce`) per the no-default-consumer rule; promotion is Issue 875 T5's verdict. T4 CLOSED.

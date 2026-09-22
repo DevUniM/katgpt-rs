@@ -134,7 +134,7 @@ statrs = "0.17"
 # 582 §2 coverage table). Mechanism-distinct from tether::horizon_decay
 # (past-looking staleness fading). Pure math, zero new deps, zero allocs,
 # wasm32-clean. T2 consumer SHIPPED as the combined-gate
-# renoise_ce_score_horizon (Bench 878: precision@k 1.000 vs incumbent
+# renoise_ce_score_horizon (Bench 877: precision@k 1.000 vs incumbent
 # 0.906 at −0.8% latency); the feature itself stays OPT-IN — promotion is
 # T5's verdict on the recorded GOATs.
 horizon_weights = []

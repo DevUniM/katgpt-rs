@@ -4501,3 +4501,73 @@ HOLDS: in-corpus 30.0% / LOO 29.2% vs constant-pick 10.8% · G2 p99
 42–167 ns · G4 0 allocs) · test-gate rows
 `katgpt-core:2085:state_option_scoring` +
 `katgpt-core:1:state_option_head_alloc_check:state_option_scoring`.
+
+## 123. horizon_weights — PFD remaining-horizon weighting: closed form + BLAKE3-committed table (Issue 875 T1 / Research 582)
+
+The (T−t) horizon-weighting law from Probability-Flow Distillation
+(arXiv:2605.09071), as a pure utility: averaging a uniformly-sampled-t
+partial integral gives effective weight (T−s) (Fubini swap on the
+triangular domain) — low-noise observations get max weight, decaying
+linearly to exactly zero at t=T. Three forms over a discrete uniform
+grid: the generic normalized (T−s)/T weights; the exact closed form
+w(t) = ½(T−t)·g(t)²·c(t,0)² with c = exp(−∫a), frozen into a
+BLAKE3-committed [f32; 64] table (the static_cal committed-table
+pattern — exact, no calibration pass, O(1) nearest-grid lookup); and
+`remaining_horizon_t_sample`, the law's exact inverse-CDF sampler (one
+sqrt, zero alloc). Mechanism-distinct from tether::horizon_decay
+(past-looking staleness fading). G1 table/closed-form bit-match +
+independent f64 oracle (rel < 1e-5); G2 lookup 2.13 ns/op vs 9.68
+ns/op strong per-call baseline (4.5×, interleaved ab_timing); G4
+zero-alloc (TrackingAllocator).
+
+**T2 consumer (2026-09-22, Bench 877).** `renoise_ce_score_horizon`:
+(T−t)-weighted k-draw averaging in `renoise_ce` — weights ride the tilted
+sampling distribution (importance sampling, never double-applied).
+Planted-drift selectivity oracle: precision@32 = **1.000 vs 0.906
+incumbent-fixed vs 0.938 uniform-range control** (the control isolates
+the LAW from the RANGE); latency −0.8% at equal k=8. Regime boundary
+(caller guidance): defect classes visible ONLY at high t favor the
+fixed arm; tau does not transfer between modes.
+
+🔧 Feature flag: `horizon_weights = []` (katgpt-core) — opt-in; the T2
+consumer rides the combined gate `renoise_ce+horizon_weights`. T5
+verdict (2026-09-23): no promotion — no default-path call site (the
+no-default-consumer rule); re-gate trigger = a default-path
+`renoise_ce` caller.
+
+📖 Bench: [877](../../.benchmarks/877_renoise_horizon_goat.md) ·
+Issue: [875](../../.issues/875_pfd_horizon_weighting_target_anchored_probe.md).
+
+## 124. renoise_ce_surprise — target-anchored renoise-CE probe: distributional surprise vs self-consistency (Issue 875 T4 / Research 582)
+
+PFD's resolve-against-the-teacher variant of the renoise-CE probe:
+same k-draw loop, NFE budget, and allocation profile as the incumbent
+`renoise_ce_score`, but each re-resolved draw is scored against a
+caller-supplied frozen TARGET anchor instead of the candidate itself.
+The score stops being self-consistency ("is this state a stable fixed
+point of the operator") and becomes **distributional surprise**
+("where does this state flow, relative to what the prior expected").
+First consumer sketch: consolidation surprise ordering (Raven/δ-Mem
+sleep-cycle admission = the surprise-ranked head) — ordering-only, no
+behavior change. NOT a UQ primitive (ranking signal only — no
+probability/interval/coverage claim; the conformal-naive floor rule is
+out of scope).
+
+Shell-world oracle (all candidates equidistant from the prior anchor —
+plain distance blind by construction): precision@32 = **1.000 surprise
+vs 0.000 incumbent (self-consistency ANTI-ranks foreign-basin novelty)
+vs 0.500 plain-distance** (python mirror 200 seeds: 1.000±0.002 / 0.000
+/ 0.428); latency −0.1% at equal budget. Regime boundary (caller
+guidance): where pointwise distance already sees displacement it ranks
+0.87-0.95+ and the mode adds little — the win is FLOW-RELATIVE novelty
+(basin membership invisible pointwise); single-reading obs noise caps
+any arm at the Φ(−s/2) information limit.
+
+🔧 Feature flag: `renoise_ce_surprise = ["renoise_ce"]` (katgpt-core) —
+opt-in per the no-default-consumer rule; katgpt-rs root passthrough for
+the GOAT bench. T5 verdict (2026-09-23): no promotion — no default-path
+call site; re-gate trigger = the riir-neuron-db consolidation-admission
+consumer wiring up.
+
+📖 Bench: [879](../../.benchmarks/879_renoise_surprise_goat.md) ·
+Issue: [875](../../.issues/875_pfd_horizon_weighting_target_anchored_probe.md).
