@@ -1,6 +1,6 @@
 # Plan 608 — reflex Issue 009: the threshold-recommendation surface (the jimothy steal)
 
-**Status:** IN PROGRESS 2026-09-22 — T1+T3+T4 LANDED (riir-reflex `a732bcf6a`); T2 DEFERRED on a sibling collision (`src/harness/runner.rs` holds another session's uncommitted candle-lane-removal edits — T2 lands on top of that work).
+**Status:** COMPLETE 2026-09-22 — T1–T4 ALL LANDED. T1+T3+T4 at riir-reflex `a732bcf6a`; T2 at riir-reflex `0dc2397` (rebased clean on the sibling's `e4bf657`, pushed) — the byte-identical migration held: pure-swap diff over 14 suites NORMALIZED-IDENTICAL (noise set {latency, seconds, date, git_sha} validated by double-baseline), disclosure measured ADDITIVE-ONLY (14 new `threshold_recommendation` keys, zero changed values), 3 in-module migration gates added. Issue 009 CLOSED; site-side rendering rides the reflex-site repo.
 
 ## Why
 
@@ -40,16 +40,24 @@ calibrator):
   measured `confs.len() < 16` fallback floor, pinned by gate.
   `recommend_fused_gate()` fits both gate axes (score + distance) under
   one posture — the T2 entry point.
-- [-] **T2 — harness consumption** (byte-identical migration bar).
-  DEFERRED: `src/harness/runner.rs` carries a sibling session's
-  uncommitted candle-lane-removal edits in the shared reflex worktree;
-  editing/staging around another agent's in-flight hunks is the collision
-  the workspace rules forbid. The T1-side parity gate
-  (`percentile_parity_with_the_harness_quantile_law`) holds the bar — the
-  runner's inline law is replicated verbatim in the gate, so drift on
-  either side reds. Resume: rebase on the sibling's landed runner, swap
-  the fit block for `recommend_fused_gate` at ρ=0.30 (labels from the
-  probe's picks), assert table byte-identity on the current suites.
+- [x] **T2 — harness consumption** LANDED at riir-reflex `0dc2397` (2026-09-22).
+  The collision was cleared WITHOUT touching the sibling's in-flight worktree:
+  the migration ran in an isolated `git worktree` at `bf8ebe5` (detached;
+  the sibling's uncommitted fmt/families WIP untouched; commit rebased onto
+  their landed `e4bf657` and pushed `HEAD:develop`). Evidence: baseline
+  double-run fixed the noise set {latency_p50/p99, seconds, date_utc,
+  git_sha — the runner reads the cwd's HEAD, which a sibling commit moved
+  mid-run}; pure-swap run NORMALIZED-IDENTICAL on results.json + TABLES.md
+  identical beyond the run-line sha over all 14 suites (`--skip-laya` — the
+  fit block lives in `run_modelless` only, the laya lane shares nothing);
+  disclosure step measured ADDITIVE-ONLY by recursive diff (exactly 14 new
+  `threshold_recommendation` keys, zero changed values). The runner's
+  `quantile` fn is deleted — its law frozen as the oracle in 3 in-module
+  gates (`threshold_migration_tests`); `LaneResult.threshold_recommendation`
+  + the TABLES.md `gate-fit (ρ=.30)` column land the T3 tail. Probe labels
+  use `slot.pick` with eval_engine's Noul [no,yes] wire flip mirrored
+  (the percentile posture selects on score only — labels feed the
+  accuracy disclosure, never the threshold).
 - [x] **T3 — metadata exposure**: `FusedGateRecommendation` — serde
   camelCase `{ posture, score, distance }`, JSON `null` per axis on thin
   support (jimothy's shape, numbers only). Harness-table column +
