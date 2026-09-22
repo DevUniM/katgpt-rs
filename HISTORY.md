@@ -1,3 +1,38 @@
+## 2026-09-22 — Issue 873 primitive B landed twice in one evening: the twin-duplicate resolution (third of the class)
+
+The 873-handoff context-overflow relay produced the exact Issue-825 shape:
+two sessions picked up "primitive B (`rate_control`) remains" from the same
+handoff summary and both implemented the dual-EWLS effect-size controller
+independently. The sibling's landing (`ee01f1598`, 21:12 +0700) reached
+origin first with a complete GOAT-gated port (f32 internals + an exact
+algebraic rolling-origin recenter every 256 ticks, σ-floors against
+cancellation, predict-next jump detection, Bench 875, catalog + test-gate
+rows); the second session's push arrived minutes later, was rejected
+non-fast-forward, and — per the Batch-169 twin precedent — the unpushed
+duplicate was `git reset --hard` away (reflog only), origin's commit
+ canonical. The duplicate's verifier then ran the winner's full gate set
+on the reset tree (13/13 G1, G2 bench PASS, docs counts 637 consistent)
+and read the module against the source before standing down: no material
+defect; the differing constants are documented house defaults
+(λ/gain/width sextet source-pinned; T_MID/EFFECT/clamps/jump thresholds
+pinned at first landing with provenance stated).
+
+- **The class, third instance** (riir-clippy Batch 169 twins → Issue 825
+  negative-result → this): a handoff summary that names remaining work is
+  an ASSIGNMENT to every session that reads it. The 825 lesson held:
+  before pushing any primitive, `git fetch` + check whether a sibling
+  already shipped it. Push rejection with your own commit subject on
+  origin is the twin tell — resolve by dropping yours, then VERIFY the
+  winner (its tests, its bench, its docs surfaces) rather than walking
+  away; the disagreement between two independent ports of one source is
+  the cheapest oracle either session gets.
+- **Standing follow-up (minor, on-record):** the landed module's
+  caller-facing sign convention (rising `val` = improving, `e = +slope/σ` —
+  the OPPOSITE of mini-AGI's falling-loss convention) is pinned by test
+  fixtures but not stated in the module doc's caller terms; the first
+  consumer (riir-train Plan 416 Phase 2) should pin the doc line in the
+  same commit that decides its own feed direction.
+
 ## 2026-09-22 — Issue 871 closed: the `algebraic_*` A/B measured end-to-end — feature-gated `algebraic_dot` ADOPTED (owner verdict a′), the in-crate codegen truth repaired, T6/T7 deferred on-record
 
 The full arc, three sessions, one issue: T1–T3 measured (`e2f77e70`), T4
