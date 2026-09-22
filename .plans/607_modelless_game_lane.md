@@ -1,7 +1,12 @@
 # Plan 607 — Modelless game-decision lane (the laya game arenas)
 
-**Status:** PROPOSED — owner gates RULED by verdict ping-pong round 2
-(both applied below); owner read before PROPOSED → ACCEPTED.
+**Status:** IN PROGRESS — owner-accepted 2026-09-22 ("607 accepted").
+T0a + T4a + T0b LANDED (same day): substrate gate clean, the state
+enumerator + `laya-tetris-v2` grammar pinned, and the G1-oracle fixture
+committed with airtight provenance (generator committed to riir-reflex
+FIRST, run re-verified byte-identical from the committed code). Next:
+T1 + T4 co-developed (the `state_option_scoring` primitive + the arena
+over the fixture), then the first GOAT reading gates {T2, T3}.
 - Lane priority: **co-developed ordering** (T0a → T4a → T0b → T1+T4 →
   first GOAT reading → T5 → {T2,T3} evidence-gated → T6 → T7).
 - T2 Gate A: **approved in principle, build deferred, lapses on the first
@@ -91,14 +96,22 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
 
 ## Tasks
 
-- [ ] **T0a — substrate-first gate** (before any code): grep + read
+- [x] **T0a — substrate-first gate** (before any code): grep + read
   `decision_wire`, `compression_drafter` (Lz4FlexDrafter),
   `variable_rank_domain_expert` (`pick_domain`), `rating` (Elo/Beta-LCB),
   `CorpusDistanceGate`, and `katgpt-attn-match`'s `beta_fitter.rs` /
   `value_fitter.rs` (closed-form-LS-warm-started NNLS fitting — shipped
   precedent). Consume; never re-implement. Any T1/T2/T3 piece these cover
   is a forward, not new code.
-- [ ] **T4a — the state enumerator + laya-format renderer** (katgpt-rs
+  **Record (2026-09-22):** all six read; findings + consume/build
+  decisions in §Substrate check below. Headline: T1 = NEW katgpt-core
+  module `state_option_scoring` consuming `exact_sigmoid` +
+  `float_order::cmp_for_max` + the unit-normalize idiom + `pick_domain`'s
+  const-generic shape; reflex's `engine.rs` route_terms
+  (`sigmoid(dot(state, centroid)·ROUTE_SCALE)`) is the shape being
+  upstreamed; the fitters are the T3 precedent (not consumed at T1); the
+  drafter is OUT of the hot loop per R3.
+- [x] **T4a — the state enumerator + laya-format renderer** (katgpt-rs
   `examples/`, the arena's first half): enumerates Tetris states (board +
   piece + the ~34 landing options) and renders the laya-protocol English
   sentence for each — closed grammar, WHERE-form questions, no numbers in
@@ -106,7 +119,30 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   why the grammar is pinned). Dumps (sentence, structured_state) pairs to
   disk. Both the fixture (T0b) and the arena (T4) consume this; nothing
   downstream of it can exist first.
-- [ ] **T0b — the G1-oracle fixture** (generated in riir-reflex, committed
+  **Record (2026-09-22):** `examples/tetris_01_state_enum.rs` +
+  `examples/common/tetris_sim.rs` (the shared `#[path]` module — the
+  `tests/common/ab_timing.rs` precedent — so T4's arena imports the same
+  sim). 120 states (12 authored archetypes × 7 pieces + a 36-state
+  seeded Dellacherie-greedy play ladder, seed 607), 2,660 options,
+  byte-identical across runs (blake3
+  `aa07b3b4ea75afca60fe5c6c7b75c0c4eca27383f44b32e5985dfe6cd64f4e72`).
+  7 unit tests pin rotation dedupe, option counts (O=9/I=17 exact), the
+  hard-drop landing law, hole/clear mechanics, and grammar closure (no
+  digits in prose). **Protocol correction from the live laya page:**
+  their Tetris is ONE sentence PER SPOT (`The piece leaves one hole under
+  it and makes a small bump on top`) → P(clean) per spot → code argmaxes
+  — a noul-shaped question per option, not a choice question over ~34
+  options; number WORDS are in-protocol ("one hole" is the counted
+  conclusion handed over in words). Grammar widened v1→**v2** after the
+  first oracle run: the two-clause grammar (39 distinct sentences) tied
+  66/120 oracle states at identical p_clean — the argmax degenerated to
+  the index tie-break; v2 adds landing-side + resulting-height clauses
+  (245 distinct sentences), taking cross-sentence ties to zero (the 33
+  residual exact ties are all SAME-sentence — honest equivalences on
+  symmetric boards; see the fixture README). Pre-clear law: every
+  heights-based archetype carries a 0-height shaft column (uniform floors
+  are pre-full rows — real boards never carry complete rows).
+- [x] **T0b — the G1-oracle fixture** (generated in riir-reflex, committed
   INTO katgpt-rs with its provenance sha — the `katgpt-device-verify` rule:
   copying code across the seam creates drift, copying the fixture detects
   it): run riir-reflex's LOCAL laya forward (`laya::riir::RiirAgent`, the
@@ -118,6 +154,18 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   does not exist. The real degradation trigger is OPERATIONAL — laya
   weights absent on the generating box — and then fixture generation
   BLOCKS; it never quietly relabels the gate.
+  **Record (2026-09-22):** generator committed to riir-reflex FIRST
+  (`examples/laya_oracle_batch` @ `e4bf657`, pushed — a GENERIC batch
+  oracle over a JSONL manifest, game-free: the game vocabulary lives in
+  the input data; T5's Flappy/lanes fixtures reuse it). Run: english
+  checkpoint, CPU posture, 2,660 noul forwards (396 s, ~124 ms each),
+  decisions + p_clean per option committed as the SELF-JOINED fixture
+  `tests/fixtures/tetris_oracle_laya_en_v2.jsonl` (+ provenance README;
+  dump blake3 `aa07b3b4…`, oracle blake3 `2261dbf3…`). Byte-identical
+  re-run from the committed generator verified. Oracle sanity (recorded,
+  not gated): p_clean spans 0.027–0.850; Spearman(p_clean, Dellacherie)
+  mean +0.365, positive 94/120 — laya reads the sentences and prefers
+  clean placements.
 - [ ] **T1 — the option-scoring primitive, minimal + generic** (katgpt-core,
   opt-in feature `state_option_scoring` — named for the CAPABILITY, never
   "game"): v1 signature takes `(state vector, option feature matrix)` with
@@ -197,6 +245,38 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   modelless-legal (search is not learning) but low value-per-effort. File
   a `.research/` note only if T4's oracle replay shows the argmax scorer
   losing decisions to laya on multi-step lookahead.
+
+## Substrate check (substrate-first skill, T0a — 2026-09-22)
+
+- Searched for: option scoring, centroid cosine, corpus routing, typed
+  decision wire, NNLS/closed-form fitting — `decision_wire`,
+  `Lz4FlexDrafter`/`compression_drafter`, `pick_domain`/
+  `variable_rank_domain_expert`, `rating` (Elo/Beta-LCB),
+  `CorpusDistanceGate`/`distance_abstain`, `beta_fitter`/`value_fitter`
+  (katgpt-attn-match), and riir-reflex `engine.rs` route_terms.
+- Found (all in-tree): the typed wire (`Question::choice/noul/score` —
+  the arena + oracle wire); `pick_domain<N,A>` (argmax over unit
+  centroids, deterministic tie-break — the routing math);
+  `CorpusDistanceGate` (cosine + sigmoid over unit-normalized corpus rows,
+  zero-alloc — the hot-path idiom); the fitters (closed-form-LS warm
+  start + fixed-iter projected gradient — the T3 determinism precedent);
+  reflex `engine.rs:410-436` route_terms (`sigmoid(dot(state, centroid_i)
+  · ROUTE_SCALE)` + drafter-delta blend — the exact per-option scoring T1
+  upstreams, born reflex-side in Issue 004 T7).
+- Decision: **T1 BUILDS NEW** — a katgpt-core module behind the opt-in
+  `state_option_scoring` feature (capability-named, no "game"),
+  CONSUMING `exact_sigmoid` (the Issue-870 exact form),
+  `float_order::cmp_for_max` (the tie-break), the unit-normalize-at-build
+  idiom, and `pick_domain`'s const-generic shape; the compression
+  drafter stays OUT of the per-decision loop (R3 — reflex measured
+  drafter deltas cannot rank short options). No existing primitive
+  covers per-option sigmoid scoring over a corpus centroid table.
+- Architectural rules checked: semantic domain (latent dot + sigmoid) ✓;
+  no sync boundary crossed (offline arena) ✓; sigmoid-never-softmax on
+  OUR primitives ✓ (the laya port keeps the reference's softmax by its
+  own parity law — that is laya's semantics, not ours); naming law ✓
+  (no "game" in katgpt-core flags/types; game vocabulary lives in
+  `examples/` where the charter puts it).
 
 ## Boundary + provenance notes
 

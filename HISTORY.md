@@ -1,3 +1,50 @@
+## 2026-09-22 — Plan 607 ACCEPTED + T0a/T4a/T0b landed: the modelless game-decision lane's first three tasks (substrate gate, the laya-Tetris enumerator, the G1-oracle fixture)
+
+The owner accepted the plan ("607 accepted") and the first three tasks of
+the co-developed ordering landed the same day. The lane's thesis: laya's
+game protocol (code does the arithmetic → templated English sentence →
+BERT reads it) is exactly the closed-grammar regime where corpus-limited
+scoring is lossless — the plan's job is to PROVE the modelless lane wins
+on latency/deployment by construction and on accuracy by protocol
+choice, with a measured GOAT gate.
+
+- **T0a (substrate-first)**: all six named substrate pieces read and
+  adjudicated (§Substrate check in the plan). Headline: T1 will be a NEW
+  `state_option_scoring` module (capability-named) consuming
+  `exact_sigmoid` + `float_order::cmp_for_max` + the unit-normalize
+  idiom; reflex `engine.rs` route_terms is the shape being upstreamed;
+  the fitters are the T3 precedent; the drafter stays OUT of the hot
+  loop (R3).
+- **T4a (enumerator + grammar)**: `examples/tetris_01_state_enum.rs` +
+  the shared `examples/common/tetris_sim.rs` (#[path] module, the
+  tests/common precedent). 120 deterministic states (12 archetypes × 7
+  pieces + a 36-state seeded Dellacherie-greedy ladder), 2,660 options,
+  byte-identical dumps. **Protocol correction from the live laya page**:
+  their Tetris is one sentence PER SPOT → P(clean) per spot → code
+  argmaxes (noul-shaped, not choice-over-34) — number WORDS in-protocol.
+  **The v1→v2 grammar lesson**: the two-clause grammar produced 39
+  distinct sentences and the first oracle run tied 66/120 states at
+  identical p_clean (argmax degenerating to the index tie-break); v2
+  adds landing-side + resulting-height clauses (245 distinct sentences),
+  cross-sentence ties → 0, residual 33 exact ties all SAME-sentence
+  (honest equivalences on symmetric boards). Pre-clear law discovered:
+  uniform-height floors are pre-full rows — every heights archetype
+  carries a 0-height shaft column.
+- **T0b (oracle fixture)**: the generator committed to riir-reflex FIRST
+  (`laya_oracle_batch` @ `e4bf657`, pushed — a GENERIC game-free batch
+  oracle; T5's arenas reuse it), then 2,660 english-checkpoint noul
+  forwards (396 s CPU) committed as the self-joined fixture
+  `tests/fixtures/tetris_oracle_laya_en_v2.jsonl` + provenance README;
+  byte-identical re-run from the committed generator verified (the
+  katgpt-device-verify rule held end to end). Oracle sanity: p_clean
+  spans 0.027–0.850; Spearman(p_clean, Dellacherie) mean +0.365
+  (positive 94/120) — the checkpoint reads the sentences and prefers
+  clean placements; the oracle is meaningful, not constant-picking (the
+  reflex Issue-004-T7 trap, checked BEFORE the fixture was frozen).
+- **Next**: T1 + T4 co-developed (the primitive + the arena over the
+  fixture), first GOAT reading gates {T2, T3}; T5 (Flappy + lanes)
+  precedes any default-on consideration (R4).
+
 ## 2026-09-22 — Issue 874 closed: G8 re-founded on real claims — the dead speedup gate became a bit-contract pin + a relocated, executing throughput floor (two sessions, one issue)
 
 The Issue-871 T5 fallout, closed in one evening by two complementary

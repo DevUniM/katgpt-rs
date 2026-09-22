@@ -5,7 +5,7 @@ exact flag is listed per example and in the catalog below. Examples that gate
 themselves internally (`#![cfg(feature = ...)]`) print a hint and exit cleanly if the
 flag is missing.
 
-**178 examples** across 25 groups. Full feature definitions live in
+**179 examples** across 25 groups. Full feature definitions live in
 [`Cargo.toml`](../Cargo.toml) and the [README Feature Flags](../README.md#feature-flags) section.
 
 ## Catalog
@@ -44,6 +44,7 @@ flag is missing.
 | `monopoly_02_tui` | Monopoly | `monopoly` | Animated ratatui replay with walk effect |
 | `monopoly_03_hl_proof` | Monopoly | `monopoly` | 1000-game HL proof — 56.5% win, +41.3pp over Validator |
 | `monopoly_04_bench` | Monopoly | `monopoly` | Throughput + per-turn latency (p50/p90/p99) |
+| `tetris_01_state_enum` | Tetris | — | Laya-protocol state enumerator + sentence dump, deterministic fixture generator (Plan 607 T4a) |
 | `fft_01_arena` | FFT | — | 4v4 ATB tactics arena, 4 AI tiers (Plan 047) |
 | `fft_02_rubric_tournament` | FFT | `ropd_rubric,g_zero,fft` | RubricFFTPlayer vs all baselines (Plan 077) |
 | `fft_03_sdar_tournament` | FFT | `sdar_gate,ropd_rubric,g_zero,fft` | SDAR vs all baselines incl. Rubric (Plan 072) |
