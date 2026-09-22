@@ -111,6 +111,7 @@ labels repaired). The file keeps the full 16-site census table; durable
 summary: trap = ONE gate; healthy population defended three independent
 ways (bench_148's anti-vectorization assert, fast_bpe's fallback-catch
 floor, bench_578's same-code-aware loud skip).
+The issue file was removed 2026-09-22 (noise rule, this pass; the 16-site census table stays recoverable via the git history of `.issues/874*`).
 
 ## 2026-09-22 — Issue 873 primitive B landed twice in one evening: the twin-duplicate resolution (third of the class)
 
