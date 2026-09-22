@@ -776,6 +776,16 @@ pub use renoise_ce::best_of_n_freedom;
 #[cfg(all(feature = "renoise_ce", feature = "horizon_weights"))]
 pub use renoise_ce::{RenoiseCeHorizon, renoise_ce_score_horizon};
 
+// Issue 875 T4 / Research 582: the target-anchored renoise-CE probe mode —
+// each re-resolved draw is scored against a caller-supplied frozen TARGET
+// anchor (distributional surprise vs the prior) instead of the candidate
+// itself (self-consistency). Flow-relative novelty: states at the prior's
+// own distance but in a foreign basin separate only through the flow
+// (Bench 879). Consumer sketch: consolidation surprise ordering.
+// renoise_ce_surprise implies renoise_ce, so the single gate suffices.
+#[cfg(feature = "renoise_ce_surprise")]
+pub use renoise_ce::renoise_ce_surprise;
+
 // horizon_weights (Issue 875 T1 / Research 582, arXiv:2605.09071): the PFD
 // (T−t) Fubini accumulation law + the exact w(t) = ½(T−t)g²c² closed form
 // (c = exp(−∫a)), with the BLAKE3-committed fixed-grid table form (the
