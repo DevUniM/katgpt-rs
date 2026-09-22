@@ -1,6 +1,6 @@
 # Proposal 014 — KatGPT Decisions: the open decision-engine comparison arena + the `riir-reflex` serving repo
 
-Status: **IN FLIGHT — [Plan 603](../.plans/603_reflex_phase1_engine_harness.md) Phase 1 opened with owner go (T1.2 `katgpt_core::decision_wire` LANDED; T1.6 abstain arm GO via Bench 845; T1.1 BLOCKED on owner: `mkdir /Users/katopz/git/riir-reflex` + optional `gh repo create gist-rs/riir-reflex --private`).**
+Status: **PHASES 1+2 LANDED (2026-09-22) — [Plan 603](../.plans/603_reflex_phase1_engine_harness.md) Phase 1 COMPLETE (engine + laya parity + harness, `riir-reflex` Bench 001); [Plan 606](../.plans/606_reflex_phase2_site_distribution.md) Phase 2 LANDED (release `gist-rs/reflex` v0.1.1 macOS aarch64+x86_64, tap formula, arena site live on workers.dev — custom domain `reflex.gist.rs` owner-gated on zone route perms; Linux/Windows assets + scoop manifest = CI-lane follow-up). Phase 3 (flywheel) + Phase 4 (hosted plane) remain.**
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: Research 562 × 573 × 574 × 576 + Issue 810/Bench 808 + Issue 859/Bench 816–817 + riir-clippy Issues 125/126 + the quest_grammar drafter pattern + the KAT contribution network (riir-kat + riir-dapps + riir-clippy)
