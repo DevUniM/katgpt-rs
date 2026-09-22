@@ -196,6 +196,20 @@ graph_stable_pool = []
 # pending first consumer GOAT.
 pool_admission = []
 
+# dying (Issue 873 primitive C, 2026-09-22): dual-threshold staleness death
+# metric — the delete-side complement of kv_eviction's keep-side usage-rate
+# scoring (Research 581 mechanism row #5, distilled from volotat/mini-AGI
+# paged.py:284-325 @ 96784b7, MIT). d = min(now−last_addressed, own_age)/
+# window with newborn trial pinning; ONE definition read at TWO thresholds
+# (≥0.75 brake / ≥1.0 delete) so brakes and prunes can never disagree.
+# Anti-magnitude by design (paged.py:292-299 — the busiest items carry the
+# smallest gates): DeathRow carries no magnitude field at all. Window
+# self-calibration helper from cumulative counters. Zero steady-state
+# allocs, deterministic, pure std. Consumers (file their own wiring):
+# riir-neuron-db shard_compactor, riir-clippy corpus rule retirement,
+# belief GC. OPT-IN pending first consumer GOAT.
+dying = ["usage_rate_eviction"]
+
 # jsd_topk (Issue 802 item 2, 2026-09-16): NaN-safe bounded top-K Jensen–
 # Shannon divergence kernel — JSD = H(M) − ½H(P) − ½H(Q) over renormalized
 # top-K slices; disjoint supports → EXACTLY ln 2 (never the KL +∞/NaN trap
@@ -3540,6 +3554,14 @@ required-features = ["lthash"]
 name = "bench_873_pool_admission_goat"
 harness = false
 required-features = ["pool_admission"]
+
+# Issue 873 primitive C — dying GOAT G2: the O(1) death metric + verdict
+# batch scan at 4096 rows, ns/row fences. required-features so a default
+# build skips it (the green-zero law).
+[[bench]]
+name = "bench_874_dying_goat"
+harness = false
+required-features = ["dying"]
 
 # Bench 847 (Issue 847) — are `simd_lut_dequant`'s and `bf16_convert`'s AVX2
 # arms REACHED on an ordinary x86_64 build? Each dispatcher is compared against
