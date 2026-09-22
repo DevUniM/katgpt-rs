@@ -1,8 +1,16 @@
 #![cfg(feature = "vortex_flow")]
-//! Benchmark — SIMD Register TopK for k≤16 (Plan 256 Phase 1)
+//! Benchmark — SIMD Register `TopK` for k≤16 (Plan 256 Phase 1)
 //!
-//! Compares SIMD-optimized argtopk path vs scalar fallback across
-//! k=4, 8, 16, 32 and n=64, 128, 256, 512, 1024 block counts.
+//! Compares the `argtopk` dispatch against the `argtopk_scalar_heap` baseline
+//! across k=4, 8, 16 and n=64, 128, 256, 512, 1024 block counts.
+//!
+//! Which kernel `argtopk` actually dispatches is **arch-dependent** (Issue 808
+//! T1): NEON takes the whole k ≤ 16 range; `x86_64` AVX2 only k ≤
+//! `AVX2_ARGTOPK_K_MAX` (= 4), so the k ∈ {8, 16} rows time the SAME kernel
+//! twice on `x86_64` — dispatch overhead + noise, not a kernel contrast. The
+//! table prints the per-row dispatch label so no column can be misread
+//! (Issue 874 T3: the pre-808 "SIMD (ns/call)" header was this file's one
+//! stale surface; every other section below already documents the dispatch).
 //!
 //! Run: `cargo test --features vortex_flow --test bench_256_simd_topk -- --nocapture`
 //!
@@ -19,8 +27,8 @@ use katgpt_rs::dash_attn::block_topk::{argtopk, argtopk_scalar_heap};
 fn make_scores(n: usize, seed: usize) -> Vec<f32> {
     (0..n)
         .map(|i| {
-            let x = ((i.wrapping_mul(2654435761)).wrapping_add(seed.wrapping_mul(40503))) as f32;
-            (x * 0.0001).sin() * 0.5 + 0.5
+            let x = ((i.wrapping_mul(2_654_435_761)).wrapping_add(seed.wrapping_mul(40503))) as f32;
+            (x * 0.000_1).sin() * 0.5 + 0.5
         })
         .collect()
 }
@@ -32,6 +40,39 @@ fn argtopk_reference(scores: &[f32], k: usize) -> Vec<usize> {
     indexed.into_iter().take(k).map(|(i, _)| i).collect()
 }
 
+/// The kernel `argtopk` actually dispatches to at `k`, per architecture.
+///
+/// Mirrors `argtopk_with_scratch`'s dispatch exactly: k=1 → `simd_argmax_f32`;
+/// k>16 → selection sort; the k ≤ 16 register path is NEON-whole on aarch64
+/// and bound to `AVX2_ARGTOPK_K_MAX` (= 4) on `x86_64`, with k above the bound
+/// routing to `argtopk_scalar_heap` (Issue 808 T1).
+fn dispatch_kernel(k: usize) -> &'static str {
+    if k > 16 {
+        return "selection_sort";
+    }
+    if k == 1 {
+        return "simd_argmax";
+    }
+    {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if k <= katgpt_rs::dash_attn::block_topk::AVX2_ARGTOPK_K_MAX {
+                "avx2_sorted_register"
+            } else {
+                "scalar_heap (dispatch)"
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            "neon_sorted_register"
+        }
+        #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+        {
+            "scalar_heap (dispatch)"
+        }
+    }
+}
+
 // ── Correctness check ─────────────────────────────────────────
 
 #[test]
@@ -41,11 +82,21 @@ fn bench_simd_topk_correctness_and_speed() {
     let seed = 42;
     let iters = 1000;
 
-    println!("╔══════════════════════════════════════════════════════════════════╗");
-    println!("║  Plan 256 — SIMD Register TopK Benchmark (k≤16)               ║");
-    println!("╠═════════╦════════╦════════════════╦════════════════╦═══════════╣");
-    println!("║    k    ║   n    ║  SIMD (ns/call)║ Scalar(ns/call)║ Speedup   ║");
-    println!("╠═════════╬════════╬════════════════╬════════════════╬═══════════╣");
+    println!(
+        "\nPlan 256 — argtopk dispatch vs scalar_heap baseline (arch = {})",
+        std::env::consts::ARCH
+    );
+    #[cfg(target_arch = "x86_64")]
+    println!(
+        "note (Issue 808 T1): x86_64 dispatches AVX2 only for k <= {} — \
+         larger k rows are SAME-kernel (scalar_heap vs scalar_heap); their \
+         speedup column is dispatch overhead + timing noise, not a kernel contrast.",
+        katgpt_rs::dash_attn::block_topk::AVX2_ARGTOPK_K_MAX
+    );
+    println!(
+        "{:<3} {:<6} {:<24} {:>14} {:>14} {:>9}",
+        "k", "n", "kernel", "argtopk ns", "scalar ns", "speedup"
+    );
 
     for &k in &k_values {
         for &n in &n_values {
@@ -60,7 +111,7 @@ fn bench_simd_topk_correctness_and_speed() {
                 "SIMD mismatch at k={k}, n={n}: simd={simd_indices:?} != ref={ref_indices:?}"
             );
 
-            // Benchmark SIMD path
+            // Benchmark the argtopk dispatch path (kernel per `dispatch_kernel`)
             let mut simd_indices = Vec::with_capacity(k);
             let start = std::time::Instant::now();
             for _ in 0..iters {
@@ -80,12 +131,16 @@ fn bench_simd_topk_correctness_and_speed() {
 
             let speedup = scalar_ns / simd_ns;
             println!(
-                "║ k={k:<5}║ n={n:<5}║ {simd_ns:>12.1}  ║ {scalar_ns:>12.1}  ║ {speedup:>7.2}x  ║"
+                "{:<3} {:<6} {:<24} {:>14.1} {:>14.1} {:>8.2}x",
+                k,
+                n,
+                dispatch_kernel(k),
+                simd_ns,
+                scalar_ns,
+                speedup
             );
         }
     }
-
-    println!("╚═════════╩════════╩════════════════╩════════════════╩═══════════╝");
 }
 
 // ── k=32 fallback benchmark (scalar path) ─────────────────────
@@ -269,12 +324,12 @@ const ALL_DISTS: [Dist; 6] = [
 impl Dist {
     fn name(self) -> &'static str {
         match self {
-            Dist::IidUniform => "iid_uniform",
-            Dist::GaussSigmoid => "gauss_sigmoid",
-            Dist::Locality => "locality",
-            Dist::EarlyPeak => "early_peak",
-            Dist::LatePeak => "late_peak",
-            Dist::BimodalSparse => "bimodal_sparse",
+            Self::IidUniform => "iid_uniform",
+            Self::GaussSigmoid => "gauss_sigmoid",
+            Self::Locality => "locality",
+            Self::EarlyPeak => "early_peak",
+            Self::LatePeak => "late_peak",
+            Self::BimodalSparse => "bimodal_sparse",
         }
     }
 
@@ -284,8 +339,8 @@ impl Dist {
         let mut rng = SplitMix64(seed ^ 0xD1B5_4A32_D192_ED03);
         let peak = (n / 20).max(k);
         match self {
-            Dist::IidUniform => (0..n).map(|_| rng.next_f32()).collect(),
-            Dist::GaussSigmoid => (0..n)
+            Self::IidUniform => (0..n).map(|_| rng.next_f32()).collect(),
+            Self::GaussSigmoid => (0..n)
                 .map(|_| {
                     // Irwin–Hall(3) ≈ Gaussian logit, scaled to σ≈1
                     let s = rng.next_f32() + rng.next_f32() + rng.next_f32();
@@ -293,7 +348,7 @@ impl Dist {
                     1.0 / (1.0 + (-logit).exp())
                 })
                 .collect(),
-            Dist::Locality => {
+            Self::Locality => {
                 let mut s = rng.next_f32();
                 (0..n)
                     .map(|_| {
@@ -302,7 +357,7 @@ impl Dist {
                     })
                     .collect()
             }
-            Dist::EarlyPeak => (0..n)
+            Self::EarlyPeak => (0..n)
                 .map(|i| {
                     if i < peak {
                         0.85 + 0.15 * rng.next_f32()
@@ -311,7 +366,7 @@ impl Dist {
                     }
                 })
                 .collect(),
-            Dist::LatePeak => (0..n)
+            Self::LatePeak => (0..n)
                 .map(|i| {
                     if i >= n - peak {
                         0.85 + 0.15 * rng.next_f32()
@@ -320,7 +375,7 @@ impl Dist {
                     }
                 })
                 .collect(),
-            Dist::BimodalSparse => (0..n)
+            Self::BimodalSparse => (0..n)
                 .map(|_| {
                     if rng.next_f32() < 0.12 {
                         0.75 + 0.25 * rng.next_f32()
@@ -418,11 +473,11 @@ fn measure_cell(base: &[f32], k: usize, rounds: usize) -> CellResult {
 /// ⚠ POST-T1 the answer differs by architecture, and reading one grid for the
 /// other is the trap. On **aarch64** this is still the question it was: NEON
 /// dispatches the whole k ≤ 16 range and the grid measures a real A/B. On
-/// **x86_64** Issue 808 T1 narrowed the dispatch to k ≤ 4, so the k ∈ {8, 16}
+/// **`x86_64`** Issue 808 T1 narrowed the dispatch to k ≤ 4, so the k ∈ {8, 16}
 /// rows now compare `argtopk_scalar_heap` against ITSELF and read ~1.00 —
 /// that is the fix, not a measurement of the kernel. The kernel's own numbers
 /// above the bound are the ones recorded in Bench 810; this grid can no longer
-/// reach them on x86_64. `bench_simd_topk_issue808_t2_above_bound_is_not_a_loss`
+/// reach them on `x86_64`. `bench_simd_topk_issue808_t2_above_bound_is_not_a_loss`
 /// is the assertion built on that ~1.00.
 #[test]
 fn bench_simd_topk_issue808_distribution_matrix() {
@@ -459,14 +514,14 @@ fn bench_simd_topk_issue808_distribution_matrix() {
     }
 }
 
-/// The per-k N_MIN crossover sweep — option 1's data half. Sweeps n upward at
+/// The per-k `N_MIN` crossover sweep — option 1's data half. Sweeps n upward at
 /// each k until the SIMD dispatch reaches parity (speedup ≥ 1.00), on two
 /// distribution bookends (i.i.d. and the locality shape a real block-score
 /// stream plausibly has). One box, one microarchitecture — the Raptor-Lake
 /// row of the table the owner's T2 needs before any dispatch change.
 ///
 /// ⚠ The owner picked option 2, not option 1 (Issue 808 T1, 2026-09-17), so on
-/// x86_64 this sweep no longer measures what it was built to measure above
+/// `x86_64` this sweep no longer measures what it was built to measure above
 /// k = 4: both arms are the same code there and it crosses at the first n.
 /// KEPT anyway, and deliberately — it is the instrument that would have to
 /// re-run, on a second microarchitecture, before `AVX2_ARGTOPK_K_MAX` could be
@@ -491,7 +546,7 @@ fn bench_simd_topk_issue808_crossover_nmin() {
             let mut n_min = None;
             let mut n_min_05 = None;
             for &n in &n_sweep {
-                let base = dist.make(n, k, 0xC0FF_EE01 + (n as u64) * 104729);
+                let base = dist.make(n, k, 0xC0FF_EE01 + (n as u64) * 104_729);
                 let r = measure_cell(&base, k, rounds);
                 println!(
                     "{:<15} {:>4} {:>6} {:>12.1} {:>12.1} {:>8.2}x  {:>6.2}..{:<6.2}",
@@ -518,7 +573,7 @@ fn bench_simd_topk_issue808_crossover_nmin() {
                     dist.name()
                 ),
                 (Some(n1), None) => {
-                    println!("--> N_MIN[{}, k={k}] = {n1} (no ≥1.05 point in sweep)", dist.name())
+                    println!("--> N_MIN[{}, k={k}] = {n1} (no ≥1.05 point in sweep)", dist.name());
                 }
                 (None, _) => println!(
                     "--> N_MIN[{}, k={k}] = >{} (no crossing in sweep)",

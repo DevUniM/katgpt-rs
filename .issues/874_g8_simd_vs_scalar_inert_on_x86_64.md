@@ -143,3 +143,29 @@ already defend this class three independent ways worth copying whichever option 
 bench_148's anti-vectorization assert on the scalar baseline, fast_bpe's fallback-catch
 floor, and bench_578's same-code-aware loud skip. The two riir-ai by-catches are filed
 for repair there (the wasm32 break restores two live ≥2.0 GOAT gates once compile-fixed).
+
+### T3 addendum — parallel-pass delta (2026-09-22, second session, 4090 box)
+
+An independent second census (17 on-disk contract roots, name-variant sweep
++ a structural plain-twin pass over every `fn X`/`fn X_simd`/`fn X_scalar`
+kernel pair) **converged on the same one-gate verdict** — the consolidation
+trap is `g8` alone. Its delta was on the REPORT axis the gate-read pass
+indexed less tightly:
+
+- `katgpt-rs/tests/bench_256_simd_topk.rs::bench_simd_topk_correctness_and_speed`
+  (site 12's first test — distinct from the 808 sections below it, which are
+  the deliberate same-code tripwire): the pre-808 box table headed its second
+  column "SIMD (ns/call)", but on x86_64 the k=8/16 rows dispatch to
+  `argtopk_scalar_heap` (`AVX2_ARGTOPK_K_MAX = 4`, Issue 808 T1) — same-kernel
+  columns printed under a SIMD label, speedup = dispatch overhead + noise. The
+  REPORT flavor of this issue's class (no assert → no false gate; site 12's
+  verdict stands, sharpened). **Repaired in the same commit as this addendum**:
+  per-row `dispatch_kernel(k)` kernel-label column + the x86_64 arch note +
+  module-doc update; value asserts untouched; all 6 tests green; the healer
+  took the mechanical lints (`let_and_return` + in-passing `use_self`,
+  `doc_markdown`, digit separators — compile-gated).
+- Confirmed honest, no action: the DOCUMENTED-ALIAS family
+  (`katgpt-types/src/simd/temporal.rs::observe_simd → observe` forwarding;
+  `katgpt-core/src/temporal_deriv.rs::observe_simd_matches_observe`'s own
+  "equivalence is structural" doc; riir-ai `spec_adapter.rs::apply_simd`'s
+  "bit-plane iteration itself is scalar").
