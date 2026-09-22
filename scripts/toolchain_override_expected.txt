@@ -1,0 +1,34 @@
+# The EXPECTED rows for scripts/toolchain_override_drift_sweep.py —
+# DELIBERATELY EMPTY. Header only, by design.
+#
+# ── the rule ─────────────────────────────────────────────────────────────────
+# A row reading "not written yet" is a backlog wearing a pin (the Issue-785
+# rule the family adopted). This file carries MEMBERSHIP rows only for
+# occurrences that CANNOT carry an in-source marker — today that set is empty,
+# because the marker vocabulary (`# toolchain-override-deliberate: <reason>`
+# on the occurrence line or in the contiguous # comment run directly above)
+# is exactly the in-source escape hatch for a deliberate override. With the
+# marker mechanism, every current override should classify MATCH, DELIBERATE
+# or UNRESOLVED-MARKED — none needs an expectation row.
+#
+# Reds in BOTH directions, the len_derived_eyes_expected.txt pattern: a NEW
+# row here is a finding, and a pinned row that stops being reported is a
+# finding too (it was adjudicated — drop the row in that commit — or the
+# classifier stopped reaching it).
+#
+# Format (when a row ever earns its place here — mirror the eyes-list key:
+# line-free, count within the address):
+#
+#   <repo> <file> <value> <reason> <rows_at_this_address>
+#
+# ── what does NOT belong here ────────────────────────────────────────────────
+# A DRIFT or UNRESOLVED row you have simply not marker-edited yet. The
+# 2026-09-15 landing deliberately does NOT pin the five known occurrences
+# (katgpt-rs full_gate.yml:99 + wasm32_gate.yml:75, riir-ai
+# g2_netem_docker.sh:212, riir-game-sdk t36_netem_partition_docker.sh:91,
+# riir-chain toolchain_drift.yml:117): their in-source markers are landing
+# concurrently in a sibling commit, and a sweep that pins its own pending
+# repairs as expected has re-created the exact "backlog wearing a pin" this
+# file exists to prevent. Until the markers land, the drift WALL (see
+# toolchain_override_drift_floors.txt) holds and the sweep reds — that is
+# the instrument working.

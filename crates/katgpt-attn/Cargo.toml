@@ -34,6 +34,11 @@ serde = { version = "1", features = ["derive"], optional = true }
 [dev-dependencies]
 fastrand = "2"
 serde_json = "1"
+# Issue 779 T2: the FUNCATTN spectral-arm eval consumes the promoted
+# subspace-intervention protocol (test-only feature forward — the lib's
+# dependency surface is unchanged).
+katgpt-core = { path = "../katgpt-core", features = ["subspace_intervention"] }
+katgpt-spectral = { path = "../katgpt-spectral" }
 
 [features]
 default = []
@@ -83,6 +88,16 @@ gdn_tree_verify = ["gdn2_attention", "katgpt-core/gdn_tree_verify"]
 gdn_hola_tree_verify = ["gdn_tree_verify", "hippocampal_cache", "katgpt-core/gdn_hola_tree_verify"]
 # FuncAttn composition layer (Plan 286 Phase 5).
 funcattn_freeze_thaw = ["dep:blake3", "dep:serde"]
+# calibration_staleness (Issue 841 §B-3 follow-up, seam 1 of 4 — the SUPPLY
+# side). `FuncAttnWeightsSnapshot` already carries a caller-managed generation
+# ordinal (`version`, deliberately NOT part of its own hash input) beside a
+# BLAKE3 commitment that `swap` verifies before installing, which makes it the
+# one seam in the workspace that can hand a calibration a REAL `SnapshotId`
+# today. Implements `katgpt_core::calibration_staleness::SnapshotIdentity`;
+# adds no field, changes no shipped signature, and compiles to nothing when
+# off. Consumers (StaticCalTable, CalibratedVerifier, and last because it is
+# default-on, ConformalIntervalCalibrator) are separate rows.
+calibration_staleness = ["funcattn_freeze_thaw", "katgpt-core/calibration_staleness"]
 funcattn_spectral_pre_rotate = ["dep:katgpt-spectral"]
 funcattn_chiar_blend = ["chiaroscuro"]
 # sparse_mlp: gates the `#[cfg(feature = "sparse_mlp")]` MLP path in
@@ -178,6 +193,14 @@ trained_indexer = ["flashmemory_sparse"]
 name = "kda_g1_spec_match"
 required-features = ["kda_linear"]
 
+# Issue 779 T2 — the FUNCATTN spectral-arm triad (consumes the promoted
+# subspace_intervention protocol via the dev-dep feature-forward). Runs
+# green only under its feature — required-features keeps `cargo test
+# --workspace` honest about skipping it (the Issue-713 green-zero trap).
+[[test]]
+name = "funcattn_spectral_triad"
+required-features = ["funcattn_spectral_pre_rotate"]
+
 [[test]]
 name = "mla_g1_spec_match"
 required-features = ["mla_attention"]
@@ -209,6 +232,18 @@ required-features = ["asentmax_schedule"]
 name = "asentmax_alloc_check"
 required-features = ["asentmax_schedule"]
 
+# Bench 845 (Issue 845) — `channel_aware::simd_dot_f32`'s AVX2 arm is gated on a
+# COMPILE-time `target_feature`, which is off by default on x86_64, so the
+# shipped path runs a 4-accumulator scalar loop while katgpt-types'
+# runtime-CPUID-dispatched kernel sits in the graph via katgpt-core's re-export.
+# Measures the local ~200-line duplicate against the shipped kernel at the
+# routing/head dims its own doc names. REPORT (instrument health + numerical
+# agreement asserted, no bar): the verdict is build-configuration-dependent by
+# construction, so run it with and without RUSTFLAGS="-C target-feature=+avx2".
+[[test]]
+name = "bench_845_channel_aware_dot_dispatch"
+required-features = ["dash_attn"]
+
 # Issue 747 P1 — derived-k budget G1 length-independence gate (Lemma-2
 # boundary law: realized support == k̂ = 4/Δ̂² at every n ∈ 1k..1M).
 [[test]]
@@ -239,4 +274,25 @@ required-features = ["asentmax_schedule"]
 [[bench]]
 name = "bench_747_asentmax_goat"
 harness = false
+required-features = ["asentmax_schedule"]
+
+# Issue 747 P0.7 — real-model fixture GENERATOR (Ternary-Bonsai-8B qwen3
+# prefill → routing rows + block summaries + ground-truth attention masses).
+# Dev-tool: needs the real GGUF on disk; not part of any gate.
+[[example]]
+name = "asentmax_p07_gen_fixture"
+required-features = ["asentmax_schedule"]
+
+# Issue 747 P0.7 — real-model ASEntmax G2/G3 re-gate (replays the committed
+# fixture through EntmaxRouter None vs with_asentmax_schedule).
+[[test]]
+name = "asentmax_p07_realmodel_regate"
+required-features = ["asentmax_schedule"]
+
+# Issue 762 T0 — long-context re-measure: same replay harness over the
+# ≈10.9k-token fixture (log-spaced k-ends to ~170 blocks); pins the σ̂(n)
+# trend + support/mass/needle/latency gates the P0.7 addendum's n≤32 caveat
+# left open.
+[[test]]
+name = "asentmax_long_context_regate"
 required-features = ["asentmax_schedule"]

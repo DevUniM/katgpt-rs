@@ -34,9 +34,11 @@ pub const DEFAULT_TAU_SNAP: f32 = 0.92;
 /// Default Jaccard fallback threshold (RIZZ §"hierarchical routing" uses 0.40).
 pub const DEFAULT_TAU_JACCARD: f32 = 0.40;
 
-/// Default spawn threshold: spawn when the max dot-product score is strictly
-/// below this. `0.0` means "spawn only when no positive dot-product match".
-pub const DEFAULT_TAU_SPAWN: f32 = 0.0;
+// DEFAULT_TAU_SPAWN removed (Issue 772 S1): the spawn threshold was never
+// implemented — route()/route_with_tokens() spawn on no-snap while capacity
+// remains (pinned by router tests as the intended RIZZ semantics). The
+// phantom knob is deleted rather than wired: wiring would invert the pinned
+// default behavior for the [tau_spawn, tau_snap) band.
 
 /// How the router resolved a route query.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,7 +96,7 @@ impl RouteResult {
 /// Dot-product snap router with optional Jaccard fallback.
 ///
 /// Construct with [`BranchRouter::default`] for RIZZ-paper-aligned thresholds
-/// (τ_snap=0.92, τ_jaccard=0.40, τ_spawn=0.0), or with [`BranchRouter::new`]
+/// (τ_snap=0.92, τ_jaccard=0.40), or with [`BranchRouter::new`]
 /// for custom thresholds.
 #[derive(Clone, Copy, Debug)]
 pub struct BranchRouter {
@@ -102,8 +104,6 @@ pub struct BranchRouter {
     pub tau_snap: f32,
     /// Jaccard similarity ≥ this → snap to best-Jaccard branch (fallback).
     pub tau_jaccard: f32,
-    /// Max dot-product score < this → consider spawn (if no snap).
-    pub tau_spawn: f32,
 }
 
 impl Default for BranchRouter {
@@ -112,7 +112,6 @@ impl Default for BranchRouter {
         Self {
             tau_snap: DEFAULT_TAU_SNAP,
             tau_jaccard: DEFAULT_TAU_JACCARD,
-            tau_spawn: DEFAULT_TAU_SPAWN,
         }
     }
 }
@@ -121,12 +120,8 @@ impl BranchRouter {
     /// Construct with custom thresholds.
     #[inline]
     #[must_use]
-    pub const fn new(tau_snap: f32, tau_jaccard: f32, tau_spawn: f32) -> Self {
-        Self {
-            tau_snap,
-            tau_jaccard,
-            tau_spawn,
-        }
+    pub const fn new(tau_snap: f32, tau_jaccard: f32) -> Self {
+        Self { tau_snap, tau_jaccard }
     }
 
     /// Route a query embedding to a branch (dot-product snap only).
@@ -458,7 +453,7 @@ mod tests {
 
     #[test]
     fn router_custom_thresholds() {
-        let router = BranchRouter::new(0.5, 0.3, 0.0);
+        let router = BranchRouter::new(0.5, 0.3);
         let bank = make_bank_with_branches(&[vec![1.0, 0.0]]);
         // cosine 0.707 ≥ 0.5 (custom tau_snap) → snap.
         let inv_sqrt2 = 1.0 / 2.0f32.sqrt();

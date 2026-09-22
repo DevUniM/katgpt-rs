@@ -158,6 +158,12 @@ pub use sink_classify::{
     stable_rank_update_into_flat,
 };
 
+/// Sink stability forecast (Issue 819 T1, Research 566). The item lives in
+/// `sink_classify` (itself gated `sink_aware_attn`), so both features must be
+/// on for the re-export to resolve.
+#[cfg(all(feature = "sink_aware_attn", feature = "sink_margin_forecast"))]
+pub use sink_classify::forecast_stable_positions;
+
 // ── Re-exports (gold_share items, gated) ────────────────────────────────
 
 #[cfg(feature = "gold_share_probe")]

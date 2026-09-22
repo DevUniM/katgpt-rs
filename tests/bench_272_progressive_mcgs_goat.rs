@@ -53,6 +53,11 @@
 #[path = "common/alloc_tracking.rs"]
 mod alloc_tracking;
 
+// Issue 855: the load-invariant timing treatment, whose `best_of_us` panics
+// on an all-zero reading instead of letting a deleted loop satisfy a ceiling.
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 /// Liveness sentinel (Issue 682): FAIL the audit if the TrackingAllocator
 /// is not actually installed (debug builds only).
 #[cfg(debug_assertions)]
@@ -620,23 +625,34 @@ fn g4b_latency_pick_mode_under_1us() {
     let scheduler = EntropyGatedScheduler::default();
     let mut rng = fastrand::Rng::with_seed(42);
 
-    // Warmup.
-    for i in 0..1000 {
-        let t = i as f32 / 1000.0;
-        let _ = scheduler.pick_mode(t, &mut rng);
-    }
+    // Issue 855: the previous loop was `let _ = scheduler.pick_mode(t, &mut
+    // rng)` over 100_000 iterations with the result discarded. rustc deleted
+    // the whole chain, `per_call_ns` read **0.0**, and the < 1 microsecond
+    // ceiling passed with maximum margin on work that never ran. `best_of_us`
+    // FAILS loudly on an all-zero reading, and the mode is now accumulated
+    // into a sink consumed through `black_box` so the callee cannot be
+    // dropped. The bar below is byte-identical to what it has always been.
+    const ROUNDS: usize = 10;
+    const ITERS: usize = 10_000;
 
-    let n = 100_000;
-    let start = std::time::Instant::now();
-    for i in 0..n {
-        let t = i as f32 / n as f32;
-        let _ = scheduler.pick_mode(t, &mut rng);
-    }
-    let elapsed = start.elapsed();
-    let per_call_ns = elapsed.as_nanos() as f64 / n as f64;
+    let best_us = ab_timing::best_of_us(2, ROUNDS, || {
+        let mut sink = 0usize;
+        let t0 = std::time::Instant::now();
+        for i in 0..ITERS {
+            let t = i as f32 / ITERS as f32;
+            sink += scheduler.pick_mode(t, &mut rng) as usize;
+        }
+        let e = t0.elapsed();
+        std::hint::black_box(sink);
+        e
+    });
+    let per_call_ns = best_us * 1000.0 / ITERS as f64;
 
     println!();
-    println!("│ G4b: pick_mode() per-call: {per_call_ns:.1} ns (target < 1000 ns)");
+    println!(
+        "│ G4b: pick_mode() {ROUNDS} samples × {ITERS} iters, best \
+         {best_us:.1} µs — per-call: {per_call_ns:.1} ns (target < 1000 ns)"
+    );
 
     assert!(
         per_call_ns < 1000.0,

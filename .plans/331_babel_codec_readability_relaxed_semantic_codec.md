@@ -12,17 +12,17 @@
 
 Ship a generic `BabelCodec` trait + two deterministic implementations:
 
-1. **`FixedRuleTextCodec`** — BT-P8 / BT-P13 fixed symbolic mapping rules. Deterministic, BLAKE3-commitable text compression for KG-triple / entity-attribute / config / quest-grammar surfaces. Target: 2–3× compression on Seal corpus (NOT the paper's prompt-elicited 3.6× — we ship the modelless subset).
+1. **`FixedRuleTextCodec`** — BT-P8 / BT-P13 fixed symbolic mapping rules. Deterministic, BLAKE3-commitable text compression for KG-triple / entity-attribute / config / quest-grammar surfaces. Target: 2–3× compression on RPG corpus (NOT the paper's prompt-elicited 3.6× — we ship the modelless subset).
 2. **`SigmoidLatentCodec<D>`** — deterministic dot-product projection + sigmoid gate on `&[f32; D]`. Generic-trait facade over what `DensityBudget` + `extract_hla_slice` (Plan 311) already do for HLA slices — unifies text and latent under one API.
 
 **GOAT gate (must pass before promotion to default):**
 - G1 (fidelity): round-trip `decompress(compress(x)) ≡ x` on the deterministic subset (KG triples, entity-attribute pairs, config strings). 100% bit-identical for the fixed-rule inverse.
-- G2 (compression): ≥ 2× byte reduction on the real Seal 17k corpus (the one that killed CompressionDrafter, Plan 285/287). Honest target: 2–3×.
+- G2 (compression): ≥ 2× byte reduction on the real RPG 17k corpus (the one that killed CompressionDrafter, Plan 285/287). Honest target: 2–3×.
 - G3 (latency): compress + decompress < 200 ns per message on D=8 latent / < 2 µs per 256-byte text chunk. Plasma-tier budget.
 - G4 (no regression): `cargo test -p katgpt-core --all-features` clean.
 - G5 (determinism): same input → bit-identical output across ARM64/x86_64/wasm32 (BLAKE3 checks). Required for any future LatCal-commitment path (issue #002).
 
-**Why opt-in until G2 passes:** CompressionDrafter failed G2 twice on Seal (Plan 285/287). BabelCodec must beat that bar on the same corpus before promotion. If G2 fails again, the open primitive stays opt-in as a documented negative result (matching the CompressionDrafter precedent).
+**Why opt-in until G2 passes:** CompressionDrafter failed G2 twice on the RPG corpus (Plan 285/287). BabelCodec must beat that bar on the same corpus before promotion. If G2 fails again, the open primitive stays opt-in as a documented negative result (matching the CompressionDrafter precedent).
 
 ---
 
@@ -94,7 +94,7 @@ Ship a generic `BabelCodec` trait + two deterministic implementations:
 ### Tasks
 
 - [x] **T5.1** `crates/katgpt-core/tests/bench_331_babel_codec_goat.rs`: G1 round-trip fidelity on 1000 synthetic KG triples + entity-attribute pairs.
-- [x] **T5.2** G2 compression on the **real Seal 17k corpus** (same corpus as Plan 285/287). Measure byte reduction. **Target: ≥ 2×.** Honest expectation: 2–3×.
+- [x] **T5.2** G2 compression on the **real RPG 17k corpus** (same corpus as Plan 285/287). Measure byte reduction. **Target: ≥ 2×.** Honest expectation: 2–3×.
 - [x] **T5.3** G3 latency: `std::time::Instant` batched median (matching crate convention). Target: < 200 ns / latent msg, < 2 µs / 256-byte text chunk.
 - [x] **T5.4** G4 no-regression: `cargo test -p katgpt-core --all-features` clean.
 - [x] **T5.5** G5 cross-arch determinism: run G1 on ARM64 + x86_64 (wasm32 if feasible), assert bit-identical BLAKE3 commitments.
@@ -144,4 +144,4 @@ Ship a generic `BabelCodec` trait + two deterministic implementations:
 
 ## TL;DR
 
-Plan 331 = `BabelCodec` trait + `FixedRuleTextCodec` (BT-P8 deterministic text codec, the modelless subset of BabelTele) + `SigmoidLatentCodec<D>` (generic-trait facade over existing `DensityBudget` infrastructure) + BLAKE3 commitment. Opt-in `babel_codec` feature until G2 (≥ 2× on real Seal 17k corpus) passes — the same gate that killed CompressionDrafter twice. Honest negative result if G2 fails. Cross-arch determinism (G5) is required to unblock issue #002 (LatCal chain commitment of compressed KG triples). riir-ai integration (NPC dialog memory, npc_comms text channel, Engram text-side compressor) is a separate plan after G2 passes.
+Plan 331 = `BabelCodec` trait + `FixedRuleTextCodec` (BT-P8 deterministic text codec, the modelless subset of BabelTele) + `SigmoidLatentCodec<D>` (generic-trait facade over existing `DensityBudget` infrastructure) + BLAKE3 commitment. Opt-in `babel_codec` feature until G2 (≥ 2× on real RPG 17k corpus) passes — the same gate that killed CompressionDrafter twice. Honest negative result if G2 fails. Cross-arch determinism (G5) is required to unblock issue #002 (LatCal chain commitment of compressed KG triples). riir-ai integration (NPC dialog memory, npc_comms text channel, Engram text-side compressor) is a separate plan after G2 passes.

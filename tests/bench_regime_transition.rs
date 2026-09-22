@@ -5,7 +5,11 @@
 
 #![cfg(feature = "regime_transition")]
 
+use std::hint::black_box;
 use std::time::Instant;
+
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
 
 use katgpt_rs::pruners::decision_trace::DecisionTrace;
 use katgpt_rs::pruners::four_regime_router::{FourRegimeRouter, RegimeFeatures};
@@ -72,17 +76,36 @@ fn make_ddtree_stats(n_failures: usize, uniform_depth: bool) -> DDTreeStats {
 #[test]
 fn bench_collapse_classification_throughput() {
     let classifier = RegimeCollapseClassifier::default();
-    let n = 100_000;
     let stats = make_ddtree_stats(10, true);
 
-    let start = Instant::now();
-    for _ in 0..n {
-        let _ = classifier.classify(&stats);
-    }
-    let elapsed = start.elapsed();
-    let ns_per = elapsed.as_nanos() as f64 / n as f64;
+    // ⛔ Issue 855: this was `for _ in 0..100_000 { let _ = classifier.classify(&stats); }`
+    // over a loop-invariant input with the result discarded. Under `-C lto=fat`
+    // that whole loop is dead code (Issue 723 Class A2), so the release run
+    // printed `100000 iterations in 0ns (0.0 ns/op)` and the `< 10_000 ns/op`
+    // ceiling below passed with maximum margin — satisfied by work that did
+    // not happen. A flaky bar is eventually noticed; this one could not fail.
+    //
+    // `best_of_us` is the treatment for a ONE-ARM absolute budget: contention
+    // can only ever ADD time, so the minimum of N samples is the load-invariant
+    // observation, and an all-zero run is a NAMED instrument failure rather
+    // than a verdict. The input goes through `black_box` so the callee cannot
+    // be hoisted out of the chunk and the result through `black_box` so it
+    // cannot be discarded. The bar is unchanged.
+    const CHUNK: usize = 10_000;
+    const SAMPLES: usize = 10;
+    let us = ab_timing::best_of_us(2, SAMPLES, || {
+        let t = Instant::now();
+        for _ in 0..CHUNK {
+            black_box(classifier.classify(black_box(&stats)));
+        }
+        t.elapsed()
+    });
+    let ns_per = us * 1000.0 / CHUNK as f64;
 
-    println!("bench_collapse_classification: {n} iterations in {elapsed:?} ({ns_per:.1} ns/op)");
+    println!(
+        "bench_collapse_classification: {SAMPLES} samples × {CHUNK} iterations, \
+         best {us:.1}µs ({ns_per:.1} ns/op)"
+    );
     assert!(ns_per < 10_000.0, "Classification too slow: {ns_per} ns/op");
 }
 
@@ -92,16 +115,26 @@ fn bench_collapse_classification_throughput() {
 fn bench_gate_evaluation_throughput() {
     let gate = RegimeTransitionGate::default();
     let trace = make_trace(10, 5);
-    let n = 100_000;
 
-    let start = Instant::now();
-    for _ in 0..n {
-        let _ = gate.evaluate(&trace, 5);
-    }
-    let elapsed = start.elapsed();
-    let ns_per = elapsed.as_nanos() as f64 / n as f64;
+    // ⛔ Issue 855, same class as `bench_collapse_classification_throughput`
+    // above: `let _ = gate.evaluate(&trace, 5)` over a hoisted input measured
+    // `0ns` over 100 000 iterations and passed the ceiling on nothing. Same
+    // treatment, same bar.
+    const CHUNK: usize = 10_000;
+    const SAMPLES: usize = 10;
+    let us = ab_timing::best_of_us(2, SAMPLES, || {
+        let t = Instant::now();
+        for _ in 0..CHUNK {
+            black_box(gate.evaluate(black_box(&trace), black_box(5)));
+        }
+        t.elapsed()
+    });
+    let ns_per = us * 1000.0 / CHUNK as f64;
 
-    println!("bench_gate_evaluation: {n} iterations in {elapsed:?} ({ns_per:.1} ns/op)");
+    println!(
+        "bench_gate_evaluation: {SAMPLES} samples × {CHUNK} iterations, \
+         best {us:.1}µs ({ns_per:.1} ns/op)"
+    );
     assert!(
         ns_per < 10_000.0,
         "Gate evaluation too slow: {ns_per} ns/op"

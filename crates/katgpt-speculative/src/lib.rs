@@ -82,6 +82,13 @@ pub mod selectivity_router;
 pub mod belief_cache;
 #[cfg(feature = "belief_drafter")]
 pub mod belief_drafter;
+// Weak-side probe artifact (Issue 865 T2): the BLAKE3-committed freeze/thaw
+// wire for the probe_guidance decode lane — a LatentDynamicsMLP connector +
+// shared trunk lm_head + tap metadata, sealed and verified on load. Gated on
+// belief_drafter because the connector IS that MLP class (reused, not
+// re-invented); training lives in the riir-train nextlat_* lane pattern.
+#[cfg(feature = "probe_artifact")]
+pub mod probe_artifact;
 // Bigram Markov head — the modelless sequential drafter (Issue 659,
 // Research 316 §3.5 path 2). belief_drafter above is the trained-MLP
 // drafter (NextLat); this is its table-lookup sibling: deterministic CSR

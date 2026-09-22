@@ -1,6 +1,6 @@
 # Proposal 013 — Engram-Fused PUCT: Offline-Mined Memory for the Moka Go Search
 
-Status: **draft**
+Status: **MEASURED NEGATIVE (Bench 848, 2026-09-22) — G5 FAIL: 296/616 = 48.1% head-to-head (Wilson one-sided 95% lower 44.8% < 50%), budget arm 35.7%, vs-GREEDY delta −4.0pp (ns), G2 293 ns > 100 ns bar. Diagnosis (T1.3 sanity gates): the mechanism fired at 98.4% of lookups but the count-based evidence gate correctly damped 99.98% of rows to ≤0.18 strength — 9×9 self-play transpositions are too rare (100% of positions n<4 after 240 games) to accumulate evidence, and hard-hash routing has no neighbourhood to generalize over (the paper's actual mechanism). `engram_puct` stays opt-in/native-gated; wasm build untouched (T2.1 size-identical). Re-open needs a transposition-dense domain, neighbourhood generalization, or a much larger mining corpus. Was: POC scoped as `Issue 868` (2026-09-21, owner go by filing); implemented by Plan 605 (G1/G4/G6 PASS, negative G5 recorded).**
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: Engram (Plan 299 / Research 278, katgpt-core) × Moka+PUCT (Plan 565, katgpt-moka-wasm) × the Issue 565 G5 corrected-forward seam

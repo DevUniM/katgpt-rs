@@ -15,7 +15,7 @@
 > **Feature Gate:** `sense_composition` (single gate, all tasks)
 > **Depends On:** `plasma_path` (TernaryWeights), `domain_latent` (DomainLatent), `bandit` (TrialLog)
 > **Companion Plan:** riir-ai Plan 249 (model-based training)
-> **Schema Plan:** seal-online-remaster Plan 036 (Brain Annotation — KG/HLA schema metadata for GameComponent derive)
+> **Schema Plan:** mmorpg-remaster Plan 036 (Brain Annotation — KG/HLA schema metadata for GameComponent derive)
 
 ---
 
@@ -96,7 +96,7 @@ Compress game domain knowledge into fixed-type ternary bit-plane sense modules (
   - Tests: compose 3 modules, project_all returns 3 scalars, pin overrides autonomous, disable stops all autonomous, re-enable restores
   - MAX_OVERRIDES = 8 (one per SenseKind)
 
-- [x] **T6: SenseWasmPool — per-thread WASM sense module pool** (`seal-online-remaster/crates/seal-core/src/mempool/pool.rs`)
+- [x] **T6: SenseWasmPool — per-thread WASM sense module pool** (`mmorpg-remaster/crates/mmorpg-core/src/mempool/pool.rs`)
   - Reuse BomberWasmPruner pattern: `papaya::HashMap<ThreadId, Mutex<SenseWasmInner>>`
   - WASM ABI: `project(hla_ptr, hla_len, result_ptr) -> u32`, `batch_project(...)`, `emit_triples(...)`
   - Q16.16 fixed-point return values

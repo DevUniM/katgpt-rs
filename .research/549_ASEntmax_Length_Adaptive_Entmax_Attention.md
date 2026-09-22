@@ -2,7 +2,7 @@
 
 > **Source:** Vasylenko, Pitorro, Martins, Treviso. *Long-Context Generalization with Sparse Attention*. [arXiv:2506.16640v4](https://arxiv.org/abs/2506.16640) (ICLR 2026), 2026-03-02. Code: [deep-spin/asentmax](https://github.com/deep-spin/asentmax).
 > **Date:** 2026-09-11
-> **Status:** Done — verdict 🟢 GOAT (dual-track). Modelless execution → [Issue 747](../.issues/747_asentmax_modelless_mining.md); training arm → riir-train Plan 396 (SECONDARY).
+> **Status:** Done — verdict 🟢 GOAT (dual-track). Modelless execution → `Issue 747`; training arm → riir-train Plan 396 (SECONDARY).
 > **Related Research:** 392 (SSMax/GoldShare — the softmax arm of the duality), 068 (DashAttention α-entmax routing), 225 (MSA blockwise sparse), 140 (sigmoid parallax), 258 (attention sinks), 344 (length extrapolation, implicit LM), 362 (HydraHead head importance)
 > **Related Plans:** 411 (SSMax + GoldShare — SHIPPED), 106 (DashAttention — SHIPPED default-on), 256 (MSA adaptive k), 287 (sink-aware attention)
 > **Cross-ref (riir-train):** Plan 396 (ASEntmax recipe arm — drafter + learned-scaler extraction)

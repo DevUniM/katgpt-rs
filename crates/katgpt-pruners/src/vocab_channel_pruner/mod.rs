@@ -298,6 +298,32 @@ pub struct VocabChannelConfig {
     pub fd_epsilon: f32,
 }
 
+/// Deterministic seed for the Householder symmetry-breaker (Issue 809).
+///
+/// FNV-1a over the neuron's own f32 bit patterns plus the two shape scalars.
+/// Cheap, dependency-free, and the only property it needs is that the same
+/// input yields the same stream — it is NOT a hash anybody should rely on for
+/// anything else, which is why it is private to this module.
+fn seed_from_input(neuron_weight: &[f32], vocab_size: usize, n_embd: usize) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut h = OFFSET;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(PRIME);
+        }
+    };
+    for f in neuron_weight {
+        // `to_bits`, not `to_le_bytes` on the f32 directly: -0.0 and 0.0 are
+        // `==` but must seed differently, and NaN payloads must not collapse.
+        feed(&f.to_bits().to_le_bytes());
+    }
+    feed(&(vocab_size as u64).to_le_bytes());
+    feed(&(n_embd as u64).to_le_bytes());
+    h
+}
+
 impl Default for VocabChannelConfig {
     fn default() -> Self {
         Self {
@@ -337,9 +363,25 @@ impl VocabChannelDecomposer {
     ) -> Vec<VocabChannel> {
         let mut channels = Vec::with_capacity(self.config.max_channels);
         let mut mask = vec![false; vocab_size];
+        // ⛔ DETERMINISM (Issue 809). The two draws below used `fastrand`'s
+        // UNSEEDED thread-local global, so this function returned a different
+        // decomposition on every process — measured: the same commit on the
+        // same box passed one run and failed the next, on
+        // `test_decompose_neuron_discovers_channels`, because two tokens tie
+        // and the symmetry-breaking perturbation decided the order. This repo
+        // has 555 `Rng::with_seed` sites against 11 global-`fastrand` ones, so
+        // the unseeded global was the outlier, not the convention.
+        //
+        // The seed is derived from the INPUT rather than taken as a config
+        // field: the perturbation is a symmetry breaker, not a source of
+        // entropy, so "same neuron in, same channels out" is the property
+        // worth having — and a new field would have broken 21 struct-literal
+        // construction sites to say something the input already says.
+        let mut rng = fastrand::Rng::with_seed(seed_from_input(neuron_weight, vocab_size, n_embd));
 
         for _ in 0..self.config.max_channels {
-            let Some(channel) = self.discover_channel(neuron_weight, lm_head, vocab_size, n_embd, &mask)
+            let Some(channel) =
+                self.discover_channel(neuron_weight, lm_head, vocab_size, n_embd, &mask, &mut rng)
             else {
                 break;
             };
@@ -366,12 +408,13 @@ impl VocabChannelDecomposer {
         vocab_size: usize,
         n_embd: usize,
         mask: &[bool],
+        rng: &mut fastrand::Rng,
     ) -> Option<VocabChannel> {
         // Initialize Householder vector as small random perturbation
-        let mut h: Vec<f32> = (0..n_embd).map(|_| (fastrand::f32() - 0.5) * 0.1).collect();
+        let mut h: Vec<f32> = (0..n_embd).map(|_| (rng.f32() - 0.5) * 0.1).collect();
 
         // Optimize h to maximize kurtosis - lambda*(1 - cos(v, w))
-        self.optimize_householder(&mut h, w, lm_head, vocab_size, n_embd, mask);
+        self.optimize_householder(&mut h, w, lm_head, vocab_size, n_embd, mask, rng);
 
         // Compute final channel
         let v = householder_apply(&h, w);
@@ -391,6 +434,11 @@ impl VocabChannelDecomposer {
     }
 
     /// Optimize Householder vector via random coordinate descent on kurtosis.
+    // 8 args: the 7 that were already the call context, plus the seeded `rng`
+    // Issue 809 threads through. Bundling them into a struct would move the
+    // same seven values one level down for no reader's benefit — the house
+    // convention here (361 sites) is the allow with the reason.
+    #[allow(clippy::too_many_arguments)]
     fn optimize_householder(
         &self,
         h: &mut [f32],
@@ -399,13 +447,14 @@ impl VocabChannelDecomposer {
         vocab_size: usize,
         n_embd: usize,
         mask: &[bool],
+        rng: &mut fastrand::Rng,
     ) {
         let eps = self.config.fd_epsilon;
 
         for _ in 0..self.config.max_iterations {
             // Pick random dimensions for coordinate descent
             for _ in 0..self.config.coords_per_iter {
-                let dim = fastrand::usize(0..n_embd);
+                let dim = rng.usize(0..n_embd);
 
                 // Compute objective at h + eps*e_dim
                 h[dim] += eps;

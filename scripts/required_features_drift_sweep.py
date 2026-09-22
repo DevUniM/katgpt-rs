@@ -81,6 +81,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # feature names are enableable.
 from required_features_build_audit import parse_rows, static_invalid  # noqa: E402
 from cfg_gated_target_audit import derive_repos, manifests  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
+from worktree_state import (  # noqa: E402
+    HeadDelta, deferral_line, delta_of, head_tree, sweep_advisory)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKSPACE = REPO_ROOT.parent
@@ -149,6 +152,181 @@ def audit(repo: Path) -> dict:
     }
 
 
+# ONE list, read by the worktree advisory, by the HEAD trigger and by the
+# archive pathspec. This classifier reads MANIFESTS and nothing else — no
+# sources at all, which makes it the narrowest population in the family and the
+# cheapest HEAD pass.
+#
+# ⚠ `*.toml` for the ARCHIVE and `Cargo.toml` for the advisory: a git pathspec
+# `Cargo.toml` matches only the repo ROOT, and a HEAD tree missing
+# `crates/*/Cargo.toml` would report zero rows and breach every floor — a false
+# RED that looks exactly like a blind walk. `_matches` on the advisory side
+# tests the basename too, so the narrower form is correct there.
+SCOPE = ("Cargo.toml",)
+ARCHIVE_PATHS = ("*.toml",)
+
+
+def adjudicate(repo: Path, got: dict):
+    """-> (`HeadDelta` over the invalid rows, HEAD's `audit()` or None).
+
+    Issue 822 T5j, the last of the fan-out. `head_tree`, because `parse_rows`
+    and `manifests()` both walk the filesystem and there is no single reader to
+    intercept — but this is the CHEAPEST instance of it, since the archive
+    carries manifests alone.
+
+    The rows are already their own key: `f"{row.label}  [{feature}] {why}"`,
+    where `label` is `repo:package:kind:name`. No line number, no path, and the
+    repo component matches across the two sides because `head_tree` names its
+    checkout after the source repo. The FEATURE and the REASON are in it
+    because the ceiling counts rows: a row that gained a second invalid feature
+    is a second finding, and one whose reason changed is a different one.
+    """
+    with head_tree(repo, SCOPE, paths=ARCHIVE_PATHS) as tree:
+        if tree is None:
+            return HeadDelta(list(got["invalid"]), [], []), None
+        head = audit(tree)
+        return delta_of(got["invalid"], head["invalid"], lambda r: r), head
+
+
+_BAD_MANIFEST = """[package]
+name = "canary-a"
+version = "0.0.0"
+
+[features]
+on = []
+
+[[test]]
+name = "t"
+path = "tests/t.rs"
+required-features = ["nope"]
+"""
+_GOOD_MANIFEST = _BAD_MANIFEST.replace('required-features = ["nope"]',
+                                       'required-features = ["on"]')
+
+
+def adjudicate_cases() -> list[str]:
+    """`adjudicate` end to end against REAL git — Issue 822 T5j.
+
+    The fixture is this sweep's own subject: a `required-features` row naming a
+    feature the package does not declare, which `cargo` refuses to build at all.
+    """
+    import subprocess
+    import tempfile
+
+    fails: list[str] = []
+
+    def git(root, *args):
+        subprocess.run(("git", "-C", str(root)) + args,
+                       capture_output=True, check=True)
+
+    def fixture(td, committed, worktree=None, nested=False):
+        repo = Path(td) / "r"
+        where = repo / "crates" / "canary-a" if nested else repo
+        where.mkdir(parents=True)
+        (where / "Cargo.toml").write_text(committed, encoding="utf-8")
+        git(repo.parent, "init", "-q", "r")
+        git(repo, "config", "user.email", "arm@example.invalid")
+        git(repo, "config", "user.name", "arm")
+        git(repo, "add", "-A")
+        git(repo, "-c", "commit.gpgsign=false", "commit", "-qm", "base")
+        if worktree is not None:
+            (where / "Cargo.toml").write_text(worktree, encoding="utf-8")
+        return repo
+
+    def run(repo):
+        got = audit(repo)
+        delta, head = adjudicate(repo, got)
+        return got, delta, (got if head is None else head)
+
+    # a. ⛔ Issue 798's direction: a repair that is not COMMITTED is not landed.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, _BAD_MANIFEST, _GOOD_MANIFEST)
+        got, delta, j = run(repo)
+        if got["invalid"]:
+            fails.append(f"arm a: the fixture is INERT — the worktree must "
+                         f"read no invalid row ({got['invalid']})")
+        if len(j["invalid"]) != 1 or not delta.masked:
+            fails.append(f"adjudicate: an UNCOMMITTED fix cleared the invalid "
+                         f"ceiling ({j['invalid']}) — the committed row still "
+                         f"names a feature its package cannot enable")
+
+    # b. And its mirror: a bad row introduced in the worktree must not red a
+    #    ceiling over a line no commit contains.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, _GOOD_MANIFEST, _BAD_MANIFEST)
+        got, delta, j = run(repo)
+        if len(got["invalid"]) != 1:
+            fails.append("arm b: the fixture is INERT — the worktree must "
+                         "read one invalid row")
+        if j["invalid"] or len(delta.uncommitted) != 1:
+            fails.append(f"adjudicate: an uncommitted invalid row reached the "
+                         f"ceiling ({j['invalid']})")
+
+    # c. The FLOORS read HEAD too — Issue 797 measured this class on a
+    #    POPULATION rather than on a finding.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, _GOOD_MANIFEST,
+                       _GOOD_MANIFEST + '\n[[test]]\nname = "t2"\n'
+                       'path = "tests/t2.rs"\nrequired-features = ["on"]\n')
+        got, delta, j = run(repo)
+        if got["n_rows"] != 2 or j["n_rows"] != 1:
+            fails.append(f"adjudicate: the row floor read the worktree "
+                         f"({got['n_rows']}) instead of HEAD ({j['n_rows']})")
+
+    # d. ⛔ The ARCHIVE PATHSPEC. `Cargo.toml` as a git pathspec matches only
+    #    the ROOT, so a nested manifest would be absent from the HEAD tree,
+    #    every count would read 0, and every floor would breach — a false RED
+    #    indistinguishable from the blind walk these floors exist to catch.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, _BAD_MANIFEST, _GOOD_MANIFEST, nested=True)
+        got, delta, j = run(repo)
+        if j["n_manifests"] != 1:
+            fails.append(f"ARCHIVE_PATHS: a NESTED crates/*/Cargo.toml did not "
+                         f"survive into the HEAD tree ({j['n_manifests']}) — "
+                         f"every floor then breaches and it reads like a blind "
+                         f"walk")
+        if len(j["invalid"]) != 1:
+            fails.append(f"adjudicate: the nested repo's committed invalid row "
+                         f"was lost ({j['invalid']})")
+
+    # e. A CLEAN tree must cost NOTHING: this instrument copies a tree.
+    with tempfile.TemporaryDirectory() as td:
+        repo = fixture(td, _GOOD_MANIFEST)
+        calls = []
+        real = globals()["audit"]
+        globals()["audit"] = lambda r: calls.append(r) or real(r)
+        try:
+            got, delta, j = run(repo)
+        finally:
+            globals()["audit"] = real
+        if len(calls) != 1:
+            fails.append(f"adjudicate: re-classified a CLEAN repo "
+                         f"({len(calls)} calls) — `head_tree` must yield None "
+                         f"and the caller must SKIP")
+    return fails
+
+
+def adjudicate_arms() -> list[str]:
+    """The cases above, plus the STUB PROBE proving they sit on the seam.
+
+    ⛔ Aimed at `delta_of` — the helper `adjudicate` ACTUALLY calls — because
+    two of this family's first three probes reported a false all-clear by
+    being aimed at a function the target never invokes.
+    """
+    fails = adjudicate_cases()
+    real = globals()["delta_of"]
+    globals()["delta_of"] = lambda wt, hd, key: HeadDelta(list(wt), [], [])
+    try:
+        probed = adjudicate_cases()
+    finally:
+        globals()["delta_of"] = real
+    if len(probed) < 2:
+        fails.append(f"STUB PROBE: a `delta_of` that files every row as "
+                     f"COMMITTED red only {len(probed)} of the provenance "
+                     f"arms — they are not sitting under the seam")
+    return fails
+
+
 def selftest() -> list[str]:
     """Pin that the verdict FIRES, that it does not fire on `dep/feat`, and the
     parsers. Every one of these fails silently otherwise — and the first canary
@@ -161,14 +339,14 @@ def selftest() -> list[str]:
         ws = Path(td)
         repo = ws / "fake-repo"
         (repo / "tests").mkdir(parents=True)
-        (repo / "BOUNDARY.md").write_text("x")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (repo / "Cargo.toml").write_text(
             "[package]\nname = 'fake'\nversion = '0.1.0'\n"
             "[features]\nreal = []\n"
             "[dependencies]\nserde = '1'\n"
             "[[test]]\nname = 'ok_row'\nrequired-features = ['real']\n"
             "[[test]]\nname = 'dep_row'\nrequired-features = ['serde/derive']\n"
-            "[[test]]\nname = 'bad_row'\nrequired-features = ['nope']\n"
+            "[[test]]\nname = 'bad_row'\nrequired-features = ['nope']\n", encoding="utf-8"
         )
         got = audit(repo)
         # 1. the verdict FIRES on a planted invalid row
@@ -188,7 +366,7 @@ def selftest() -> list[str]:
         # 3. an unparseable manifest must be COUNTED, not silently dropped —
         #    it is what makes a blind walk look like a repo with no rows.
         (repo / "sub").mkdir()
-        (repo / "sub" / "Cargo.toml").write_text("[package\nname = broken")
+        (repo / "sub" / "Cargo.toml").write_text("[package\nname = broken", encoding="utf-8")
         got2 = audit(repo)
         if got2["n_unparseable"] != 1:
             fails.append(f"unparseable manifest not counted: {got2}")
@@ -198,8 +376,8 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if [p.name for p in derive_repos(ws)] != []:
             fails.append("population: admitted a repo with no .git dir")
         (repo / ".git").mkdir()
@@ -208,18 +386,21 @@ def selftest() -> list[str]:
 
         # 5. pin parser: 4 fields, comments stripped, arity ENFORCED
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a\t3\t10\t0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a\t3\t10\t0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {
             "repo-a": {"min_manifests": 3, "min_rows": 10, "max_invalid": 0}
         }:
             fails.append("pin parse: 4-field row not read correctly")
-        pins.write_text("repo-a 1 2\n")
+        pins.write_text("repo-a 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: 3-field row accepted")
         except ValueError:
             pass
-    return fails
+    # Issue 822 T5j. In `selftest` and behind no flag: this sweep has no
+    # `--canary`, and an arm behind a flag runs on no invocation anybody makes
+    # (Issue 789). The cheapest of the fan-out's arms — manifests only.
+    return fails + adjudicate_arms()
 
 
 def main() -> int:
@@ -274,8 +455,20 @@ def main() -> int:
     bad = False
     tot_rows = tot_invalid = tot_manifests = tot_unparseable = 0
 
+    n_uncommitted = n_masked = 0
     for repo in repos:
-        got = audit(repo)
+        # Issue 842: the derived handle is CONTRACT-named; the DIRECTORY is
+        # the on-disk spelling. Audit the real checkout, label by the handle.
+        path = open_repo(repo.name, WORKSPACE)
+        got = audit(path)
+        # Issue 822 T5j — the DISPLAY reads the worktree (it is what the files
+        # say today); every CEILING and both FLOORS read what a commit of this
+        # checkout would produce.
+        delta, head = adjudicate(path, got)
+        j = got if head is None else head
+        held = set(delta.uncommitted)
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
         row = pins.get(repo.name)
         tot_rows += got["n_rows"]
         tot_invalid += len(got["invalid"])
@@ -283,16 +476,21 @@ def main() -> int:
         tot_unparseable += got["n_unparseable"]
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(repo.name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
-            if got["n_manifests"] < row["min_manifests"]:
-                flags.append(f"manifest FLOOR breached: {got['n_manifests']} "
+            if j["n_manifests"] < row["min_manifests"]:
+                flags.append(f"manifest FLOOR breached: {j['n_manifests']} committed "
                              f"< {row['min_manifests']} — a crate was removed, "
                              f"or the walk went blind")
-            if got["n_rows"] < row["min_rows"]:
-                flags.append(f"row FLOOR breached: {got['n_rows']} < {row['min_rows']}")
-            if len(got["invalid"]) > row["max_invalid"]:
-                flags.append(f"invalid rows {len(got['invalid'])} > pinned "
+            if j["n_rows"] < row["min_rows"]:
+                flags.append(f"row FLOOR breached: {j['n_rows']} committed < {row['min_rows']}")
+            if len(j["invalid"]) > row["max_invalid"]:
+                flags.append(f"invalid rows {len(j['invalid'])} committed > pinned "
                              f"{row['max_invalid']}")
         if got["n_unparseable"]:
             flags.append(f"{got['n_unparseable']} manifest(s) do not parse — "
@@ -301,15 +499,37 @@ def main() -> int:
         print(f"{status} {repo.name:22s} manifests={got['n_manifests']:<4d} "
               f"rows={got['n_rows']:<5d} invalid={len(got['invalid'])}")
         for r in got["invalid"]:
-            print(f"      invalid:  {r}")
+            wip = " [UNCOMMITTED — not adjudicated]" if r in held else ""
+            print(f"      invalid:  {r}{wip}")
+        # A MASKED row is NOT in the worktree bucket — that is what MASKED
+        # means — so it prints from the HEAD side or it prints nowhere, and a
+        # WALL at 0 reds over a row nobody can see.
+        for r in sorted(delta.masked):
+            print(f"      ⛔ invalid:  {r}  [MASKED — committed, hidden by "
+                  f"this worktree]")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - seen):
+    # The population axis, shared (Issue 793): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, seen)
+
+    # Issue 797 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — the manifest rows.
+    deferred.extend(sweep_advisory(
+        seen, SCOPE, root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(repos)} contract repo(s) · {tot_manifests} manifest(s) "
           f"({tot_unparseable} unparseable) · {tot_rows} required-features row(s) "
@@ -323,8 +543,13 @@ def main() -> int:
           "(riir-train .issues/513 T2/T3, ~1,070 grouped cargo invocations).")
     if bad:
         print("✗ required-features sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  {deferral_line(_d)}")
         return 1
-    print("✓ required-features sweep PASSED — 0 invalid rows, both floors held")
+    _line = "✓ required-features sweep PASSED — 0 invalid rows, both floors held"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

@@ -94,6 +94,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from cfg_gated_target_audit import derive_repos  # noqa: E402
 from required_features_build_audit import Row, parse_rows  # noqa: E402
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 INNER_CFG = re.compile(r"^\s*#!\[cfg\((.*)\)\]\s*$", re.DOTALL)
 # A `//` comment inside a multi-line attribute must be dropped BEFORE the
 # predicate is joined, and before parens are counted. Two failures otherwise,
@@ -209,7 +217,27 @@ def leading_inner_cfgs(path: str) -> list[str] | None:
                     pending = [bare]  # continued on later lines
             continue
         break  # first real item — inner attributes cannot follow it
-    return out
+    if out:
+        return out
+    # Issue 856: a file with NO whole-file `#![cfg]` can still be gated in its
+    # entirety by the `#[cfg(feature = …)] mod`-as-whole-body spelling, which
+    # zeroes the binary identically. Leaving that unread here would reproduce,
+    # one instrument over, the blind spot 856 was filed for — and this gate is
+    # the one that catches a row that EXISTS and is WRONG, which is strictly
+    # worse than a missing row. The predicate is SHARED, never re-derived.
+    from cfg_gated_target_audit import whole_body_cfg_mod
+
+    body = whole_body_cfg_mod(text)
+    if body is None:
+        return out
+    # ⛔ A RUN of gated modules is gated by `any(...)`: the binary empties only
+    # when every module does, so no single feature is REQUIRED and the
+    # implication this gate checks does not hold. Those are the `any_of` class
+    # cargo's AND-only `required-features` cannot express; reading one here
+    # would invent a finding demanding features the row must not name.
+    if body.replace(" ", "").startswith("any("):
+        return out
+    return [body]
 
 
 def required_features(pred: str) -> set[str] | None:
@@ -396,7 +424,7 @@ def selftest() -> None:
     import tempfile
 
     def scan(body: str) -> list[str] | None:
-        with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False) as fh:
+        with tempfile.NamedTemporaryFile("w", suffix=".rs", delete=False, encoding="utf-8") as fh:
             fh.write(body)
             name = fh.name
         try:

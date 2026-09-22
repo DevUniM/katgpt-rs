@@ -21,6 +21,7 @@
 //! | `segment_checkpoint` | `segment_checkpoint` | `src/segment_checkpoint/` | Plan 223b — GRM segment caching |
 //! | `drift_segment` | `drift_segment` | `src/drift_segment/` | Issue 652 / Research 482 — drift-segmented multi-state memory (arXiv:2606.10650 modelless) |
 //! | `async_qdq` | `async_qdq_overlap` | `src/async_qdq.rs` | Plan 227 Phase 6 — double-buffered KV dequantize |
+//! | `radix_prefix` | `radix_prefix_cache` | `src/radix_prefix/` | Issue 771 — RadixAttention radix-tree prefix index (chunk-granular, leaf-LRU) |
 //!
 //! # Cross-crate deps
 //!
@@ -45,6 +46,8 @@ pub mod kv_share;
 pub mod kvarn;
 #[cfg(feature = "osc_kv")]
 pub mod osc_kv;
+#[cfg(feature = "radix_prefix_cache")]
+pub mod radix_prefix;
 #[cfg(feature = "shard_kv")]
 pub mod shard_kv;
 #[cfg(feature = "sp_kv")]

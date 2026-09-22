@@ -33,7 +33,7 @@
 //! - **BLAKE3** for commitment (NOT SHA1/SHA256) — matches the existing crate
 //!   convention.
 //! - **Opt-in feature `babel_codec`**: NOT in `default`. The G2 gate
-//!   (≥ 2× compression on the real Seal-style corpus) killed CompressionDrafter
+//!   (≥ 2× compression on the real RPG-style corpus) killed CompressionDrafter
 //!   twice (Plan 285/287); BabelCodec must beat that bar before promotion.
 //!
 //! # References

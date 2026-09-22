@@ -264,14 +264,14 @@ Feature flag ON → Run benchmark suite
 
 ---
 
-## Cross-Repo Alignment (riir-ai ↔ katgpt-rs ↔ seal-online-remaster)
+## Cross-Repo Alignment (riir-ai ↔ katgpt-rs ↔ mmorpg-remaster)
 
 | Concept | Repo | Relationship |
 |---------|------|-------------|
 | **NeuronShard** | riir-ai | LSH bucket includes shard fingerprint — same shard + region → same bucket |
 | **SpatialBelief** | riir-ai | Future: quadtree zones → LSH buckets by belief similarity |
 | **Emotion Vector** | riir-ai | CMS freq × arousal → eviction priority (same as Plan 218) |
-| **QuadTree** | seal-online-remaster | Cross-repo: terrain quadtree → spatial × BFCP region proximity |
+| **QuadTree** | mmorpg-remaster | Cross-repo: terrain quadtree → spatial × BFCP region proximity |
 | **FeatureHasher** | katgpt-rs | Existing LSH projection in delta_mem — reuse random projection pattern |
 
 ---

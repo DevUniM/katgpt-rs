@@ -48,6 +48,11 @@
 //! `flashmemory_sparse` — implies `mla_attention` (MLA types) + `dash_attn`
 //! (VortexFlow scratch types). Opt-in, default-off. GOAT gate required for
 //! promotion (see Issue 584 Phase 3).
+//!
+//! ⚠ Promotion gate MUST include a needle/long-context retrieval axis
+//! (katgpt-rs Issue 826): the mean-of-latent centroid is the pooled-summary
+//! class SAS (arXiv:2609.13141) measured destroying needle retrieval at
+//! 64K–128K; perf-only validation is not promotion evidence.
 
 use katgpt_core::simd::{simd_add_inplace, simd_dot_f32, simd_matmul_rows, simd_scale_inplace};
 use katgpt_kv::shard_kv::rope::RopeFreqs;

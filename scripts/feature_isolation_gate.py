@@ -58,7 +58,7 @@ DIFF_FILE_RE = re.compile(r"^\+\+\+ b/(.*)$")
 
 
 def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, **kw)
+    return subprocess.run(cmd, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", **kw)
 
 
 def rev(ref: str) -> str | None:
@@ -138,20 +138,25 @@ def manifest_facts(cargo_toml: Path) -> tuple[str | None, set[str]]:
             {k for k in feats if k != "default"})
 
 
-def changed_flags(base: str) -> list[tuple[str, str]]:
-    """[(package, flag)] for every feature DEFINITION added/edited vs base."""
-    diff = run(["git", "diff", "--unified=0", f"{base}...HEAD", "--",
-                "*Cargo.toml"])
-    if diff.returncode != 0:
-        print(f"  ✗ git diff against {base} failed: {diff.stderr.strip()}")
-        sys.exit(1)
+def parse_changed_flags(diff_text: str, facts_for) -> list[tuple[str, str]]:
+    """The PARSE, separated from the git call that feeds it.
+
+    `facts_for(relpath) -> (package, declared_features)` is injected so the
+    selection rules below can be pinned without a git repository. Both failure
+    modes of this gate live in this function — a selector too NARROW silently
+    under-covers and still prints a confident pass, a selector too WIDE reports
+    a `required-features` row as a broken feature — and until Issue 790 T6
+    measured it, neither was asserted by anything: this module scored 4 killed
+    of 62, the second-weakest arm reach in the workspace. Same extraction, same
+    reason, as `required_features_touched_gate.select`.
+    """
     out: list[tuple[str, str]] = []
     cur_pkg: str | None = None
     cur_feats: set[str] = set()
-    for line in diff.stdout.splitlines():
+    for line in diff_text.splitlines():
         m = DIFF_FILE_RE.match(line)
         if m:
-            cur_pkg, cur_feats = manifest_facts(ROOT / m.group(1))
+            cur_pkg, cur_feats = facts_for(m.group(1))
             continue
         m = FEATURE_DEF_RE.match(line)
         if not (m and cur_pkg):
@@ -171,6 +176,17 @@ def changed_flags(base: str) -> list[tuple[str, str]]:
         if (cur_pkg, flag) not in out:
             out.append((cur_pkg, flag))
     return out
+
+
+def changed_flags(base: str) -> list[tuple[str, str]]:
+    """[(package, flag)] for every feature DEFINITION added/edited vs base."""
+    diff = run(["git", "diff", "--unified=0", f"{base}...HEAD", "--",
+                "*Cargo.toml"])
+    if diff.returncode != 0:
+        print(f"  ✗ git diff against {base} failed: {diff.stderr.strip()}")
+        sys.exit(1)
+    return parse_changed_flags(diff.stdout,
+                               lambda rel: manifest_facts(ROOT / rel))
 
 
 def collect_flags(scope: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
@@ -255,6 +271,111 @@ def selftest() -> None:
             f"✗ scope self-test FAILED — empty scope "
             f"(default-on={len(d)}, all={len(a)}); the manifest walk found "
             f"nothing, so any sweep would pass vacuously")
+    fails = selection_arms() + parse_opts_arms()
+    if fails:
+        raise SystemExit("✗ selection self-test FAILED:\n  "
+                         + "\n  ".join(fails))
+
+
+def selection_arms() -> list[str]:
+    """Pin `parse_changed_flags` — the rule that decides WHAT gets isolated.
+
+    ⛔ Unasserted until Issue 790 T6: this module scored 4 killed of 62, the
+    second-weakest arm reach in the workspace. Both of its failure modes live
+    in that function and each is silent — too NARROW under-covers and still
+    prints a confident pass, too WIDE reported a `required-features` row as a
+    broken feature (the gate's own first canary). The git call is injected out
+    so the rules can be pinned over synthetic diff text, no repository needed.
+    """
+    f: list[str] = []
+    FACTS = {"a/Cargo.toml": ("pkg_a", {"alpha", "beta"}),
+             "b/Cargo.toml": ("pkg_b", {"gamma"})}
+
+    def facts(rel):
+        return FACTS.get(rel, (None, set()))
+
+    def diff(*lines):
+        return "\n".join(lines)
+
+    def got(*lines):
+        return parse_changed_flags(diff(*lines), facts)
+
+    # 1. a real [features] definition is selected, attributed to ITS package.
+    if got("+++ b/a/Cargo.toml", "+alpha = [\"x\"]") != [("pkg_a", "alpha")]:
+        f.append("selection: a added feature definition was not selected")
+
+    # 2. ⛔ `required-features = [..]` under [[bench]] has the IDENTICAL shape
+    #    and --unified=0 never shows the table header. Confirming against
+    #    HEAD's real [features] is the only thing separating them.
+    if got("+++ b/a/Cargo.toml", "+required-features = [\"alpha\"]") != []:
+        f.append("selection: a required-features row was reported as a flag — "
+                 "the gate's first canary, back again")
+
+    # 3. `default` is never a flag to isolate.
+    if got("+++ b/a/Cargo.toml", "+default = [\"alpha\"]") != []:
+        f.append("selection: `default` was selected as a feature")
+
+    # 4. a DELETED definition is absent from HEAD's features: nothing to isolate.
+    if got("+++ b/a/Cargo.toml", "+removed_flag = [\"x\"]") != []:
+        f.append("selection: a flag absent from HEAD's [features] was selected")
+
+    # 5. attribution follows the FILE header, and a later header rebinds it.
+    two = got("+++ b/a/Cargo.toml", "+alpha = []",
+              "+++ b/b/Cargo.toml", "+gamma = []")
+    if two != [("pkg_a", "alpha"), ("pkg_b", "gamma")]:
+        f.append(f"selection: package attribution did not follow the diff "
+                 f"file header: {two}")
+
+    # 6. a definition BEFORE any file header has no package and is dropped —
+    #    not attributed to whatever package happens to come next.
+    if got("+alpha = []", "+++ b/a/Cargo.toml") != []:
+        f.append("selection: a headerless definition was attributed")
+
+    # 7. DEDUPE: the same pair twice is one row, or the sweep builds it twice.
+    if got("+++ b/a/Cargo.toml", "+alpha = []", "+alpha = [\"y\"]") != \
+            [("pkg_a", "alpha")]:
+        f.append("selection: duplicate definitions were not deduplicated")
+
+    # 8. a manifest that does not PARSE contributes nothing and does not abort
+    #    the walk — `manifest_facts` returns (None, set()) and the next header
+    #    must still bind.
+    after = parse_changed_flags(
+        diff("+++ b/unknown/Cargo.toml", "+alpha = []",
+             "+++ b/a/Cargo.toml", "+beta = []"), facts)
+    if after != [("pkg_a", "beta")]:
+        f.append(f"selection: an unparseable manifest broke the walk: {after}")
+
+    # 9. a REMOVED line (`-flag = [...]`) is not an addition. The `^\\+` anchor
+    #    is the whole difference and a dropped anchor doubles the sweep.
+    if got("+++ b/a/Cargo.toml", "-alpha = []") != []:
+        f.append("selection: a REMOVED line counted as an added definition")
+    return f
+
+
+def parse_opts_arms() -> list[str]:
+    """Pin the CLI contract the workflow depends on.
+
+    `feature_isolation.yml` passes `feature_isolation_gate.py [base_ref]`
+    positionally, and the docstring on `parse_opts` says the calling convention
+    is kept exactly — which nothing checked. A flag that silently swallows the
+    positional base ref makes the gate diff against the wrong commit.
+    """
+    f: list[str] = []
+    opts, rest = parse_opts(["origin/main"])
+    if rest != ["origin/main"] or opts["scope"] != "diff":
+        f.append(f"opts: the positional base ref was not preserved: {rest}")
+    opts, rest = parse_opts(["--scope", "all", "--sample", "5", "--seed", "9",
+                             "--list", "origin/main"])
+    if (opts["scope"], opts["sample"], opts["seed"], opts["list"], rest) != \
+            ("all", 5, 9, True, ["origin/main"]):
+        f.append(f"opts: flag parsing lost a value: {opts}, rest={rest}")
+    # A value-taking flag at the END has no value: it must not consume the
+    # following None and must not crash the gate on its own argv.
+    opts, rest = parse_opts(["--scope"])
+    if opts["scope"] != "diff" or rest != ["--scope"]:
+        f.append(f"opts: a trailing value-less flag was mis-handled: "
+                 f"{opts['scope']}, rest={rest}")
+    return f
 
 
 def parse_opts(argv: list[str]) -> tuple[dict, list[str]]:

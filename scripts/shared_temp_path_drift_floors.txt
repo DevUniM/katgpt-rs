@@ -1,0 +1,123 @@
+# Pins for scripts/shared_temp_path_drift_sweep.py — EVERY contract repo.
+# Issue 832 T3, the cross-repo half of scripts/shared_temp_path_gate.py.
+#
+# Format, 3 whitespace-separated fields:
+#
+#   <repo> <min_temp_sites> <max_fixed>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── why there are only TWO columns ──────────────────────────────────────────
+# There is no `min_rs_files` column. `orphaned_attr_drift_floors.txt`,
+# `platform_dead_code_drift_floors.txt` and `percentile_drift_floors.txt`
+# already floor this identical `tracked_files(repo, "*.rs")` call over this
+# identical population, and a fourth copy is a fourth number to re-pin on
+# ordinary churn — they already disagree with each other about the number.
+# The delegation is ASSERTED, not assumed (len_derived_drift_sweep's rule):
+# every repo pinned here must still carry a NON-ZERO min_rs_files row in
+# orphaned_attr_drift_floors.txt, and a delegated file the sweep cannot PARSE
+# is refused rather than read as an empty dict.
+#
+#   min_temp_sites  the PREDICATE floor. A regex regression that stops matching
+#                   `env::temp_dir()` collapses the population to ~0 over an
+#                   unchanged walk, and then every ceiling below passes
+#                   vacuously. Pinned well under the measured value so ordinary
+#                   churn does not re-pin it, while a collapse still reds.
+#                   ⚠ VACUOUS in riir-auth (0 sites) — that repo has .rs files
+#                   and no temp_dir call at all, which is exactly why the walk
+#                   floor is delegated rather than dropped: in a 0-site repo
+#                   the delegated min_rs_files is the ONLY blindness detector
+#                   there is (Issue 783's population shape).
+#
+#   max_fixed       the RATCHET, at measured.
+#
+# ── why max_fixed is a RATCHET and not a wall ───────────────────────────────
+# Measured 2026-09-18 over the 13 canonical repos present on this box: 100
+# fixed `env::temp_dir().join("literal")` sites, of which 98 are NOT in
+# katgpt-rs. A wall would demand 98 repairs across ten trees in one change, and
+# AGENTS.md is explicit that a cross-repo repair is not landed until it is
+# COMMITTED in the sibling with a cited SHA (Issue 798 — measured, two tracked
+# files recorded sibling repairs as landed and green when two of five existed
+# and both sweeps were red for six hours). A wall here makes the next repo to
+# join somebody's emergency, and a sweep that always reds is a sweep nobody
+# runs. This is instrument_reachability_drift_sweep's answer, for its reason.
+#
+# ⚠ That is NOT a claim the 98 are acceptable — they are a real backlog, filed
+# as Issue 832 T5 with these per-repo counts, and each repo's rows stay its
+# owner's to adjudicate. The ratchet's job is that the commit adding the NEXT
+# one reds. Sampled for over-capture and it is not over-capture: riir-ai's
+# `go_bonsai_cache_test.bin` and `test_egl_roundtrip.bin` are #[test] bodies
+# writing a fixed filename, byte-for-byte the shape that produced this repo's
+# own five-at-once `"File too small for header"` failures.
+#
+# ── katgpt-rs's row does not restate its gate ───────────────────────────────
+# `max_fixed 2` is the two adjudicated examples/ rows, and a count comparison
+# against it would be true by construction — this sweep and the gate call the
+# same scan(). The sweep asserts the GATE'S VERDICT over this repo instead
+# (numbering_drift_sweep's rule), so a stale membership row in
+# shared_temp_path_expected.txt reds the sweep too.
+#
+# ── the seven former no-row repos, pinned 2026-09-18 ────────────────────────
+# The block below once read "the SEVEN canonical repos with no row": they were
+# absent from the box that landed this file and were deliberately unpinned
+# rather than guessed at, with the wasm32_surface_drift_floors precedent named
+# for the day they became present. That day came in the same week: the
+# repo-alias codec now resolves all 21 contract names on this box, the sweep
+# VISITED all seven, and the rows below are typed from that run's printed
+# per-repo values (the Issue-837 T1 discipline — never from a neighbour's
+# row). Three of the seven (mmorpg-*) resolve through alias to differently
+# named on-disk dirs the sweep does not open, so their measured cells read 0
+# on this box — floors of 0 stay honest (always true) and the max_fixed
+# ratchets tighten the moment any of them is measured with content.
+
+katgpt-rs                20    2
+katgpt-web                0    0  # observed 2026-09-18: no temp_dir sites
+# ⬇ 48 → 4, riir-ai `9d138531b` (2026-09-18): 44 test sites repaired IN that
+#   repo, `cargo check --tests` + `cargo test --lib` green over all 8 affected
+#   packages. A ratchet that only ever loosens is a backlog wearing a pin, so
+#   the tightening lands with the repair rather than later. The 4 that remain
+#   are `crates/riir-examples/examples/*` — the adjudicated demo class, the
+#   same read this repo's own two pinned rows get.
+riir-ai                  70    4
+riir-auth                 0    0
+# ⬇ 10 → 1, riir-chain `8a3b0f5` (2026-09-18): 9 test sites repaired IN that
+#   repo (src/ssh_key.rs 4, src/asset_lifecycle/delivery.rs 4, riir-wallet
+#   tests/ssh_openssh_str.rs 1); lib 385 passed + riir-wallet --features ssh
+#   ssh_openssh_str 5 passed. The 1 that remains is an `examples/` site — the
+#   adjudicated demo class, the same read this repo's own two pinned rows get.
+riir-chain               40    1
+# ⬇ 24 → 17, riir-clippy `f5ada0ec` (2026-09-18): 7 TEST sites repaired IN
+#   that repo. The other 9 of the 16 the fix tool offered are PRODUCTION cargo
+#   scratch roots (`work_root` / `.with_work_root`), where a pid suffix stops
+#   the directory being reused across runs and is a BEHAVIOUR change, not a
+#   test fix — left for that repo's owner, per T5's "per-site read" rule.
+#   ✓ VERIFIED: `cargo test --lib` 1945 passed, 0 failed. The limit this row
+#   originally recorded — riir-clippy path-depends on ../riir-llm
+#   (Cargo.toml:124, added fbf698e6) and cargo resolves path deps even when
+#   optional, so NO cargo command ran here — was closed when riir-llm was
+#   cloned and registered (katgpt-rs `b5dd81dc`). Kept rather than deleted:
+#   the next partial-clone box hits it again, and a disclosed limit that
+#   silently vanishes teaches nobody why the row once said less.
+#   ⛔ 1 more site is in a CRLF file the tool REFUSED rather than reformat.
+riir-clippy              85   17
+riir-dao                  2    0  # observed 2026-09-18: 4 temp_dir sites, 0 fixed
+riir-dapps               10    0
+riir-deployer             6    5  # observed 2026-09-18: 11 temp_dir sites, 5 fixed
+riir-esp32                0    0  # observed 2026-09-18: no temp_dir sites
+# ⬇ 1 → 0, riir-game-sdk `ef66117` (2026-09-18): the single site
+#   (`node_identity_from_ssh_key_roundtrip`) repaired IN that repo; lib 29
+#   passed. A 0 here is a WALL in effect — the next such site reds.
+riir-game-sdk             3    0
+riir-kat                 15    0
+riir-llm                  0    0  # observed 2026-09-18: joined the workspace 2026-09-18; no temp_dir sites
+riir-mmorpg-examples      5    0
+riir-neuron-db            3    3
+riir-shader               2    0
+riir-train               30   12
+riir-viewbridge           2    0
+mmorpg-editor            19    1  # Issue 842: the sweep read this repo for the FIRST time 2026-09-19 (the alias-mapped open used to measure nothing). Measured 19 temp sites / 11 files / 2 fixed; nav.rs's editor_data_nav_missing repaired same day (process-id suffix). services.rs TmpDirStore (`<temp>/seal-game-editor/`) is DELIBERATE: a production per-user scratch root surfaced to the user and shared across editor processes BY DESIGN — the examples/ adjudication, production-shaped. max_fixed 1 pins that one deliberate site.
+mmorpg-remaster           7    0  # Issue 842: first measured 2026-09-19 (7 sites / 6 files); seal_asset_explorer_idx_test repaired same day (process-id suffix).
+mmorpg-remake            18    0  # Issue 842: first measured 2026-09-19 (16 sites / 8 files / 3 fixed); filedb.rs + relay_mirror_front.rs repaired same day. quest_sim_front.rs's site repaired 2026-09-19 at seal-remake db68f5e (Issue 832 T5 close — the concurrent-WIP blocker cleared with the lane landing, validated via the guard layer-16 invocation in-repo); site count 16→18 through the sibling lane landing, all pid-suffixed. fixed=0, the wall.
+riir-reflex                 0    0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-infer                  9    0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired); pinned at measured per the recent-join convention (mmorpg rows)

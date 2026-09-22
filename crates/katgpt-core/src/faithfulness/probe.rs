@@ -293,6 +293,100 @@ where
             filler_delta,
         }
     }
+
+    // ── Issue 776 (Research 555 / CVRR §2.1+§5.3) contrastive interventions ──
+
+    /// Coherent matched-swap intervention, zero-alloc form.
+    ///
+    /// Copies `memory` into `scratch`, swaps in the donor's state via
+    /// [`perturb::perturb_matched_swap`](super::perturb::perturb_matched_swap),
+    /// and reports the behavioral delta **against the CLEAN memory behavior**
+    /// (not the no-memory baseline — this is the CVRR §2.1 "paired clean
+    /// prediction" semantic, sharper for content-sensitivity: it asks "did
+    /// swapping the evidence content change behavior?" while the classic
+    /// suite asks "does any content matter at all?").
+    ///
+    /// The donor should come from a **contrastive pair** — same query/context,
+    /// different evidence, different outcome — so a large delta isolates
+    /// evidence-conditioned content specifically (see the perturb fn docs).
+    ///
+    /// `scratch` MUST be same-length as `memory` (caller-owned, reused
+    /// across audits). Length-mismatched donors are a no-op → delta 0.
+    #[inline]
+    pub fn probe_matched_swap_into(
+        &mut self,
+        memory: &C::Memory,
+        donor: &C::Memory,
+        scratch: &mut C::Memory,
+    ) -> C::Delta {
+        let clean = self.consumer.behavior_with_memory(memory);
+        {
+            let src = memory.mem_as_slice();
+            let dst = scratch.mem_as_mut_slice();
+            dst.clone_from_slice(src);
+        }
+        {
+            let slice = scratch.mem_as_mut_slice();
+            perturb::perturb_matched_swap(slice, donor.mem_as_slice());
+        }
+        let swapped = self.consumer.behavior_with_memory(scratch);
+        self.consumer.behavior_delta(&clean, &swapped)
+    }
+
+    /// Cloning form of [`probe_matched_swap_into`](Self::probe_matched_swap_into).
+    /// Allocates one memory clone per call; prefer the `_into` form at audit
+    /// cadence.
+    pub fn probe_matched_swap(&mut self, memory: &C::Memory, donor: &C::Memory) -> C::Delta {
+        let mut scratch = memory.clone();
+        self.probe_matched_swap_into(memory, donor, &mut scratch)
+    }
+}
+
+/// f32-element memories gain the norm-matched-noise intervention (Issue 776).
+/// Norm matching needs numeric elements, hence the tighter `Elem = f32` bound
+/// on a separate impl block.
+impl<C> DefaultFaithfulnessProbe<C>
+where
+    C: ConsumerContext,
+    C::Memory: MemorySlice<Elem = f32> + Clone,
+{
+    /// Norm-matched-noise intervention, zero-alloc form.
+    ///
+    /// Overwrites `scratch` with a copy of `memory`, applies
+    /// [`perturb::perturb_norm_matched_noise`](super::perturb::perturb_norm_matched_noise)
+    /// (Gaussian noise scaled to the memory's own L2 norm — magnitude kept,
+    /// structure destroyed), and reports the delta **against the clean
+    /// memory behavior** (same semantic as `probe_matched_swap_into`).
+    ///
+    /// Separating canary: a consumer that reads only the norm/energy of the
+    /// memory yields ≈0 here while still diverging under matched-swap and the
+    /// classic suite; a structure reader diverges under both.
+    #[inline]
+    pub fn probe_norm_noise_into(
+        &mut self,
+        memory: &C::Memory,
+        scratch: &mut C::Memory,
+        rng: &mut Rng,
+    ) -> C::Delta {
+        let clean = self.consumer.behavior_with_memory(memory);
+        {
+            let src = memory.mem_as_slice();
+            let dst = scratch.mem_as_mut_slice();
+            dst.clone_from_slice(src);
+        }
+        {
+            let slice = scratch.mem_as_mut_slice();
+            perturb::perturb_norm_matched_noise(slice, rng);
+        }
+        let noised = self.consumer.behavior_with_memory(scratch);
+        self.consumer.behavior_delta(&clean, &noised)
+    }
+
+    /// Cloning form of [`probe_norm_noise_into`](Self::probe_norm_noise_into).
+    pub fn probe_norm_noise(&mut self, memory: &C::Memory, rng: &mut Rng) -> C::Delta {
+        let mut scratch = memory.clone();
+        self.probe_norm_noise_into(memory, &mut scratch, rng)
+    }
 }
 
 impl<C> FaithfulnessProbe for DefaultFaithfulnessProbe<C>
@@ -679,5 +773,119 @@ mod tests {
             profile_clone.filler_delta,
             profile_scratch.filler_delta
         );
+    }
+
+    // ── Issue 776 (Research 555 / CVRR) contrastive-intervention canaries ──
+
+    /// Norm-only consumer: behavior = L2 norm of the memory (reads energy,
+    /// ignores structure). The SEPARATING canary — ≈0 under norm-matched noise
+    /// while structure readers diverge.
+    struct NormOnlyConsumer;
+
+    impl ConsumerContext for NormOnlyConsumer {
+        type Behavior = f32;
+        type Delta = f32;
+        type Memory = Vec<f32>;
+
+        fn baseline_behavior(&self) -> f32 {
+            0.0
+        }
+
+        fn behavior_with_memory(&self, memory: &Vec<f32>) -> f32 {
+            memory.iter().map(|v| v * v).sum::<f32>().sqrt()
+        }
+
+        fn behavior_delta(&self, a: &f32, b: &f32) -> f32 {
+            (a - b).abs()
+        }
+    }
+
+    #[test]
+    fn test_issue776_matched_swap_structure_reader_diverges() {
+        // FaithfulConsumer reads structure (position-weighted dot): a coherent
+        // counterfactual swap MUST move its behavior (CVRR §5.3 — a contrastive
+        // donor is more disruptive than content removal for content readers).
+        let weights = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let mut probe = DefaultFaithfulnessProbe::new(
+            FaithfulConsumer { weights },
+            vec![0.1_f32],
+            1.0_f32,
+        );
+        let memory = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let donor = vec![-8.0_f32, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0];
+
+        let delta = probe.probe_matched_swap(&memory, &donor);
+        // clean = 204; swapped = -204 → |Δ| = 408.
+        assert!(
+            delta > 100.0,
+            "structure reader must diverge under coherent swap, got {delta}"
+        );
+
+        // Decorative consumer: ≈0 under the same intervention.
+        let mut probe_dec =
+            DefaultFaithfulnessProbe::new(UnfaithfulConsumer, vec![0.1_f32], 1.0_f32);
+        let delta_dec = probe_dec.probe_matched_swap(&memory, &donor);
+        assert_eq!(delta_dec, 0.0, "decorative consumer must not move");
+    }
+
+    #[test]
+    fn test_issue776_norm_noise_separating_canary() {
+        // Structure reader: norm-matched noise destroys structure → diverges.
+        let weights = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let mut probe = DefaultFaithfulnessProbe::new(
+            FaithfulConsumer { weights },
+            vec![0.1_f32],
+            1.0_f32,
+        );
+        let memory = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let mut rng = Rng::with_seed(7);
+        let structure_delta = probe.probe_norm_noise(&memory, &mut rng);
+        assert!(
+            structure_delta > 1.0,
+            "structure reader diverges under norm-matched noise (structure destroyed), got {structure_delta}"
+        );
+
+        // Norm-only reader: magnitude preserved → ≈0. This is the channel
+        // separation origin-Gaussian noise cannot show (it destroys both).
+        let mut probe_norm =
+            DefaultFaithfulnessProbe::new(NormOnlyConsumer, vec![0.1_f32], 1.0_f32);
+        let mut rng2 = Rng::with_seed(7);
+        let norm_delta = probe_norm.probe_norm_noise(&memory, &mut rng2);
+        assert!(
+            norm_delta < 1e-3,
+            "norm-only reader ≈0 under norm-matched noise (magnitude kept), got {norm_delta}"
+        );
+    }
+
+    #[test]
+    fn test_issue776_into_forms_bit_identical_to_clone_forms() {
+        let memory = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let donor = vec![8.0_f32, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
+
+        let mk_probe = || {
+            DefaultFaithfulnessProbe::new(
+                FaithfulConsumer {
+                    weights: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+                },
+                vec![0.1_f32],
+                1.0_f32,
+            )
+        };
+
+        let mut probe_a = mk_probe();
+        let mut probe_b = mk_probe();
+        let a = probe_a.probe_matched_swap(&memory, &donor);
+        let mut scratch = vec![0.0_f32; memory.len()];
+        let b = probe_b.probe_matched_swap_into(&memory, &donor, &mut scratch);
+        assert_eq!(a.to_bits(), b.to_bits(), "matched-swap clone vs _into");
+
+        let mut probe_c = mk_probe();
+        let mut probe_d = mk_probe();
+        let mut rng_c = Rng::with_seed(99);
+        let mut rng_d = Rng::with_seed(99);
+        let c = probe_c.probe_norm_noise(&memory, &mut rng_c);
+        let mut scratch_d = vec![0.0_f32; memory.len()];
+        let d = probe_d.probe_norm_noise_into(&memory, &mut scratch_d, &mut rng_d);
+        assert_eq!(c.to_bits(), d.to_bits(), "norm-noise clone vs _into");
     }
 }

@@ -50,6 +50,11 @@ mod horizontal;
 mod maxsim;
 mod research;
 mod sparse;
+/// Per-shape plasma dispatch — f32 below the L3 boundary, ternary above
+/// (Issue 843 T4 owner call, 2026-09-19). Gated with the ternary container
+/// it dispatches over (`TernaryWeights` itself is `plasma_path`-gated here).
+#[cfg(feature = "plasma_path")]
+mod plasma_dispatch;
 mod ternary;
 /// Group-scale ternary matvec kernels (`ternary_group_scale`, Issue 578).
 #[cfg(feature = "ternary_group_scale")]
@@ -57,6 +62,9 @@ pub mod ternary_group;
 /// Trit-packed ternary matvec kernels (`ternary_trit_pack`, Issue 582).
 #[cfg(feature = "ternary_trit_pack")]
 pub mod ternary_trit;
+/// BITCOS presence-bitmap GEMV kernels (`bitcos`, Issue 864).
+#[cfg(feature = "bitcos")]
+pub mod bitcos;
 
 #[cfg(test)]
 mod tests;
@@ -123,6 +131,8 @@ pub use ternary_group::{
 pub use ternary_trit::{
     simd_ternary_trit_matvec, simd_ternary_trit_matvec_parallel, ternary_trit_matvec_scalar,
 };
+#[cfg(feature = "bitcos")]
+pub use bitcos::{BITCOS_LUT, bitcos_matvec, bitcos_matvec_lut, bitcos_matvec_scalar};
 #[cfg(feature = "maxsim")]
 pub use maxsim::{maxsim_score, maxsim_score_packed};
 pub use research::{
@@ -142,6 +152,11 @@ pub use ternary::simd_ternary_dot_f32;
 pub use ternary::{
     project_ternary_simd, project_ternary_simd_scalar, simd_ternary_matmul_batch,
     simd_ternary_matvec, ternary_matvec_scalar,
+};
+#[cfg(feature = "plasma_path")]
+pub use plasma_dispatch::{
+    l3_cache_bytes, plasma_prefers_ternary, plasma_prefers_ternary_with_l3,
+    simd_matvec_plasma_dispatch, simd_matvec_plasma_dispatch_with_l3, DEFAULT_L3_BYTES,
 };
 // WASM SIMD128 SWAR kernel — only available on `wasm32 +simd128`. Exported so
 // callers can invoke the specialized path directly (e.g. benches that want to

@@ -102,7 +102,7 @@ fastrand = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 postcard = { version = "1", features = ["alloc"] }
-bevy_ecs = { version = "0.15", optional = true }  # Standalone ECS (Plan 033)
+bevy_ecs = { version = "0.19", optional = true }  # Standalone ECS (Plan 033 bomber + Plan 035 monopoly arenas; bumped 0.15→0.19, Issue 799)
 wasmi = { version = "2", optional = true, features = ["simd"] }  # WASM bomber validator (Plan 034, wasmi migration Plan 167). `simd`: hosts load +simd128-built modules
 papaya = { version = "0.2", optional = true }      # Lock-free concurrent HashMap (Plan 037)
 # katgpt-tokenizer (Issue 014): extracted to standalone crate. Non-optional — the
@@ -156,14 +156,17 @@ memmap2 = { version = "0.9", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # getrandom wasm32 backends — required so that transitive consumers (bevy_ecs
-# → bevy_utils → ahash pulls BOTH getrandom 0.2 and 0.3) compile for the
-# browser / CF Worker / wasmtime wasm32-unknown-unknown targets. Without
-# these, `secure_vessel` / `bomber-wasm` / `bomber` fail with getrandom's
+# → bevy_utils → ahash pulls getrandom 0.2 and 0.3; uuid ≥1.26 pulls 0.4)
+# compile for the browser / CF Worker / wasmtime wasm32-unknown-unknown
+# targets. Without these, `bomber-wasm` / `bomber` fail with getrandom's
 # "wasm32-unknown-unknown targets are not supported by default" error.
 # getrandom 0.3 renamed the feature: `js` (0.2) → `wasm_js` (0.3).
 # See https://docs.rs/getrandom/#webassembly-support
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+# getrandom 0.4 (uuid 1.26 → uuid-rng-internal, Issue 799 bevy_ecs 0.19 bump):
+# same wasm32-default-off premise, same fix.
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
 
 # (Issue 413, 2026-07-08): coreml-native / coreml-proto / prost / metal moved
 # into crates/katgpt-backend/Cargo.toml's macOS target-deps section. The
@@ -177,8 +180,10 @@ crossterm = "0.28"
 tempfile = "3"
 
 [features]
-default = ["orthogonal_procrustes", "domain_latent", "bandit_top_p", "spectral_quant", "hybrid_oct_pq", "deep_manifold", "federation", "tes_loop", "lattice_deduction", "delta_routing", "stability_metrics", "mls_aggregate", "gdn2_attention", "dreamer", "lt2_looped", "dmax_spd", "eqr_convergence", "subterranean", "sr2am_configurator", "data_gate", "plasma_path", "tf_loop", "dual_leo", "sigmoid_margin", "moa_inference", "sleep_consolidation", "dual_gram_pca", "roofline_cost", "newton_schulz", "river_valley", "peira_distill", "kog_cpu_fusion", "gepa_reflective", "phrase_boost", "hydra_budget", "budget_adaptation", "ilc_distill", "trd_refined_draft", "swir_switch_thinking", "freq_bandit", "spec_reconciliation", "trust_region_spec", "curvature_alloc", "directional_credit", "kv_share", "nds_proxy", "wealth_pruner", "speculative_generator", "kurtosis_gate", "kvarn", "chain_fold", "vortex_flow", "domino_correction", "corr_budget", "best_buddies", "rosetta_pruner", "rv_gated_routing", "problem_mutator", "idea_divergence", "self_distilling_bandit", "lodestar", "bfcf_lsh_cms", "belief_drafter", "substrate_gate", "llmexec_guard", "outlier_guard", "segment_checkpoint", "regime_transition", "static_cal_tables", "targeted_precision", "modality_pruned_load", "precision_aware_draft", "async_qdq_overlap", "channel_simd_align", "schema_centroid", "reward_mem", "collapse_aware_thinking", "auto_constraint_synthesis", "union_bound_confidence", "pathway_tracker", "federation_composer", "caddtree_budget", "concept_grounding", "reward_calibrator", "decision_explain", "posterior_evolution", "mux_latent_context", "sense_lod", "spectral_pruner", "epiplexity_bandit", "breakeven_routing", "lattice_operad", "spec_pruner", "ssd_block", "ss_pruner", "dendritic_gate", "sparse_task_vector", "off_principal_retrieval", "spectral_rank", "module_energy_route", "gauge_invariant", "chiaroscuro", "attn_match", "triggered_injection", "temporal_deriv", "manifold_power_iter_router", "quantile_balance_router", "self_advantage_gate", "clr", "personality_composition", "committed_field_blend", "cce_moderator", "claim_rubric", "salience_tri_gate", "complexity_prior_sampler", "depth_invariance", "cross_resolution_transport", "latent_field_steering", "viable_manifold_graph", "subspace_phase_gate", "closed_unit_compaction", "fourier_continuation", "funcattn", "closure_instrument", "non_interference_branches", "sigmoid_graded_reject", "zone_density_routing", "band_conditioner", "specialist_projection", "collider_consistency", "future_probe", "step_attribution_qualifier", "smooth_min_similarity", "ica_lens", "plot"]  # funcattn DEFAULT-ON (2026-07-07, post-Issue-049 D4 fix): G6 LLM-domain gate now PASS - generate_pattern_dataset rejects degenerate a==b sequences (was admitting ~12.5% constant draws at V=8, corrupting the learned basis and producing a spurious 0.969 plateau vs SDPA 1.000). Post-fix: FUNCATTN=1.000 SDPA=1.000 @ release 600 FD-SGD steps; debug 40-step FUNCATTN 0.9297 > SDPA 0.6719. 6/6 GOAT gates green (G1-G5 + G6). Modelless closed-form Tikhonov operator (no training). Heavy downstream use: riir-ai plans 318/329/330/309/310/321 consume C as transport substrate. Prior G6 FAIL was a test-data-gen artifact, NOT a primitive ceiling.  # step_attribution_qualifier DEFAULT-ON (Plan 381 Phase 5, 2026-07-06): G1 14/14 tests, G3 cfg-gated no-regression, G4 13ns gate overhead @ W=64 (76.9× under 1µs), G5 zero deps, G6 feature-isolation clean. G2 (quality-parity) verified via riir-ai Plan 313 Phase 5 G6 PoC — 81.6% drift reduction vs no-attribution baseline (DirectionDelta mutations), 63.1% vs TrajectoryDoctor-only. Modelless instantiation of SkillAdaptor (arXiv:2606.01311) eq. 8 Δ≥0 commit gate. Sibling to TrajectoryDoctor (Plan 223).  # zone_density_routing DEFAULT-ON (Plan 351 Phase 3): G5a +19.4% entropy gain, G5b 99.1% compute saved, G5c 0 stale reads. Modelless.  # sigmoid_graded_reject DEFAULT-ON (Plan 310 T4.1, 2026-06-26): T1 GOAT both halves PASS (T3.2 perf + T3.1 quality), HarnessBridge Table 7 tolerant>strict confirmed. Zero runtime cost unless caller invokes soft_reject_with_relax.  # non_interference_branches DEFAULT-ON (Plan 329 Phase 3, 2026-06-26): G1 8 orthogonal directions in D=8 (pairwise interference 0.00e0<1e-6), G2 route 301.5ns<1us (64-branch bank), G3 all clean, G4 0 allocs/100 calls, G5 [] deps. 101/101 tests.  # closure_instrument DEFAULT-ON (Plan 290 T4.7 + G4 fix, 2026-06-26): G1 67us<100us (bit matrix, Issue 035), G2 638us<5ms, G3 synthetic-proxy monotone, G4 0.296MB<1MB (Option<[u8;32]> fix — production via PtgTracedPruner::trace passes None for all nodes; upper bound all-Some = 1.822MB informational). 55/55 tests green (38 closure + 3 mining + 8 wire + 6 integration). Zero runtime cost unless a caller invokes the recorder. API break: PtgNode.blake3_in [u8;32] -> Option<[u8;32]>; PtgRecorder::enter takes Option.  # closed_unit_compaction DEFAULT-ON (Plan 333 Phase 6, 2026-06-25): 7/7 GOAT gates PASS - G1 recall=1.000/FDR=0.000, G2 50% suppression, G3 probe 1.4ns ratio=1.00, G4 zero-alloc, G5 feature isolation, G6 0 softmax, G7 can_freeze isomorphism all 4 combos. evaluate() 8.91ns <50ns, 112.9M/s >=50M. Super-GOAT: trajectory compaction and shard freeze are the same primitive (proven structurally). Zero runtime cost unless a caller invokes evaluate.  # viable_manifold_graph DEFAULT-ON (Plan 312 Phase 5, 2026-06-24): G1-G7 correctness PASS + perf bench PASS post-CSR (manifold_random_walk 485.58→7.10 ns/step, 14× under 100ns target; CSR makes for_each_neighbor O(degree); random-walk output byte-identical).  # latent_field_steering DEFAULT-ON (Plan 309 Phase 4, 2026-06-23): G1-G5 all PASS - G1 fear-axis 1.50x>=1.30, G2 mean cos 0.9958>=0.95 min cos 0.9667>=0.90, G3 leakage 4.5e-5<0.01, G4 19.2us<1ms, G5 0 allocs. Caveat: 8% argmax flip at alpha=0.3 - keep alpha<=0.3 for hot-path. | cross_resolution_transport DEFAULT-ON (Plan 310 Phase 4, 2026-06-23): G1 mean cos 0.8944>=0.85, G2-A rank preservation mean cos 0.9300>=0.85 (Super-GOAT headline holds), G3 elbow k=8, G4 0 allocs. Implies funcattn as transitive default. | depth_invariance DEFAULT-ON (Plan 306 T7.4): G1/G2/G3 PASS, G4 re-spec to absolute-latency at HLA scale (all PASS), SIMD inner-loop landed. Zero runtime cost unless invoked. | salience_tri_gate DEFAULT-ON (Plan 303 Phase 5, 2026-06-23): 4/4 GOAT gates PASS — decide() 9.11ns <50ns target, decide_batch() 120.6M/s ≥50M target, G1 determinism + G2 ablation parity PASS. Zero runtime cost unless a caller invokes decide/decide_batch. | complexity_prior_sampler DEFAULT-ON (Plan 305 Phase 2, 2026-06-23): G2 majority-pass (RLE 92275× + Entropy 18455× stretch speedups on low-K optimum; L1 honest-negative on sparse byte encoding, documented domain mismatch) + G1 5/5 safety PASS. Zero runtime cost unless a caller invokes the sampler. | claim_rubric DEFAULT-ON (Plan 307 T3.3, 2026-06-23): meta-discipline validator, 17/17 Phase 2 round-trip + GOAT gate green. Zero runtime cost unless a probe/steering primitive explicitly invokes ClaimValidator::grade; promotion enforces the rubric at CI time per R287 §2.3.  # Production best perf + accuracy (Plan 051, bt_rank Plan 079, spectral_quant Plan 063, hybrid_oct_pq Plan 101 GOAT best MSE + 64x fewer FMAs vs OCT, elf_sde Plan 079, cna_steering Plan 087 GOAT, deep_manifold Plan 085 GOAT 6/6, federation Plan 085 GOAT 6/6, tes_loop Plan 086 GOAT 8/8, lattice_deduction Plan 088 GOAT 7/7, delta_routing Plan 097 GOAT 6/6, stability_metrics Plan 102 GOAT 13/13, mls_aggregate Plan 104 GOAT 6/6, gdn2_attention Plan 105 GOAT 14/14, dash_attn Plan 106 GOAT 9/9, dreamer Plan 107 GOAT 8/8, lt2_looped Plan 108 GOAT 8/8, dmax_spd Plan 109 GOAT 7/7, eqr_convergence Plan 119, subterranean Plan 110, sr2am_configurator Plan 112, data_gate Plan 111, plasma_path Plan 148 GOAT 5/5, parallel_probe Plan 133 26 unit tests, tf_loop Plan 136 GOAT 4/4, leo_all_goals Plan 155 SUPER GOAT, dual_leo Plan 155 SUPER GOAT, sigmoid_margin Plan 157 GOAT 7/7, moa_inference Plan 158 GOAT 3/3, sleep_consolidation Plan 154 GOAT 14/14, spectral_hierarchy Plan 156 GOAT, dual_gram_pca Plan 159 GOAT, roofline_cost Plan 159 GOAT, newton_schulz II Plan 152 GOAT 25/25, river_valley Plan 152 GOAT 25/25, peira_distill Plan 153 GOAT 7/7, kog_cpu_fusion Plan 160 GOAT 3/3 Gemma2 scale, thinking_cot Plan 194 GOAT 7/7 adaptive CoT, bandit_top_p Plan 181 dMoE adaptive top-p, trust_region_spec Plan 182 GOAT T1-T7, directional_credit Plan 184 GOAT 6/6, kv_share Plan 185 GOAT 7/7, nds_proxy Plan 186 GOAT 13/13, wealth_pruner Plan 187 GOAT, and_or_dtree Plan 190 GOAT, speculative_generator Plan 193 GOAT, chain_fold Plan 195 GOAT 16/16 validated by Plan 228, kvarn Plan 179 GOAT ALL PASS, partial_scoring Plan 191 GOAT 5/5, problem_mutator Plan 191 GOAT 2/2, idea_divergence Plan 191 GOAT 1/1, attn_match Plan 271 GOAT 9/9 (G1 β-recovery, G2 Cv reconstruction, G3 OMP residual, G4 HighestAttn coverage, G5 reconstruction quality, G6 router determinism, G7 no-alloc, G8 SIMD speedup))
+default = ["orthogonal_procrustes", "domain_latent", "bandit_top_p", "spectral_quant", "hybrid_oct_pq", "deep_manifold", "federation", "tes_loop", "lattice_deduction", "delta_routing", "stability_metrics", "mls_aggregate", "gdn2_attention", "dreamer", "lt2_looped", "dmax_spd", "eqr_convergence", "subterranean", "sr2am_configurator", "data_gate", "plasma_path", "tf_loop", "dual_leo", "sigmoid_margin", "moa_inference", "sleep_consolidation", "dual_gram_pca", "roofline_cost", "newton_schulz", "river_valley", "peira_distill", "kog_cpu_fusion", "gepa_reflective", "phrase_boost", "hydra_budget", "budget_adaptation", "ilc_distill", "trd_refined_draft", "swir_switch_thinking", "freq_bandit", "spec_reconciliation", "trust_region_spec", "curvature_alloc", "directional_credit", "kv_share", "nds_proxy", "wealth_pruner", "speculative_generator", "kurtosis_gate", "kvarn", "chain_fold", "vortex_flow", "domino_correction", "corr_budget", "best_buddies", "rosetta_pruner", "rv_gated_routing", "problem_mutator", "idea_divergence", "self_distilling_bandit", "lodestar", "legal_token_set", "bfcf_lsh_cms", "belief_drafter", "substrate_gate", "llmexec_guard", "outlier_guard", "segment_checkpoint", "regime_transition", "static_cal_tables", "targeted_precision", "modality_pruned_load", "precision_aware_draft", "async_qdq_overlap", "channel_simd_align", "schema_centroid", "reward_mem", "collapse_aware_thinking", "auto_constraint_synthesis", "union_bound_confidence", "pathway_tracker", "federation_composer", "caddtree_budget", "concept_grounding", "reward_calibrator", "decision_explain", "posterior_evolution", "mux_latent_context", "sense_lod", "spectral_pruner", "epiplexity_bandit", "breakeven_routing", "lattice_operad", "spec_pruner", "ssd_block", "ss_pruner", "dendritic_gate", "sparse_task_vector", "off_principal_retrieval", "spectral_rank", "module_energy_route", "gauge_invariant", "chiaroscuro", "attn_match", "triggered_injection", "temporal_deriv", "manifold_power_iter_router", "quantile_balance_router", "self_advantage_gate", "clr", "personality_composition", "committed_field_blend", "cce_moderator", "claim_rubric", "salience_tri_gate", "complexity_prior_sampler", "depth_invariance", "cross_resolution_transport", "latent_field_steering", "viable_manifold_graph", "subspace_phase_gate", "closed_unit_compaction", "fourier_continuation", "funcattn", "closure_instrument", "non_interference_branches", "sigmoid_graded_reject", "zone_density_routing", "band_conditioner", "specialist_projection", "collider_consistency", "future_probe", "step_attribution_qualifier", "smooth_min_similarity", "ica_lens", "plot"]  # funcattn DEFAULT-ON (2026-07-07, post-Issue-049 D4 fix): G6 LLM-domain gate now PASS - generate_pattern_dataset rejects degenerate a==b sequences (was admitting ~12.5% constant draws at V=8, corrupting the learned basis and producing a spurious 0.969 plateau vs SDPA 1.000). Post-fix: FUNCATTN=1.000 SDPA=1.000 @ release 600 FD-SGD steps; debug 40-step FUNCATTN 0.9297 > SDPA 0.6719. 6/6 GOAT gates green (G1-G5 + G6). Modelless closed-form Tikhonov operator (no training). Heavy downstream use: riir-ai plans 318/329/330/309/310/321 consume C as transport substrate. Prior G6 FAIL was a test-data-gen artifact, NOT a primitive ceiling.  # step_attribution_qualifier DEFAULT-ON (Plan 381 Phase 5, 2026-07-06): G1 14/14 tests, G3 cfg-gated no-regression, G4 13ns gate overhead @ W=64 (76.9× under 1µs), G5 zero deps, G6 feature-isolation clean. G2 (quality-parity) verified via riir-ai Plan 313 Phase 5 G6 PoC — 81.6% drift reduction vs no-attribution baseline (DirectionDelta mutations), 63.1% vs TrajectoryDoctor-only. Modelless instantiation of SkillAdaptor (arXiv:2606.01311) eq. 8 Δ≥0 commit gate. Sibling to TrajectoryDoctor (Plan 223).  # zone_density_routing DEFAULT-ON (Plan 351 Phase 3): G5a +19.4% entropy gain, G5b 99.1% compute saved, G5c 0 stale reads. Modelless.  # sigmoid_graded_reject DEFAULT-ON (Plan 310 T4.1, 2026-06-26): T1 GOAT both halves PASS (T3.2 perf + T3.1 quality), HarnessBridge Table 7 tolerant>strict confirmed. Zero runtime cost unless caller invokes soft_reject_with_relax.  # non_interference_branches DEFAULT-ON (Plan 329 Phase 3, 2026-06-26): G1 8 orthogonal directions in D=8 (pairwise interference 0.00e0<1e-6), G2 route 301.5ns<1us (64-branch bank), G3 all clean, G4 0 allocs/100 calls, G5 [] deps. 101/101 tests.  # closure_instrument DEFAULT-ON (Plan 290 T4.7 + G4 fix, 2026-06-26): G1 67us<100us (bit matrix, Issue 035), G2 638us<5ms, G3 synthetic-proxy monotone, G4 0.296MB<1MB (Option<[u8;32]> fix — production via PtgTracedPruner::trace passes None for all nodes; upper bound all-Some = 1.822MB informational). 55/55 tests green (38 closure + 3 mining + 8 wire + 6 integration). Zero runtime cost unless a caller invokes the recorder. API break: PtgNode.blake3_in [u8;32] -> Option<[u8;32]>; PtgRecorder::enter takes Option.  # closed_unit_compaction DEFAULT-ON (Plan 333 Phase 6, 2026-06-25): 7/7 GOAT gates PASS - G1 recall=1.000/FDR=0.000, G2 50% suppression, G3 probe 1.4ns ratio=1.00, G4 zero-alloc, G5 feature isolation, G6 0 softmax, G7 can_freeze isomorphism all 4 combos. evaluate() 8.91ns <50ns, 112.9M/s >=50M. Super-GOAT: trajectory compaction and shard freeze are the same primitive (proven structurally). Zero runtime cost unless a caller invokes evaluate.  # viable_manifold_graph DEFAULT-ON (Plan 312 Phase 5, 2026-06-24): G1-G7 correctness PASS + perf bench PASS post-CSR (manifold_random_walk 485.58→7.10 ns/step, 14× under 100ns target; CSR makes for_each_neighbor O(degree); random-walk output byte-identical).  # latent_field_steering DEFAULT-ON (Plan 309 Phase 4, 2026-06-23): G1-G5 all PASS - G1 fear-axis 1.50x>=1.30, G2 mean cos 0.9958>=0.95 min cos 0.9667>=0.90, G3 leakage 4.5e-5<0.01, G4 19.2us<1ms, G5 0 allocs. Caveat: 8% argmax flip at alpha=0.3 - keep alpha<=0.3 for hot-path. | cross_resolution_transport DEFAULT-ON (Plan 310 Phase 4, 2026-06-23): G1 mean cos 0.8944>=0.85, G2-A rank preservation mean cos 0.9300>=0.85 (Super-GOAT headline holds), G3 elbow k=8, G4 0 allocs. Implies funcattn as transitive default. | depth_invariance DEFAULT-ON (Plan 306 T7.4): G1/G2/G3 PASS, G4 re-spec to absolute-latency at HLA scale (all PASS), SIMD inner-loop landed. Zero runtime cost unless invoked. | salience_tri_gate DEFAULT-ON (Plan 303 Phase 5, 2026-06-23): 4/4 GOAT gates PASS — decide() 9.11ns <50ns target, decide_batch() 120.6M/s ≥50M target, G1 determinism + G2 ablation parity PASS. Zero runtime cost unless a caller invokes decide/decide_batch. | complexity_prior_sampler DEFAULT-ON (Plan 305 Phase 2, 2026-06-23): G2 majority-pass (RLE 92275× + Entropy 18455× stretch speedups on low-K optimum; L1 honest-negative on sparse byte encoding, documented domain mismatch) + G1 5/5 safety PASS. Zero runtime cost unless a caller invokes the sampler. | claim_rubric DEFAULT-ON (Plan 307 T3.3, 2026-06-23): meta-discipline validator, 17/17 Phase 2 round-trip + GOAT gate green. Zero runtime cost unless a probe/steering primitive explicitly invokes ClaimValidator::grade; promotion enforces the rubric at CI time per R287 §2.3.  # Production best perf + accuracy (Plan 051, bt_rank Plan 079, spectral_quant Plan 063, hybrid_oct_pq Plan 101 GOAT best MSE + 64x fewer FMAs vs OCT, elf_sde Plan 079, cna_steering Plan 087 GOAT, deep_manifold Plan 085 GOAT 6/6, federation Plan 085 GOAT 6/6, tes_loop Plan 086 GOAT 8/8, lattice_deduction Plan 088 GOAT 7/7, delta_routing Plan 097 GOAT 6/6, stability_metrics Plan 102 GOAT 13/13, mls_aggregate Plan 104 GOAT 6/6, gdn2_attention Plan 105 GOAT 14/14, dash_attn Plan 106 GOAT 9/9, dreamer Plan 107 GOAT 8/8, lt2_looped Plan 108 GOAT 8/8, dmax_spd Plan 109 GOAT 7/7, eqr_convergence Plan 119, subterranean Plan 110, sr2am_configurator Plan 112, data_gate Plan 111, plasma_path Plan 148 GOAT 5/5, parallel_probe Plan 133 26 unit tests, tf_loop Plan 136 GOAT 4/4, leo_all_goals Plan 155 SUPER GOAT, dual_leo Plan 155 SUPER GOAT, sigmoid_margin Plan 157 GOAT 7/7, moa_inference Plan 158 GOAT 3/3, sleep_consolidation Plan 154 GOAT 14/14, spectral_hierarchy Plan 156 GOAT, dual_gram_pca Plan 159 GOAT, roofline_cost Plan 159 GOAT, newton_schulz II Plan 152 GOAT 25/25, river_valley Plan 152 GOAT 25/25, peira_distill Plan 153 GOAT 7/7, kog_cpu_fusion Plan 160 GOAT 3/3 Gemma2 scale, thinking_cot Plan 194 GOAT 7/7 adaptive CoT, bandit_top_p Plan 181 dMoE adaptive top-p, trust_region_spec Plan 182 GOAT T1-T7, directional_credit Plan 184 GOAT 6/6, kv_share Plan 185 GOAT 7/7, nds_proxy Plan 186 GOAT 13/13, wealth_pruner Plan 187 GOAT, and_or_dtree Plan 190 GOAT, speculative_generator Plan 193 GOAT, chain_fold Plan 195 GOAT 16/16 validated by Plan 228, kvarn Plan 179 GOAT ALL PASS, partial_scoring Plan 191 GOAT 5/5, problem_mutator Plan 191 GOAT 2/2, idea_divergence Plan 191 GOAT 1/1, attn_match Plan 271 GOAT 9/9 (G1 β-recovery, G2 Cv reconstruction, G3 OMP residual, G4 HighestAttn coverage, G5 reconstruction quality, G6 router determinism, G7 no-alloc, G8 re-founded Issue 874: route bit-agreement + relocated throughput floor — the original G8 SIMD-speedup claim retired at the kernel consolidation))
 alloc_tracking = ["katgpt-core/alloc_tracking"]  # Issue 741: compile katgpt-core's TrackingAllocator + per-thread counters in a RELEASE build, so the G4/G5/G7 alloc gates can run under `--release` (the profile AGENTS.md mandates for gates) instead of compiling to an EMPTY BINARY and printing `ok. 0 passed`, exit 0. Measured before the fix: kimi_k3_g4_alloc_free = 1 passed dev / 0 passed release. MUST stay opt-in — enabling it installs a #[global_allocator] doing a TLS read + 2 adds per allocation. A measurement capability, NOT a perf primitive, so it is not a GOAT-promotion candidate; zero cost when off (the module does not exist).
+state_option_scoring = ["katgpt-core/state_option_scoring"]  # Plan 607 T1 forward — per-option centroid-cosine scoring over a fixed option table + the pinned lowest-index argmax (the game-decision lane's primitive, upstreamed from riir-reflex Issue 004 T7's route_terms shape). Opt-in pending the Plan 607 GOAT (bench_876 + the tetris_02_option_arena fixture replay); consumer: the arena example only.
+template_decode = ["katgpt-core/template_decode"]  # Plan 607 T2 forward — bounded template decode over CLOSED sentence grammars (decode → (template, fill indices), loud Unknown/Ambiguous refusals, verify_closed full-space proof). The lane's losslessness arm (sentence vs structured agreement delta) + laya-format traffic intake; decode-only, corpus-limited, Lz4FlexDrafter lineage. Opt-in; consumer: the decode_01_losslessness example only.
 plot = ["dep:plotters"]  # Benchmark SVG plot output (Issue 355 Phase 2a). Only `src/plot.rs` + `src/main.rs` benchmark runner use plotters. DEFAULT-ON to preserve historical behavior; riir-ai sets default-features = false to drop it.
 data_probe = ["katgpt-core/dirichlet_energy", "katgpt-core/sink_aware_attn"]  # Data Probe Diagnostics — controlled information-theoretic validation (Plan 141). Also enables sink-aware classifier primitive (Plan 287 Phase 1).
 dirichlet_energy = ["katgpt-core/dirichlet_energy"]  # Dirichlet Energy structural alignment diagnostic (Research 111, Plan 149)
@@ -195,6 +200,7 @@ ssmax_adaptive = ["katgpt-core/ssmax_adaptive"]  # SSMax built-in rolling-Δ est
 gold_share_probe = ["data_probe", "katgpt-core/gold_share_probe"]  # GoldShare — content-specific output-fraction diagnostic `‖a^G_L‖ / ‖a_L‖` (Plan 411, Research 392, arxiv 2607.01538 Gollapudi et al.). Decomposes a layer's attention output into gold-derived vs distractor-derived fractions; detects when output has been rewritten from gold-content to aggregate-noise at comparable magnitude (the paper's recall-generation gap diagnostic). Complements `effective_rank` (content-agnostic) and `stable_rank_update` (per-sink). Opt-in diagnostic; implies data_probe + sink_aware_attn.
 gaussianity_probe = ["katgpt-core/gaussianity_probe"]  # Sketched Gaussianity Probe — multi-direction projection-normality for embedding populations (Issue 681, Research 498 — LeVLJEPA arXiv:2607.00784 SIGReg distilled from training loss to inference-time diagnostic). Cramér-Wold sketch: 16 fixed directions (4 axis anchors + 12 BLAKE3 Rademacher), KS-vs-fitted-Gaussian per direction (bit-identical port of katgpt-spectral ks_d_statistic, pinned by the gaussianity_agreement test there), sigmoid aggregate over the n-aware Kolmogorov min-p. Catches bimodal / heavy-tail / discrete marginals that pass every second-moment metric (erank & friends — the bench_681 non-redundancy pin). GOAT ALL PASS (.benchmarks/673): G1 fixtures + non-redundancy (bimodal erank 83% "healthy" while score 2.4e-23 "sick"), G2 4.2× faster than effective_rank @ d=64, G4 0 allocs, G5 bit-identical. Opt-in until a consumer promotes (band_conditioner Fisher-z guard, riir-ai #743, neuron-db freeze advisory).
 knn_entropy = ["katgpt-core/knn_entropy"]  # kNN differential-entropy estimator (Kozachenko–Leonenko) — data_probe::entropy (Issue 708 P1, distilled from Research 437 / arXiv:2608.29335 GenFirst's two-channel collapse law): Ĥ = ψ(n) − ψ(k) + ln c_d + (d/n)·Σ ln εₖ(i) in nats over point-latent populations — the uncertainty axis beside the dispersion proxies (effective_rank/gaussianity/flatness produce none). Brute-force O(n²·d) offline-audit by design, O(k) max-heap scratch, f64, deterministic ×3, zero steady-state allocs, duplicates ⇒ −∞ (the collapse signal). G1 calibration vs closed-form isotropic-Gaussian entropy + monotone-under-shrink + planted collapse trip. Opt-in until P2 (the two-channel imbalance monitor) or a dist-guard axis consumes it.
+refinement_marginal = ["katgpt-core/refinement_marginal"]  # Plan 598 / Research 559 — single-pass token→byte marginal + terminal-mass certificate. The core primitive is katgpt-core's (opt-in there); THIS root module (src/refinement_bridge.rs) is the BPE instantiation: RefinementTable from BpeTokenizer's id_to_vocab bytes + the tokenizer_geometry profile + the streaming per-position loop. Lives in the ROOT crate because katgpt-tokenizer is a categorical leaf (no katgpt-* deps) while the bridge needs both types. Zero new deps. Opt-in — promotion needs a serving/spec-decode consumer.
 imbalance_monitor = ["katgpt-core/imbalance_monitor", "katgpt-pruners/collapse_aware_thinking", "katgpt-pruners/population_collapse"]  # Two-channel imbalance collapse monitor (Issue 708 P2, Research 437 — arXiv:2608.29335 GenFirst two-channel law): katgpt-core data_probe::imbalance::{ImbalanceMonitor, ImbalanceConfig, ImbalanceReading} — channel A = knn entropy (spread), channel B = strided-pair mean |cosine| (directional concentration, scale-invariant), conjunctive z-score alarm vs a warm-up-frozen baseline. Balance-vs-absolute is the delta over every shipped detector (cgsp EntropyCollapse / S2F hesitation / erank floors are absolute): baseline deviation crosses early while the level must traverse healthy→collapsed — measured lead time in bench_708_imbalance_goat on the bench_681 fixtures (lead ≥ 1 cycle everywhere, monotone in severity, sub-threshold severities only the imbalance channel sees, healthy specificity clean), with the isotropic-shrink scope boundary pinned (channel B flat under uniform rescaling — directional/mode collapse is this monitor's regime). Event-triggered reporting only, never a controller. Also forwards katgpt-pruners collapse_aware_thinking + population_collapse (the advisory latch on S2FCollapseDetector — collapse_detector is gated collapse_aware_thinking there, so the latch forward is vacuous without it, the gate-coverage trap). Deterministic ×3, zero steady-state allocs. Opt-in per the no-default-consumer rule.
 smooth_min_similarity = ["katgpt-core/smooth_min_similarity"]  # Smooth-Min Soft Similarity — modelless latent-space utility for fuzzy multi-token retrieval (Research 385, SoftMatcha 2, Issue 041, removed, see git history). GOAT PoC PASS: +12pp recall@5, ~0ns overhead. Consumer GOAT PASS (T6 SmoothMinAligned): recall@5 = 1.000 vs Cosine 0.495 (+50.5pp). DEFAULT-ON (2026-07-12). First consumer: katgpt-attn-match/smooth_min_rerank.
 smooth_min_rerank = ["maxsim", "katgpt-attn-match/smooth_min_rerank"]  # Smooth-Min reranking method — wires `smooth_min_similarity` as a `RerankMethod::SmoothMin` variant in the rerank module (Issue 041, Research 385). First real consumer of the smooth-min primitive.
@@ -210,7 +216,16 @@ msa_adaptive_k = ["msa_sparse", "katgpt-attn/msa_adaptive_k"]  # Adaptive k budg
 rt_turbo = ["dash_attn", "katgpt-speculative/rt_turbo"]  # RTPurbo retrieval head sparse decode via low-dim indexing (Plan 126, Research 86). Phase 6: substrate moved to katgpt-speculative; root re-exports as `katgpt_rs::rt_turbo`.
 mls_aggregate = ["katgpt-forward/mls_aggregate"]  # MLS Multi-Layer Sum aggregation of last K layer residuals (Plan 104, Research 68). Forwarded to katgpt-forward so ForwardContext.mls_buf compiles (Issue 007 Phase F).
 dllm = ["katgpt-forward/dllm"]  # D2F Discrete Diffusion Forcing — mini dLLM research (Plan 066). Plan 398: forwarded to katgpt-forward so the extracted D2fContext + forward_block_causal_with + attention_forward_safe_into + denoising_accuracy substrate (moved from root src/dllm.rs) compiles.
-set_diffusion = ["dllm", "katgpt-core/set_diffusion", "katgpt-forward/set_diffusion"]  # Set Diffusion — set-causal attention (Research 376 T0.2) + DecodeStrategy::SetDiffusion variant (T4.2) + SetDiffusionDecoder substrate (T4.1). Generalizes block-causal to arbitrary position orderings. Plan 401: forwarded to katgpt-forward so the moved forward_set_causal_positions.rs compiles when this feature is enabled.
+structured_reads = ["dllm", "katgpt-forward/structured_reads"]  # Jev structured reads — read-only seeded-canvas decision primitive (Issue 859 / Research 574 / Bench 816, opt-in POC). Forwarded so the root policy-arm bench (bench_817) composes katgpt_rs::dllm::train_mini_dllm with the primitive; the primitive itself lives in katgpt-forward.
+set_diffusion = ["dllm", "katgpt-core/set_diffusion", "katgpt-forward/set_diffusion"]  # Set Diffusion — set-causal attention (Research 376 T0.2) + DecodeStrategy::SetDiffusion variant (T4.2) + SetDiffusionDecoder substrate (T4.1). Generalizes block-causal to arbitrary position orderings. Plan 401: forwarded to katgpt-forward so the moved forward_set_causal_positions.rs compiles when this feature is enabled. Issue 813: the dllm::set_causal module (train/eval + the custom-order gen-steps seam) lives behind this gate.
+# Plan 602 T3.1 (2026-09-20): the root lane for the decode-order bench — the
+# AR-ness × w cross-tab in src/benchmark/diffusion.rs composes
+# train_mini_set_causal + set_diffusion_decode + the T1.3 π readouts, so it
+# implies set_diffusion and forwards to core+forward. OPT-IN pending the
+# Phase-3 G3 GOAT — promotion NOT claimed (same posture as the core feature).
+decode_order_metrics = ["set_diffusion", "katgpt-core/decode_order_metrics", "katgpt-forward/decode_order_metrics"]
+probe_guidance = ["dllm", "katgpt-forward/probe_guidance"]  # Probe guidance (Issue 865 T1) — weak-side probe seam + affine autoguidance combine on the D2F decode path (logits' = λ·logits + (1−λ)·probe_logits; Research 68 §7.2 / arXiv:2609.19356). Gates the WeakLogitProbe trait + D2fContext::{set_guidance, clear_guidance} + D2fPipeline::set_guidance. λ=1.0 default is bit-identical to unguided (G1). Implies dllm (the combine lives in the dllm-gated d2f module). The trained probe artifact is T2 (riir-train nextlat_* lane, freeze/thaw wire; fixture tests/fixtures/weak_probe_micro_dllm_v1.bin). **STAYS OPT-IN — Bench 847 (T3 λ-sweep GOAT gate, 2026-09-21) measured a NEGATIVE verdict: the gain is temperature-reachable and within noise on the saturated mini trunk; the negative verdict is pinned as a regression gate (tests/probe_guidance_goat.rs) whose bars flip red the day guidance wins — that flip is the promotion case.**
+ignition_schedule = ["katgpt-core/ignition_schedule"]  # Ignition Schedule forward — closed-form logistic ignition curves + the REM commitment-time law t* (Issue 459 T5, Bench 666, katgpt-core opt-in §83 of the feature catalog). Opt-in; consumed by the set-causal reveal-order sweep lane (Issue 813 / Bench 809). Nothing in src/ reads it yet — a pure dependency forward until a runtime consumer lands.
 dmax_spd = ["dllm", "katgpt-core/dmax_spd", "katgpt-forward/dmax_spd"]  # DMax Soft Parallel Decode — hybrid embedding D2F enhancement (Plan 109, Research 72). Plan 399: forwarded to katgpt-forward so the moved d2f.rs's SoftDecodeConfig + HybridEmbedding + d2f_decode_block_soft + ~10 dmax_spd-gated fns compile.
 tri_mode = ["dllm", "katgpt-core/tri_mode", "katgpt-forward/tri_mode"]  # Tri-Mode inference — AR + Diffusion + Self-Speculation (Plan 089, Research 55). Plan 399: forwarded to katgpt-forward so the moved d2f_verifier.rs + diffusion_sampler.rs + d2f.rs's tri_mode-gated variants compile.
 sudoku = ["katgpt-pruners/sudoku"]
@@ -304,6 +319,7 @@ fft = ["bandit", "sr2am_configurator", "katgpt-pruners/fft"]     # FFT Tactics A
 stepcode = ["bandit", "katgpt-pruners/stepcode"]  # ⚠️ Plan 054 — NO GAIN proven. Infrastructure only. Off by default, not in `full`.
 skill_lifecycle = ["bandit", "katgpt-pruners/skill_lifecycle"]  # Inference-Time Skill Evolution — per-pruner memory + test-gated registration + progressive disclosure catalog (Plan 192, Research 172)
 sense_composition = ["katgpt-core/sense_composition", "bandit"]  # KG Latent Octree Sense Composition (Plan 221)
+modality_additive = ["katgpt-core/modality_additive"]  # Modality-additive belief kernel (Issue 777, Research 556 / FLYNN arXiv:2607.00025): forward to katgpt-sense `evolve_belief_additive` — per-dim first-order filter, no cross-modality normalization; belief transitions superpose exactly per SenseKind. DEFAULT-ON via katgpt-sense's default since Issue 777 T4 (GOAT ALL PASS in bench modality_superposition_bench: exact superposition vs the divisive default's ratio 5.17); default evolve_belief path byte-identical.
 schema_centroid = ["katgpt-core/schema_centroid", "sense_composition"]  # Schema-Centroid Informed KG Embedding Initialization (Plan 237, GOAT 7/7, default-ON)
 slod = ["katgpt-core/slod", "spectral_hierarchy"]  # SLoD Spectral Level-of-Detail Pruner (Plan 235, GOAT G1-G6 all pass, default-ON). Not in `default` directly; transitively enabled via `sense_lod` (Issue 181).
 spectral_threat = ["katgpt-core/spectral_threat", "sense_composition"]  # LinOSS Modal Threat Prediction (Plan 241, GOAT PASS 46.9%)
@@ -368,12 +384,12 @@ adaptive_cot_identifiability = ["katgpt-band/adaptive_cot_identifiability"]  # P
 lt2_looped = ["hla_attention"]  # LT2 looped inference pipeline — weight-shared T-pass loop (Plan 108, Research 73)
 lt2_deep_stability = ["lt2_looped"]  # Issue 717 T3/T4: runtime deep-loop stabilization for `forward_looped` at T≫4 — delayed damping `h ← (1−α)h + α·F(h)` after burn-in B (sotaku, riir-train Research 440; closed form λ → 1−α+αλ) + tangential/radial update-scale knobs + the direction-drift probe. DEFAULT-OFF: `None`/`α=0`/`{1,1}` knobs are bit-identical to plain `lt2_looped` (G1); the eigenvalue-map gate runs on a gate-driven (ρ>1) deterministically-destabilized fixture (G2); stable-fixture cost recorded against the upstream 1.5–2.3 pt class (G3); zero-alloc hot loop (G4).
 sleep_consolidation = ["lt2_looped", "gdn2_attention"]  # Sleep-time offline recursive memory consolidation at eviction (Plan 154 GOAT 14/14, Research 116) — default-ON
-plasma_path = ["katgpt-core/plasma_path", "katgpt-transformer/plasma_path", "katgpt-forward/plasma_path"]  # Bit-plane ternary SIMD matvec — multiplication-free CPU inference (Plan 148, Research 110). Plan 400: also forwarded to katgpt-forward so the moved flashar_consensus.rs's `#[cfg(feature = "plasma_path")]` block compiles. Issue 145 reclassification: this now gates the HOT-tier ternary CPU path (ternary moved from Plasma to Hot; binary is the new Plasma tier under `binary_plasma`). Flag name retained for minimal churn.
+plasma_path = ["katgpt-core/plasma_path", "katgpt-transformer/plasma_path", "katgpt-forward/plasma_path"]  # Bit-plane ternary SIMD matvec — CPU inference with a 21× smaller weight footprint (Plan 148, Research 110). Plan 400: also forwarded to katgpt-forward so the moved flashar_consensus.rs's `#[cfg(feature = "plasma_path")]` block compiles. Issue 145 reclassification: this now gates the HOT-tier ternary CPU path (ternary moved from Plasma to Hot; binary is the new Plasma tier under `binary_plasma`). Flag name retained for minimal churn. ⚠ MEASURED TRADE (Issue 843, both arches, 2026-09-19): the ternary dense matvec is 1.9–3.0× SLOWER than the f32 matvec it replaces at every served shape (both operands fit L3 there); the footprint is the win, and latency only beyond the L3 boundary. T4 owner call (gate D1): per-shape dispatch — `simd_matvec_plasma_dispatch` (f32 below the L3 boundary, ternary above; `l3_cache_bytes()` probe + `KATGPT_PLASMA_L3_BYTES` override); option (b) (pre-expanded i8, ~1.7–2× back at 5.3× footprint) NOT taken — the bitplane footprint is not the product at served shapes.
 binary_plasma = ["katgpt-core/binary_plasma", "katgpt-transformer/binary_plasma", "katgpt-forward/binary_plasma"]  # Binary {−1,+1} plasma tier — single bit-plane + group-wise FP16 scale (Issue 145, Bonsai 27B). GOAT gate PASSED (1.22× faster + 1.82× smaller than ternary at 1024²); stays OPT-IN per T2.4 — latency gain (1.22×) is below the 1.5× decisive threshold required for default-on promotion. Ternary (plasma_path) is now the Hot-tier CPU path; binary is the Plasma tier.
 peira_distill = ["katgpt-core/peira_distill", "katgpt-spectral/peira_distill", "bandit", "katgpt-speculative/peira_distill"]  # PEIRA inter-view regressor alignment — collapse-free modelless distillation (Plan 153 GOAT 7/7, Research 115) — default-ON. Phase 4: substrate moved to katgpt-spectral; root re-exports as `katgpt_rs::distill::peira`. Plan 387: peira_pruner (spec-decode ScreeningPruner) moved to katgpt-speculative.
 ilc_distill = ["bandit", "katgpt-speculative/ilc_distill"]  # ILC Iterative Latent Clustering — synonym-aware DDTree pruning (Research 136 GOAT 6/6, arXiv:2605.27734) — default-ON. Phase 6: substrate moved to katgpt-speculative; root re-exports as `katgpt_rs::distill::ilc`.
 trd_refined_draft = ["elf_sde", "bandit", "bt_rank", "katgpt-speculative/trd_refined_draft"]  # Trajectory-Refined Draft — modelless TRD for speculative decoding (Plan 249 GOAT 7/7, Research 217) — default-ON. Plan 384 (2026-07-05): substrate moved to katgpt-speculative; root re-exports as `katgpt_rs::distill::trd`.
-monopoly = ["bevy_ecs", "bandit", "katgpt-pruners/monopoly"]  # Monopoly Board Game Engine (Plan 034)
+monopoly = ["bevy_ecs", "bandit", "katgpt-pruners/monopoly"]  # Monopoly Board Game Engine (Plan 035)
 go = ["bandit", "dep:reqwest", "katgpt-pruners/go"]  # AutoGo API bridge + Go GameState (Plan 065)
 randopt_weight = ["bandit", "katgpt-pruners/randopt_weight"]  # RandOpt weight-space perturbation ensembling (Plan 121, Research 080)
 thicket_variance_probe = ["rv_gated_routing", "katgpt-pruners/thicket_variance_probe"]  # Thicket Variance Probe — decoding-space density routing signal (Plan 267, Research 235) — composes with RV for ablation
@@ -399,6 +415,7 @@ still_kv = ["katgpt-kv/still_kv", "katgpt-attn-match/still_kv"]  # StillKV perce
 attn_match = ["katgpt-attn-match/attn_match"]  # Attention Matching KV compaction — modelless (Plan 271, arxiv 2602.16284). Extracted to katgpt-attn-match leaf (Issue 359). Includes the simplified `compact_with_fixed_beta(BETA_MID)` fast path (Issue 305).
 adaptive_cot_compaction = ["attn_match", "freq_bandit"]  # Phase 6: entropy-thresholded bandit-tuned online compaction (Plan 271) — opt-in — Plan 271 Phase 6 COMPLETE 2026-06-14 (.plans/271_attention_matching_compaction.md — 13 tests pass, Phase 6 Exit Criteria ALL MET: adaptive triggers at entropy troughs, bandit converges UCB1 over 3 arms, quality ≥ blind online compaction). Stays opt-in as Fusion B compaction — attn_match (Fusion A) is the default-on promoted feature; adaptive_cot is a distinct entropy-gated bandit-tuned variant for thinking traces. The adaptive_cot glue lives in root at `src/attn_match_adaptive_cot.rs` (composes root-only `freq_bandit`).
 cache_prune = ["katgpt-kv/cache_prune"]  # CachePrune SAT + rolling hash + sensitivity masking (Plan 140, Research 101). Phase 5: moved to katgpt-kv (Proposal 003).
+radix_prefix_cache = ["katgpt-kv/radix_prefix_cache"]  # RadixAttention radix-tree prefix KV index (Issue 771) — chunk-granular longest-prefix matching + leaf-LRU eviction over a paged pool's ref-counted pages. The pool seam: katgpt-transformer PagedKVCache chunk_page_tables/retain/release/adopt. Opt-in — GOAT bench_762; promotion candidate when a multi-request serving lane consumes it (no production consumer yet).
 state_source = ["bandit", "katgpt-pruners/state_source"]  # State-Source Modelless Distillation — state-visitation tracking + P-UCB + retention (Plan 142, Research 103)
 nexus_elo = ["state_source", "proof_sketch_evolution", "katgpt-pruners/nexus_elo"]  # Nexus Elo — Plackett-Luce + P-UCB + goal cache for DDTree/SR²AM (Plan 143, Research 104)
 skill_opt = ["katgpt-core/skill_opt"]  # SkillOpt text-space skill optimization — generic framework for game rule optimization (Plan 144, Research 105). Phase 10 (2026-07-04): module moved to katgpt-core; root forwards.
@@ -435,7 +452,7 @@ moa_inference = ["coda_fusion", "katgpt-core/moa_inference"]  # MoA Mixture of A
 
 kog_cpu_fusion = ["katgpt-transformer/kog_cpu_fusion", "katgpt-forward/kog_cpu_fusion"]  # Kog AI monokernel CPU fusion — RMSNorm gamma folding + QKV interleaving (Plan 160 GOAT 3/3 Gemma 2 scale, Research 139) — default-ON. Forwards to katgpt-transformer so LayerWeights.attn_norm_gamma / mlp_norm_gamma / attn_qkv_fused fields are present. Plan 385: also forwarded to katgpt-forward so forward_base/forward_coda's `types::rmsnorm_with_gamma` + `attn_qkv_fused` paths compile.
 flashar_consensus = ["tri_mode", "plasma_path", "katgpt-forward/flashar_consensus"]  # FlashAR Consensus Tri-Mode with Ternary Thermal Paths (Plan 166, Research 149). Plan 400: forwarded to katgpt-forward so the moved flashar_consensus.rs compiles. DEMOTED from default-on (Issue 136, 2026-07-12, removed, see git history): Plan 485 benchmark showed KL 2.9-6.5 (100× worse than Leviathan baseline 0.03) — G1 quality FAIL. DSpark entropy-skip hybrid beats it on both axes. Stays opt-in for callers who explicitly want speed-over-quality. Issue 651 (2026-08-15, Bench 637): Warm/Cold paths now run the FLARE Eq 21 acceptance policy (DraftAcceptPolicy on ConsensusConfig, default SoftmaxArgmax — shared with d2f_verifier's Issue 587 helpers) against the slot-ALIGNED target distribution; fixed the pre-651 off-by-one (draft token i was tested against the position-i+1 law conditioned on the token being tested — H-win positions auto-accepted, the verified paths were degenerate). Verified paths exact (first-token TV 0.0046 vs reference; PrefixMatch control collapses at 0.3256). Plasma/Hot remain distribution-biased BY DESIGN (verification-skipping is the feature). Streaming restructure deleted the (MAX_DRAFT_WIDTH+1)×vocab p_flat buffer (≈67 MB → 1 MB at 256K vocab) + early-exit on rejection; T9 time/token −11%.
-flashar_anchor = ["dllm", "katgpt-forward/flashar_anchor"]  # FlashAR strided anchor-then-fill D2F (Plan 166 stretch, Research 149). Plan 400: forwarded to katgpt-forward so the moved flashar_anchor.rs compiles.
+flashar_anchor = ["dllm", "katgpt-forward/flashar_anchor"]  # FlashAR strided anchor-then-fill D2F (Plan 166 stretch, Research 149). Plan 400: forwarded to katgpt-forward so the moved flashar_anchor.rs compiles. Plan 600: anchor_then_fill_with adds the opt-in DBTM confidence-commit rule (Issue 811); stride stays default. Plan 601: real-text GOAT green (Austen char-level, Bench 601) — ConfidenceAnchorConfig::default() (κ=0.9+floor) is the blessed decode rule inside the seam; this root flag stays opt-in; the strided entry stays as the no-floor comparator.
 recfm = ["katgpt-speculative/recfm", "katgpt-transformer/recfm"]  # RecFM recursive cross-scale consistency — DDTree + LT2 + SpecHop (Plan 168, Research 150). Phase 6: spechop substrate moved to katgpt-speculative; CrossHopConfig + observation_velocity gated there. Phase 9: tf_loop's RecFM-accelerated functions gated in katgpt-transformer.
 thinking_prune = ["sr2am_configurator", "katgpt-pruners/thinking_prune", "katgpt-speculative/thinking_prune", "katgpt-transformer/thinking_prune", "katgpt-forward/thinking_prune"]  # Thinking Prune — FrozenBaseGuard for SpecHop/LT2 intermediate steps (Plan 171, Research 153). Phase 6: also forwards to katgpt-speculative so spechop/hop_tree's PrunerSchedule usage resolves. Phase 9: also forwards to katgpt-transformer (no-op gate; the actual pruner-schedule fn lives in root shim due to katgpt-pruners → katgpt-transformer cycle). Plan 396: forwarded to katgpt-forward so the moved dd_tree.rs's build_dd_tree_screened_with_schedule + its tests compile. Not in `default` directly; transitively enabled via `thinking_cot` (Issue 181).
 rim_slots = ["katgpt-core/rim_slots", "katgpt-pruners/rim_slots"]  # RiM Reasoning Buffer Slots — fixed latent workspace for DDTree (Plan 172, Research 192). Not in `default` directly; transitively enabled via `thinking_cot` (Issue 181).
@@ -476,6 +493,11 @@ hippocampal_cache = ["katgpt-core/hippocampal_cache"]  # HOLA Hippocampal Exact 
 hga = ["katgpt-core/hga", "katgpt-attn/hga"]  # Hierarchical Global Attention — chunk→group→token routing with RoPE-aware mixed-frequency summaries (Plan 397, Research 379, arxiv 2606.30709). Opt-in — Phase 2 GOAT gate (G2 head-to-head vs DashAttention) RAN + FAILED (G2-proxy negative result per .plans/397_hierarchical_global_attention.md — HGA loses to default-on DashAttention on synthetic NIAH routing comparison); stays opt-in as documented negative result per Plan 397 T3.3 (G5 latency PASS at 1.12×, but G2 is the load-bearing gate and it lost).
 chain_fold = ["thinking_cot", "katgpt-speculative/chain_fold"]  # ThoughtFold chain folding — inference-time CoT step pruning (Plan 195 GOAT 16/16, validated by Plan 228 78% reduction). Phase 12 (2026-07-04): module moved to katgpt-speculative; root forwards.
 clr = ["katgpt-claim/clr"]  # CLR Claim-Level Reliability runtime — sigmoid projection vote over claim embeddings (Plan 284, Research 255). Phase 11 (2026-07-04): module moved to katgpt-claim; root forwards.
+clr_calibration = ["katgpt-claim/clr_calibration"]  # CLR verdict calibration — the first sigmoid_calibration consumer (riir-ai Issue 964 C1; substrate Issue 810, GOAT Bench 807). CalibratedVerifier wraps any ClaimVerifier: observe (sigmoid_output, outcome) pairs, refit off-hot-path, apply in front of the reliability gate. Cold start bit-identical; fitted transform strictly monotone. Opt-in per the no-default-consumer rule.
+kron_tile = ["katgpt-core/kron_tile"]  # Issue 839 — Kronecker-factored tile apply `(A ⊗ B) · x = A Z Bᵀ` as two small GEMMs (2n³ MACs / 2n² params against n⁴ / n⁴), batched, zero-alloc, with a delegating Walsh–Hadamard fast path. Research 569 (Cactus Needle 3). Passthrough only — the primitive lives in katgpt-core::linalg::kron_tile; this row exists so Bench 839 can name it in required-features. Opt-in per the no-default-consumer rule.
+kpt_archive = ["katgpt-core/kpt_archive"]  # Issue 841 / Research 568 fusion 2 (owner call 2026-09-19) — .kpt single-file weight-archive POC: nameless positional layer-major file × BLAKE3/Merkle integrity × atomic file-replacement hot-swap, over packed ternary layers. Passthrough only — the POC module lives in katgpt-core::kpt_archive; examples/kpt_archive_poc.rs (poc + perf) and tests/kpt_archive_sec_injection.rs (bad-injection arms) name this row in required-features. Opt-in POC, NOT promoted: the format+engine lift waits for a NeuronShard-Merkle consumer wanting single-file mmap hot-swap.
+horizon_weights = ["katgpt-core/horizon_weights"]  # Issue 875 T1 / Research 582 (arXiv:2605.09071) — PFD (T−t) remaining-horizon weighting: the Fubini-law (T−t)/T weights + the exact closed form w(t) = ½(T−t)g²c², c = exp(−∫a), frozen into a BLAKE3-committed fixed-grid table (the static_cal pattern, exact — no calibration pass) + the law's exact inverse-CDF sampler (T2). Pure math, zero new deps, zero-alloc. Passthrough only — the primitive lives in katgpt-core::horizon_weights; this row exists so tests/bench_875_horizon_weights_goat.rs + tests/bench_875_renoise_horizon_goat.rs can name it in required-features. T2 consumer shipped as the combined-gate renoise_ce_score_horizon (Bench 877 GOAT); the feature stays opt-in — promotion is Issue 875 T5's verdict.
+renoise_ce_surprise = ["katgpt-core/renoise_ce_surprise"]  # Issue 875 T4 / Research 582 — the target-anchored renoise-CE probe mode (PFD's resolve-against-the-teacher): each re-resolved draw scored against a caller-supplied frozen target anchor instead of the candidate itself. Flow-relative novelty — states at the prior's own distance but in a foreign basin separate only through the flow (Bench 879: surprise precision@32 1.000 vs incumbent 0.000 vs plain-distance 0.428 chance). Consumer sketch: consolidation surprise ordering (Raven/δ-Mem sleep-cycle admission), ordering-only. Passthrough only; opt-in per the T5 promotion rule.
 claim_rubric = ["katgpt-claim/claim_rubric"]  # Claim Rubric Runtime — L1/L2/L3 evidence ladder validator (Plan 307, Research 287). Phase 11 (2026-07-04): module moved to katgpt-claim; root forwards.
 bandit_top_p = ["bandit", "katgpt-pruners/bandit_top_p"]  # Adaptive top-p bandit arm selection (Plan 181, default ON candidate)
 curvature_alloc = ["bandit", "katgpt-pruners/curvature_alloc"]  # Curvature-influence allocation — EoS proxy budget control (Plan 183)
@@ -525,6 +547,7 @@ best_buddies = ["katgpt-speculative/best_buddies", "katgpt-forward/best_buddies"
 egcs = ["katgpt-pruners/egcs"]  # Episode-Guided Constraint Synthesis — reference-based structural constraint injection (Plan 206, GOAT 4/4, default-ON). Not in `default` directly; transitively enabled via `self_distilling_bandit` / `reward_mem` / `auto_constraint_synthesis` (Issue 181).
 self_distilling_bandit = ["egcs", "katgpt-pruners/self_distilling_bandit"]  # Self-Distilling Pruner Bandit — episode-guided arm selection (Plan 208 GOAT 4/4, default-ON)
 lodestar = ["katgpt-pruners/lodestar"]  # Lodestar Completion-Distance Pruning — shortest-accepting-distance powers budget-aware masking + jump-ahead + A* termination (Plan 207, Research 183, GOAT 5/5 Bench 055, default-ON)
+legal_token_set = ["lodestar", "katgpt-core/legal_token_set", "katgpt-pruners/legal_token_set", "katgpt-speculative/legal_token_set"]  # Legal-token-set enumeration + the restricted vocabulary projection (Issue 841, grammar-forced projection skip). Inverts "is this token valid?" into "which tokens are": CsrLegalSet gives a structural pruner O(deg) enumeration where the shipped path scanned 32 768 tokens calling is_valid — which re-walks the prefix inside every one of those calls, so a DDTree heap pop cost O(vocab x prefix). The builder fast path is BIT-identical, not merely equivalent (both visit ascending token ids, so the heap receives the same pushes in the same order). ProjectionPlan is the consumer-side decision and deliberately refuses the naive "smaller than the vocabulary, therefore gather" rule: gathered LM-head rows run at ~20.6 GB/s against ~108 GB/s dense (Issue 661), so the crossover is DATA (RestrictionPolicy::max_active_fraction) and Bench 841 gates the shipped default against a measured sweep. DEFAULT-ON 2026-09-19 (Bench 841, 5/5): G1 bit-identical over 12 (degree x config) cells plus 18 unit arms across jump-ahead / A* / pruner-budget / short-marginal, G2 20.6-22.5x tree build at grammar degrees 8 and 64 (2.7x at degree 1) on interleaved medians, G2b the crossover MEASURED at ~20% active — which independently reproduces the Issue-661 21-34% band from a different kernel — with the 10% default threshold measuring 2.48x, G3 the worst case (every token legal, enumeration buys nothing) is 1.3-3.5x FASTER not a regression, because the scan re-walks the prefix inside every is_valid, G4 zero added allocations, G5 index memory +0.01% for a real grammar and +41.7% at full density against a density/2 bound. Promoted because `lodestar` is itself default-on, so the seam improves a shipped path.
 reward_calibrator = ["katgpt-pruners/reward_calibrator"]  # Reward-Gated Pruner Calibration — sigmoid-bounded Q-values + Welford variance + blake3 audit (Plan 210 F4, GOAT 6/6, default-ON)
 reward_mem = ["egcs", "bandit", "katgpt-pruners/reward_mem"]  # Reward-Weighted Branch Memorization — blake3 pattern hashing + EMA reward tracking (Plan 209 T3, GOAT 6/6, default-ON)
 sparse_task_vector = ["katgpt-sparse/sparse_task_vector"]  # Sparse Off-Principal Task Vector storage — OPD-grounded sparse delta format (Plan 264 Phase 1, Research 231, GOAT G1–G2 PASS 2.9–5.7× storage reduction, default-ON). Phase 11 (2026-07-04): module moved to katgpt-sparse; root forwards.
@@ -708,9 +731,53 @@ required-features = ["recos"]
 name = "transformer_inversion_01_forensics"
 required-features = ["grad_policy"]
 
+# Issue 808 T3 — this target opens `#![cfg(feature = "vortex_flow")]` and had
+# no row, so `cargo test --test bench_256_simd_topk` at default features
+# compiled an EMPTY binary and printed `ok. 0 passed`, exit 0. It is the only
+# thing in the workspace that executes the AVX2 `argtopk` kernel, and two
+# correctness defects lived in that kernel behind this green zero (Issue 806).
+[[test]]
+name = "bench_256_simd_topk"
+required-features = ["vortex_flow"]
+
+# Issue 875 T1 — remaining-horizon weights GOAT gate (G1 e2e table-vs-
+# closed-form bit-match; G2 table lookup vs the STRONG per-call exp baseline
+# via the shared ab_timing harness). Row required (the Issue-808 green-zero
+# class): without it, a feature-off invocation compiles an empty binary and
+# reports a pass.
+[[test]]
+name = "bench_875_horizon_weights_goat"
+required-features = ["horizon_weights"]
+
+# Issue 875 T2 — the (T−t)-weighted renoise-CE consumer GOAT gate:
+# precision@k planted-drift oracle (three arms: fixed-level incumbent /
+# uniform-range control / horizon law) + latency-class A/B vs the incumbent.
+# renoise_ce rides katgpt-core's default features (the root dep is
+# default-features on); horizon_weights is the opt-in arm this row names.
+[[test]]
+name = "bench_875_renoise_horizon_goat"
+required-features = ["horizon_weights"]
+
+# Issue 875 T4 — the target-anchored surprise-mode GOAT gate: flow-relative
+# novelty precision@32 oracle (three arms: fixed-level incumbent self-
+# consistency / plain whitened distance / renoise_ce_surprise) + latency-
+# class A/B vs the incumbent + the consolidation-ordering consumer sketch.
+# Row required (the Issue-808 green-zero class).
+[[test]]
+name = "bench_875_renoise_surprise_goat"
+required-features = ["renoise_ce_surprise"]
+
 [[test]]
 name = "bench_280_cs_kv_probe_goat"
 required-features = ["cs_kv_probe"]
+
+[[test]]
+name = "refinement_marginal_tokenizer_bridge"
+required-features = ["refinement_marginal"]
+
+[[test]]
+name = "bench_762_radix_prefix_cache_goat"
+required-features = ["radix_prefix_cache"]
 
 [[test]]
 name = "goat_234_manifold_pruner"
@@ -952,6 +1019,30 @@ path = "benches/latent_thought_flow_scorer_bench.rs"
 required-features = ["self_advantage_gate", "micro_belief"]
 harness = false
 
+# Issue 777 T1–T4 — Modality-ablation superposition measurement + GOAT gate
+# (Research 556 / FLYNN arXiv:2607.00025). Measures cos(Δ_full, Σ_m Δ_single)
+# AND the magnitude ratio (the load-bearing half — T1 showed the divisive
+# kernels false-pass cosine alone) on the shipped belief kernels + the
+# `modality_additive` variant, plus T3 argmax-stability / predictability and
+# the T4 gate table. std::time::Instant + harness=false convention.
+[[bench]]
+name = "modality_superposition_bench"
+path = "benches/modality_superposition_bench.rs"
+required-features = ["sense_composition", "micro_belief", "modality_additive"]
+harness = false
+
+# Issue 952 §B T3 — Belief dual state POC (PC-ALM dual accumulator on the
+# sense belief kernel; Research 554 / arXiv:2605.31022). Bench-local
+# prototype: λ ∈ [f32;8] integrates the (belief − slow-expectation)
+# residual; the dual's only footprint is a one-sided per-tick evidence
+# demotion feeding the SHIPPED accumulate+evolve_belief path; readout =
+# sigmoid(⟨λ, d⟩). α = 0 (and the arming phase) is bit-identical to the
+# incumbent by construction (G1 measures it). Consumer: riir-ai Issue 952 §B.
+[[bench]]
+name = "belief_dual_bench"
+path = "benches/belief_dual_bench.rs"
+required-features = ["sense_composition"]
+harness = false
 
 # Issue 001 — Orthogonal Procrustes GOAT benchmark.
 # G1: <=800 us at n=512, d=32. G2: <=5 ms at n=2048, d=64.
@@ -1166,6 +1257,17 @@ harness = false
 [[bench]]
 name = "bench_023_flashmemory_niah_semantic_needle"
 path = "benches/bench_023_flashmemory_niah_semantic_needle.rs"
+required-features = ["kimi_k3_loader", "flashmemory_sparse"]
+harness = false
+
+# Issue 826 T1+T2 — FlashMemory FULL-MODEL NIAH QA gate (needle-axis quality
+# measurement for the promotion gate; closes Bench 023's honest negative:
+# single-layer retrieval untestable). Dense (real forward) vs FlashMemory
+# sparse arms at 2048/16384/65536, single+multi-needle, σ e2e arms + T2
+# selection-axis sweep, parity gate at σ=0.0. harness=false.
+[[bench]]
+name = "bench_685_flashmemory_full_model_niah_qa"
+path = "benches/bench_685_flashmemory_full_model_niah_qa.rs"
 required-features = ["kimi_k3_loader", "flashmemory_sparse"]
 harness = false
 
@@ -2535,6 +2637,82 @@ name = "bench_284_clr_goat_g4"
 path = "tests/bench_284_clr_goat_g4.rs"
 required-features = ["clr"]
 
+# Bench 807 — CLR verifier calibration GOAT (riir-ai Issue 964 C1 — the first
+# sigmoid_calibration consumer; substrate katgpt-rs Issue 810). Gates:
+#   G1  miscalibrated-fixture ECE (planted transform, train/test split) —
+#       calibrated beats uncalibrated AND the base-rate floor on log-loss
+#       + Brier (Report-the-Floor rule);
+#   G1b no-harm on the already-calibrated Bench-284 G2 fixture;
+#   G3  cold-start bit-identity + pairwise monotonicity + vote-winner
+#       stability under a near-identity refit;
+#   G4  alloc-free observe/apply loop (debug-gated, the Issue-741 predicate).
+# Run: cargo test --features clr_calibration --test bench_807_clr_calibration_goat -- --nocapture
+[[test]]
+name = "bench_807_clr_calibration_goat"
+path = "tests/bench_807_clr_calibration_goat.rs"
+required-features = ["clr_calibration"]
+
+# Bench 839 (Issue 839 T4) — kron_tile GOAT G2: the Kronecker stage against the
+# dense 1024×1024 matvec it replaces (G2a, barred), against the WHT butterfly
+# (G2b, barred), and against the shipped ternary dense matvec (G2c, REPORTED —
+# the arms are 512× apart in parameters, so a bar would be a claim nobody made).
+# `plasma_path` is named explicitly although it is a default: G2c consumes
+# `simd_ternary_matvec`, which that flag gates in katgpt-types, and a row that
+# relies on another flag's default is the required-features drift shape
+# AGENTS.md records. Run with --release; the A/B arms use the interleaved
+# `tests/common/ab_timing.rs` harness.
+[[test]]
+name = "bench_839_kron_tile_goat"
+path = "tests/bench_839_kron_tile_goat.rs"
+required-features = ["kron_tile", "plasma_path"]
+
+# Bench 843 (Issue 843 T2) — does the plasma_path ternary dense matvec beat the
+# f32 one at ANY size? A size sweep m ∈ {256..4096}, because the 1024-point
+# finding (ternary 1.94× SLOWER than the multiply it removes) sits where the f32
+# operand still fits L3 — the one regime where the ternary footprint advantage
+# cannot pay. REPORT, not a gate: it asserts instrument health only, because the
+# quantity it measures is what T4 has to decide about a default-on flag.
+[[test]]
+name = "bench_843_ternary_size_sweep"
+path = "tests/bench_843_ternary_size_sweep.rs"
+required-features = ["plasma_path"]
+
+# .kpt archive POC (Issue 841 / Research 568 fusion 2, owner call 2026-09-19).
+# The example proves the concept end-to-end AND prints the perf envelope
+# (build / verify / atomic hot-swap latency at the served 768×3072 shape);
+# the sec test carries the bad-injection arms. Both ride the opt-in
+# kpt_archive passthrough — a POC, not a promotion candidate.
+[[example]]
+name = "kpt_archive_poc"
+path = "examples/kpt_archive_poc.rs"
+required-features = ["kpt_archive"]
+
+[[test]]
+name = "kpt_archive_sec_injection"
+path = "tests/kpt_archive_sec_injection.rs"
+required-features = ["kpt_archive"]
+
+# Bench 843 GOAT (Issue 843 T4, owner call gate D1) — the per-shape plasma
+# dispatch: f32 below the L3 boundary, ternary above. G1 bit-identity to the
+# selected kernel both sides of a FORCED boundary; G2 dispatch ≥1.5× faster
+# than pure ternary at 1024² (half the measured 2.16–2.26×, the house slack
+# convention) + ≤10% overhead vs pure dense.
+[[test]]
+name = "bench_843_plasma_dispatch_goat"
+path = "tests/bench_843_plasma_dispatch_goat.rs"
+required-features = ["plasma_path"]
+
+# Bench 844 (Issue 844) — at what dot LENGTH does delegating to the shipped
+# ISA-dispatched `simd_dot_f32` start paying? It has a fixed per-call cost, so
+# below ~24 elements a plain single-accumulator loop is faster and above it the
+# kernel wins by a widening margin. Settles whether this workspace's ~23 private
+# single-accumulator dots are a backlog (they are mostly not). No
+# required-features: `katgpt_core::simd` is an unconditional re-export of
+# katgpt-types' SIMD surface, so this target builds at default features.
+[[test]]
+name = "bench_844_dot_delegation_crossover"
+path = "tests/bench_844_dot_delegation_crossover.rs"
+
 # Plan 284 Phase 4 — CLR clr_vote_minimal performance benchmark (G3).
 # Uses std::time::Instant + harness = false (criterion is not a root-crate
 # dev-dep; see benches/bench_284_clr_perf.rs doc-comment for the deviation note).
@@ -2676,6 +2854,12 @@ required-features = ["fpcg_selector"]
 name = "fpcg_probe_forecast_bench"
 path = "benches/fpcg_probe_forecast_bench.rs"
 required-features = ["future_probe"]
+harness = false
+
+[[bench]]
+name = "plan598_refinement_marginal_bench"
+path = "benches/plan598_refinement_marginal_bench.rs"
+required-features = ["refinement_marginal"]
 harness = false
 
 # ── Plan 294: ICT Distributional Branching-Point Detector ───────────
@@ -3022,6 +3206,26 @@ name = "bench_291_d2f_3sr_warm_start_goat"
 required-features = ["d2f_3sr_warm_start"]
 
 [[test]]
+name = "bench_600_flashar_confidence_commit_goat"
+required-features = ["flashar_anchor"]
+
+[[test]]
+name = "bench_600_flashar_fill_alloc_gate"
+required-features = ["flashar_anchor"]
+
+[[test]]
+name = "bench_601_flashar_realtext_goat"
+required-features = ["flashar_anchor"]
+
+[[test]]
+name = "bench_809_set_causal_order_sweep"
+required-features = ["set_diffusion", "ignition_schedule"]
+
+[[test]]
+name = "bench_602_ar_ness_cross_tab"
+required-features = ["decode_order_metrics"]
+
+[[test]]
 name = "bench_committee_boost_goat"
 required-features = ["committee_boost"]
 
@@ -3263,3 +3467,152 @@ required-features = ["recfm", "spechop"]
 [[test]]
 name = "verify_tiktoken_fix"
 required-features = ["kimi_k3_loader"]
+
+# Issue 856 T4 — the `#[cfg(feature = …)] mod` whole-body spelling.
+# These twelve carry NO whole-file `#![cfg]`; their entire body is one or
+# more feature-gated modules, which zeroes the binary identically — same
+# empty binary, same `ok. 0 passed`, same exit 0. The `#![cfg]` protects
+# the COUNT and these files already have that; `required-features`
+# protects the READER, and that is what was missing. Seven are named
+# `*_goat`, i.e. invoking one by name and reading `ok. 0` was
+# indistinguishable, at the terminal, from having proved something.
+
+[[test]]
+name = "bench_181_dmoe_vocab_coreset_goat"
+required-features = ["vocab_coreset"]
+
+[[test]]
+name = "bench_sdpg_bandit_modelless"
+required-features = ["sdpg_bandit"]
+
+[[test]]
+name = "go_integration"
+required-features = ["go"]
+
+[[test]]
+name = "go_komi_test"
+required-features = ["go"]
+
+[[test]]
+name = "goat_090_tower_search"
+required-features = ["unit_distance"]
+
+[[test]]
+name = "interval_pruner"
+required-features = ["interval_pruner"]
+
+[[test]]
+name = "test_121_randopt_goat"
+required-features = ["randopt_weight"]
+
+[[test]]
+name = "test_122_toast_goat"
+required-features = ["toast_tokenizer"]
+
+[[test]]
+name = "test_124_event_log_goat"
+required-features = ["event_log"]
+
+[[test]]
+name = "test_127_convex_tok_goat"
+required-features = ["convex_tok"]
+
+[[test]]
+name = "test_129_opus_boltzmann_goat"
+required-features = ["opus_selection"]
+
+[[test]]
+name = "test_pgd_analytics"
+required-features = ["go"]
+
+[[bench]]
+name = "bench_841_legal_token_set_goat"
+path = "benches/bench_841_legal_token_set_goat.rs"
+required-features = ["legal_token_set"]
+harness = false
+
+# Issue 871 — strict IEEE ordered-reduction dot vs Rust 1.98 algebraic_*
+# reassociated dot: interleaved A/B (ab_timing) + ulp/argmax-flip retention.
+# Record bench, no feature gate, no perf bar — the issue carries the verdict.
+[[bench]]
+name = "bench_871_algebraic_dot_ab"
+path = "benches/bench_871_algebraic_dot_ab.rs"
+harness = false
+
+# Issue 859 T5 — the entropy-gated re-read policy arm (M3), measured on the
+# micro_dllm_text trained fixture: agreement bars (sample_label_index, N=4,
+# temperature 1 — the reference's protocol) vs single-read entropy/maxprob
+# as confidence proxies for argmax correctness. Measurement bench, not a
+# gate: the AUROC comparison is the research question (Bench 817).
+[[test]]
+name = "bench_817_structured_read_policy_arm"
+path = "tests/bench_817_structured_read_policy_arm.rs"
+required-features = ["structured_reads"]
+
+# Issue 865 T3 — the probe_guidance λ-sweep GOAT gate (the promotion
+# decider) + its G4 alloc gate. Both carry required-features so Cargo skips
+# them when the feature is off; the files' #![cfg] gates would otherwise
+# strip the tests and print a green `0 passed` (the Issue 808 class).
+[[test]]
+name = "probe_guidance_goat"
+path = "tests/probe_guidance_goat.rs"
+required-features = ["probe_guidance"]
+
+# Issue 865 T3 follow-up — the headroom-trunk STUDY (Bench 850): the same
+# methodology as the gate above (per-position resample entropy, zero-logit
+# null, temperature front) rerun on a 12-epoch trunk with headroom, with the
+# modelless DropoutHeadProbe as the weak side (the Bench-847-deferred arm
+# (b), unblocked tap-level). A study, not a gate — asserts structural
+# invariants only (λ=1 identity, null monotonicity); the verdict lives in
+# .benchmarks/850_probe_guidance_headroom_study.md.
+[[test]]
+name = "probe_guidance_headroom_study"
+path = "tests/probe_guidance_headroom_study.rs"
+required-features = ["probe_guidance"]
+
+[[test]]
+name = "probe_guidance_alloc_gate"
+path = "tests/probe_guidance_alloc_gate.rs"
+required-features = ["probe_guidance"]
+
+# ── Plan 607 — the modelless game-decision lane ────────────────────────
+# tetris_01_state_enum (T4a) is ungated (pure std + serde deps). The arena
+# (T4) consumes the opt-in state_option_scoring primitive, so it carries
+# required-features — without the row, auto-discovery would build it
+# feature-off and break `cargo check --all-targets` with E0432 (the
+# Issue-004 batch class).
+[[example]]
+name = "tetris_02_option_arena"
+required-features = ["state_option_scoring"]
+
+# T3's reading (Plan 607): the corpus-fitted head over the fixture's frozen
+# features — same feature gate, same required-features shape.
+[[example]]
+name = "tetris_03_head_fit"
+required-features = ["state_option_scoring"]
+
+# T5's micro-arenas (Plan 607): the 01 enumerators are ungated (pure std +
+# serde deps, tetris_01's shape); the 02 arenas consume the same opt-in
+# primitive, same required-features shape.
+[[example]]
+name = "flappy_01_state_enum"
+
+[[example]]
+name = "lanes_01_state_enum"
+
+[[example]]
+name = "flappy_02_arena"
+required-features = ["state_option_scoring"]
+
+[[example]]
+name = "lanes_02_arena"
+required-features = ["state_option_scoring"]
+
+# T2's losslessness arm (Plan 607): decodes the three fixtures' sentences
+# through the closed-grammar tables and re-fits the heads over the DECODED
+# features — the agreement delta vs the structured arm IS the reading.
+# Needs both primitives: decode (template_decode) + the fitted head
+# (state_option_scoring).
+[[example]]
+name = "decode_01_losslessness"
+required-features = ["state_option_scoring", "template_decode"]

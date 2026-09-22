@@ -72,6 +72,8 @@ jobs:
       # refuses a partial pass. The first five CI runs (34296642292…34314937986,
       # 2026-09-09) died on exactly that refusal. The lane rides the same channel
       # as the full gate it slices, keeping the two wasm32 verdicts comparable.
+      # toolchain-override-deliberate: rot-gate — same stable override as
+      # full_gate.yml, for the same documented reason.
       RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v6

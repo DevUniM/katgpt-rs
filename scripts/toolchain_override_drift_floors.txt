@@ -1,0 +1,152 @@
+# Pins for scripts/toolchain_override_drift_sweep.py — EVERY contract repo.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_files> <max_drift> <max_unresolved>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message. A pin that drifts behind reality is a pin
+# nobody trusts.
+#
+# ── max_drift is a WALL at 0, everywhere ─────────────────────────────────────
+# DRIFT is THE finding class: a literal override that differs from the repo
+# pin, unmarked. There is no measured-tolerated level of it — the wall is the
+# whole point of the class (riir-clippy mining-queue intake P14 (k), the
+# 1.95.0-vs-1.98.1 decay incident: a benchmark bout dies pre-measurement on
+# the wrong compiler, silently).
+#
+# ⛔ Do not "fix" a red by raising a ceiling. The repairs are, in order:
+# add the in-source marker (`# toolchain-override-deliberate: <reason>` on
+# the line or in the contiguous # comment run directly above) if the
+# override is deliberate, or change the value to match the pin if it is not.
+#
+# ⚠ LANDING RECORD, 2026-09-15: the sweep RED on katgpt-rs (2) and riir-ai
+# (1) at its first run was BY DESIGN — those rows were documented-deliberate
+# in PROSE (AGENTS.md, the rust-toolchain.toml header, workflow comments),
+# prose is not a marker, and the wall held until the in-source markers
+# landed. The expected file for this class stays deliberately EMPTY (see
+# toolchain_override_expected.txt) unless an occurrence can never carry an
+# in-source marker.
+#
+# ⛔ CORRECTED, same day (Issue 798). This block previously read "RESOLVED
+# the same day: all five markers are in" and quoted a green sweep. Only TWO
+# of the five existed — the katgpt-rs pair below. The three sibling markers
+# were edited into their worktrees, measured green, written up here, and
+# never committed anywhere; the sweep read `drift 1 · unresolved 1 · ✗
+# FAILED` for the whole interval. The quoted figures were a real measurement
+# of a state NO commit contained — Issue 797's class, reached by a PROSE
+# record rather than by a floor. Issue 797's worktree advisory (41ecdcbd)
+# postdates that write-up by hours and names exactly these three repos on
+# the repair run.
+#
+# THE RULE THIS ADOPTS: a cross-repo repair is not landed until it is
+# COMMITTED in the sibling repo, and a record here claiming one must CITE
+# THE SIBLING COMMIT. "the marker is in" is unverifiable and stood false for
+# six hours; a SHA is checkable with one `git -C ../<repo> cat-file -e`.
+#
+# Markers actually in, each cited (verified 2026-09-15):
+#   katgpt-rs      .github/workflows/full_gate.yml    rule (b)   cb03c8dc
+#   katgpt-rs      .github/workflows/wasm32_gate.yml  rule (b)   cb03c8dc
+#   riir-ai        scripts/g2_netem_docker.sh         rule (c)   194cdc9b5
+#   riir-game-sdk  scripts/t36_netem_partition_...sh  rule (c)   61f11e7
+#   riir-chain     .github/workflows/toolchain_drift.yml rule (b) 5f814a2
+# Rule (c) = the marker sits above the docker-run head, because a comment
+# line cannot live inside a backslash-continuation arg list. The two docker
+# overrides are deliberate rather than decayed: each script BAKES its own
+# image (riir-g2-netem:1.95 / riir-t36-netem:1.95, both FROM
+# rust:1.95.0-bookworm), so the value tracks the baked container, not the
+# workspace pin. Sweep after the four sibling commits, 16 repos on this box:
+# 0 DRIFT / 3 DELIBERATE / 0 UNRESOLVED / 1 UNRESOLVED-MARKED /
+# 1 NO-PIN-OVERRIDE / 10 UNPINNED-REPO — take the figure from a run, not
+# from this comment.
+#
+# ── max_unresolved is a COUNTED ceiling, pinned at its measured value ────────
+# A TOKEN value (${{ ... }}, ${VAR}, $VAR) cannot be evaluated statically.
+# It is never folded into clean; it gets its own ceiling with the reason.
+#
+# riir-chain = 0: .github/workflows/toolchain_drift.yml:117 reads
+#   ${{ matrix.channel }} — the file IS the deliberate pin-edge drift test
+#   (Issue 051 T2) and now carries the toolchain-override-deliberate marker,
+#   so it classifies UNRESOLVED-MARKED (not walled), and this ceiling is
+#   re-pinned to 0 in that same commit.
+#
+# ── never walled, deliberately ───────────────────────────────────────────────
+# DELIBERATE, UNRESOLVED-MARKED, NO-PIN-OVERRIDE and the repo-level
+# UNPINNED-REPO row are INFO: listed and counted by both halves, never a
+# ceiling. A marker is an in-source CLAIM of intent, not proof — walling it
+# would certify the claim rather than record it. NO-PIN-OVERRIDE means the
+# override IS the de facto authority (no pin file, or a pin file with no
+# channel): drift relative to WHAT is unanswerable. UNPINNED-REPO (root
+# Cargo.toml, no rust-toolchain.toml) is intake item (k)(ii) — the
+# version-sensitive-code-without-a-pin hazard, one row per repo.
+#
+# ── the walk floor ───────────────────────────────────────────────────────────
+# max_drift = 0 is green over whatever the walk can SEE, and the walk shells
+# out to `git ls-files` — a regression takes the population to 0 and every
+# ceiling passes, indistinguishable from a clean repo. min_files (~55-60% of
+# measured: SLACK against churn — consolidating scripts legitimately shrinks
+# the count, and a floor that ratcheted to the last measurement would red
+# that cleanup; TIGHT against blindness — a walk regression drops the count
+# by an order of magnitude, not by a third) catches that. The five repos at
+# min_files <= 3 have populations too small for slack to mean anything; their
+# floor is exact and still bites (it moves 0 when the walk goes blind ONLY if
+# the repo also loses every scannable file, which the shared population
+# verdict reports separately).
+#
+# The audit half reads THIS file too (same parser, one file, two consumers)
+# and refuses exit 2 on a walk below min_files — a blind walk is an
+# untrustworthy instrument, a different verdict from drift.
+#
+# ── landing measurement, 2026-09-15 (all 20 contract repos on this box) ─────
+# Per-repo (scannable tracked files = .sh/.yml/.yaml/.toml/.py + Dockerfile
+# paths · occurrences by verdict), for the next re-pin's slack arithmetic.
+# The audit's walked count cross-checks `git ls-files` exactly for
+# katgpt-rs (128 of 4371 tracked) — the walk is the tracked walk, verified.
+#
+#   katgpt-rs 128 (drift 2) · riir-train 125 · riir-ai 124 (drift 1,
+#   vendored 284) · riir-chain 60 (unresolved 1) · mmorpg-editor 52 ·
+#   riir-mmorpg-examples 46 · mmorpg-remaster 43 (vendored 3) ·
+#   riir-deployer 27 · riir-clippy 26 · mmorpg-remake 22 · riir-game-sdk 17
+#   (no-pin-override 1) · riir-shader 17 · riir-dapps 13 · riir-neuron-db 14 ·
+#   riir-viewbridge 11 · riir-dao 5 · riir-esp32 5 · riir-kat 5 ·
+#   riir-auth 4 · katgpt-web 4
+#
+#   totals: 748 scannable · 0 MATCH · 0 DELIBERATE · 3 DRIFT · 1 UNRESOLVED ·
+#   0 UNRESOLVED-MARKED · 1 NO-PIN-OVERRIDE · 13 UNPINNED-REPO
+#
+# Judgment call on record: the intake listed riir-game-sdk's t36 row as "same
+# shape" as riir-ai's g2 row, but riir-game-sdk carries NO rust-toolchain.toml
+# — there is no pin to drift from, so the row classifies NO-PIN-OVERRIDE (the
+# override is the de facto authority) plus the repo-level UNPINNED-REPO row.
+# The marker should still be added when it lands (it documents intent), but
+# the real repair in that repo is a pin file.
+#
+# ⚠ Read the list above as a MEASUREMENT RECORD, not as a second set of pins.
+# The floors below are the claim; these are what they were derived from,
+# dated so a later reader can tell a real shrink from a re-pin nobody
+# justified.
+#
+#                        min_files  max_drift  max_unresolved
+katgpt-rs                       75          0               0
+katgpt-web                       2          0               0
+riir-ai                         70          0               0
+riir-auth                        2          0               0
+riir-chain                      35          0               0
+riir-clippy                     15          0               0
+riir-dao                         3          0               0
+riir-dapps                       8          0               0
+riir-deployer                   16          0               0
+riir-esp32                       3          0               0
+riir-game-sdk                   10          0               0
+riir-kat                         3          0               0
+riir-llm                         1          0               0  # observed 2026-09-18: joined the workspace 2026-09-18; 1 scanned file, no override
+riir-mmorpg-examples            27          0               0
+riir-neuron-db                   8          0               0
+riir-shader                     10          0               0
+riir-train                      72          0               0
+riir-viewbridge                  6          0               0
+mmorpg-editor                30          0               0
+mmorpg-remaster            25          0               0
+mmorpg-remake                     13          0               0
+riir-reflex                        3          0               0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-infer                         2          0               0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired)

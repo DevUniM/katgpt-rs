@@ -525,7 +525,7 @@ pub mod cluster_head;
 pub use forward::forward_coda;
 pub use cluster_head::{
     ClusterCost, ClusterHeadView, ClusterScratch, ClusterStop, PackedHeadView,
-    clustered_lm_head_bounded, clustered_lm_head_packed,
+    clustered_lm_head_bounded, clustered_lm_head_packed, restricted_lm_head,
 };
 pub use forward::{
     CPU_FORWARD_USES_DEVICE_BASE_PATH, ClusterInit, ClusterLayout, LayoutRefusal, TiedPolicy,
@@ -660,6 +660,18 @@ pub use d2f_context::{
     D2fContext, attention_forward_safe_into, denoising_accuracy, forward_block_causal_with,
 };
 
+// Trained weak-side probe consumption (Issue 865 T2): `MlpWeakProbe` wraps a
+// BLAKE3-committed `ProbeArtifact` (katgpt-speculative `probe_artifact` — the
+// LatentDynamicsMLP connector + shared trunk lm_head + tap metadata, trained
+// by the riir-train nextlat_* lane pattern) and implements the `WeakLogitProbe`
+// seam above. Gated `probe_guidance` — the seam it implements lives in the
+// same feature, and the feature forwards to katgpt-speculative/probe_artifact
+// so the artifact module always compiles alongside its consumer.
+#[cfg(feature = "probe_guidance")]
+pub mod weak_probe_mlp;
+#[cfg(feature = "probe_guidance")]
+pub use weak_probe_mlp::MlpWeakProbe;
+
 // ── Plan 399 (2026-07-05): D2F wrapper cluster ──
 // `d2f.rs`, `d2f_verifier.rs`, `diffusion_sampler.rs` moved from root
 // `src/speculative/`. Root's copies are now thin re-export shims. The 8
@@ -681,8 +693,22 @@ pub use d2f_verifier::{D2fDrafterVerifier, DraftAcceptPolicy};
 pub mod diffusion_sampler;
 #[cfg(all(feature = "dllm", feature = "tri_mode"))]
 pub use diffusion_sampler::{
-    DiffusionSampler, SamplerDecision, SamplerFeatures, SamplerTrajectory, SamplerVariant,
-    collect_trajectories,
+    DiffusionSampler, N_STABILITY_FEATURES, SamplerDecision, SamplerFeatures, SamplerTrajectory,
+    SamplerVariant, StabilityTracker, TOPK_DRIFT_K, collect_trajectories,
+};
+
+// ── Issue 859 (2026-09-20): Jev structured reads ──
+// Read-only seeded-canvas decision primitive (Research 574 §5): seed → ONE
+// denoise step → per-free-slot {argmax, exact full-marginal label logprobs,
+// subset-normalized entropy} → return, no commit forward. Composes the
+// `dllm`-gated forward_positions substrate; zero new substrate elsewhere.
+// Opt-in POC — promotion rides Issue 859's GOAT gate.
+#[cfg(all(feature = "dllm", feature = "structured_reads"))]
+pub mod structured_read;
+#[cfg(all(feature = "dllm", feature = "structured_reads"))]
+pub use structured_read::{
+    MAX_LABELS, SlotReadout, StructuredReadError, StructuredReadScratch, sample_label_index,
+    structured_read, structured_read_into,
 };
 
 // ── Plan 400 (2026-07-05): FlashAR cluster ──
@@ -700,7 +726,11 @@ pub use diffusion_sampler::{
 #[cfg(all(feature = "dllm", feature = "flashar_anchor"))]
 pub mod flashar_anchor;
 #[cfg(all(feature = "dllm", feature = "flashar_anchor"))]
-pub use flashar_anchor::{AnchorConfig, AnchorFillResult, anchor_then_fill};
+pub use flashar_anchor::{
+    AnchorConfig, AnchorFillResult, ConfidenceAnchorConfig, anchor_fill_with_prefilled,
+    anchor_then_fill, anchor_then_fill_with, dbtm_floor, select_confidence_anchors,
+    select_confidence_anchors_into,
+};
 
 #[cfg(all(feature = "dllm", feature = "flashar_consensus"))]
 pub mod flashar_consensus;

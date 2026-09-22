@@ -569,8 +569,16 @@ fn gradient_check_multitoken_all_params() {
     let tol = 2.5e-2f32;
     // Skip entries whose total gradient magnitude is noise-dominated (near-
     // cancellation across 8 tokens). These have finite-diff noise that swamps
-    // the true value regardless of ε.
-    let magnitude_floor = 5e-4f32;
+    // the true value regardless of ε. The floor must satisfy
+    // floor × tol > max FD noise, else an entry just above the floor can
+    // exceed tol on noise alone: first x86_64 execution (issue 806, 4090 box,
+    // 2026-09-16) measured 2.8e-5 absolute noise on f_b_proj[127] (~7.5e-4
+    // magnitude, rel_err 3.6% > tol) against the old 5e-4 floor — consistent
+    // with the f32 FD bound ≈ f32::EPSILON·|loss|/ε ≈ 2.9e-5 at ε = 1e-2, so
+    // the constant was M3-noise-tuned, not a derivation defect (the L=1 check
+    // + the exact token-vs-sequence identity both pass on x86_64). 2e-3 gives
+    // budget 2e-3 × 2.5e-2 = 5e-5, a 1.8× margin over the measured noise.
+    let magnitude_floor = 2e-3f32;
 
     let weights = KdaWeights::random(&config, 4242);
     let h_seq: Vec<Vec<f32>> = (0..l)

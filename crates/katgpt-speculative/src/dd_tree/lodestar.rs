@@ -114,20 +114,18 @@ pub fn build_dd_tree_lodestar(
 
     // Seed root children (depth 0, empty parent). After placing a token at depth
     // 0, remaining slots = seq_len - 1.
-    for (i, &prob) in marginals[0].iter().enumerate() {
-        if prob > 0.0 && horizon.is_valid(0, i, &[]) {
-            let d = horizon.min_completion_distance(0, i, &[]);
-            if d != u32::MAX && (d as usize) < seq_len {
-                let score = prob.ln();
-                heap.push(TreeNode {
-                    score: a_star_score(score, lambda, d),
-                    depth: 0,
-                    token_idx: i,
-                    parent_path: TreePath::root(i as u32),
-                });
-            }
+    for_each_candidate(horizon, 0, &[], marginals[0], |i, prob| {
+        let d = horizon.min_completion_distance(0, i, &[]);
+        if d != u32::MAX && (d as usize) < seq_len {
+            let score = prob.ln();
+            heap.push(TreeNode {
+                score: a_star_score(score, lambda, d),
+                depth: 0,
+                token_idx: i,
+                parent_path: TreePath::root(i as u32),
+            });
         }
-    }
+    });
 
     // Best-first expansion with budget mask + optional jump-ahead + A*.
     while tree.len() < config.tree_budget {
@@ -224,22 +222,20 @@ pub fn build_dd_tree_lodestar(
                     log_m.push(if p > 0.0 { p.ln() } else { 0.0 });
                 }
             }
-            for (i, &prob) in marginal.iter().enumerate() {
-                // NEURO-SYMBOLIC INTERCEPT + LODESTAR BUDGET MASK
-                if prob > 0.0 && horizon.is_valid(start_depth, i, parent_tokens) {
-                    let d = horizon.min_completion_distance(start_depth, i, parent_tokens);
-                    if d != u32::MAX && (d as usize) <= remaining_after {
-                        // `log_m[i]` == `prob.ln()` here (guard is `prob > 0.0`).
-                        let score = best.score + log_m[i];
-                        heap.push(TreeNode {
-                            score: a_star_score(score, lambda, d),
-                            depth: start_depth,
-                            token_idx: i,
-                            parent_path: best.parent_path.push(i as u32, start_depth),
-                        });
-                    }
+            // NEURO-SYMBOLIC INTERCEPT + LODESTAR BUDGET MASK
+            for_each_candidate(horizon, start_depth, parent_tokens, marginal, |i, _prob| {
+                let d = horizon.min_completion_distance(start_depth, i, parent_tokens);
+                if d != u32::MAX && (d as usize) <= remaining_after {
+                    // `log_m[i]` == `prob.ln()` here (the guard is `prob > 0.0`).
+                    let score = best.score + log_m[i];
+                    heap.push(TreeNode {
+                        score: a_star_score(score, lambda, d),
+                        depth: start_depth,
+                        token_idx: i,
+                        parent_path: best.parent_path.push(i as u32, start_depth),
+                    });
                 }
-            }
+            });
         }
     }
 
@@ -262,6 +258,72 @@ fn a_star_score(score: f32, lambda: f32, d: u32) -> f32 {
     }
 }
 
+/// Visit every `(token, prob)` this position could expand into.
+///
+/// Two implementations of one question. The fallback asks the horizon about
+/// each of the `vocab_size` tokens in turn — and `is_valid` re-walks the
+/// prefix inside every one of those calls, so a heap pop costs
+/// O(vocab × prefix). The fast path asks the horizon to NAME its legal set
+/// instead, which a structural pruner can do in O(deg) from its own state.
+///
+/// **Bit-identical, not merely equivalent.** Both visit ascending token ids —
+/// the scan by construction, the enumeration by the
+/// [`ConstraintPruner::for_each_legal`] contract — so the heap receives the
+/// same pushes in the same order, and `f32` scores accumulate the same way.
+/// The `prob > 0.0` guard and the `marginal` bound stay on BOTH paths: the
+/// legal set is a property of the grammar and says nothing about this
+/// position's marginal, which may be shorter than the automaton's alphabet.
+///
+/// [`ConstraintPruner::for_each_legal`]: katgpt_core::traits::ConstraintPruner::for_each_legal
+#[cfg(all(feature = "lodestar", feature = "legal_token_set"))]
+#[inline]
+fn for_each_candidate<F: FnMut(usize, f32)>(
+    horizon: &dyn CompletionHorizon,
+    depth: usize,
+    parent_tokens: &[usize],
+    marginal: &[f32],
+    mut f: F,
+) {
+    let Some(degree) = horizon.legal_degree(depth, parent_tokens) else {
+        for (i, &prob) in marginal.iter().enumerate() {
+            if prob > 0.0 && horizon.is_valid(depth, i, parent_tokens) {
+                f(i, prob);
+            }
+        }
+        return;
+    };
+    let mut yielded = 0usize;
+    horizon.for_each_legal(depth, parent_tokens, &mut |i| {
+        yielded += 1;
+        if let Some(&prob) = marginal.get(i)
+            && prob > 0.0
+        {
+            f(i, prob);
+        }
+    });
+    debug_assert_eq!(
+        yielded, degree,
+        "ConstraintPruner contract: legal_degree said {degree}, for_each_legal yielded {yielded}"
+    );
+}
+
+/// The scan, when the legal-set seam is not compiled in.
+#[cfg(all(feature = "lodestar", not(feature = "legal_token_set")))]
+#[inline]
+fn for_each_candidate<F: FnMut(usize, f32)>(
+    horizon: &dyn CompletionHorizon,
+    depth: usize,
+    parent_tokens: &[usize],
+    marginal: &[f32],
+    mut f: F,
+) {
+    for (i, &prob) in marginal.iter().enumerate() {
+        if prob > 0.0 && horizon.is_valid(depth, i, parent_tokens) {
+            f(i, prob);
+        }
+    }
+}
+
 /// Find the single forced token at `depth` given `parent_tokens`.
 /// Returns `Some((token_idx, prob))` if there is exactly one valid token
 /// that passes both the validity and budget checks; `None` otherwise.
@@ -275,17 +337,22 @@ fn find_forced_token(
 ) -> Option<(usize, f32)> {
     let marginal = marginals.get(depth)?;
     let mut found: Option<(usize, f32)> = None;
-    for (i, &prob) in marginal.iter().enumerate() {
-        if prob > 0.0 && horizon.is_valid(depth, i, parent_tokens) {
-            let d = horizon.min_completion_distance(depth, i, parent_tokens);
-            if d != u32::MAX && (d as usize) <= budget_remaining {
-                if found.is_some() {
-                    // More than one valid token — not forced.
-                    return None;
-                }
-                found = Some((i, prob));
+    let mut branched = false;
+    for_each_candidate(horizon, depth, parent_tokens, marginal, |i, prob| {
+        if branched {
+            return;
+        }
+        let d = horizon.min_completion_distance(depth, i, parent_tokens);
+        if d != u32::MAX && (d as usize) <= budget_remaining {
+            match found {
+                // More than one valid token — not forced.
+                Some(_) => branched = true,
+                None => found = Some((i, prob)),
             }
         }
+    });
+    match branched {
+        true => None,
+        false => found,
     }
-    found
 }

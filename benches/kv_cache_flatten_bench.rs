@@ -389,7 +389,6 @@ fn main() {
 
             let config = ShardConfig {
                 avg_bits_k: 4.0,
-                avg_bits_v: 2.0,
                 min_tail_bits: 1,
                 max_bits: 8,
                 n_layers,

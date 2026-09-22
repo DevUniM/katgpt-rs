@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn writer_writes_and_counts_samples() {
-        let dir = std::env::temp_dir().join("bomber_replay_test");
+        let dir = std::env::temp_dir().join(format!("bomber_replay_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test_replay.bin");
 

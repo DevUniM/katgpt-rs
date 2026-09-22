@@ -69,7 +69,13 @@ pub trait ClaimExtractor<T> {
 ///
 /// Returns `sigmoid(dot(claim.embedding, direction_vec[direction_idx]))`.
 /// `direction_idx` must be in `[0, M)`. The scalar output is bounded in
-/// `(0, 1)` and is the atomic unit of reliability aggregation.
+/// `(0, 1)` and is the atomic unit of reliability aggregation — and, with
+/// the `clr_calibration` feature, it can be made CALIBRATED against
+/// recorded outcomes by wrapping any implementor in
+/// [`crate::clr::calibration::CalibratedVerifier`] (Bench 807: a drifted
+/// verifier's ECE 0.0924 → 0.0164; an already-calibrated one undisturbed).
+/// Boundedness says the output lives in `(0,1)`; calibration is what makes
+/// a 0.8 mean "~80% of such claims come true".
 ///
 /// # Zero-alloc hot path
 ///

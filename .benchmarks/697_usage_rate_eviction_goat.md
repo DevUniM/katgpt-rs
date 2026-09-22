@@ -4,8 +4,8 @@
 wins its designed regime decisively (2× raw-H2O recall at cap=32, 100% at cap≥48,
 R_median 1.0 vs 8.0) and LOSES at the extreme-pressure point (cap=16, 8% budget,
 11× turnover). **Stays opt-in** (`usage_rate_eviction = []`): no runtime consumer
-(riir-ai Issue 836 is pull-gated on this GOAT), and the G8 sweep records one
-genuine regime miss. Per the plan's own rule the miss does not demote the
+(riir-ai Issue 836 is pull-gated on this GOAT), and the G8 sweep records TWO
+genuine regime misses — see § Correction (2026-09-18). Per the plan's own rule the miss does not demote the
 primitive — it bounds the claim: mass/age is the right statistic when the budget
 covers ≥ ~2× the churn horizon; at extreme pressure lifetime-mass luck dominates.
 
@@ -184,7 +184,49 @@ decision (riir-ai Issue 836).
 | G2 update latency | **1.22 ns/row** (budget 10) PASS |
 | G3 default-features no-regression (module fully gated) | PASS (`cargo check -p katgpt-core` clean; `kv_eviction` invisible) |
 | G4 zero steady-state allocs (TrackingAllocator, test-pinned) | **PASS — after the gate caught 1 alloc/step** (see §History) |
-| G8 mass/age family ≥ raw_h2o at every cap | **MIXED** — PASS at 32/48/64, FAIL at 16 |
+| G8 (`mass_age` + `mass_age_sink` + `ega_x_usage`) ≥ raw_h2o at every cap | **MIXED** — 3 deterministic misses: `mass_age` 0 vs 24 and `mass_age_sink` 0 vs 24 at cap 16; `ega_x_usage` 92 vs 93 at cap 32 |
+
+## Correction (2026-09-18) — this doc under-reported its own gate's output
+
+⛔ **The G8 row above read *"MIXED — PASS at 32/48/64, FAIL at 16"* and the
+status line read *"one genuine regime miss"*. The instrument has been printing
+THREE misses, deterministically, on every run since it was written** — verified
+twice on a quiet box, byte-identical both times:
+
+```
+G8 MISS: mass_age (0) < raw_h2o (24) at cap 16
+G8 MISS: mass_age_sink (0) < raw_h2o (24) at cap 16
+G8 MISS: ega_x_usage (92) < raw_h2o (93) at cap 32
+```
+
+The first two are one regime boundary stated for two arms, which is what the
+old row described. The third is neither: a **different arm at a different cap**,
+inside the PASS range the doc claimed. It is one document out of 93 — small,
+and the point is that a doc recorded a PASS over a printed FAIL for sixteen
+days, not that the margin is large.
+
+**Cause: the gate's LABEL was narrower than its POPULATION.** The code has
+always gated `[MassAge, MassAgeSink, EgaUsage]`; the printed line and the
+module header both said *"mass/age"*, and `ega_x_usage` is an EGA×usage hybrid,
+not mass/age. Whoever transcribed the gate row read the label.
+
+**Repaired by moving the LABEL, not the population.** Narrowing G8 to the two
+mass/age arms would have made every sentence here true and is exactly the
+tuning-away the gate's own comment forbids — the hybrid consumes the primitive
+under gate, so its regime is part of the claim. The bench now prints
+`G8 GATE (mass_age + mass_age_sink + ega_x_usage >= raw_h2o at every cap)`.
+
+⚠ **What this does NOT change:** the promotion decision. The primitive was
+already opt-in with no runtime consumer, and a third miss inside the winning
+range makes the regime bound tighter, not the verdict different. The headline
+2–4× recall win at cap ≥ 32 is `mass_age` / `mass_age_sink` and is untouched.
+
+⚠ **Latency, with its box:** re-measured 1.23 and 1.20 ns/row on shikuwa
+(i7-13700K, quiet), against the 1.22 recorded below on the 4090 box. A third
+reading taken immediately after a cargo build on the same box read **2.15** —
+same code, same binary, 75% higher, and under the 10 ns budget either way.
+Cite a latency number with the box state it was taken under or it is not
+reproducible (AGENTS.md § Feature Flag Discipline).
 
 ## GOAT verdict
 

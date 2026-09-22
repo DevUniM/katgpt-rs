@@ -34,9 +34,11 @@ BACKUP_DIR="$(mktemp -d)"
 # PRESERVE the status), a `set -u` abort (or an `eval` syntax error) enters the
 # EXIT trap with `$?` ALREADY 0, so a handler whose last command succeeds makes
 # the abort exit **0** — this script would restore every file and then report
-# "all perturbations caught" by silence, having run none of them. Since this
-# script is only ever run by hand, on a Mac, 3.2 is the interpreter that
-# matters for it. Saving and re-exiting `$?` does not help; the saved value is
+# "all perturbations caught" by silence, having run none of them. CI runs
+# this on ubuntu-latest (bash 5.x, launder-immune — katgpt-rs Issue 748
+# option (a)); the macOS hand-run remains the day-to-day lane because CI is
+# main-only, and 3.2 is the interpreter there. Saving and re-exiting `$?`
+# does not help; the saved value is
 # itself 0. Only "did the script reach its own last line?" catches it — and
 # that catches every other premature death, on every shell.
 NEG_COMPLETED=0

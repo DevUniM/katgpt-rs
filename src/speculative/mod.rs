@@ -5,6 +5,13 @@ pub use katgpt_speculative::budget_compat;
 pub use katgpt_speculative::belief_cache;
 #[cfg(feature = "belief_drafter")]
 pub use katgpt_speculative::belief_drafter;
+// Weak-side probe artifact (Issue 865 T2): the BLAKE3-committed freeze/thaw
+// wire the riir-train training lane writes and the probe_guidance consumer
+// loads. Re-exported so downstream trainers reach it through the root crate
+// (katgpt_rs::speculative::probe_artifact) without a new direct dep —
+// probe_guidance transitively compiles speculative/probe_artifact.
+#[cfg(feature = "probe_guidance")]
+pub use katgpt_speculative::probe_artifact;
 
 pub mod dd_tree;
 #[cfg(feature = "dendritic_gate")]
@@ -265,8 +272,8 @@ pub use d2f_verifier::{D2fDrafterVerifier, DraftAcceptPolicy};
 pub use d2f::{d2f_decode_block_with_prompt_with_sampler, d2f_decode_block_with_sampler};
 #[cfg(feature = "tri_mode")]
 pub use diffusion_sampler::{
-    DiffusionSampler, SamplerDecision, SamplerFeatures, SamplerTrajectory, SamplerVariant,
-    collect_trajectories, train_logistic_on_patterns,
+    DiffusionSampler, N_STABILITY_FEATURES, SamplerDecision, SamplerFeatures, SamplerTrajectory,
+    SamplerVariant, StabilityTracker, TOPK_DRIFT_K, collect_trajectories, train_logistic_on_patterns,
 };
 
 #[cfg(feature = "sudoku")]

@@ -235,6 +235,20 @@ gdsd_distill = ["katgpt-pruners/gdsd_distill"]
 # `pub mod d2f_context` declaration + re-exports in lib.rs.
 dllm = []
 
+# Jev structured reads (Issue 859 / Research 574): the read-only seeded-canvas
+# decision primitive — seed (mask-token placement) → one denoise step →
+# per-free-slot {argmax, exact full-marginal label logprobs, subset-normalized
+# entropy} → return, never committing. Composes only `dllm`-gated substrate
+# (forward_bidirectional_positions_into); opt-in POC — promotion rides
+# Issue 859's GOAT gate, not default.
+structured_reads = ["dllm"]
+
+# Forwards katgpt-core's alloc_tracking (Issue 741): compiles the `alloc`
+# module in RELEASE so the structured_reads G4 gate runs against optimised
+# code — `debug_assertions` alone compiles the gate to an empty binary in
+# the profile gates are meant to be read in.
+alloc_tracking = ["katgpt-core/alloc_tracking"]
+
 # RCD (Residual-Conditioned Diffusion) injection fields in `D2fContext`.
 # Forwards to katgpt-core so the gated struct fields + reset impl resolve.
 # Plan 402 (2026-07-06): also gates `BidirectionalContext.rcd_residual_embeddings` /
@@ -272,9 +286,10 @@ d2f_3sr_warm_start = ["rcd_residual", "katgpt-core/d2f_3sr_warm_start"]
 
 # Tri-Mode inference — AR + Diffusion + Self-Speculation (Plan 089).
 # Gates `pub mod d2f_verifier` + `pub mod diffusion_sampler` + the tri_mode-
-# gated soft-decode variants in `d2f.rs`. Empty tracking flag — the gate
-# only controls module registration + a handful of cfg blocks.
-tri_mode = []
+# gated soft-decode variants in `d2f.rs`. Implies katgpt-core/jsd_topk since
+# Issue 802 item 3: the sampler's StabilityTracker measures inter-step
+# top-K drift through the kernel's sets-form (jsd_topk_sets).
+tri_mode = ["katgpt-core/jsd_topk"]
 
 # DMax Soft Parallel Decode — hybrid embedding D2F enhancement (Plan 109).
 # Gates ~10 functions in `d2f.rs`: SoftDecodeConfig, HybridEmbedding,
@@ -307,7 +322,11 @@ flashar_anchor = []
 # the import always resolve for direct consumers too.
 flashar_consensus = ["tri_mode"]
 
-# Bit-plane ternary SIMD matvec — multiplication-free CPU inference (Plan 148).
+# Bit-plane ternary SIMD matvec — CPU inference with a 21× smaller weight
+# footprint (Plan 148). ⚠ MEASURED (Issue 843, 2026-09-19): 1.9–3.0× slower
+# than the f32 matvec at every served shape (L3-resident operands); the
+# footprint is the win. T4 owner call: per-shape dispatch
+# (katgpt-types::simd::plasma_dispatch) for dual-representation callers.
 # Plan 400: forwarded to katgpt-forward so the moved flashar_consensus.rs's
 # `#[cfg(feature = "plasma_path")]` block (which uses
 # `katgpt_core::{TernaryWeights, simd_ternary_matvec}`) compiles when the root
@@ -327,6 +346,29 @@ binary_plasma = ["katgpt-core/binary_plasma"]
 # `rmsnorm`, `katgpt_core::simd::*`) resolve through existing deps.
 set_diffusion = []
 
+# Decode-order π-logging (Plan 602 T1.3, 2026-09-20): the D2F block-decode
+# core and the SW-SetDLM decode loop emit per-position unmask steps
+# (trajectory π) for the AR-ness instruments — `d2f_decode_block_with_unmask_steps`
+# + `SetDiffusionResult::unmask_steps`. Forwards the pure-metrics module
+# (`katgpt_core::dllm`) so the emitters + consumers share one sentinel.
+# OPT-IN pending the Phase-3 G3 GOAT.
+decode_order_metrics = ["katgpt-core/decode_order_metrics"]
+
+# Probe guidance (Issue 865 T1): weak-side probe seam + affine autoguidance
+# combine on the D2F decode path — `logits' = λ·logits + (1−λ)·probe_logits`
+# after the multistep blend, before sampling. Gates the `WeakLogitProbe`
+# trait + `ProbeCtx`, `D2fContext::{set_guidance, clear_guidance,
+# probe_logits_flat, guidance_lambda, weak_probe}`, `apply_probe_guidance`,
+# and `D2fPipeline::set_guidance`. λ = 1.0 (default) is bit-identical to
+# unguided decode (G1: the combine is skipped, the probe never invoked).
+# Issue 865 T2: also gates `weak_probe_mlp::MlpWeakProbe` (the trained
+# artifact consumer) and forwards to katgpt-speculative/probe_artifact — the
+# BLAKE3-committed freeze/thaw wire the riir-train nextlat_* lane trains.
+# OPT-IN until the T3 λ-sweep GOAT gate passes.
+# Implies `dllm` — the combine lives inside the dllm-gated d2f module, so a
+# probe_guidance build without dllm would compile the feature to nothing.
+probe_guidance = ["dllm", "katgpt-speculative/probe_artifact"]
+
 # Weaver inference-only logit corrector (Issue 131, Plan 433). Gates the
 # `dflash_predict_with_weaver` wrapper that combines DFlash predict + Weaver
 # marginal correction in a single call. Forwards to katgpt-speculative so the
@@ -334,3 +376,19 @@ set_diffusion = []
 # requires a trained checkpoint to produce non-trivial gain; zero weights are a
 # safe no-op.
 weaver_runtime = ["katgpt-speculative/weaver_runtime"]
+
+# Issue 859 (Research 574) — Jev structured reads GOAT gates.
+# G4 alloc-free hot path: structured_read_into must allocate nothing after
+# scratch construction (canary-armed counting allocator, the bench_811
+# convention). Run in release with alloc_tracking for the honest reading:
+# `cargo test --release -p katgpt-forward --features structured_reads,alloc_tracking --test structured_read_alloc_check`.
+[[test]]
+name = "structured_read_alloc_check"
+required-features = ["structured_reads"]
+
+# G2 latency (read-only read vs the full denoise loop, Issue-723 interleaved
+# pairs) + the three-competitor informational arm (read vs full-loop-then-
+# parse agreement). Release for latency, per the module doc.
+[[test]]
+name = "structured_read_goat"
+required-features = ["structured_reads"]

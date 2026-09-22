@@ -499,10 +499,7 @@ mod tests {
                 is_erasure: false,
             })
             .collect();
-        let config = HydraBudgetConfig {
-            cumulative_threshold: 0.95,
-            ..Default::default()
-        };
+        let config = HydraBudgetConfig::default();
         let plan = hydra_layer_skip(&profiles, &config);
         let result = hydra_adaptive_budget(&plan, 10);
 

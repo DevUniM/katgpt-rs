@@ -21,7 +21,7 @@ that all need this:
 |--------|-----------------|----------------|
 | Native app | `riir-chaind` binary | CPU SIMD + ANE + wasmi host |
 | Browser | `riir-chaind chain_node_browser` | WASM SIMD ternary + WebGPU |
-| CF Worker | `seal-edge-worker` (`worker` crate) | WASM SIMD ternary |
+| CF Worker | `mmorpg-edge-worker` (`worker` crate) | WASM SIMD ternary |
 
 A `cargo check --target wasm32-unknown-unknown` on `katgpt-core` and
 `katgpt-rs --features secure_vessel` was failing, blocking all three non-native
@@ -66,7 +66,7 @@ All gates run on 2026-06-24, M3 Max, develop branch:
 | G7 — katgpt-core lib tests | `cargo test -p katgpt-core --lib` | ✅ 509 passed; 0 failed |
 | G8 — downstream riir-chain | `cargo check -p riir-chain --no-default-features` | ✅ Finished |
 | G9 — downstream riir-neuron-db | `cargo check -p riir-neuron-db --no-default-features` | ✅ Finished |
-| G10 — seal-edge-worker wasm32 | `cargo check -p seal-edge-worker --target wasm32-unknown-unknown` | ✅ Finished |
+| G10 — mmorpg-edge-worker wasm32 | `cargo check -p mmorpg-edge-worker --target wasm32-unknown-unknown` | ✅ Finished |
 
 ## Conceptual Clarifications (recorded to prevent re-confusion)
 
@@ -98,21 +98,21 @@ the Vessel *projection* path (Model B) needed the getrandom + bytemuck fixes.
 
 - `cf_workers = ["browser_gpu"]` in doc 56 is **aspirational** — grep of
   `riir-chain/Cargo.toml` returns zero matches. The real CF target today is
-  `seal-edge-worker` (uses Cloudflare's `worker` crate + D1/R2/Durable Objects),
+  `mmorpg-edge-worker` (uses Cloudflare's `worker` crate + D1/R2/Durable Objects),
   which builds clean to wasm32 but does **not yet depend on katgpt-core/riir-chain**.
-- The moment `katgpt-core` is wired into `seal-edge-worker`, it inherits the
+- The moment `katgpt-core` is wired into `mmorpg-edge-worker`, it inherits the
   fixes from this plan (the wasm32 build stays green).
 - **Update (2026-07-25):** Doc 56's viability claims got their first real
-  measurement, from a sibling project, not from `seal-edge-worker` itself.
+  measurement, from a sibling project, not from `mmorpg-edge-worker` itself.
   riir-mmorpg-examples Issue 030 deployed real Cloudflare Durable Object
   Alarms, WebSocket-message-driven catch-up, and Cloudflare Containers to
   test whether a 20Hz/50ms game tick holds up on each — Alarms and
   WS-catchup both measured unreliable (p99 drift up to 617ms; ~48% of
   ticks late respectively), a properly-sized Container held p99 within ~1%
-  of target. This is directly relevant here because `seal-edge-worker`'s
+  of target. This is directly relevant here because `mmorpg-edge-worker`'s
   own `Zone DO` tick (per `riir-ai/.docs/01_orientation/architecture.md`
   §22) is documented as Alarm-driven at the same 50ms/20Hz rate — **not
-  re-verified against `seal-edge-worker` itself in that session** (the repo
+  re-verified against `mmorpg-edge-worker` itself in that session** (the repo
   isn't checked out in that environment). Tracked as
   `riir-ai Issue 566`
   (open, blocked on someone checking the real deployment) so this doesn't
@@ -140,7 +140,7 @@ the Vessel *projection* path (Model B) needed the getrandom + bytemuck fixes.
   `cargo check --target wasm32-unknown-unknown --features chain_node_browser`
   works out of the box. Verified: builds clean (1 pre-existing dead-code warning,
   0 errors). All three targets now compile: native ✅ browser ✅ CF Worker ✅.
-- `seal-online-remaster/crates/seal-edge-worker/src/runtime/wasm_compat.rs:213` has a `0xCA` filler standing
+- `mmorpg-remaster/crates/mmorpg-edge-worker/src/runtime/wasm_compat.rs:213` has a `0xCA` filler standing
   in for `web_sys::crypto().getRandomValues()` (`TODO(F-140)`). Any crypto path
   routing through this on CF uses non-random randomness. Audit before production.
 - WASM SIMD128 coverage gap: only `simd_ternary_matvec` has a real wasm32 SIMD128
@@ -162,7 +162,7 @@ modelless freeze/thaw stack: (1) `argmax.rs` missing import, (2) getrandom `wasm
 `extern_crate_alloc` for `pod_collect_to_vec`. Verified: `katgpt-core`,
 `secure_vessel`, `bomber-wasm`, and `plasma_path +simd128` all compile to
 `wasm32-unknown-unknown`; native + 509 lib tests pass; downstream riir-chain /
-riir-neuron-db / seal-edge-worker unaffected.
+riir-neuron-db / mmorpg-edge-worker unaffected.
 
 **Follow-up (2026-06-24):** the "browser target web-sys gap" listed above as a
 known issue was a misdiagnosis — the cargo features were already correct. The

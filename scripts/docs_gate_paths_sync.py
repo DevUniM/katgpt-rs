@@ -143,6 +143,26 @@ jobs:
     if len(blocks) != 2 or blocks[1] != []:
         fails.append(f"lone/empty paths block mis-parsed: {blocks}")
 
+    # 6/7. ⚑ The blank/comment SKIP vs the terminator, added by Issue 790 T3.
+    #    Arm 3 above has a blank line and a comment and still could not kill
+    #    an `== "" -> != ""` flip on the skip test, because in that fixture the
+    #    block was going to end at the blank line anyway. What discriminates it
+    #    is an item that comes AFTER the blank (must still be collected) and an
+    #    item that comes after a real terminator (must NOT be).
+    gapped = ("on:\n  push:\n    paths:\n      - 'a'\n\n"
+              "      # a comment between items\n      - 'b'\n")
+    blocks = parse_paths_blocks(gapped)
+    if blocks != [["a", "b"]]:
+        fails.append(f"an item after a blank line was dropped: {blocks} — the "
+                     f"blank/comment skip must keep the block OPEN")
+
+    terminated = "on:\n  push:\n    paths:\n      - 'a'\njobs:\n      - 'b'\n"
+    blocks = parse_paths_blocks(terminated)
+    if blocks != [["a"]]:
+        fails.append(f"a list item after a real terminator was collected: "
+                     f"{blocks} — a non-blank, non-comment, non-item line must "
+                     f"CLOSE the block")
+
     return fails
 
 

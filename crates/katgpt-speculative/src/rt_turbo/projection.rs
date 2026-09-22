@@ -588,7 +588,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_dir() -> PathBuf {
-        std::env::temp_dir().join("rt_turbo_projection_test")
+        std::env::temp_dir().join(format!("rt_turbo_projection_test_{}", std::process::id()))
     }
 
     fn cleanup(path: &std::path::Path) {

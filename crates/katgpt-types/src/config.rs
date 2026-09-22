@@ -424,6 +424,29 @@ impl Config {
         }
     }
 
+    /// Micro config for the REAL-TEXT dllm lane (Plan 601: the Plan 600
+    /// promotion precondition). Char-level: a 32-token compact-alphabet vocab
+    /// (31 text tokens + mask) and 2 layers of d=32 — the smallest capacity
+    /// that learns English bigram structure. Bidirectional attention,
+    /// mask_token = vocab_size - 1, same 8-token D2F block as
+    /// [`micro_dllm`](Self::micro_dllm) so the anchor-then-fill harness stays
+    /// protocol-identical.
+    pub fn micro_dllm_text() -> Self {
+        Self {
+            vocab_size: 32,
+            n_embd: 32,
+            n_head: 4,
+            head_dim: 8,
+            mlp_hidden: 128,
+            n_layer: 2,
+            bos_token: 31,
+            attention_mode: AttentionMode::Bidirectional,
+            mask_token: 31,
+            d2f_block_size: 8,
+            ..Self::micro()
+        }
+    }
+
     /// Game config for Bomberman LoRA training (Plan 041).
     /// Tiny Transformer for board state → action prediction.
     /// 10-token vocab: 4 board cells (0-3) + 6 actions (4-9).

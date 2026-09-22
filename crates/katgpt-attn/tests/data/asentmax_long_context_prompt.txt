@@ -1,0 +1,248 @@
+The tide pools at Cape Merrow form a kind of natural ledger. Each depression in the granite holds a fixed budget of seawater, and every twelve hours the ocean empties the account and refills it. What lives in each pool must survive the interval between tides, when the sun lifts the temperature, the wind raises the salinity, and the residents compress themselves into the deepest corners to wait. Marine biologists who study these pools have learned to read them the way an accountant reads a balance sheet. A pool with too many predators and too few grazers will be choked with algae by August. A pool with a healthy population of turban snails and anemones will stay clear and productive for years. The lesson generalizes: any small closed system, examined honestly over time, reveals whether its inputs and outputs balance.
+
+Lighthouse keepers kept a different kind of ledger. Before automation, the keeper of the Cape Merrow light wound the clockwork every four hours, trimmed the wick, polished the lens, and wrote the weather in the log by candlelight. The logs that survive are dry, precise, and unexpectedly moving. On the third of February, 1891, Keeper Elias Hartley recorded wind at force nine, spray carrying over the tower, and the lamp burning steady. On the fourth he recorded the same. On the fifth he recorded only the wind, because the supply boat could not round the point, and his entry for oil remaining read one inch in the drum. He did not write that he was afraid. He wrote the barometric pressure. The discipline of the log was the point: a keeper who wrote what he felt would soon write nothing that could be trusted, and a keeper who wrote only what he measured could hand his successor a tower that worked.
+
+Debugging a distributed system rewards the same discipline. The failure arrived on a Tuesday: a small fraction of payments, perhaps one in eight thousand, settled twice. The ledger balanced in aggregate because the duplicates were matched by an equal number of drops elsewhere, which is the worst kind of bug, the kind that cancels itself in every summary you think to check. We began, as always, with the timestamps. A duplicate pair always straddled a connection retry. The retry path re-sent the payment intent, and on the receiving side the idempotency key was checked against a cache that had been evicted between the first attempt and the second. The fix was three lines. Finding the fix took nine days, and eight of those days were spent learning to see the system as it actually was rather than as the diagrams claimed it to be. The diagram showed one cache. The system had four, and only one of them was authoritative.
+
+The mountain surveyors who worked the northern ridge in the 1970s used punch cards and a theodolite, and their field notes have a similar honesty. A surveyor could not fake a reading without later contradiction, because every station closed against two others. When the triangle would not close, the note said so plainly: instrument shaken by wind, observation discarded, station reoccupied at dawn. Modern telemetry rarely admits its own doubt. A service that reports its latency at the ninety-ninth percentile has already discarded the tail that the percentile was meant to describe, and a dashboard that averages error rates across regions has already decided that a failure in one region is acceptable if the others are quiet. The old surveyors would not have tolerated it. Closure is closure or it is not.
+
+In the kitchen the same principle holds at a smaller scale. A recipe is a distributed transaction between heat, time, and protein. When you sear a steak, the Maillard reaction begins around one hundred forty degrees and accelerates quickly above that, while the interior should rise no faster than the exterior browns, which is why thickness governs time more than weight does. A cook who measures nothing produces a good steak sometimes, and cannot say why. A cook who measures everything produces a good steak every time, and can teach it. The difference between the two cooks is not talent. It is the ledger.
+
+Between the fourth and fifth survey of the season, the field team stationed at the old observatory received a maintenance bulletin that read as follows. The access procedures for the observatory were revised after the storm season. Enter it once at the key panel beside the east door; the panel accepts the code for sixty seconds after the first keystroke and then resets. Do not share the code over radio. The bulletin was signed by the regional engineer, dated the eleventh of June, and pinned above the stove in the common room, where it stayed for the rest of the season. The team joked that the observatory was the only building on the ridge with a lock, since the weather stations and the relay huts were open to anyone who could walk that far. The lock, they agreed, was less about security and more about ceremony.
+
+The weather stations themselves logged every fifteen minutes: temperature, humidity, wind speed and direction, and a battery voltage that sagged predictably through the polar night. Station fourteen failed in March with a cracked solder joint, and the failure was visible in the log weeks before the station died, as a slow drift in the voltage floor that no one had thought to alarm on. After the postmortem the team added a simple rule: alert when the nightly minimum falls below the December baseline for five consecutive days. It caught station twenty-two the following autumn. The rule was not clever, but it closed, the way the surveyor's triangles closed, against something real.
+
+There is a habit of mind that unites the keeper, the surveyor, the cook, and the engineer on call, and it is worth naming. Measure what matters, write it down, compare it against what you wrote before, and act on the difference. The tools differ by four orders of magnitude in cost and none at all in principle. The clockwork and the punch card and the cast iron pan and the distributed trace are all instruments for converting experience into record, and record into foresight. The alternative is to rely on memory, which is generous with itself, or on narrative, which is optimized for interest rather than accuracy. Neither survives an audit.
+
+The second half of the survey season brought the ridge team down off the mountain and into the archive, where the older paper records were kept. The archivist, a patient woman named Ruth Oyelaran, had spent eleven years arranging the collection by station, by year, and by instrument, and she could produce any month of any log within a minute. She was less interested in the weather than in the people. In the margins of the March logs, she had found pencil sketches, shopping lists, arguments conducted between keepers on opposite shifts, and once, a complete chess game played across three months between two men who never met. The game ended in a draw, and both players had annotated the final position with the same word: satisfied. Ruth kept a card index of these marginalia, which she called the human weather.
+
+Field observations, numbered as the surveyors numbered them, follow. One: the relay hut at kilometer nine drifts two degrees east of true north according to every map, and no one remembers why. Two: the ptarmigan that overwinter near station six have learned to perch on the equipment boxes for warmth, and their droppings corrode the connectors, so the boxes now carry small wire skirts that the birds ignore. Three: the satellite phone works best between two and four in the morning, local time, when the network is quiet. Four: the oldest continuous temperature record on the ridge began in 1953 and has a gap of forty days in the winter of 1962, which the keeper at the time explained, in the log, as illness, and then apologized for. Five: the apology is still there.
+
+Six: the river below the observatory freezes from the banks inward, and in a cold still week it freezes clear, and you can stand on the bridge and watch the stones on the bottom. Seven: the bridge is rated for two tons and was installed by helicopter in 1988. Eight: the helicopter pilot returned for the dedication and told the team that the sling load had swung twice on the way up and that he had considered dropping it in the lake. Nine: nobody wrote down which lake. Ten: the marmots at kilometer eleven are bolder than the marmots at kilometer seven, and the leading theory is that the kilometer seven colony was trapped and relocated in 1994 and has been cautious ever since.
+
+Eleven: the archive's copy of the 1953 field manual specifies a lead pencil, number two hardness, sharpened with a knife rather than a sharpener, on the grounds that a knife-pointed pencil makes a finer line and the graphite resists rain better than ink. Twelve: modern ballpoint ink fails below freezing, which the team rediscovered in 2004 and again in 2019. Thirteen: the rediscovery is itself now part of the archive, filed under equipment, pencil, and cross-referenced from ink. Fourteen: the archivist approves of rediscovery, because every rediscovery brings the older record back into the light where it can argue. Fifteen: the argument between records is the healthiest thing an archive can host.
+
+The engineers took this attitude home with them. In the months after the survey, the payment system was rebuilt around a single authoritative ledger, the dashboards were redrawn so that no chart averaged across a boundary that mattered, and the idempotency cache was replaced with a table that was written before the intent was sent and never evicted while the intent was in flight. None of these changes was novel. Each had been stated, in some form, in the field manuals of an older profession. The team's only real invention was the discipline of going back to those manuals and reading them as engineering documents rather than as history, which is perhaps the oldest engineering technique of all: when your own records will not close, find someone whose records did, and ask what they measured.
+
+# Research 549: ASEntmax — Length-Adaptive α-Entmax Sparse Attention
+
+> **Source:** Vasylenko, Pitorro, Martins, Treviso. *Long-Context Generalization with Sparse Attention*. [arXiv:2506.16640v4](https://arxiv.org/abs/2506.16640) (ICLR 2026), 2026-03-02. Code: [deep-spin/asentmax](https://github.com/deep-spin/asentmax).
+> **Date:** 2026-09-11
+> **Status:** Done — verdict 🟢 GOAT (dual-track). Modelless execution → [Issue 747](../.issues/747_asentmax_modelless_mining.md); training arm → riir-train Plan 396 (SECONDARY).
+> **Related Research:** 392 (SSMax/GoldShare — the softmax arm of the duality), 068 (DashAttention α-entmax routing), 225 (MSA blockwise sparse), 140 (sigmoid parallax), 258 (attention sinks), 344 (length extrapolation, implicit LM), 362 (HydraHead head importance)
+> **Related Plans:** 411 (SSMax + GoldShare — SHIPPED), 106 (DashAttention — SHIPPED default-on), 256 (MSA adaptive k), 287 (sink-aware attention)
+> **Cross-ref (riir-train):** Plan 396 (ASEntmax recipe arm — drafter + learned-scaler extraction)
+> **Classification:** Public
+
+---
+
+## TL;DR
+
+The paper trains transformers whose attention transformation is **α-entmax** (exact zeros below a threshold τ) with a **per-head learnable length schedule** `(δ + β·(log n)^γ)·z`, achieving 1000× synthetic length extrapolation and 97.4% needle retrieval at 8× training context. Both halves of the base mechanism already ship here — α-entmax as DashAttention routing (Plan 106, default-on) and a length-aware temperature as SSMax (Plan 411, `s_L·log N`). What does NOT ship is the **mirror image of SSMax**: entmax over-sparsifies as the scored set grows (logit range grows `2σ√(2 log n)`, Kamath 2015), and the paper's Eq 10 *derives* the training-free counter-schedule — **γ = −0.5, δ = 0** makes `β·(log n)^{−0.5}·Δ_n = 2σβ√2 = const`. One extreme-value law, two signed arms, same substrate socket (`SsmaxMode`-style mode enum keyed on runtime `log_n`): softmax needs sharpening ∝ log n (shipped), entmax needs damping ∝ (log n)^{−0.5} (this note).
+
+**Distilled for katgpt-rs (modelless, inference-time):**
+1. **`asentmax_schedule`** — damping mode for `entmax_1p5`: pre-scale scores by `β·(log n_c)^{−0.5}` (n_c = scored candidate count) before the threshold pass. Derived, zero-training, one `powf` + one mul.
+2. **Lemma-2 support controller** — `k̂ = ((α−1)·Δ̂)^{−1/(α−1)}` (α=1.5: `k̂ = 4/Δ̂²`), consuming the shipped `RollingDeltaEstimator` — a derived replacement for the fitted-shaped `sigmoid(w·var+b)` budget in `adaptive_k.rs`.
+3. **Prop 6 eviction window** — ALiBi-biased entmax attention has a hard cutoff `d_max = ⌊(z_max − z_min + 1)/m_h⌋ + 1` beyond which mass is *exactly* zero → KV eviction whose correctness gate is **bit-identity** (a theorem, not a tolerance). *(Correction at implementation, Issue 747 P2: the paper's Eq. 110 is `d_max = ⌊(z_max − z_min + 1/(α−1))/m_h + 1⌋` — `+1` inside the floor, numerator `1/(α−1)` = 2 at α=1.5.)*
+4. **Lemma 1 incremental decode** — below-threshold additions leave existing entmax probabilities exactly unchanged → O(candidates) incremental recompute instead of O(n log n) resort per decode step.
+
+---
+
+## 1. Paper Core Findings
+
+1. **α-entmax attention**: `p_i = [(α−1)z_i − τ]_+^{1/(α−1)}` — exact zeros below threshold; α=1.5 has a closed-form sort-based algorithm (Peters et al. 2019 — the algorithm our `entmax_1p5` implements); α=2 is sparsemax.
+2. **Theory (the paper's real contribution):**
+   - **Lemma 1 (non-vanishing attention):** adding tokens with logits below threshold leaves existing probabilities *exactly* unchanged; softmax strictly leaks on every added token.
+   - **Lemma 2 (two-level logits):** if gap `Δ ≥ k^{−(α−1)}/(α−1)`, exactly k tokens share attention 1/k each — **independent of n**. Softmax needs `Δ ≥ θ·ln((n−k)c/(k(1−c)))` to hold concentration c — grows with log n.
+   - **Prop 1:** softmax normalized entropy → 1 (complete dispersion); entmax with support `|S| = O(n^β)` keeps it ≤ β.
+   - **Prop 2:** representational collapse avoided; gradient paths O(sL) not O(nL).
+   - **Prop 6:** ALiBi × entmax → hard cutoff distance `d_max` (see TL;DR). **Prop 7/8:** RoPE × entmax → per-frequency cutoffs `d_{k,0} = arccos(τ(α−1)/‖q_k‖‖k_k‖)/g_k` with periodic re-entry windows at `2π/g_k`.
+3. **ASEntmax**: per-head `(δ + β(log n)^γ)·z` rescaling; β = softplus(Xw_β), γ = s·tanh(Xw_γ). **Eq 10 (closed form):** for IID Gaussian logits, γ = −0.5, δ = 0 keeps the effective logit range constant as n grows — the derived counter to over-sparsification. Per-head fitted γ varies in sign (Copy task: all-negative = *less* sparse at long n; Max Retrieval: positive).
+4. **NAPE**: half heads NoPE, half ALiBi — beats RoPE+ABF for consistent extrapolation.
+5. **Empirics:** 95.3% MQMTAR at 65K trained on 64 (1000×); 420M LM: Lambada PPL 41.6 vs 52.4 (softmax), S-NIAH-1 97.4% at 16K vs 0.8%. **Critical failure mode:** plain fixed-α entmax *underperforms* softmax OOD (Copy: 28.5% vs 99.4% at 4×) — adaptive scaling is what fixes it (99.7%). α ≥ 32 collapses to one-hot (gradient death).
+
+## 2. Distillation
+
+### 2.1 Signal-diff vs shipped substrate (§3.6 discipline)
+
+| Shipped cousin | File | Signal it consumes | Paper component's signal | Verdict |
+|---|---|---|---|---|
+| `entmax_1p5` | `katgpt-attn/src/dash_attn/entmax.rs` | raw chunk scores; **no length, no temperature** | scores + `log n_c` (candidate count) + per-head β,γ | **Uncovered** — no length term exists on any entmax path |
+| `apply_ssmax_inplace` | `katgpt-core/src/ssmax.rs` | `log_n` + rolling Δ̂ (`SsmaxMode::Fixed/Adaptive`) | same `log n` key | **Covered for softmax only, γ=1 fixed, sign = sharpen-UP** — the entmax arm needs the *opposite* sign and a power law |
+| `AdaptiveKConfig` | `katgpt-attn/src/dash_attn/adaptive_k.rs` | score *variance* via `sigmoid(w·var+b)` | the derived threshold law `k̂ = 4/Δ̂²` | **Partial** — content-adaptive but fitted-shaped; Lemma 2 supplies the closed form from the same Δ̂ the ssmax estimator already produces |
+
+### 2.2 The duality (why this snaps into the substrate)
+
+| Arm | Failure without correction | Law | Correction |
+|---|---|---|---|
+| **Softmax** (shipped: SSMax γ=1) | dilution — mass leaks to every token | Lemma 2 softmax side: holding concentration needs Δ ∝ log n | sharpen **UP** ∝ log n |
+| **α-entmax** (this paper) | over-sparsification — logit range grows, threshold eats the support | `E[Δ_n] = 2σ√(2 log n)` (Kamath 2015) | damp **DOWN** ∝ (log n)^{−0.5} (a log-log schedule — gentler than SSMax) |
+
+### 2.3 Path 0 inventory (component → coverage → extraction → disposition)
+
+| Component | Coverage | Extraction | Disposition |
+|---|---|---|---|
+| α-entmax transform (α=1.5) | **ships** (Plan 106, default-on routing) | — | — |
+| Length temperature, softmax path | **ships** (Plan 411, `s_L·log N`) | — | — |
+| Entmax damping schedule γ=−0.5 | **no** | **yes** — derived (Eq 10), β from rolling σ̂ | Issue 747 **P0** |
+| γ-power generalization `(δ+β(log n)^γ)` | **no** (γ=1 implicit in SSMax) | yes — closed form + offline grid sweep (frozen table) | Issue 747 P0/P4 |
+| Lemma 2 support controller `k̂ = 4/Δ̂²` | partial (sigmoid variance budget) | yes — consumes shipped `RollingDeltaEstimator` | Issue 747 **P1** |
+| Lemma 2 softmax side → `SsmaxMode::HoldConcentration{c,k}` analytic θ* | no (only Fixed/Adaptive) | yes — `θ*(n) = Δ̂/ln((n−k)c/(k(1−c)))` | Issue 747 P4 |
+| Prop 6 eviction window | no (sink-aware ≠ distance window) | yes — closed form; **bit-identity gate** | Issue 747 **P2** |
+| Lemma 1 incremental decode entmax | no (full re-sort per call) | yes — algebraic identity | Issue 747 **P3** |
+| Prop 7/8 RoPE cutoff spectrum | no | yes, with periodicity caveat | Issue 747 P4 (stretch) |
+| Entropy diagnostic `H(p)/log n ≤ log s/log n` | partial (`effective_rank` ships) | yes — O(s) over support | Issue 747 P4 |
+| Per-head learned β,γ | no | offline sweep → frozen table (modelless) **or** extraction run (Plan 396 Ph2) | dual-track bridge |
+| NAPE positional encoding | no | **no** — training-side only | Plan 396 (training arm) |
+| ASEntmax-native model quality (1000×, S-NIAH 97.4%) | no | **no** — weights-conditioned | Plan 396 Ph1/Ph3 (training arm) |
+
+### 2.4 Fusion
+
+- **ASEntmax schedule × DashAttention routing (the primary fusion):** routing scores are *our* chunk-summary heuristic, not pretrained-weight attention — so length-adaptive rescaling is quality-safe and fully modelless (unlike swapping trained softmax attention on Bonsai/Qwen GGUF weights, which we do NOT claim). The scored candidate set is `n_chunks`, so the √(2 log n) law applies to chunk count — the over-sparsification diagnosis transfers exactly.
+- **Prop 6 window × sink-aware KV policy:** sink-aware classifies *what* (NOP vs Broadcast); Prop 6 bounds *where* (hard distance). A theorem-backed eviction policy whose correctness needs no tolerance.
+- **Support-masked O(s) compute:** entmax's exact zeros make `Σ_{i∈S} p_i v_i` lossless — the inference dual of Prop 2, feeding `riir-gpu` gather-GEMV.
+- **Support-set fingerprint (stretch):** canonical (indices, values) sparse encoding of routing state → BLAKE3-committed shard latent field / KG triples ("head attends block") in riir-neuron-db.
+
+### 2.5 Honest caveats
+
+1. **γ=−0.5 is IID-Gaussian-optimal only.** Real heads are not IID Gaussian (the paper's own per-head γ varies in sign). The derived default must beat the fixed-α baseline first; the offline sweep is the bridge, not decoration.
+2. **Quality anchors are the paper's models.** Our gates re-measure on our routing surfaces (Bench 032 harness pattern); the anchors set targets, not pass conditions.
+3. **RoPE re-entry periodicity** forbids naive "drop everything past the first cutoff" eviction — retention must respect the window union.
+4. **No quality-parity claim is made for pretrained models** — we do not swap softmax→entmax on trained weights (the paper's Copy-table result shows naive fixed-α conversion *hurts*; the retrofit path is Plan 396 Ph2 distillation, gated).
+
+## 3. Verdict
+
+**🟢 GOAT — dual-track.** Modelless: Issue 747 (entmax damping schedule + derived support controller + eviction window, feature-flagged, Bench-032-pattern gates). Model-based: riir-train Plan 396 (SECONDARY — ASEntmax drafter + learned-scaler extraction).
+
+**One-line reasoning:** the base mechanisms ship (entmax routing, SSMax temperature), but the paper *derives* the missing entmax-side arm of a law we already exploit on the softmax side — plus three theorem-backed primitives (support controller, eviction window, incremental decode) that are provable gains over shipped defaults, and a credible training recipe for the one thing modelless cannot produce (content-conditional per-head schedules on trained weights).
+
+**Why NOT Super-GOAT:**
+
+| Q | Answer |
+|---|---|
+| Q1: No prior art? | **NO** — α-entmax ships (Plan 106), length-aware temperature ships (Plan 411), sigmoid parallax / sink-aware / MSA ship. The γ-power + damping sliver is an extension of shipped families. AdaSplash (ICML 2025) is the kernel, not the schedule; SSMax (Nakanishi 2025) is the softmax arm. |
+| Q2: New behavior class? | **NO** — better long-context calibration of existing routing/eviction, not a new capability. |
+| Q3: Product selling point? | **WEAK** — "sparse routing stays calibrated at any context length" is incremental over DashAttention + SSMax. |
+| Q4: Force multiplier? | **YES** — composes with DashAttention, `block_select_entmax`, SSMax, adaptive_k, sink-aware KV. Not sufficient alone. |
+
+**MOAT gate (katgpt-rs):** attention-stack inference primitive via fusion with two shipped plans — in scope, public, no game/chain/shard semantics. ✓
+
+**Track priority (serving-envelope fit, TTPO rule):** PRIMARY = modelless schedule (lands on the default-on DashAttention routing hot path; zero training); SECONDARY = Plan 396 (the drafter's flat-in-n acceptance needs 40–60 GPU-hrs on the 4090 and lands on the spec-decode lane, not the serving hot path).
+
+**Discard audit (§3.5 — every advocate finding either filed or discarded with mechanism-level reason):**
+- *NAPE for inference* — discarded for the modelless track: positional encoding is baked into pretrained GGUF weights; no runtime consumer without retraining. Recorded in Plan 396 (training arm).
+- *420M specialist LM* — deferred, not discarded: 140–170 GPU-hrs with no near-term consumer; Plan 396 Ph3 records the recipe for the day an entmax-native owned LM is wanted.
+- *Quest-grammar entmax student* — discarded (ranked last by the model-based advocate): quest contexts are short; entmax's advantage is length OOD. Noted in Plan 396 riders.
+- *Sort/Reverse-class extrapolation* — discarded: the paper itself shows all methods fail ≥4×; no trainable signal, no consumer.
+
+**PASS-Redirects (synthesis):** none — verdict is GOAT, not PASS. (For the record: the closest shipped cousins are Research 392/Plan 411 [SSMax — the softmax arm of this paper's duality] and Research 068/Plan 106 [DashAttention — the shipped α-entmax].)
+
+Before the survey team broke camp, the coordinator repeated the standing instruction one final time. The secret access code for the observatory is 7F-39-KE, and it must be quoted exactly when the duty officer answers the radio at midnight. New codes arrive each quarter by sealed letter, but this one holds until the equinox.
+
+# Research 489: oMLX Dual-ANE/GPU Hybrid Prompt Processing — Verdict
+
+> **Source:** [jundot/omlx PR #2756](https://github.com/jundot/omlx/pull/2756) — onthehub97, "feat(qwen3.5): add experimental dual-ANE/GPU prompt processing", merged 2026-08-17 (commit `fbb98dc`, 19.3k-star MLX inference server). Follow-ups: #2760 (oQ4e + runtime hardening, merged), #2781 (M3 Max: 16K +13%, 32K +57% prefill, open), #2803 (DeepSeek, open).
+> **Date:** 2026-08-18
+> **Status:** RESOLVED — external Gain stands as prior-art record; OUR POC failed G2 **but the 7-8× gap was later DIAGNOSED as our integration, not the fabric** (same day, riir-ai Bench 775 — renumbered from 774 in the 2026-08-28 collision resolution: ANE-driver ~4-8-program hot-set → 96-program round-robin pays 45.6 ms/switch ≈ the whole branch-D residual, pair-alternation free — omlx's 2-program/112-procedure bank is the dodge; + 56% of the hybrid arm was per-op queue-drain readbacks, 14% scalar host unpack; pure ANE compute ≈ P10's 4.7 s/block). riir-ai Issue 726 stays closed as-built; **Phase C (segment-split overlap) LANDED 2026-08-28 per the delegated perf/sec decision — riir-ai Plan 549 / Bench 776: overlap thesis VALIDATED (+40% over serial @2048, G1 stretch-pass 2048+4096) but G2 MISS vs the GPU baseline (0.864×/0.941× — the GPU arm itself lifted to 61.8 tok/s by the Issue-768 32×32 GEMM); the host-pointer readback is the isolated structural 60-75% — the omlx +27-57% class requires the IOSurface zero-copy bridge (armed follow-up); toggles default-off.** Partially fires Research 427's revisit trigger #1: ANE fused-kernel dispatch decisions now matter at LLM-prefill scale — but on the **private-runtime** path, not CoreML. **Companion note:** the Weschera/drowzeys deployment-recipe evidence (fraction=0.5 sweet spot, 0.75 worse; GDN-off winning config; decode +10% second-order via shared-engine interference) is distilled in riir-ai Research 343, not here.
+> **T0 update (2026-08-19, riir-ai `5b9fdb73c`):** binding spike DONE — private runtime reachable on M3 Max/macOS 26.5 via an ObjC bridge (pure-Rust msgSend rejected by ANECCompile with byte-identical artifacts — negative result recorded); **M3 Max is ONE 16-core ANE fabric, not discrete pinnable dies** (concurrent programs overlap 2.4-2.9× regardless of instance hint — the omlx dual-instance constraint is M3-Ultra-only and unnecessary here); handle budget ≥256; multi-procedure banks rejected on macOS 26.5 (single-procedure programs viable); fp16 conv numerics cosine 1.000016; int8 dual-residency budget fits 64 GB at any fraction. POC proceeds (T1+).
+> **Related Research:** 155 (ANE Backend Verdict — Path B `rane` private-API precedent, Path A CoreML decision), 377 (ANE architecture: 0.23ms dispatch floor, 2MB working set, int8 formats), 223/224 (ANE distillation + coremltools), 427 (tile-graph overlap — dependency-chain analysis kin), 419 (PackInfer, loose)
+> **Related Plans/Benches:** Plan 255 + Bench 053 (`ane_npc` GOAT FAIL — dispatch-floor economics), Plan 379 (`ane_roofline.rs`), Bench 438/439 (ANE fused-chain cost model: fusion saves 95.3% dispatch-bound; CoreML routes large F32 to CPU); riir-clippy **Bench 010** (the live-gap anchor — see §5)
+> **Classification:** Public
+
+---
+
+## TL;DR
+
+oMLX PR #2756 adds a hybrid prompt-processing path for dense Qwen 3.5/3.6/3.8: eligible fixed-size (2048-token) prefill blocks split the **output channels** of MLP gate/up projections (and GDN `z+qkv`) across **both physical ANE instances + the GPU concurrently**, with a Metal merge kernel that fuses SwiGLU. Measured on M3 Ultra / Qwen3.8-27B-AWQ: **+35.6% prompt throughput** (334.9 → 454.3 tok/s), growing with context (+14.4% @4K, +26.1% @16K; M3 Max #2781: +57% @32K), at cosine 0.9992 hidden-state fidelity vs GPU-only.
+
+For us this is the **first production-grade proof of the regime Bench 053 predicted ANE would win**: our CoreML ANE path failed economically because per-dispatch compute (~11µs of NPC projection) was dwarfed by the ~0.28ms ANE dispatch floor. A 2048-token × hidden GEMM is ~25-60ms of compute per layer — the floor amortizes ~100×. Crucially, the winning path is **NOT CoreML** (our Path A): it is the private `AppleNeuralEngine.framework` runtime with **procedure banks** (112 procedures in 2 resident programs under a ~121-handle budget), **instance pinning** (two pinned submissions beat one unpinned: 41.51ms vs 57.90ms), and INT8 per-output-channel requant with fail-open GPU fallback. That is Research 155's Path B (`rane`-style private access), which we shelved as "experimental fallback" — now validated at production scale by an external codebase.
+
+**Verdict: Gain (POC-gated).** Not Super-GOAT (external prior art caps Q1; perf not a new behavior class). Actionable output: riir-ai Issue 726 — dual-ANE/GPU hybrid prefill POC on **Ternary-Bonsai-27B** (`TernaryDeltanetGpuForward`, the only model in focus per Issue 629's 2026-08-15 directive; retargeted from gemma2, which we don't run — Bonsai's deltanet layers are omlx's own GDN target): default-off, fail-open, GOAT-gated. katgpt-rs gets **no** new primitive now — `ane_roofline.rs` suffices; a hybrid-split cost term is a follow-up only if the POC lands.
+
+---
+
+## 1. The eight load-bearing design decisions
+
+| # | Decision | Measured/argued evidence |
+|---|---|---|
+| 1 | **Two instance-pinned ANE submissions per op** (not one unpinned) | Private runtime does not stripe one call across both ANEs: 55% MLP slice 57.90ms unpinned vs 41.51ms as two pinned calls |
+| 2 | **Procedure banks** — 112 procedures (64 MLP + 48 GDN) packed into 2 resident programs (one per ANE) | Private runtime caps resident handles at ~121; one-program-per-layer would exhaust the budget before covering MLP+GDN |
+| 3 | **Combined gate/up (and z/qkv) in one procedure** | Splitting into more calls raises launch count + sync overhead without adding useful ANE parallelism |
+| 4 | **Merge kernel fuses SwiGLU** | Avoids full gate/up materialization + extra concatenations (our B15 fused-dual-GEMV+GeGLU shape) |
+| 5 | **Blocking input-pack wait is intentional** | Async alternatives all measured worse; Metal-callback submission made a layer 47.5 → 71ms and the full body slower than GPU-only. Blocking lets ANE submit while the GPU suffix is still queued |
+| 6 | **Eager compile at model load** (config ∈ runtime signature) | 112-procedure bank = 37-44s compile; moved out of first request |
+| 7 | **Exact fixed-shape eligibility only, fail-open** — no synthetic padding | Qwen padding token is learned: padding perturbs logits, KV positions, RoPE, GDN recurrent state. Tails/decode/verify/unsupported → GPU |
+| 8 | **INT8 per-output-channel ANE weights from resident q4; down-proj stays GPU** | Requant is not bit-exact (cosine 0.9992 / 0.9985, top-1 unchanged, HumanEval 28/30 both). An experimental split-down path had unacceptable errors and was **removed, not flagged** |
+
+Residual inefficiency honestly reported: each ANE runs only ~38.8% duty cycle; downtime is dominated by waiting on upstream GPU dependency chains, not submission delay (tens of µs) — more submissions cannot fix it without restructuring the layer boundary.
+
+## 2. Their measured results (THEIR stack — not a claim about ours)
+
+| Measurement | GPU | Hybrid | Δ |
+|---|---|---|---|
+| Layer-0 MLP, 2048 tok (M3 Ultra, 27B AWQ) | 61.12 ms | 48.45 ms | 1.26× |
+| Full language body (corrected MLP+GDN) | 6.115 s | 4.508 s | 1.356× |
+| Prompt throughput | 334.9 tok/s | 454.3 tok/s | +35.6% |
+| E2E 4K / 8K / 16K | 331.4 / 326.0 / 318.9 | 379.1 / 397.7 / 402.1 | +14.4 / +22.0 / +26.1% |
+| M3 Max (#2781) 16K / 32K | — | — | +13% / +57% |
+| Numerics | — | — | hidden cos 0.999200, logit cos 0.998522, top-1 unchanged |
+
+Gains grow with prompt length (more complete fixed-shape blocks amortize eager compile + per-request overheads). Costs: >2× resident weights (INT8 ANE copies + originals + IO surfaces), 37-44s startup compile, macOS-private-API fragility, prompt-processing only (decode stays GPU).
+
+## 3. Prior art — the Aug-2026 hybrid-ANE wave (caps novelty)
+
+| Work | Contribution |
+|---|---|
+| SqueezeBits, "Disaggregated Inference on Apple Silicon: NPU prefill and GPU decode" | The concept split: CoreML/ANE better for prefill, MLX/GPU for decode — use both |
+| AtomGradient `hybrid-ane-mlx-bench` (+ paper) | "CoreML and ANE **Private API** Prefill + MLX GPU Decode" — the private-API angle predates omlx |
+| `thebasedcapital/ane-infer` | From-scratch engine running Qwen3.5-2B on three accelerators simultaneously |
+| **omlx #2756 line** (#2760/#2781/#2803) | Dual-**instance pinning**, **procedure banking** under handle budget, GDN `z+qkv`, fused merge+SwiGLU, production server integration + UI |
+
+Q1 (no prior art?) = **NO** — the hybrid ANE-prefill/GPU-decode concept is published multiple times. omlx's specific novelties are the pinning + banking mechanics, not the concept. This caps the verdict at GOAT-tier Gain; Super-GOAT (all-4-YES) is not available.
+
+## 4. Why their regime pays where our Bench 053 failed
+
+| Axis | Ours (Bench 053, CoreML) | omlx (private runtime) |
+|---|---|---|
+| Compute per dispatch | ~11µs (1000 NPC projections) | 2048-token × hidden GEMM, 25-60ms/layer |
+| ~0.23-0.28ms dispatch floor | **Dominates** → 26× slowdown, GOAT FAIL | Amortized ~100× |
+| API path | CoreML prediction (opaque placement; Bench 439: large F32 → CPU) | Private `AppleNeuralEngine.framework` procedures (explicit placement) |
+| ANE instances | 1 (CoreML decides) | 2, explicitly pinned per-op |
+| Shapes | fixed batch 1024 (padded) | exact 2048-token blocks, **no padding** (positional state) |
+| Numerics | FP16 CoreML | INT8 per-channel requant from q4, originals resident for fallback |
+| Fusion | Bench 438: fusion saves 95.3% (dispatch-bound) | gate/up + SwiGLU fused into merge kernel |
+
+Bench 053's "When ANE Would Win" section predicted exactly this: heavier workloads amortize the floor. Bench 438's fusion result is the same mechanism at smaller scale. Research 155 Path B (`rane`: dlopen private frameworks, ~0.24ms dispatch, IOSurface zero-copy, zero deps) is the Rust precedent for the access path and was explicitly shelved as "experimental fallback … when CoreML refuses ANE placement" — that trigger has now fired externally, at production scale.
+
+## 5. Novelty gate + routing verdict
+
+- **Q1 no** (§3). **Q2 no** (perf, not a new behavior class). **Q3 partial** ("all-three-engines inference on Apple Silicon" is an engine-tooling selling point, not a game-NPC one). **Q4 yes** (connects ANE substrate 155/377/427/379 × riir-gpu batched ternary prefill × our deltanet substrate × Bonsai-27B, the only model in focus per Issue 629's directive).
+- → **Gain, not Super-GOAT.** No guide/plan mandated by the gate.
+- **riir-ai Issue 726** (filed; retargeted 2026-08-18): dual-ANE/GPU hybrid prefill POC on **Ternary-Bonsai-27B deltanet** — `in_proj_concat` (qkv|z|a|b, already fused — mirrors omlx's combined-procedure decision) + `gate_up_proj` channel split, ANE prefix + GPU batched-GEMM suffix (the Issue 637/641 kernels — **riir-clippy Bench 010's "no batched prefill at all" finding is stale**, they landed after it and `prefill_project` is wired), feature `ane_prefill` (default-off, macOS-only), fail-open, GOAT G1 numerics (ternary→int8 requant is **lossless** — weights ∈ {−1,0,1}; better than omlx's 0.9992) / G2 ≥+15% @≥4K / G3 no-regression. Live-gap anchor: Bench 010 (prefill was 8.38× behind llama.cpp when unbatched; 17.89 vs 149.95 tok/s). **Honest scope:** short clippy prompts (93-154 tok) never engage the ANE path — the lever is long-context prefill (4K-32K; omlx M3 Max +13%→+57%), complementing Issue 721 (tree-verify) which owns the decode half of the latency budget.
+- **katgpt-rs: nothing now.** `ane_roofline.rs` (Plan 379) already models dispatch floor + working set; if the POC lands, extend it with a hybrid-split cost term (pick `fraction` by predicted ANE/GPU overlap, replacing a manual sweep). Research 427 tile-graph stays deferred — the PR's 38.8% duty-cycle analysis is dependency-chain reasoning, but we don't need a simulator to pick one scalar split fraction; a sweep suffices.
+
+## 6. Defend-wrong scope (what we do NOT claim)
+
+No quality or performance parity claim for OUR stack. Their cosine 0.9992 is their requant path on their model; any adoption claim requires our own PoC (GPU-only vs hybrid, identical prompts, riir-gpu bench) per the §3.6 rule. Architecturally the analog exists (Bench 438 measured our ANE fusion mechanism); latency and quality on the private runtime from Rust are **unproven** until Issue 726's gates run. The ≥+15% gate is a hypothesis derived from their measurements on a different model/quant/runtime — not a transferable number.
+
+## 7. riir-clippy distill verdict — NO (recorded; conversation-only per distill skill)
+
+- **Source language:** Swift/MLX + private-framework C++ — corpus fixtures must be original minimal Rust; no direct mining.
+- **Dedup gate (both vocabularies grepped):** fused gate/up+SwiGLU = B15 `fused-dual-gemv-geglu`; fixed-shape fast path + GPU fallback = B23 `hardcoded-fast-path-jit-specialization`; eager compile-at-load = B26/B33 prebuilt-at-init family; hybrid device split with sync points = B35 `hybrid-cpu-elementwise-gpu-throughput-sync-points`; combined sibling ops in one call = B25 fan-out family.
+- **New candidates, all failing the GOAT benchable test:** resident-handle-budget procedure banking (no capped runtime in our validators); instance-pinned dual submission (no validator); blocking-submission-beats-completion-callback (B36-adjacent; measurement is ANE-private-runtime-specific).
+- **Revisit trigger:** if we land Rust ANE substrate (Issue 726 T0) and fix things on it → measured-GOAT distillation of OUR fixes (the B49 path).
+
+## 8. Revisit triggers
+
+1. **riir-ai 726 GOAT pass — RESOLVED NEGATIVE 2026-08-28**: G2 FAIL at every length (0.792-0.965×, Bench 760); the `ane_roofline` hybrid-split cost term was never needed. 726's reopen is owner-gated (its Status block): M3 prefill becomes a production surface, OR a diagnosis probe attributes the 7-8× in-pipeline ANE cost gap to a Phase C-removable cause. Any reopen seeds `fraction` from Research 343's 0.5 sweet spot + the GDN-off recipe shape.
+2. **Apple ships a public multi-device/split ANE API** or CoreML exposes procedure banks → re-evaluate Path A vs B (stability win).
+3. **Bench 053 economics reopen** — NPC-side workloads growing to batched-heavy ops (≥ ~25k-NPC-equivalent FLOPs per dispatch).
+4. **Release-notes delta (2026-08-28):** oMLX v0.5.4rc1 → v0.6.3 final refined two §1 decisions — #2966 tail-padding-to-fixed-tile refines decision #7 (no synthetic padding → no STATE padding: intermediates only, synthetic rows stripped before any stateful consumer; +29% on a 2,047-token tail) and #2935/#2892 intra-op hidden-dim split with per-branch down-projection refines decision #8 (down-proj no longer GPU-only; +50.9% @27B M3 Ultra; CPU sharing +4–6% with its own memory cost). Plus #3133's approximate-scope rule (recurrent rows checkpoint-precision — the 32K-quality guardrail). Full delta: riir-ai Research 353 §2.5.1; execution: riir-ai Issue 769 T8/T9.
+
+By the time you climb the last ridge, the night has gone fully dark and the observatory lights burn below you.
+
+At the gate a caretaker stops you: to enter, you must recite the entry credential you were issued at the start of the evening. You close your eyes and think back to where you wrote it down.
+
+The credential, you remember, was a short alphanumeric string — the kind you were warned never to say aloud on the trail. You rehearse it once, silently, character by character, exactly the way the night manager told you to.
+
+The caretaker nods, checks it against the ledger, and unbolts the door. Inside, the dome smells of cold metal and coffee; the telescope is already tracking. You sign the visitors' book under a red lamp, still turning the string over in your mind so you will not forget it on the walk back down.

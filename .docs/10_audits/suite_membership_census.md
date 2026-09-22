@@ -62,7 +62,7 @@ the census one command.
 | riir-neuron-db | 51 | 0 | 1 | 50 | 18 | YES | 0 |
 | riir-train | 458 | 6 | 31 | 421 | 221 | NO | 221 |
 | riir-viewbridge | 4 | 0 | 0 | 4 | 0 | YES | 0 |
-| seal-remake | 5 | 3 | 0 | 2 | 2 | YES | 0 |
+| mmorpg-remake | 5 | 3 | 0 | 2 | 2 | YES | 0 |
 
 Totals: 2445 targets / 2141 unpinned / 1095 LB unpinned / **346 actionable**.
 

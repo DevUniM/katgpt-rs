@@ -62,6 +62,19 @@ smooth_min_rerank = ["maxsim", "katgpt-core/smooth_min_similarity"]
 # (values). Requires `maxsim` or any feature that already pulls katgpt-core.
 rotary_value_embedding = ["dep:katgpt-core", "katgpt-core/rotary_value_embedding"]
 
+# Opt-in reassociated dot (Issue 871 T4, Bench 871, owner verdict ADOPT
+# 2026-09-22): 1.77-8.8x vs strict on x86_64-pc-windows-msvc (rustc 1.98.1,
+# one box; aarch64 UNMEASURED), accuracy improved vs strict on the bench
+# fixture class. NOT bit-equal to dot_8wide — never on bit-pinned lanes
+# (committed bytes, GOAT fixtures, Kahan, conformal/CRPS, bit-identity pins).
+# ARGMAX-BEARING CONSUMERS: a real-data retention walk (Issue-750-T3 shape)
+# is REQUIRED before first wiring — Bench 871's fixture walk (0/1024, 9
+# near-ties) is low power and does not satisfy it. Ships with ZERO
+# consumers; promotion to default would need its own GOAT gate.
+# algebraic_div/algebraic_rem stay BANNED repo-wide
+# (scripts/algebraic_op_ban_gate.py).
+algebraic_dot = []
+
 # Symmetric Boundary Pair for BT ranking (Plan 085 Deep Manifold Part 2,
 # arXiv:2512.06563 §2.6.2). Gates the `SymmetricBoundaryPair` impl block inside
 # rerank.rs — orthogonal to the `maxsim` gate (the rest of rerank.rs compiles

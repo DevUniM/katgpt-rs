@@ -1,5 +1,7 @@
 # Research 539: SparDA — Decoupled Lookahead Selection & the Prefill Offload Schedule
 
+> **PASS-Redirects (synthesis):** Li, Zhu, Gu, Hu, Wang, Mi, Han, Liang, Guo [arXiv:2609.13141 "SAS: Simple Attention Sparsification via End-to-End Optimization of Context Ranking"] — the LM-loss-log-gate OBJECTIVE fix for this paper's distillation-trained selector class (SeerAttention-R-controlled: same AttnGate, +10–15 pts at tight budgets); its recipe deltas file into riir-train Plan 337 via Issue 560, and its pooled-summary RULER failure is the needle-gate evidence behind katgpt-rs Issue 826. Distilled in [Research 567](567_SAS_LogGate_LM_Loss_Sparse_Context_Ranking.md).
+
 > **Source:** [SparDA: Sparse Decoupled Attention for Efficient Long-Context LLM Inference](https://arxiv.org/abs/2606.04511) — Yaosheng Fu, Guangxuan Xiao, Xin Dong, Song Han, Oreste Villa (NVIDIA / Thinking Machines Lab / ByteDance Seed / MIT), arXiv:2606.04511, 2026-06-03. Code: https://github.com/NVlabs/SparDA
 > **Date:** 2026-09-06
 > **Status:** Gain — per-track outputs filed this session: (a) modelless/league: katgpt-rs Issue 730 (deterministic prefill KV-offload double-buffer); (b) game runtime: riir-ai Issue 880 (belief-Forecast Warm-tier prefetch, fusion idea); (c) training: riir-train Issue 524 (Plan 337 recipe deltas, ~0 GPU-h).

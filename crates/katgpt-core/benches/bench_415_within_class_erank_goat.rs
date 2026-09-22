@@ -49,7 +49,14 @@ fn main() {
         acc_w += within_class_effective_rank(&flat, dim, &labels);
     }
     let dt_w = t0.elapsed();
-    let _ = acc_w; // prevent dead-code elimination
+    // ⛔ `black_box`, not `let _ = acc_w`. The old line carried the comment
+    // "prevent dead-code elimination" and does not do that: a pure
+    // accumulation whose result is dropped is the shape Issue 723 T5
+    // measured being deleted by rustc 1.98.1 + fat LTO, and bench_171's
+    // screener was found costing literally nothing for this reason
+    // (Issue 831). This bench's claim is a RATIO between two timed loops,
+    // so an eliminated arm does not read as zero — it reads as a ratio.
+    std::hint::black_box(acc_w);
 
     // ── effective_rank (global) ──
     let t1 = std::time::Instant::now();
@@ -58,7 +65,7 @@ fn main() {
         acc_g += effective_rank(&owned);
     }
     let dt_g = t1.elapsed();
-    let _ = acc_g;
+    std::hint::black_box(acc_g);
 
     let ns_w = dt_w.as_nanos() as f64 / iters as f64;
     let ns_g = dt_g.as_nanos() as f64 / iters as f64;

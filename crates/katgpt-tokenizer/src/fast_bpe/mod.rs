@@ -41,10 +41,15 @@
 //!    benchmark showed the HashMap's hash overhead was the bottleneck
 //!    (gain plateaued at 6.38× at 1M chars with 100% cache coverage).
 //!    See `.benchmarks/191_fast_bpe_goat.md` §G5 (Phase 2.6) + §G6 (Phase 2.7).
-//! 4. **SIMD pretokenization** — out of scope. The upstream `pretokenize/`
-//!    module is what needs nightly `portable_simd`. The katgpt-tokenizer
-//!    is a modelless inference-time encoder; pretokenization is the
-//!    pipeline's responsibility, not the tokenizer's.
+//! 4. **SIMD pretokenization** — the *scan half* shipped (Issue 872,
+//!    2026-09-22): `simd_split.rs` classifies whitespace/bitstream-style via
+//!    SSE2/AVX2/NEON masks (runtime-probed per the `shipped_target_feature_gate`
+//!    law) with a scalar per-char fallback for multibyte chars, wired into
+//!    `FastBpeEncoder::encode_into_pretok`. What remains out of scope is the
+//!    *regex-grammar* class (GPT-2/cl100k/… bitstream grammars à la HF
+//!    tokenizers v1 "bitcannon") — those belong to tokenizer formats this
+//!    crate does not load; the katgpt `BpeTokenizer`'s only pretokenizer is
+//!    the whitespace class its own trainer invariant defines.
 //!
 //! # Attribution
 //!
@@ -60,6 +65,7 @@
 mod pair_rank_table;
 mod pretoken_cache;
 mod pretokenize_keys;
+mod simd_split;
 mod token;
 
 pub use pair_rank_table::{
@@ -67,6 +73,10 @@ pub use pair_rank_table::{
     bpe_merge_symbols_by_rank_with_lookup,
 };
 pub use token::TokenId;
+
+// SIMD bitstream whitespace splitter (Issue 872) — the scan half of
+// `FastBpeEncoder::encode_into_pretok`.
+pub(crate) use simd_split::{SplitEvent, WhitespaceSplitter};
 
 // Re-export the merge cores + scratch so `encode_fast` can drive them directly.
 #[allow(unused_imports)] // SHORT_MERGE_MAX + short_scalar are substrate for future pretokenization work.

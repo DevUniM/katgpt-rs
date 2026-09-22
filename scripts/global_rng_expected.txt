@@ -1,0 +1,96 @@
+# Pins for scripts/global_rng_gate.py — Issue 809 T2 + T3.
+#
+# Every live unseeded-global site in a tracked `*.rs` carries a row here with
+# a REASON: free-function global draws (`fastrand::f32()` et al, T1 census
+# 2026-09-16) AND unseeded constructors (`Rng::new()` / `Rng::default()`, T3
+# census 2026-09-16, key `new`). The commit that adds a site reds until it is
+# adjudicated; a row whose site is gone or whose (file, call) count moved reds
+# STALE — this file must not only ever loosen.
+#
+# Format: `relpath::call::count # reason`. Reasonless rows are REFUSED.
+# The key is line-free; the count is scoped to the (file, call) pair.
+#
+# Out of population (documented in the gate's header, not pinned here):
+# `fastrand::Rng::with_seed(..)` (the correct pattern) and non-fastrand RNG
+# crates.
+#
+# The DEFECT instances were FIXED, not pinned — they are the reason the gate
+# exists: T1 `vocab_channel_pruner` discover_channel/optimize_householder +
+# the `bench_pflash_maxsim_block_scoring` fixture pair; T3 `lsh_cache` (the
+# SimHash projection now derives from the configuration),
+# `bt_fit_from_fn` (takes a seed parameter), and `peira`'s entropy-driven
+# convergence test (`with_seed(42)`).
+
+crates/katgpt-core/benches/qgf_goat.rs::new::2 # criterion bench fixtures over deterministic QGF mocks; recorded numbers are call timings, not draw values
+crates/katgpt-core/benches/qgf_projector_bench.rs::new::5 # same bench-fixture class as qgf_goat.rs — deterministic mocks, timing is the artifact
+crates/katgpt-core/src/cgsp/types.rs::u8::4 # snapshot_id_now() — hand-rolled Uuid-v7-layout generator: the random bits are the identity component of a time-ordered id (the sanctioned Uuid::now_v7() semantics, minus the uuid dep); per-call entropy is the spec, not a symmetry breaker
+crates/katgpt-core/src/curator.rs::new::1 # CuratorBandit Thompson-sampling exploration noise — stochastic arm draw is the documented semantics; no test/bench pins the trajectory and arm selection crosses no sync/replay boundary today; the recorded trigger for a with_seed seam is either of those materializing (Issue 809 T3 borderline adjudication)
+crates/katgpt-core/src/data_probe/dirichlet_energy.rs::new::4 # cfg(all(test, dirichlet_energy)) statistical margins (E>1.0, aligned<0.5x random) orders of magnitude wide; the production API is injector-designed
+crates/katgpt-core/src/data_probe/markov.rs::new::5 # cfg(test) row-stochastic/entropy-bound invariants hold for every seed; production generate_markov_chain takes &mut Rng from the caller
+crates/katgpt-core/src/data_probe/nll.rs::new::4 # cfg(test) statistical check (avg NLL ~ H within 0.3 nats, ~30 sigma at n=10k); the file's GOAT gate seeds with_seed(88)
+crates/katgpt-core/src/data_probe/typical_set.rs::new::3 # cfg(test) AEP invariants (>80/100 typical at n=1000, eps=0.5) — violation probability negligible for any seed; the GOAT sibling seeds 42
+crates/katgpt-core/src/mi/perm.rs::new::1 # the determinism test's ADVERSARIAL fixture — contaminates a scratch stream so perm_reseeding_gives_run_to_run_bit_determinism can assert r1==r2; production PermTest::run reseeds from blake3(seed) every run
+crates/katgpt-core/src/qgf/drafter.rs::new::4 # cfg(test); MockGen returns fixed vectors ignoring rng; assertions seed-invariant
+crates/katgpt-core/src/qgf/projector.rs::new::3 # cfg(test); deterministic mock (condition+1); exact pins seed-invariant
+crates/katgpt-core/src/set_diffusion_schedule.rs::new::1 # cfg(test) interval-containment invariant [a-eps, a+w+eps] for any uniform draw; production sample_order_with takes caller uniforms (injector design)
+crates/katgpt-core/src/traits/tests_leo.rs::new::1 # #[test] membership invariant over an observed goal set; hygiene note recorded in Issue 809 T3: the module is included ungated in traits/mod.rs (sibling tests_spec_gen carries #[cfg(test)])
+crates/katgpt-core/src/traits/tests_spec_gen.rs::new::1 # cfg(test); MockGen returns fixed vec![1,2,3] ignoring rng; trait-bounds smoke, seed-invariant
+crates/katgpt-core/tests/qgf_goat.rs::new::1 # integration-test fixture over deterministic mocks; GOAT margins unaffected by draws
+crates/katgpt-forward/src/dd_tree/tests.rs::new::7 # tests module; rng forwarded only to MarginalTokenGenerator, which documents it as accepted-but-unused (deterministic top-K)
+crates/katgpt-pruners/src/sdar/sdar_absorb.rs::f32::1 # SDAR soft gate, stochastic BY DESIGN (module doc: promote = draw < gate, arXiv:2605.15155); the pure fn sdar_should_promote takes the draw as an argument — deterministic given it — and this opt-in feature's randomness is the published semantics
+crates/katgpt-pruners/src/sdar_gate.rs::f32::3 # tests only: statistical validation of the gate's own distribution at n=1000 with >=6.3-sigma bounds; the deterministic edges are covered by dedicated draw=0.0 / draw=1.0 tests
+crates/katgpt-pruners/src/fft/g_zero_player.rs::new::9 # cfg(test); structural validity asserts (matches!/non-empty/counts), no pinned draw values; the production player takes rng as a parameter
+crates/katgpt-pruners/src/fft/rubric_player.rs::new::3 # cfg(test); structural asserts (action type, visit bookkeeping, reset semantics) — RNG-value-independent
+crates/katgpt-pruners/src/fft/sdar_player.rs::new::3 # cfg(test); structural asserts; the production player takes rng as a parameter
+crates/katgpt-pruners/src/g_zero/template_proposer.rs::new::3 # one doc-comment example (rust,ignore fence — never compiled) + cfg(test) helper and probabilistic-tolerance asserts; the proposer is a stochastic drafter by design
+crates/katgpt-pruners/src/go/sdpg_player.rs::new::2 # cfg(test); legality asserts on an empty board hold for any draw
+crates/katgpt-pruners/src/go/state.rs::new::2 # cfg(test); rng.seed(fixed 0..=50) precedes every draw, so the unseeded constructor state is never consumed
+crates/katgpt-pruners/src/vr_loop.rs::new::3 # cfg(test); the mock generator's generate(.., _rng) ignores the RNG entirely (preloaded candidate queue)
+crates/katgpt-ruliology/src/mutation.rs::new::1 # cfg(test); out-of-bounds OutputFlip no-op assert — the bounds check makes it rng-independent
+crates/katgpt-spectral/src/peira.rs::new::1 # the no_collapse guard: min_norm > 0.0 over continuous-uniform samples — all-zero has measure ~zero; the entropy-driven CONVERGENCE sibling was fixed to with_seed(42) in T3 (Issue 809)
+crates/katgpt-speculative/src/belief_drafter.rs::new::2 # cfg(test); generate takes _rng and IGNORES it (greedy argmax + deterministic entropy gating)
+crates/katgpt-speculative/src/correlation_budget.rs::bool::1 # test-only input stream (~50% mix, per the comment); the ordering assertions sit ~18 sigma from any realized flip at n=500
+crates/katgpt-speculative/src/nf_flow_generator.rs::new::5 # cfg(test); MockGenerator ignores _rng; flow ranking deterministic in marginals + fixed candidates
+crates/katgpt-speculative/src/nf_flow_qgf.rs::new::10 # cfg(test); rng forwarded to the discarding mock only; every exact pin is a deterministic function of fixed marginals/gradient
+crates/katgpt-speculative/src/precision_aware_generator.rs::new::2 # cfg(test); the inner MarginalTokenGenerator is deterministic top-K (rng accepted-but-unused)
+crates/katgpt-speculative/src/spec_generator.rs::new::3 # cfg(test); pins exact top-K of a generator documenting rng as accepted-but-unused
+crates/katgpt-types/src/simd/tests.rs::f32::2 # distributional agreement test (fused vs naive) — the fresh uniform realization every run IS the coverage; 1e-4 tolerance ~10x the realized error scale
+examples/best_buddies_01_bench.rs::new::4 # example bench harness; demo code, not a shipped primitive
+examples/corr_budget_01_bench.rs::bool::4 # example bench input streams (same class as the correlation_budget test); demo code, not a shipped primitive
+examples/go_00_api_bridge.rs::usize::1 # random legal-move demo player; by-design randomness over an externally-validated move set
+examples/go_05_autoresearch.rs::new::1 # example: caller-side construction for run_autoresearch(config, rng); demo
+# ⛔ A REFUTED row, removed 2026-09-18, recorded here because the reason it
+# carried is the reason to distrust the reasons on the rows below.
+#
+#   crates/katgpt-pruners/src/go/tournament.rs::new::1
+#     "cfg(test); structural matches! assert on an empty board"
+#
+# The assertion was matches!(action, GoAction::Place(_, _)) with the message
+# "returned Pass on empty board", and GoRandomPlayer passes DELIBERATELY:
+# PASS_PROBABILITY = 0.02, "2% pass to avoid infinite games". So the unseeded
+# draw could reach the assert — measured over 400 seeds x 6 player types, 9
+# failures (Random 5, which is the 2% constant; MCTS 4). "Structural" was an
+# adjudication made by reading the assert and not the player.
+#
+# It was found by EXECUTION, not by review: the x86_64 matrix hit it, re-ran it
+# alone, saw it pass, and filed it TRANSIENT. That verdict is right for a
+# load-sensitive perf bar and wrong for a coin flip — the third class it has
+# been wrong about (Issues 831, 832). If a row below says a draw cannot reach
+# its assertion, that claim is worth ONE run of the seed sweep.
+examples/go_10_sdpg_tournament.rs::new::1 # example tournament loop; by-design randomness
+examples/self_distilling_demo.rs::usize::1 # random_arm() — the demo's stochastic arm selection is the point being demonstrated
+examples/self_distilling_demo.rs::f32::1 # demo match-quality sampling; same by-design class as random_arm
+src/benchmark/distillation.rs::new::1 # bench harness: the bt_pair_random pairing draw IS the timed workload; recorded numbers are wall-clock throughput, not draw values
+src/benchmark/heuristic.rs::new::2 # TemplateProposer::new(Rng::new()) in bench harnesses — the stochastic proposer is the timed workload; timings, not pinned proposal values
+tests/bench_001_pruners_goat.rs::new::2 # GOAT bench harness; assertions carry wide perf margins, not draw values
+tests/bench_001_pruners_goat_proof.rs::new::2 # GOAT proof bench harness; same wide-margin class
+tests/bench_217_belief_drafter_goat.rs::new::2 # GOAT bench over a drafter whose generate ignores rng
+tests/bench_bomber_arena.rs::new::2 # arena bench harness; demo-class randomness under wide margins
+tests/bench_gzero_modelless.rs::new::1 # GOAT bench harness; wide margins
+tests/bench_shared_vs_independent_hl.rs::new::2 # A/B bench harness; both arms receive equivalent streams
+tests/caddtree_budget_goat.rs::new::1 # GOAT bench harness; wide margins
+tests/go_integration.rs::usize::2 # random legal-move player against a live AutoGo server (#[ignore]-gated); the assertions cover API acceptance and board validity, not game outcomes
+tests/speculative_generator_goat.rs::new::4 # GOAT bench over a deterministic top-K generator (rng accepted-but-unused)
+tests/speculative_generator_routing.rs::new::3 # routing integration test; structural asserts
+tests/test_pgd_analytics.rs::new::1 # analytics test; wide statistical margins
+tests/three_mode_router_goat.rs::new::5 # GOAT routing bench; wide margins

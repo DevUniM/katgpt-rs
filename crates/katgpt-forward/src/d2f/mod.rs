@@ -26,6 +26,8 @@
 // `crate::types::*` → `katgpt_types::*`.
 
 use crate::d2f_context::{D2fContext, denoising_accuracy, forward_block_causal_with};
+#[cfg(feature = "probe_guidance")]
+use crate::d2f_context::apply_probe_guidance;
 use katgpt_core::simd::{simd_add_scalar_inplace, simd_exp_inplace, simd_max_f32};
 use katgpt_core::traits::{ConstraintPruner, ScreeningPruner};
 use katgpt_transformer::TransformerWeights;
@@ -558,6 +560,7 @@ pub fn d2f_decode_block_with_prompt_with(
         screener,
         rng,
         None,
+        None,
     )
 }
 
@@ -595,11 +598,55 @@ pub fn d2f_decode_block_with_prompt_with_q(
         screener,
         rng,
         Some(q_out),
+        None,
     )
 }
 
+/// [`d2f_decode_block_with_prompt_with`] + per-position unmask-step capture
+/// (Plan 602 T1.3, `decode_order_metrics`).
+///
+/// Returns the block result plus π: one `u32` per denoised position holding
+/// the **denoise step at which the position committed**, or `u32::MAX`
+/// (`katgpt_core::dllm::UNMASKED_NEVER`) when it never committed. Ties are
+/// parallel commits within one step (block-parallel decode — exactly the
+/// non-AR behavior the AR-ness instruments measure). Consume with
+/// `katgpt_core::dllm::{local_ar_ness, global_ar_ness}`.
+///
+/// Allocating convenience wrapper for the instrumentation lane — the
+/// G4-sensitive hot loop keeps [`d2f_decode_block_with_prompt_with`]
+/// (the q-capture posture: out-buffers over result fields).
+#[cfg(feature = "decode_order_metrics")]
+pub fn d2f_decode_block_with_unmask_steps(
+    dctx: &mut D2fContext,
+    weights: &TransformerWeights,
+    config: &Config,
+    decode_config: &D2fDecodeConfig,
+    prompt: &[usize],
+    pruner: &dyn ConstraintPruner,
+    screener: &dyn ScreeningPruner,
+    rng: &mut Rng,
+) -> (D2fBlockResult, Vec<u32>) {
+    let seq_len = (prompt.len() + decode_config.block_size).min(config.block_size);
+    let block_positions = seq_len - prompt.len();
+    let mut pi = vec![u32::MAX; block_positions];
+    let result = d2f_decode_block_prompt_q_core(
+        dctx,
+        weights,
+        config,
+        decode_config,
+        prompt,
+        pruner,
+        screener,
+        rng,
+        None,
+        Some(&mut pi),
+    );
+    (result, pi)
+}
+
 /// Shared core of the D2F block decode, optionally capturing per-position
-/// proposal laws (Issue 587).
+/// proposal laws (Issue 587) and/or per-position unmask steps (Plan 602
+/// T1.3 — both out-params follow the same commit-time capture contract).
 #[allow(clippy::too_many_arguments, clippy::needless_option_as_deref)]
 fn d2f_decode_block_prompt_q_core(
     dctx: &mut D2fContext,
@@ -611,6 +658,7 @@ fn d2f_decode_block_prompt_q_core(
     screener: &dyn ScreeningPruner,
     rng: &mut Rng,
     mut q_out: Option<&mut [f32]>,
+    mut pi_out: Option<&mut [u32]>,
 ) -> D2fBlockResult {
     // Standalone decode — no persistent KV across calls
     dctx.committed_len = 0;
@@ -653,6 +701,14 @@ fn d2f_decode_block_prompt_q_core(
     let mut sample_exp_buf: Vec<f32> = Vec::with_capacity(vocab);
 
     for step in 0..max_steps {
+        // Issue 865 T2: arm the early-layer tap capture exactly when guidance
+        // is live (λ ≠ 1 AND a probe installed) — before the forward, since
+        // the capture happens inside it. The G1 path (λ = 1, or no probe)
+        // pays nothing.
+        #[cfg(feature = "probe_guidance")]
+        {
+            dctx.probe_tap_capture = dctx.guidance_lambda != 1.0 && dctx.weak_probe.is_some();
+        }
         // Zero-alloc forward pass with block-causal attention
         let _seq_len_actual =
             forward_block_causal_with(dctx, weights, &tokens[..seq_len], config, block_size);
@@ -691,6 +747,21 @@ fn d2f_decode_block_prompt_q_core(
             // Rotate caches: prev ← raw current, prev_prev ← old prev
             std::mem::swap(&mut dctx.prev_logits_flat, &mut dctx.prev_prev_logits_flat);
         }
+
+        // Probe guidance (Issue 865 T1): affine combine against the weak-side
+        // probe AFTER the multistep blend, BEFORE sampling — the sampler reads
+        // guided logits exactly as it reads raw ones. No-op (bit-identical)
+        // when λ = 1.0 or no probe is installed.
+        #[cfg(feature = "probe_guidance")]
+        apply_probe_guidance(
+            dctx,
+            &tokens,
+            block_start,
+            seq_len,
+            vocab,
+            config.n_embd,
+            step,
+        );
 
         let mut n_confident = 0usize;
 
@@ -785,6 +856,16 @@ fn d2f_decode_block_prompt_q_core(
             if chosen_prob >= tau_conf && chosen_token != mask {
                 tokens[p] = chosen_token;
                 n_confident += 1;
+                // Plan 602 T1.3: record the denoise step at which this
+                // position committed (π). Same timing contract as the q
+                // capture below — commit time is the last moment this
+                // position is visited.
+                if let Some(pi) = pi_out.as_deref_mut() {
+                    let idx = p - block_start;
+                    if idx < pi.len() {
+                        pi[idx] = step as u32;
+                    }
+                }
                 // Capture the draft-time proposal law q for this position
                 // (Issue 587, ExactQ policy). Must happen at commit time:
                 // once committed the position is never revisited, so this
@@ -825,6 +906,17 @@ fn d2f_decode_block_prompt_q_core(
         for row in 0..q_rows.min(denoising_positions) {
             if tokens[block_start + row] == mask {
                 write_q_point_mass(q, row, vocab, mask);
+            }
+        }
+    }
+
+    // Plan 602 T1.3: never-committed positions keep the sentinel — the
+    // contract is total regardless of caller-side buffer init (mirrors the
+    // q point-mass fill above).
+    if let Some(pi) = pi_out.as_deref_mut() {
+        for row in 0..pi.len().min(denoising_positions) {
+            if tokens[block_start + row] == mask {
+                pi[row] = u32::MAX;
             }
         }
     }
@@ -1391,6 +1483,10 @@ pub struct D2fPipeline<'a> {
     /// the binary mask/token denoising loop.
     #[cfg(feature = "dmax_spd")]
     soft_config: Option<SoftDecodeConfig>,
+    /// Probe guidance installed for `decode_all` (Issue 865 T1): strength λ
+    /// plus the weak-side probe. `None` = unguided (the default).
+    #[cfg(feature = "probe_guidance")]
+    guidance: Option<(f32, Box<dyn crate::d2f_context::WeakLogitProbe>)>,
 }
 
 /// Result of full pipeline decode.
@@ -1418,6 +1514,8 @@ impl<'a> D2fPipeline<'a> {
             prompt: Vec::new(),
             #[cfg(feature = "dmax_spd")]
             soft_config: None,
+            #[cfg(feature = "probe_guidance")]
+            guidance: None,
         }
     }
 
@@ -1435,6 +1533,8 @@ impl<'a> D2fPipeline<'a> {
             prompt: prompt.to_vec(),
             #[cfg(feature = "dmax_spd")]
             soft_config: None,
+            #[cfg(feature = "probe_guidance")]
+            guidance: None,
         }
     }
 
@@ -1445,6 +1545,18 @@ impl<'a> D2fPipeline<'a> {
     #[cfg(feature = "dmax_spd")]
     pub fn with_soft_config(mut self, soft_config: SoftDecodeConfig) -> Self {
         self.soft_config = Some(soft_config);
+        self
+    }
+
+    /// Install probe guidance for the pipeline's decode (Issue 865 T1).
+    ///
+    /// Builder-style: `D2fPipeline::with_prompt(..).set_guidance(λ, probe)
+    /// .decode_all(..)`. λ = 1.0 is a no-op (bit-identical, G1); the probe is
+    /// a [`crate::d2f_context::WeakLogitProbe`] (T2 trains the artifact;
+    /// tests use fixture probes).
+    #[cfg(feature = "probe_guidance")]
+    pub fn set_guidance(mut self, lambda: f32, probe: Box<dyn crate::d2f_context::WeakLogitProbe>) -> Self {
+        self.guidance = Some((lambda, probe));
         self
     }
 
@@ -1473,6 +1585,10 @@ impl<'a> D2fPipeline<'a> {
         let temperature = self.decode_config.temperature;
         let vocab = self.config.vocab_size;
         let mut ctx = D2fContext::new(self.config);
+        #[cfg(feature = "probe_guidance")]
+        if let Some((lambda, probe)) = self.guidance {
+            ctx.set_guidance(lambda, probe);
+        }
 
         let mut all_tokens = self.prompt.clone();
         let mut block_results = Vec::with_capacity(n_blocks);
@@ -1539,12 +1655,35 @@ impl<'a> D2fPipeline<'a> {
             let mut converged_step = max_steps;
 
             for step in 0..max_steps {
+                // Issue 865 T2: arm the early-layer tap capture exactly when
+                // guidance is live, before the forward (same contract as the
+                // prompt_q core; the G1 path pays nothing).
+                #[cfg(feature = "probe_guidance")]
+                {
+                    ctx.probe_tap_capture = ctx.guidance_lambda != 1.0 && ctx.weak_probe.is_some();
+                }
                 let _seq_len_actual = forward_block_causal_with(
                     &mut ctx,
                     weights,
                     &seq_tokens[..seq_len],
                     self.config,
                     block_size,
+                );
+
+                // Issue 865 T1 fix (found by T2): the pipeline path never
+                // applied guidance — set_guidance copied the probe into the
+                // context and the combine never fired here, so the T1
+                // pipeline test passed vacuously at λ = 1. Apply after the
+                // forward, before sampling, exactly like the prompt_q core.
+                #[cfg(feature = "probe_guidance")]
+                apply_probe_guidance(
+                    &mut ctx,
+                    &seq_tokens[..seq_len],
+                    block_start,
+                    seq_len,
+                    vocab,
+                    self.config.n_embd,
+                    step,
                 );
 
                 let mut n_confident = 0usize;

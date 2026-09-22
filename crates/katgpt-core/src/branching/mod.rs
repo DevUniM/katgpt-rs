@@ -86,9 +86,7 @@ pub use projection::{
     AssignError, AssignResult, DEFAULT_ASSIGN_MAX_INTERFERENCE, DEFAULT_ORTHOGONAL_EPSILON,
     DEFAULT_PROJECTION_DIM, NonInterferenceProjection, max_orthogonal_branches,
 };
-pub use router::{
-    BranchRouter, DEFAULT_TAU_JACCARD, DEFAULT_TAU_SNAP, DEFAULT_TAU_SPAWN, RouteMode, RouteResult,
-};
+pub use router::{BranchRouter, DEFAULT_TAU_JACCARD, DEFAULT_TAU_SNAP, RouteMode, RouteResult};
 pub use types::{
     BRANCH_TYPES_WIRE_VERSION, BranchId, BranchLifecycle, BranchStats, CognitiveBranch,
     EpisodicCodec, EpisodicEntry, FailureEntry, ProceduralRule,

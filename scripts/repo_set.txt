@@ -14,11 +14,15 @@ riir-dapps
 riir-deployer
 riir-esp32
 riir-game-sdk
+riir-infer
 riir-kat
+riir-llm
 riir-mmorpg-examples
 riir-neuron-db
+riir-reflex
 riir-shader
 riir-train
 riir-viewbridge
-seal-game-editor
-seal-remake
+mmorpg-editor
+mmorpg-remaster
+mmorpg-remake

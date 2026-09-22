@@ -14,8 +14,6 @@ use crate::mux_latent::config::CompressionRatio;
 /// Spectral energy analysis of a context window.
 #[derive(Debug, Clone, Copy)]
 pub struct SpectralLOD {
-    /// FFT size for spectral analysis. Must be power of 2.
-    pub fft_size: usize,
     /// Energy concentration threshold for high-detail classification.
     /// Windows with energy concentration above this get lower compression.
     pub high_detail_threshold: f32,
@@ -24,7 +22,6 @@ pub struct SpectralLOD {
 impl Default for SpectralLOD {
     fn default() -> Self {
         Self {
-            fft_size: 64,
             high_detail_threshold: 0.7,
         }
     }
@@ -32,9 +29,12 @@ impl Default for SpectralLOD {
 
 impl SpectralLOD {
     /// Creates a new SLoD analyzer.
-    pub fn new(fft_size: usize, high_detail_threshold: f32) -> Self {
+    ///
+    /// (Issue 772 S2 removed the never-read `fft_size` field — the analysis is
+    /// a zero-allocation variance heuristic, not an FFT; no window size is
+    /// consumed.)
+    pub fn new(high_detail_threshold: f32) -> Self {
         Self {
-            fft_size,
             high_detail_threshold,
         }
     }
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_optimal_ratio_high_detail() {
-        let slod = SpectralLOD::new(64, 0.7);
+        let slod = SpectralLOD::new(0.7);
 
         // Very diverse tokens should get 4x compression
         let tokens: Vec<u32> = vec![0, 500, 1000, 1500, 2000, 2500, 3000, 3500];
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_optimal_ratio_low_detail() {
-        let slod = SpectralLOD::new(64, 0.3);
+        let slod = SpectralLOD::new(0.3);
 
         // Repetitive tokens should get 16x compression
         // Note: with zero variance, sigmoid(var/(0+1)) = sigmoid(0) = 0.5

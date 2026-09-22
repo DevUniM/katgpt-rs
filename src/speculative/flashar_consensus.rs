@@ -13,7 +13,3 @@ pub use katgpt_forward::flashar_consensus::{
     ConsensusConfig, ConsensusResult, DualPathResult, FlashARConsensusVerifier, MAX_DRAFT_WIDTH,
     ThermalPath, compute_ternary_consensus, dual_path_draft, route_thermal_paths,
 };
-
-// `ternary_fusion_gate` is gated `plasma_path` upstream.
-#[cfg(feature = "plasma_path")]
-pub use katgpt_forward::flashar_consensus::ternary_fusion_gate;

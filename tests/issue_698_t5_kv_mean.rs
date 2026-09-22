@@ -69,6 +69,20 @@ const SEED: u64 = 42;
 /// Pinned fixture identity (T1's convention): any change to weight init or
 /// the fixture config re-keys this hash and fails loudly instead of silently
 /// re-basing the pinned band.
+///
+/// PLATFORM-BOUND by construction (first x86_64 execution, issue 806,
+/// 4090 box, 2026-09-16): the weights come from `Rng::normal()`'s Box-Muller
+/// (`f32::ln`/`f32::cos`), whose ulps differ between macOS libm and the MSVC
+/// ucrt — so every fixture weight differs at the last bit and the BLAKE3
+/// hash re-keys. Measured: aarch64 `23d0daab3f087159`, x86_64
+/// `4d0b592740db9358`. Both pins are live (a drift within ONE platform
+/// still fails loudly); the behavior gates below are the cross-platform
+/// contract, not this identity record.
+#[cfg(target_arch = "aarch64")]
+const PINNED_FIXTURE_HASH: &str = "23d0daab3f087159";
+#[cfg(target_arch = "x86_64")]
+const PINNED_FIXTURE_HASH: &str = "4d0b592740db9358";
+#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
 const PINNED_FIXTURE_HASH: &str = "23d0daab3f087159";
 
 /// Pinned max_abs band (raw bits, debug + release bit-identical on this
@@ -76,6 +90,16 @@ const PINNED_FIXTURE_HASH: &str = "23d0daab3f087159";
 /// that trips the pin should relax to a tolerance and record the delta, the
 /// Bench-773 metric lesson). The behavior gate is the argmax assertion
 /// above; the band is the magnitude record.
+///
+/// PLATFORM-BOUND at 1 ulp (issue 806 measurement, same session as the
+/// fixture hash): aarch64 `0x3e5f_d968` (2.186028e-1), x86_64 `0x3e5f_d970`
+/// (2.186029e-1) — the x86_64 forward realizes the band ONE bit higher;
+/// argmax flips stayed 0/12 on both. Same-platform drift still fails loudly.
+#[cfg(target_arch = "aarch64")]
+const PINNED_BAND_BITS: u32 = 0x3e5f_d968; // 2.186028e-1
+#[cfg(target_arch = "x86_64")]
+const PINNED_BAND_BITS: u32 = 0x3e5f_d970; // 2.186029e-1
+#[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
 const PINNED_BAND_BITS: u32 = 0x3e5f_d968; // 2.186028e-1
 
 /// micro + n_layer=3: a real 3-phase forward (pre-loop layer 0, window

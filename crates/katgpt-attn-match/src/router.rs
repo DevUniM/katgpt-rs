@@ -23,7 +23,8 @@
 pub enum SolverBackend {
     /// Plain scalar CPU loop. Wins for tiny `t` (overhead-dominated).
     CpuScalar = 0,
-    /// 8-wide SIMD auto-vectorized loop. Wins for `t ∈ [64, 1024]`.
+    /// Strict ordered-reduction loop (scalar on x86_64 — Issue 871). Wins for
+    /// `t ∈ [64, 1024]` over the rayon dispatch overhead.
     CpuSimd = 1,
     /// Rayon-parallel blocked CPU. Wins for large `T` on multi-core.
     CpuRayon = 2,

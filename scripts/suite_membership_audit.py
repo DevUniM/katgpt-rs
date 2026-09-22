@@ -71,6 +71,15 @@ except ModuleNotFoundError:  # pragma: no cover (3.10 only)
 
 import cfg_gated_target_audit as cga  # noqa: E402  (shared vocabulary)
 import ci_test_execution_report as cit  # noqa: E402  (shared invocation_texts)
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
+
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
 
 # Files that can pin a suite, per repo. The hand method grepped
 # `scripts/ .github/` — that boundary is kept. These are text-scanned, not
@@ -311,11 +320,15 @@ def audit(repo: Path, workspace_corpus: str | None = None) -> RepoReport:
 
 
 def derive_repos(workspace: Path) -> list[Path]:
-    """A root BOUNDARY.md AND a `.git` DIR — never a typed list."""
-    return sorted(
-        d for d in workspace.iterdir()
+    """A root BOUNDARY.md AND a `.git` DIR — never a typed list.
+
+    Names pass through the machine-local alias codec (`repo_alias.py`) so the
+    returned paths carry the CONTRACT spelling every tracked pin is keyed on.
+    """
+    return [workspace / n for n in repo_alias.apply(
+        d.name for d in workspace.iterdir()
         if d.is_dir() and (d / "BOUNDARY.md").is_file() and (d / ".git").is_dir()
-    )
+    )]
 
 
 def selftest() -> None:
@@ -325,16 +338,16 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         (repo / "tests").mkdir(parents=True)
-        (repo / "tests" / "goat_alpha_gate.rs").write_text("#[test] fn a() {}\n")
-        (repo / "tests" / "plain_helper.rs").write_text("pub fn h() {}\n")
+        (repo / "tests" / "goat_alpha_gate.rs").write_text("#[test] fn a() {}\n", encoding="utf-8")
+        (repo / "tests" / "plain_helper.rs").write_text("pub fn h() {}\n", encoding="utf-8")
         (repo / "tests" / "common").mkdir()
-        (repo / "tests" / "common" / "mod.rs").write_text("pub const X: u32 = 1;\n")
+        (repo / "tests" / "common" / "mod.rs").write_text("pub const X: u32 = 1;\n", encoding="utf-8")
         (repo / "Cargo.toml").write_text(
             '[package]\nname = "t"\n'
             '[[test]]\nname = "named_bench"\npath = "tests/named_bench.rs"\n'
             'required-features = ["f1"]\n'
             '[[test]]\npath = "tests/derived_name.rs"\n'
-            '[[bench]]\nname = "some_bench"\nharness = false\n'
+            '[[bench]]\nname = "some_bench"\nharness = false\n', encoding="utf-8"
         )
         rep = RepoReport(repo="t")
         scan_manifest(repo, repo / "Cargo.toml", rep)
@@ -353,8 +366,8 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         (repo / "tests").mkdir()
-        (repo / "tests" / "orphan.rs").write_text("#[test] fn a() {}\n")
-        (repo / "Cargo.toml").write_text('[package]\nname = "t"\nautotests = false\n')
+        (repo / "tests" / "orphan.rs").write_text("#[test] fn a() {}\n", encoding="utf-8")
+        (repo / "Cargo.toml").write_text('[package]\nname = "t"\nautotests = false\n', encoding="utf-8")
         rep = RepoReport(repo="t")
         scan_manifest(repo, repo / "Cargo.toml", rep)
         assert rep.targets == []
@@ -363,12 +376,12 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         (repo / "scripts").mkdir()
-        (repo / "scripts" / "gate.sh").write_text("cargo test --test pinned_target -- --nocapture\n")
+        (repo / "scripts" / "gate.sh").write_text("cargo test --test pinned_target -- --nocapture\n", encoding="utf-8")
         (repo / "Cargo.toml").write_text(
             '[package]\nname = "t"\n'
             '[[test]]\nname = "pinned_target"\npath = "tests/p.rs"\n\n'
             '[features]\nf1 = []\n'
-            '[[test]]\nname = "orphan_target"\npath = "tests/o.rs"\n'
+            '[[test]]\nname = "orphan_target"\npath = "tests/o.rs"\n', encoding="utf-8"
         )
         rep = audit(repo)
         names = {t.name for t in rep.targets}
@@ -394,7 +407,7 @@ def selftest() -> None:
     assert line_is_broad_test('cargo test --workspace --quiet || fail "cargo test --workspace"')
     assert line_is_broad_test('cargo test --all-features --tests')
     assert line_is_broad_test('out="$(cargo test --workspace)"')
-    assert line_is_broad_test("cargo test -p seal-view --features texture_vessel")
+    assert line_is_broad_test("cargo test -p mmorpg-view --features texture_vessel")
     assert not line_is_broad_test("cargo test -p riir-gpu --features x --test bench_831 -- --ignored")
     assert not line_is_broad_test("cargo test -p katgpt-core --lib")
     assert not line_is_broad_test("cargo test --doc")
@@ -407,10 +420,10 @@ def selftest() -> None:
         (repo / "scripts" / "gate.sh").write_text(
             "cargo test --workspace\n"
             "# a plain `cargo test` compiles the file to nothing\n"
-            "echo 'cargo test --workspace'\n"
+            "echo 'cargo test --workspace'\n", encoding="utf-8"
         )
         (repo / "scripts" / "notes.py").write_text(
-            'x = "cargo test --workspace"  # prose in a non-suite file\n'
+            'x = "cargo test --workspace"  # prose in a non-suite file\n', encoding="utf-8"
         )
         (repo / "scripts" / "bin.lock").write_bytes(b"\x00\x01cargo test --workspace")
         lines = command_lines(repo)
@@ -432,7 +445,7 @@ def selftest() -> None:
             "OUT=$(cargo test -p pkg --features f \\\n"
             "    --test named_gate \\\n"
             "    -- --nocapture)\n"
-            "cargo test --workspace --quiet\n"
+            "cargo test --workspace --quiet\n", encoding="utf-8"
         )
         lines = command_lines(repo)
         assert len(lines) == 2, lines

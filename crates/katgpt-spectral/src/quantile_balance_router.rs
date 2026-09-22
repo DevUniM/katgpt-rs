@@ -82,9 +82,9 @@
 //! information leaks into the current step's selection. At snapshot-swap
 //! (our application point) this trap is structurally avoided: `β` is computed
 //! once from the calibration batch and applied to **future** inference tokens,
-//! so there is no temporal circularity. The `causality_strict` flag is
-//! preserved for callers who reuse this module in a per-step context
-//! (riir-train); at snapshot-swap it has no effect.
+//! so there is no temporal circularity. (The `causality_strict` flag was
+//! removed — Issue 772 S6: never read; per-step callers must apply the old β
+//! themselves, and no riir-train consumer of this module exists.)
 //!
 //! # Substrate
 //!
@@ -104,8 +104,10 @@
 /// Configuration for Quantile Balancing router bias computation.
 ///
 /// Mirrors the reference NumPy implementation
-/// (`def quantile_bias(s, k, T=5)` from Su blog) with two added knobs:
-/// `causality_strict` (per-step callers only) and `tol` (early-stop).
+/// (`def quantile_bias(s, k, T=5)` from Su blog) with one added knob:
+/// `tol` (early-stop).
+// Issue 772 S6: `causality_strict` removed — never read; at snapshot-swap the
+// causality trap is structurally avoided (module docs §"Causality Trap").
 #[derive(Debug, Clone, Copy)]
 pub struct QbConfig {
     /// Alternating-coordinate descent iterations. **Default `iters=5`** per
@@ -118,12 +120,6 @@ pub struct QbConfig {
     /// `honest_over_iteration_can_worsen_maxvio` test). GOAT gate G7 enforces
     /// MaxVio stability (not β stability) between iters=5 and iters=10.
     pub iters: u8,
-    /// Causality-preserving variant for per-step callers (training only).
-    /// At snapshot-swap (our application point) this has no effect — `β`
-    /// is computed once and applied to future tokens, so there is no
-    /// circularity. Kept for riir-train consumers who reuse this module.
-    /// See module docs §"Causality Trap".
-    pub causality_strict: bool,
     /// Early-stop tolerance on `‖β_new − β_old‖_∞`. If the sup-norm change
     /// falls below this, the loop breaks early. Default `1e-6` (well below
     /// f32 quantization noise at typical score magnitudes).
@@ -135,7 +131,6 @@ impl Default for QbConfig {
         // Su blog defaults. `iters=5` is the validated choice (G7 enforces).
         Self {
             iters: 5,
-            causality_strict: true,
             tol: 1e-6,
         }
     }

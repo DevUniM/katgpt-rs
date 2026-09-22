@@ -275,7 +275,7 @@ pub use tether::{
 #[cfg(feature = "ignition_schedule")]
 pub mod ignition;
 #[cfg(feature = "ignition_schedule")]
-pub use ignition::{IgnitionSchedule, ignition_time, order_by_ignition_into};
+pub use ignition::{IgnitionSchedule, commit_time_star, ignition_time, order_by_ignition_into};
 // Conformal Predictive Intervals — modelless UQ overlay (Plan 340, Research
 // 322, arXiv:2605.03789 CSP + arXiv:2606.09473 "Report the Floor"). Wraps any
 // PointForecaster with a per-channel × per-horizon-bucket exp-recency-
@@ -308,6 +308,30 @@ pub mod incidence;
 // inversion channel discriminates, entropy is composition-coupled telemetry.
 #[cfg(feature = "evidence_tripwire")]
 pub mod evidence_tripwire;
+// state_option_scoring — per-option centroid-cosine scoring over a fixed
+// option table + the pinned lowest-index argmax (Plan 607 T1). Upstreams
+// riir-reflex Issue 004 T7's route_terms shape (sigmoid(dot(state, centroid)
+// · scale) per option; the compression drafter stays OUT of the hot loop —
+// reflex measured drafter deltas cannot rank short options). Generic by law
+// (R4): (state vector, option matrix) in, decision out — nothing
+// arena-specific. Consumes exact_sigmoid + cmp_for_max + distance_abstain's
+// unit normalize (feature implication, not a fork of a bit-parity-critical
+// helper). T3 adds `head::FittedHead` — the corpus-fitted linear head
+// (closed-form ridge LS over frozen features) consuming `linalg::
+// ridge_solve`'s f64 path (KARC Plan 308's fit math). Opt-in pending the
+// Plan 607 GOAT (bench_876 T1 + bench_878 T3).
+#[cfg(feature = "state_option_scoring")]
+pub mod state_option_scoring;
+// template_decode — bounded template decode over CLOSED sentence grammars
+// (Plan 607 T2). A table of literal/slot templates with closed fill
+// vocabularies; decode returns (template, fill indices) and REFUSES
+// anything else (Unknown / Ambiguous — never a guess). Decode-only,
+// corpus-limited per protocol version; `verify_closed` proves each table
+// ambiguity-free over its full fill product. The losslessness-measurement
+// + laya-traffic-intake arm of the game-decision lane (Lz4FlexDrafter
+// lineage, Plan 285). Opt-in; zero deps; zero-alloc decode.
+#[cfg(feature = "template_decode")]
+pub mod template_decode;
 #[cfg(feature = "conformal_predictive_intervals")]
 pub use conformal::metrics::{
     crps, crps_interval, empirical_coverage, mean_crps_interval, mean_winkler, winkler_score,
@@ -375,6 +399,15 @@ pub mod mcts_state_action_cache;
 // katgpt-pruners ↔ katgpt-speculative cycle. Pure stdlib (Path + fs + mem).
 // Re-exported by katgpt-pruners::freeze for backwards compatibility.
 pub mod freeze;
+// .kpt single-file weight-archive POC (Issue 841 / Research 568 fusion 2):
+// .cact-style nameless positional layer-major file × BLAKE3/Merkle integrity
+// × atomic file-replacement hot-swap (write temp + fsync + rename). POC
+// grade per the 2026-09-19 owner call: example + tests prove the concept,
+// the perf envelope and the fail-closed security posture; NOT promoted, no
+// production consumer — the format+engine lift stays parked until a
+// NeuronShard-Merkle consumer wants single-file mmap hot-swap.
+#[cfg(feature = "kpt_archive")]
+pub mod kpt_archive;
 // Proof goal deduplication cache core types (GoalHash, GoalResult,
 // GoalVerifier, ProofGoalCache). Extracted from `katgpt-pruners::proof::goal_cache`
 // (Plan 388 Phase 2) to break the katgpt-pruners ↔ katgpt-speculative cycle.
@@ -403,6 +436,16 @@ pub mod shard_embedding;
 // G1+G2+G3+G4+G5 ALL PASS.
 #[cfg(feature = "ssmax_temperature")]
 pub mod ssmax;
+// Kamath range-law regime detector + normalized-entropy dispersion diagnostic
+// (Issue 762 T4.2, Research 549 — the ASEntmax duality's measurement half,
+// beside ssmax: same statistics family). `ρ = Δ̂/(2σ̂√(2 ln n))` classifies a
+// routing logit row as Gaussian-band (the Eq-10 damping regime) vs spiked
+// (needle present — over-sparsification desired); `H(p)/ln n` measures
+// Prop-1 dispersion. Pure one/two-pass modelless statistics over the shared
+// ungated `simd::logsumexp_parts` kernel; opt-in `logit_regime` until a
+// consumer promotes.
+#[cfg(feature = "logit_regime")]
+pub mod logit_regime;
 // SIMD LUT Dequantization — software analog of StreamDQ near-memory DQ
 // (Plan 431, Research 418, arXiv:2607.08993 Jeong et al. SK Hynix 2026). Generic
 // format-parameterized dequantize primitive that replaces the per-element
@@ -464,7 +507,7 @@ pub use elasticity_gated_update::{
 pub mod set_diffusion_schedule;
 pub use set_diffusion_schedule::{
     PositionOffsetSchedule, ar_order, block_causal_gen_steps, mdlm_gen_steps, order_to_gen_steps,
-    uniform_order, uniform_order_with,
+    probability_order, uniform_order, uniform_order_with,
 };
 // UGC — Unmasking Growth Complexity certified schedules for masked diffusion
 // (arXiv:2608.13520, Research 485 / Issue 664). Always-on: pure math + a
@@ -736,6 +779,39 @@ pub use renoise_ce::{
 #[cfg(feature = "freedom_selection")]
 pub use renoise_ce::best_of_n_freedom;
 
+// Issue 875 T2 / Research 582: the (T−t)-weighted renoise-CE draw schedule —
+// k_draws sampled over [floor·L, cap·L] from the remaining-horizon density
+// instead of one fixed level. Combined-gate surface: needs both features
+// (renoise_ce is default-on; horizon_weights is the opt-in arm).
+#[cfg(all(feature = "renoise_ce", feature = "horizon_weights"))]
+pub use renoise_ce::{RenoiseCeHorizon, renoise_ce_score_horizon};
+
+// Issue 875 T4 / Research 582: the target-anchored renoise-CE probe mode —
+// each re-resolved draw is scored against a caller-supplied frozen TARGET
+// anchor (distributional surprise vs the prior) instead of the candidate
+// itself (self-consistency). Flow-relative novelty: states at the prior's
+// own distance but in a foreign basin separate only through the flow
+// (Bench 879). Consumer sketch: consolidation surprise ordering.
+// renoise_ce_surprise implies renoise_ce, so the single gate suffices.
+#[cfg(feature = "renoise_ce_surprise")]
+pub use renoise_ce::renoise_ce_surprise;
+
+// horizon_weights (Issue 875 T1 / Research 582, arXiv:2605.09071): the PFD
+// (T−t) Fubini accumulation law + the exact w(t) = ½(T−t)g²c² closed form
+// (c = exp(−∫a)), with the BLAKE3-committed fixed-grid table form (the
+// static_cal pattern, exact — no calibration pass). Future-looking
+// remaining-horizon weighting — mechanism-distinct from
+// tether::horizon_decay's past-looking staleness fading. T2 consumer
+// shipped as the combined-gate renoise_ce_score_horizon (Bench 877);
+// the feature itself stays OPT-IN per the T5 promotion rule.
+#[cfg(feature = "horizon_weights")]
+pub mod horizon_weights;
+#[cfg(feature = "horizon_weights")]
+pub use horizon_weights::{
+    HorizonWeightTable, HORIZON_WEIGHT_GRID, pfd_horizon_weight_at, pfd_horizon_weights,
+    remaining_horizon_t_sample, remaining_horizon_weight, remaining_horizon_weights,
+};
+
 #[cfg(feature = "dual_leo")]
 pub use traits::{
     ActingMode, AlphaSchedule, AutocurriculumSampler, BcConfig, BcTarget, DualLeoMixer,
@@ -822,7 +898,11 @@ pub use questbench::{
 pub use types::{CacheStrategy, IterationMode, SubStepStrategy, TrainingFreeLoopConfig};
 
 #[cfg(feature = "plasma_path")]
-pub use simd::{simd_ternary_matmul_batch, simd_ternary_matvec, ternary_matvec_scalar};
+pub use simd::{
+    l3_cache_bytes, plasma_prefers_ternary, plasma_prefers_ternary_with_l3,
+    simd_matvec_plasma_dispatch, simd_matvec_plasma_dispatch_with_l3, simd_ternary_matmul_batch,
+    simd_ternary_matvec, ternary_matvec_scalar, DEFAULT_L3_BYTES,
+};
 #[cfg(feature = "plasma_path")]
 pub use types::TernaryWeights;
 
@@ -944,6 +1024,27 @@ pub use slod::{
 #[cfg(feature = "spectral_pruner")]
 pub mod irrep_pruner;
 
+// Frozen-evidence deliberation kernel + step-drift metric (Issue riir-ai 953 /
+// katgpt-rs Research 555, arXiv:2609.06746 CVRR). Convex-mix sigmoid-gated
+// re-read of FROZEN evidence rows within one think cycle + the
+// decorative-recurrence drift detector. Opt-in; think-brain consumers only.
+#[cfg(feature = "frozen_evidence")]
+pub mod frozen_evidence;
+#[cfg(feature = "frozen_evidence")]
+pub use frozen_evidence::{
+    classify_drift, cosine, deliberate, gate_map_into, transition_into, FrozenEvidence,
+    RecurrenceHealth, DEFAULT_DRIFT_CHAOS, DEFAULT_DRIFT_STUCK,
+};
+
+// PC-ALM dual accumulator + closed-form rate laws (Issue 775, Research 554).
+// The dual half of the interleaved primal-dual pair: ballistic (wave-mode)
+// credit propagation with Jury-certified rates + the exact-adjoint-at-KKT
+// readout. α=0 bit-identical to the incumbent penalty path. The DEC twin
+// (wave-mode interleave on CochainField pairs) is katgpt-dec's
+// `wave_kernel`, behind the same-named flag there. Opt-in.
+#[cfg(feature = "dual_wave")]
+pub mod dual;
+
 // Subspace phase-gate primitives — participation ratio, numerical rank, N≥d
 // phase-transition gate (Wang et al. Thm 4, arXiv:2409.02426), and runtime
 // Jacobian SVD via forward differences (Plan 301, Research 279). Pure numeric,
@@ -954,6 +1055,18 @@ pub mod irrep_pruner;
 // + tucker_factorization (both default-on).
 #[cfg(feature = "subspace_phase_gate")]
 pub mod subspace_phase_gate;
+
+// subspace_intervention — the three-arm subspace-intervention protocol
+// (Issue 779 T1 / Research 557 / arXiv:2607.01987): modelless ridge probe +
+// aligned/random/residual projection triad + task→layer affinity sweep,
+// promoted from the Issue-778 POC harness. OPT-IN (no-default-consumer rule).
+#[cfg(feature = "subspace_intervention")]
+pub mod subspace_intervention;
+
+// Plan 598 / Research 559 — single-pass token→byte marginal with the
+// terminal-mass certificate. OPT-IN (no-default-consumer rule).
+#[cfg(feature = "refinement_marginal")]
+pub mod refinement_marginal;
 
 // Group Invariance Probe — modelless symmetry discovery on a hypothesis Lie
 // group (Plan 356, Research 355 — distilled from LieFlow, arXiv:2512.20043).
@@ -1054,6 +1167,23 @@ pub mod viable_manifold_graph;
 // 0 violations, monotone, 51.4x frontier-vs-passive). Opt-in.
 #[cfg(feature = "certified_frontier")]
 pub mod certified_frontier;
+
+// set_admission — counter-anchored set admission (Plan 599, Research 564,
+// arXiv:2603.06397 "R4T"): greedy set admission scoring g + α·cos(x,q₀) +
+// κ·log(1 + x̂ᵀM⁻¹x̂) under the 0.95 colinearity cap (Sherman–Morrison M⁻¹,
+// incremental participation-ratio tripwire), exact cosine-kernel Vendi
+// certificate via d×d eigenduality through the pinned spectral_pencil
+// Jacobi + certified_frontier's vendi_diversity. Opt-in; both substrates
+// consumed, neither forked.
+#[cfg(feature = "set_admission")]
+pub mod set_admission;
+
+// set_admission_freeze — the T4.4 self-adaptive freeze surface (Plan 599
+// track b): re-freeze improved direction banks from runtime evidence into a
+// BLAKE3-committed 1 KB artifact (the local MerkleFrozenEnvelope pattern),
+// consumed through `fan_cap_ladder_into_bank`. Opt-in with `set_admission`.
+#[cfg(feature = "set_admission")]
+pub mod set_admission_freeze;
 
 // Usage-Rate (Mass/Age) KV Eviction Scoring + Generation-Runaway Canary
 // (Plan 585, Research 523, arXiv:2608.19920 "Learning how to Forget" Seeger
@@ -1343,7 +1473,7 @@ pub use compression_drafter::{CompressionDrafter, Lz4FlexDrafter};
 
 // BabelCodec — Readability-relaxed semantic codec (Plan 331, Research 312,
 // arXiv:2606.19857 BabelTele). Successor text codec to CompressionDrafter:
-// where CompressionDrafter failed G2 twice on the Seal corpus (byte-level LZ4
+// where CompressionDrafter failed G2 twice on the RPG corpus (byte-level LZ4
 // matching on short quest-grammar strings), BabelCodec operates on semantic
 // STRUCTURE (BT-P8 fixed symbolic mapping rules) — purpose-built for KG-triple
 // / entity-attribute / config / quest-grammar surfaces. Ships three pieces:
@@ -1887,6 +2017,29 @@ pub mod committed_field_blend;
 #[cfg(feature = "committed_field_blend")]
 pub use committed_field_blend::{ArchetypeFieldSource, CommittedFieldBlend, TriArchetypeBlend};
 
+// jsd_topk — NaN-safe bounded top-K Jensen–Shannon divergence kernel
+// (Issue 802 item 2): JSD = H(M) − ½H(P) − ½H(Q) over renormalized top-K
+// slices; disjoint supports → EXACTLY ln 2 (never the KL +∞/NaN trap that
+// poisons gates). Known-answer gates + throughput bench. Prerequisite for
+// Issue 802's commitment-gap calibration tables and graded tri_mode
+// verdicts. OPT-IN.
+#[cfg(feature = "jsd_topk")]
+pub mod jsd_topk;
+
+// meld — bounded non-associative composition law (Issue 801 T3, Research 560,
+// arXiv:2609.14384 §4.9.1): meld(u,v) = sat(κ·W·[λ⋆u+(1−λ⋆)v]) — pointwise
+// soft-min mixture λ⋆ (offset-corrected Rényi-2 gate argmin; β→0 mean,
+// β→∞ hard min), tied orthogonal non-permutation W (normalized Hadamard —
+// the second-order bracketing separator), tanh saturation κ=2 (+ divisive-
+// normalization and unsaturated law-8 arms). Commutative EXACTLY (swap-
+// symmetric argmin), non-associative by construction, disagreement-coding.
+// Zero-alloc fixed-size [f32; D] (D a power of two). OPT-IN pending the
+// Issue 801 T4 riir-poc PoC verdict.
+#[cfg(feature = "meld")]
+pub mod meld;
+#[cfg(feature = "meld")]
+pub use meld::{MeldCompose, MeldLaw};
+
 // ── Variable-Rank Domain Expert Clusters (Plan 558, Research 453) ─────────
 //
 // Open MIT-licensed composition layer: applies LatentMoE's transferable
@@ -2239,7 +2392,21 @@ pub use katgpt_types::depth_invariance::{
     // Issue 736: `leakage_probe::transport` consumes `symmetric_eig` (f64
     // eigenvalues+vectors) for PCA whitening and the orthogonal-Procrustes
     // polar factor — same rule, joined at birth rather than late.
-    feature = "leakage_probe"
+    feature = "leakage_probe",
+    // Issue 763: `lif_graph::fit_readout` consumes `ridge_solve_direct_f64`
+    // (the KARC-precedent closed-form readout) — same rule, joined at birth.
+    feature = "lif_graph",
+    // Issue 767: `mb_value`'s G1 floor test consumes `ridge_solve_direct_f64`
+    // (the ridge-batch-on-the-same-code baseline) — joined at birth per the
+    // same rule (the crate must compile when only this feature is on).
+    feature = "mb_value",
+    // Issue 839: `linalg::kron_tile` IS a linalg submodule, so it gates this
+    // `pub mod` too — joined at birth per the same rule.
+    feature = "kron_tile",
+    // Plan 607 T3: `state_option_scoring::head` consumes
+    // `ridge_solve_direct_f64` for the corpus-fitted linear head (the KARC
+    // Plan-308 fit math) — joined at birth per the same rule.
+    feature = "state_option_scoring"
 ))]
 pub mod linalg;
 
@@ -2291,6 +2458,35 @@ pub use karc::lod_tier::{KarcLodTier, is_identity_projection, project_wout_lod_i
 pub mod karc_dp;
 #[cfg(feature = "karc_forecaster")]
 pub use karc_dp::{KarcDpNoiseConfig, apply_dp_noise_to_wout};
+
+// lif_graph — signed-graph LIF reservoir: event-driven sparse propagation
+// (Issue 763 / riir-ai Research 379, the fly-connectome class). Current-based
+// LIF (Shiu et al. Nature 2024 canonical constants) on a fixed signed CSR
+// adjacency, exact exponential integration (3 muls per active neuron per
+// tick), timing-wheel spike delays, and an EXACT-parity event-driven active
+// set (quiescence = bitwise fixed point of the leak map — the dense update
+// of a skipped node IS the identity). Closed-form ridge readout consumes
+// `linalg::ridge_solve_direct_f64` (the KARC precedent). Data-agnostic:
+// callers supply any signed sparse graph; no connectome datasets ship here.
+// Opt-in — POC landed with GOAT G1–G4 PASS (Bench 760); promotion needs a
+// consumer (the riir-ai per-archetype circuit shard path, Research 379 §7).
+#[cfg(feature = "lif_graph")]
+pub mod lif_graph;
+
+// mb_value — bounded three-factor (dopamine) plasticity value circuit
+// (Issue 767 / riir-ai Research 380, distilled from adonis-singh/TMNF-C @
+// eb6be045; mechanism after Bennett/Nowotny Nat. Commun. 12:2569 2021).
+// Fixed random sparse projection → top-k KC code → approach-minus-avoid
+// readout, with ONE bounded local rule as the entire learning machinery
+// (w ← clamp(w − η·code·RPE·sign, 0, w0) — the rating.rs Elo precedent for
+// legal online error-driven latent-state mutation). Value FORMATION feeding
+// external selection; no softmax; not UQ-bearing (point value for ranking);
+// no connectome data ships (seeded random wiring; fly-scale SHAPE classes
+// only). Calibration is measurement, not learning (z-scores, quantile
+// thresholds, 17-step action-gain bisection, derived η — ΔV-per-RPE ≈ α).
+// Opt-in — GOAT gate in .benchmarks/761_mb_value_goat.md.
+#[cfg(feature = "mb_value")]
+pub mod mb_value;
 
 // HOPE — Hilbert-Schmidt Capacity Kernel + Optimal Rank-1 Parent (Plan 469,
 // Research 454, arXiv:2607.21366 Mobahi & Bartlett, Google DeepMind 2026-07-24).
@@ -2479,9 +2675,9 @@ pub use branching::{
     BudgetCompiler, CognitiveBranch, CompiledContext, CompiledItem,
     DEFAULT_ASSIGN_MAX_INTERFERENCE, DEFAULT_BUDGET_BYTES, DEFAULT_MAX_BRANCHES,
     DEFAULT_ORTHOGONAL_EPSILON, DEFAULT_PROJECTION_DIM, DEFAULT_QUARANTINE_CENTROID_THRESH,
-    DEFAULT_TAU_CURIOSITY, DEFAULT_TAU_JACCARD, DEFAULT_TAU_SNAP, DEFAULT_TAU_SPAWN,
-    DEFAULT_TAU_WRITE, EpisodicEntry, FailureEntry, NonInterferenceProjection, PriorityTier,
-    ProceduralRule, RetrievedMaterials, RouteMode, RouteResult, VerifierGate, WriteDecision,
+    DEFAULT_TAU_CURIOSITY, DEFAULT_TAU_JACCARD, DEFAULT_TAU_SNAP, DEFAULT_TAU_WRITE,
+    EpisodicEntry, FailureEntry, NonInterferenceProjection, PriorityTier, ProceduralRule,
+    RetrievedMaterials, RouteMode, RouteResult, VerifierGate, WriteDecision,
     max_orthogonal_branches,
 };
 
@@ -2638,6 +2834,23 @@ pub use factorized_action::{
     fit_codebook_kmeans_into, motion_input_velocity_into, patchify_1d, relevance_score,
 };
 
+// ooo_audit — direction-bank audit & curation gate (Issue 759 / Research
+// 552, Issa/Liu/Ballé/Klindt bioRxiv 2026.09.05.748439): asymmetric
+// Odd-One-Out interpretability + Cross-OOO diversity + greedy bank
+// curation — the AUDIT stage of the direction-vector ecosystem (MAG R397
+// acquires; LFS/PWC/CFB inject; freeze/thaw commits; nothing verified
+// self-consistency or non-redundancy until this). Pure f32 reductions over
+// an activation matrix + pluggable exemplar-similarity matrix; zero deps,
+// deterministic, zero-alloc *_into (caller-owned scratch). Opt-in pending
+// the Bench 758 GOAT (no-default-consumer rule).
+#[cfg(feature = "direction_bank_audit")]
+pub mod ooo_audit;
+#[cfg(feature = "direction_bank_audit")]
+pub use ooo_audit::{
+    AuditScratch as OooAuditScratch, BankAudit, CurationResult, OooAuditConfig, audit_bank_into,
+    cross_ooo, exemplar_rbf_sim_into, greedy_curate, ooo_score, select_meis_into,
+};
+
 // Velocity-Field Ensemble — Algebraic Combination of Pre-Trained Models
 // (Plan 376, Research 375, arXiv:2602.20070 Coeurdoux et al. ICML 2026 SPIGM).
 // Combine P frozen pre-trained velocity fields (any forward model: LLM
@@ -2708,6 +2921,29 @@ pub mod trigger_gate; // Compute-tier trigger gate — always-on
 // Feature-gated (mirror root feature names):
 #[cfg(feature = "critical_interval_gate")]
 pub mod dllm_solver; // Discrete Critical Interval Solver Switching (Plan 222)
+// Plan 602 (2026-09-20): decode-order AR-ness instruments for the DLM lane
+// (ALR/AGR over per-position unmask steps). katgpt-forward's π-logging
+// forwards this same feature.
+#[cfg(feature = "decode_order_metrics")]
+pub mod dllm;
+// Plan 602 T2.1: the offline anchor scorer (decode-log ranking toward the
+// paper's sparse anchor set A — same feature, root-level per the plan target).
+#[cfg(feature = "decode_order_metrics")]
+pub mod anchor_score;
+// Plan 602 T2.2: the certified-spine anchor view over UGC reveal
+// trajectories (same feature; defined in ugc_schedule.rs per the plan
+// target — ugc_schedule itself stays always-on, only this view is gated).
+#[cfg(feature = "decode_order_metrics")]
+pub use ugc_schedule::CertifiedSpineView;
+// Plan 602 T2.3: optional decode-order schedule variants (same feature;
+// defined in set_diffusion_schedule.rs per the plan target — that module
+// stays always-on, only these variants are gated; promote-only-on-G3,
+// demote silently if the Phase-3 G3 GOAT fails).
+#[cfg(feature = "decode_order_metrics")]
+pub use set_diffusion_schedule::{
+    confidence_threshold_eligible, inverse_lambda_slot_counts, predict_w_from_order_stats,
+    predict_w_residual, ORDER_STATS_TO_W_TABLE,
+};
 #[cfg(feature = "modality_pruned_load")]
 pub mod pipeline_pruner; // Pipeline Pruner — modality-aware inference pipeline selection (Plan 227 Phase 3)
 // ── Phase 12 T4.3: folder moves from katgpt-rs/src/.
@@ -2736,6 +2972,17 @@ pub use salience::{
 };
 #[cfg(feature = "channel_simd_align")]
 pub mod channel_simd;
+
+// bf16_convert — SIMD bf16⇄f32 batch conversion (Issue 800 Arm A). Widening
+// u16→f32 is lossless (bits<<16); narrowing ships RNE (bit-exact vs `half`)
+// with truncation as the explicit fast opt-in arm (pufferlib's scalar >>16
+// shape, biased — we take the kernel shape, not the rounding). NEON + AVX2
+// (target_feature-gated) + scalar fallback; into_buf APIs write into
+// caller-owned buffers, zero alloc. OPT-IN pending the Bench 800 GOAT gate
+// (≥4× the scalar loop at 8 lanes); consumer = riir-engine weight_tensor
+// dequantize_row BF16 arm.
+#[cfg(feature = "bf16_simd")]
+pub mod bf16_convert;
 #[cfg(feature = "skill_opt")]
 pub mod skill_opt;
 #[cfg(feature = "ssd_block")]
@@ -2970,6 +3217,21 @@ pub mod recirculation;
 #[cfg(feature = "contrastive_scope")]
 pub mod contrastive_scope;
 
+// Successor-density goal critic (Issue 860 / riir-ai Research 386,
+// arXiv:2206.07568 CRL): the tabular, modelless CRL extraction — a
+// count-based closed-form estimator of the paper's log-density-ratio goal
+// critic f*(s,a,g) = log p(s_t+ = g | s,a)/p(g) over dense [S][A][S]
+// weighted-count tables, with deterministic zero-variance successor
+// samplers, argmax_a / argmax_g (goal salience), a sigmoid link (Bench 048;
+// sigmoid never softmax), and BLAKE3-committed freeze/thaw (the
+// contrastive_scope pattern). Lemma 4.1's ranking preservation is an
+// executable property here (goal-prior perturbation leaves argmax_a
+// bit-identical), not a paper claim. Consumers (riir-ai Issue 991 per-NPC
+// goal salience — think-brain only, never synced; riir-train Plan 413
+// tabular arm) file consumer-side at adoption. Opt-in POC.
+#[cfg(feature = "successor_density_critic")]
+pub mod successor_density_critic;
+
 // Bounded-target correction + realization-gap triage primitives (Issue 695
 // / Research 432, arXiv:2608.24646 DiffusionOPSD, Zhou et al.): the OPSD
 // recipe's modelless half — one-measurement SPSA direction (unit by
@@ -3081,8 +3343,12 @@ pub mod cond_audit;
 pub mod tpr;
 
 // special_fn — shared Lanczos ln_gamma substrate (Plan 597 T1.1): the one
-// ln_gamma in the crate, consumed by best_belief + bmr. UNGATED,
-// pub(crate), zero-cost when unused.
+// ln_gamma in the crate, consumed by best_belief + bmr. pub(crate), gated
+// to its consumer set (2026-09-13): under --no-default-features both
+// consumers compile away and the ungated module tripped dead_code — it now
+// compiles to nothing with them (the cfg-gated-target discipline, not an
+// #[allow(dead_code)] blanket).
+#[cfg(any(feature = "best_belief", feature = "bmr"))]
 pub(crate) mod special_fn;
 
 // slice_tca — modelless slice-rank decomposition for 3rd-order tensors
@@ -3104,15 +3370,67 @@ pub mod slice_tca;
 #[cfg(feature = "bmr")]
 pub mod bmr;
 
-// lthash - incremental homomorphic multiset hash (Issue 807): LtHash
+// slt — singular learning theory selection math (Issue 781 / Research 558,
+// Watanabe's SLT program): rlct_reduced_rank (the Aoyagi–Watanabe rank-r
+// closed form — LoRA structure exactly), wbic, free_energy, bayes_gap (the
+// BAYES-predictive gap law), sigmoid_wbic_weight pairwise mixture weights,
+// bic_overpenalty_nats. Closed-form f64 arithmetic, zero deps, zero allocs.
+// λ is a freeze/consolidation-seam scalar — never a per-tick signal (R558
+// §5 game-context reframe).
+#[cfg(feature = "slt")]
+pub mod slt;
+
+// graph_stable_pool — the append-only + free-list + never-invalidate slot
+// pool (Issue 800 Arm C): the DRY extraction of the contract that ships four
+// times under four names — katgpt-kv `radix_prefix` nodes,
+// katgpt-transformer `PagedKVCache` pages, riir-gpu `Qwen38LaneSet` arenas,
+// and this crate's `BranchBank` slots. INDEX-stable allocation (live slot
+// indices never move); see the module docs for the index-vs-address
+// stability verdict and the per-site re-point deltas. Phase 1: type +
+// contract tests only; consumer re-points are incremental follow-ups.
+#[cfg(feature = "graph_stable_pool")]
+pub mod graph_stable_pool;
+
+// pool_admission — hysteresis admission policy for a fixed-capacity resident
+// set (Issue 873 primitive A; Research 581 rows #6/#7/#8): margin ×1.10 over
+// caller-supplied want-scores, dwell-from-ADMISSION-tick newborn immunity
+// (no last-use field by construction — the clock law), terminating
+// fair-turn sweep, apply-by-identity readout. The admission complement of
+// kv_eviction (which scores whom to KEEP); want-scores caller-supplied, slot
+// allocation stays graph_stable_pool's concern. Zero steady-state allocs,
+// pure std. OPT-IN pending first consumer GOAT (riir-ai working sets /
+// PagedKVCache, riir-neuron-db zone_cache).
+#[cfg(feature = "pool_admission")]
+pub mod pool_admission;
+
+// Dual-EWLS effect-size rate controller (Issue 873 primitive B, Research
+// 581 — mini-AGI `plasticity.py:63-358`, MIT). Closed-form multiplicative
+// nudge exp(gain·tanh((v−T_MID)/width)) with v = min(t_slow, EFFECT·e_slow,
+// EFFECT·e_fast) from two exponentially-weighted least-squares fits kept
+// as 7 running quantities — no window, so no edge-jump artifacts. The
+// deciding quantity is the EFFECT SIZE e = slope/σ_resid (a t-statistic
+// measures watch-time, not progress); asymmetric gains AND widths (up
+// 0.005/0.75 = slow probe, down 0.025/6.0 = magnitude-proportional
+// response); confirmed regime-jump step (×2 + fit reset, single spikes
+// discarded). Constants PINNED (Issue-033 never-adaptive law); report-
+// first (R135/Bench 047 — gates nothing until evidence volume exists).
+// observe: 42ns dual-fit + tanh/exp nudge + jump detect, zero alloc,
+// bit-deterministic. First consumer A/B: riir-train Plan 416 Phase 2.
+// OPT-IN pending first consumer GOAT.
+#[cfg(feature = "rate_control")]
+pub mod rate_control;
+
+// lthash — incremental homomorphic multiset hash (Issue 807): LtHash
 // [u16; N] (default 1024 lanes, wrapping add mod 2^16) with insert=add,
 // remove=subtract, merge=sum, checksum=BLAKE3(state). Order-independent
-// aggregate by construction (commutative monoid) -> deterministic under any
+// aggregate by construction (commutative monoid) → deterministic under any
 // thread schedule. Element = domain-separated BLAKE3 XOF over a
-// length-prefixed part list (no concatenation-ambiguity collisions).
-// Consumed by riir-chain Proposal 010 D1 (the RSM per-replica divergence
-// check via chain_incremental_root). Pure integer arithmetic, zero deps,
-// zero allocs, wasm32-clean. OPT-IN pending first consumer wiring.
+// length-prefixed part list (no concatenation-ambiguity collisions). Mined
+// from the Agave validator snapshot (eprint 2019/227 instantiation) for
+// riir-chain Proposal 010 D1 (commitment_root → O(1)) + riir-dapps
+// Proposal 005 D1 (kat:statehash trail). Pure integer arithmetic, zero
+// deps, zero allocs, wasm32-clean. OPT-IN pending the Bench 771 GOAT +
+// first consumer wiring.
 #[cfg(feature = "lthash")]
 pub mod lthash;
 
@@ -3125,3 +3443,46 @@ pub mod lthash;
 #[cfg(all(test, any(debug_assertions, feature = "alloc_tracking")))]
 #[global_allocator]
 static TEST_GLOBAL_ALLOC: alloc::TrackingAllocator = alloc::TrackingAllocator;
+
+/// Calibrated sigmoid gate (Issue 810) — Platt-style temperature/bias refit
+/// for decision/confidence scalars. Opt-in (`sigmoid_calibration`).
+#[cfg(feature = "sigmoid_calibration")]
+pub mod sigmoid_calibration;
+
+/// Corpus-distance abstain gate (Proposal 014 T1.6 / Issue 863) — the
+/// Research 576 §2.1 extraction: max-cosine similarity to registered
+/// corpus exemplars → sigmoid → abstain when the decision state is far
+/// from every corpus region (the OOD failure mode a score-threshold
+/// ABSTAIN is blind to). Opt-in (`distance_abstain`).
+#[cfg(feature = "distance_abstain")]
+pub mod distance_abstain;
+
+/// Calibration staleness at the freeze/thaw seam (Issue 841 §B-3) — a
+/// snapshot swap invalidates every attached calibration head; `SnapshotBound`
+/// returns `None` + one loud warning instead of a stale plausible score.
+/// Opt-in (`calibration_staleness`).
+#[cfg(feature = "calibration_staleness")]
+pub mod calibration_staleness;
+
+/// Legal-token-set enumeration + the restricted-projection decision (Issue
+/// 841) — `CsrLegalSet` inverts "is this token valid?" into "which tokens
+/// are", and `ProjectionPlan` says how much of the vocabulary projection that
+/// justifies skipping. Opt-in (`legal_token_set`).
+#[cfg(feature = "legal_token_set")]
+pub mod legal_token_set;
+
+/// Jev/laya-compatible decision wire contract (Plan 603 T1.2, Proposal 014
+/// — Research 562/574/576): typed questions (`choice`/`score`/`noul`, the
+/// answer space defined at request time) answered with probabilities +
+/// confidence, abstention as a first-class answer (`outcome: None` — Jev
+/// cannot abstain, the engine can), and the routing/calibration metadata
+/// the arena's Report-the-Floor tables read. WIRE ONLY — no engine logic;
+/// the engine lives in riir-reflex (T1.3). Opt-in (`decision_wire`).
+#[cfg(feature = "decision_wire")]
+pub mod decision_wire;
+
+/// Permanent attention sinks + a bounded KV window (Issue 841) — a
+/// deterministic RAM ceiling for decode. Composes with `kv_eviction`'s
+/// selector rather than replacing it. Opt-in (`kv_sink_window`).
+#[cfg(feature = "kv_sink_window")]
+pub mod kv_sink_window;

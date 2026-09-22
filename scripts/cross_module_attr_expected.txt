@@ -1,0 +1,13 @@
+# Sibling-module attribute references this repo knowingly leaves dangling
+# (Issue 848). Key: `<file>::<module>.<attr>` — LINE-FREE on purpose, a line
+# number drifts on every edit above it and a pin file that reds on noise is one
+# people delete (`arm_reach_gate`'s recorded rule).
+#
+# Format: `<key> = <reason>`. A row without a reason is REFUSED, and a row
+# whose site is gone reds too — so this file cannot only ever loosen.
+#
+# DELIBERATELY EMPTY. The default for a dangling reference is to restore the
+# name, make it public, or fix the caller — never a row here: a row reading
+# "broken, will fix" is a backlog wearing a pin, which Issue 785's rule
+# forbids, and the thing behind it is an AttributeError waiting for an
+# execution.

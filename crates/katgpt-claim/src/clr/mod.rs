@@ -28,6 +28,8 @@
 //! "Latent vs Raw Space Rules" for the full contract.
 
 pub mod brevity;
+#[cfg(feature = "clr_calibration")]
+pub mod calibration;
 pub mod extractor;
 pub mod learning_potential;
 pub mod mgpo;
@@ -38,6 +40,8 @@ pub mod verifier;
 pub mod vote;
 
 pub use brevity::brevity_tiebreak;
+#[cfg(feature = "clr_calibration")]
+pub use calibration::CalibratedVerifier;
 pub use extractor::FnClaimExtractor;
 pub use learning_potential::{learning_potential, should_write_memory};
 pub use mgpo::{allocate_budget, mgpo_sampling_weight};

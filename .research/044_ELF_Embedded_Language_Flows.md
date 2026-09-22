@@ -322,3 +322,15 @@ Before any adoption, each proposal must pass:
 - [x] Training-time CFG: monotonic quality-diversity sweep at inference, no regression at ω=1.0 — `CfgGrpoConfig` with `sample_omega()` in `riir-ai/crates/riir-gpu/src/elf.rs`, tested in `bench_elf_model_based.rs`
 
 **Failure mode:** If SDE noise injection shows no improvement in DDTree (likely because discrete token selection doesn't benefit from continuous-space noise), then the entire ELF→modelless path is dead. The model-based proposals are independent and should be evaluated separately.
+
+---
+
+## 10. v2 Addendum (2026-09-19) — Appendix B distillation + ablation shifts
+
+**Paper version delta:** this note was written against v1 (May 11, 2026). [v2](https://arxiv.org/abs/2605.10938) (Jun 26, 2026) added the distillation appendix and moved ablations C→D. Verdict on the v2 content: **Gain for riir-train** (recipe deltas filed as riir-train Issue 563, cross-ref [Research 572](572_FMLM_Flow_Map_Language_Models.md) §3 rows 10–12); nothing changes the v1 modelless verdict above.
+
+**ELF+PD progressive distillation (App B):** Salimans-Ho-style, 5 rounds 64→16→8→4→2→1 step; distillation target is the time-extrapolated clean estimate `x̃ = z_t + (1−t)/(r−t)·(z_r − z_t)` with `L = ‖x_θ(z_t) − x̃‖²`; two-branch setup kept (denoise branch swaps loss, decode branch keeps CE); each round's student initialized from the previous student, 1 epoch, 0.1-epoch warmup. Results (OWT Gen PPL / entropy): **1-step 136.10/5.26, 2-step 68.25, 4-step 34.33, 8-step 23.18, 16-step 22.12, 32-step 21.32** — beats FMLM at EVERY step budget (168.30/133.29/111.31/86.50/63.63/45.09) and the discrete distilled baselines by an order of magnitude. Token economics: 90B total (2.0× base) vs 550–577B (12×) for SDTT/DCD/FMLM. Curriculum law: early-round students collapse at small step budgets — only the final r5 student is usable at 1–8 steps.
+
+**Ablation shifts relevant to our tree:** (a) **Muon optimizer LR 2e-3 beat tuned AdamW 1e-4** — published backing for the parked riir-train Issue 525 T2 A/B (`lora_muon` implemented, unwired); (b) x-prediction is required for the weight-shared decode branch (v-pred fails shared at dim ≥ 768, ε-pred collapses at all dims) — binding constraint for any arm where a flow head shares a trunk with an LM head (our D2F LoRA students); (c) 80/20 MSE/CE loss mix on the shared trunk.
+
+**PASS-Redirects (synthesis):** Hu, Qiu et al. [arXiv:2605.10938v2 "ELF: Embedded Language Flows"] — v2 delta routed to riir-train Issue 563; modelless surface unchanged from this note's §4/§9.

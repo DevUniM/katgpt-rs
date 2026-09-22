@@ -61,6 +61,16 @@
 
 use crate::float_order;
 
+// dying (Issue 873 primitive C): the delete-side complement of this
+// directory's keep-side scoring — dual-threshold staleness death metric
+// (d = min(unaddressed, own_age)/window; 0 on trial; ≥0.75 brake, ≥1.0
+// dead — ONE definition, TWO thresholds). Anti-magnitude by design: the
+// busiest items carry the smallest gates, so DeathRow carries no magnitude
+// field at all. OPT-IN pending first consumer GOAT (ndb shard_compactor,
+// riir-clippy corpus retirement, belief GC).
+#[cfg(feature = "dying")]
+pub mod dying;
+
 /// Per-row usage bookkeeping. One row per live KV slot, per (batch, head);
 /// the caller owns the slot indexing.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

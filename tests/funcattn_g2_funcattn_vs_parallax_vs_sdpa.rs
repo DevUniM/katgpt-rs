@@ -579,7 +579,6 @@ impl ParallaxBuffers {
             // once W_R learns nonzero values).
             cfg: ParallaxConfig {
                 gate_scale: 1.0,
-                zero_init: false,
                 activation: ParallaxActivation::Sigmoid,
                 ..Default::default()
             },

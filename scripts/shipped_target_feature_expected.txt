@@ -1,0 +1,55 @@
+# Shipped-path compile-time `target_feature` arms this repo keeps ON PURPOSE
+# (Issue 847 T3). Key: `<path>::<enclosing fn>#<ordinal within that fn>` —
+# LINE-FREE, because a line number drifts on every edit above it and a pin
+# file that reds on noise is one people delete (`arm_reach_gate`'s rule). A
+# dispatcher contributes two rows (the positive arm and its `not(any(..))`
+# complement) because both are the same compile-time construct.
+#
+# Format: `<key> = <reason>`. A row without a reason is REFUSED, and a row
+# whose site is gone reds too — so this file cannot only ever loosen.
+#
+# ⛔ The bar for a row is a MEASUREMENT or a structural argument, never "not
+# fixed yet": a row of the latter kind is a backlog wearing a pin, which Issue
+# 785's rule forbids, and the thing behind it is latency on every call.
+
+# ── the runtime probe's OWN body — the correct pattern, not the defect ─────
+# `#[cfg(target_feature = "avx2")] { true }` inside the CPUID probe: a build
+# that already targets AVX2 need not ask the CPU. This is the thing every
+# other dispatcher should CALL, and it is indistinguishable from the defect by
+# any predicate — the same attribute doing the opposite job. Issue 847's own
+# Non-goals section names it.
+crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#1 = the probe's own short-circuit: a build with AVX2 already on skips CPUID. Issue 847 Non-goals.
+crates/katgpt-types/src/simd/mod.rs::is_avx2_fma_available#2 = the probe's own `not(...)` arm, the CPUID read itself. Issue 847 Non-goals.
+
+# ── bf16 TRUNC narrowing — RESOLVED by DELETION, no rows (847 T5) ─────
+# This block held three rows and now holds none. `f32_to_bf16_trunc_avx2` was
+# deleted rather than pinned or probed: it is measured SLOWER than the scalar
+# body it replaced — 1578 vs 1138 ns at n=32768 (1.39x), stable over THREE
+# runs and TWO build configurations — and the `_autovec` arm (that same scalar
+# body under `+avx2` codegen) lands on the intrinsics at 1556-1565 rather than
+# on the scalar, which is what makes it AVX2 CODEGEN for a bare `>> 16` and
+# not a transcription defect. Deleting the x86_64 arm needed no aarch64
+# measurement: NEON is implied by the arch, so `f32_to_bf16_trunc_neon` is
+# REACHED, has always been reached, and is untouched — the per-ISA rule
+# Issue 844 T4 established. `t2_bf16_autovec_vs_intrinsics` keeps measuring
+# the absence every run, so a future re-transcription has to argue with a
+# number. The block is kept as a comment because a reader arriving from the
+# 847 write-up needs to find the resolution where the rows were.
+
+# ── bf16 WIDENING — RESOLVED by RUNTIME PROBE, no rows (847 T6) ──────
+# This block held three rows and now holds none. T2 left the widen kernel
+# UNDECIDED because the best arm appeared to change with n and one cell swung
+# 78% between two runs of one binary; T6 was filed to re-measure it on a quiet
+# box. The quiet box REFUTED that framing: the scalar arm is stable to under
+# 1% (1692-1704 ns at n=32768 over five runs) while every AVX2-bearing arm is
+# BIMODAL on `src.as_ptr() % 32`, two clusters 1.6-2.2x apart with nothing
+# between them. `vec![]` picks the residue by chance, so comparing two arms
+# across uncontrolled allocations was comparing two coin flips — the
+# "crossover" was never a property of n.
+#
+# With the residue CONTROLLED (`t6_widen_bimodality_vs_buffer_alignment`):
+# the intrinsics win 2.2x at n=256 and 1.57x at n=4096 on the favourable
+# residue and TIE on the others, and n=32768 is memory-bound and a wash. The
+# deployed consumer is riir-engine's `weight_tensor::dequantize_row` — the
+# 4096 regime — so it is probed in, and a default build now measures 7-10 /
+# 97-163 against the old scalar 13-14 / 170-234.

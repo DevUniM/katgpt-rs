@@ -127,8 +127,8 @@ fn run_round(seed: u64, players: &mut [Box<dyn BomberPlayer>], rng: &mut Rng) ->
     for _tick in 0..TICK_LIMIT {
         // Drain tick-scoped events
         let tick_events: Vec<GameEvent> = {
-            use bevy_ecs::event::Events;
-            let mut ev = world.resource_mut::<Events<GameEvent>>();
+            use bevy_ecs::message::Messages;
+            let mut ev = world.resource_mut::<Messages<GameEvent>>();
             ev.drain().collect()
         };
         all_events.extend(tick_events.iter().cloned());
@@ -160,8 +160,8 @@ fn run_round(seed: u64, players: &mut [Box<dyn BomberPlayer>], rng: &mut Rng) ->
 
     // Drain remaining events
     {
-        use bevy_ecs::event::Events;
-        let mut ev = world.resource_mut::<Events<GameEvent>>();
+        use bevy_ecs::message::Messages;
+        let mut ev = world.resource_mut::<Messages<GameEvent>>();
         all_events.extend(ev.drain().collect::<Vec<GameEvent>>());
     }
 

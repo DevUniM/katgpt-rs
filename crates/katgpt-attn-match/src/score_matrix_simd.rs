@@ -1,9 +1,16 @@
 //! Auto-vectorizing score matrix kernel (Plan 271 Phase 2, T2.2).
 //!
-//! Implements `Q·K^T · inv_sqrt_d` as a simple inner loop that LLVM
-//! auto-vectorizes to optimal SIMD (NEON `fmla` / AVX2 `vfmadd`) on release
-//! builds. Writes directly into a caller-provided output buffer — zero
-//! allocation in the hot path.
+//! Implements `Q·K^T · inv_sqrt_d` as a simple strict inner loop. The
+//! kernels are STRICT IEEE ordered reductions: the scalar serial add order
+//! is the load-bearing property (cross-arch / cross-build bit-equality comes
+//! from it, for free). What the compiler does on top of that order is
+//! target-dependent and MEASURED (Issue 871 / Bench 871, 2026-09-22):
+//! x86_64-pc-windows-msvc emits **scalar-only** float math (0 packed
+//! instructions crate-wide, at both the SSE2 baseline and `+avx2,+fma` —
+//! `--emit asm`, in-crate); aarch64 emits packed `fmul.4s` products with the
+//! add chain still scalar, lane-by-lane in exact element order (bit-identical,
+//! and **no `fmla`**). Writes directly into a caller-provided output buffer —
+//! zero allocation in the hot path.
 //!
 //! # Max-shift stabilization
 //! The kernel does NOT apply softmax. It applies only the max-shift
@@ -13,18 +20,22 @@
 //!
 //! Per AGENTS.md hot-loop rules:
 //! - Caller pre-allocates `out`; we write in-place.
-//! - Inner loop is branch-free + auto-vectorizable.
+//! - Inner loop is branch-free (bounds checks hoisted via pre-sliced rows).
 //! - No allocation inside the kernel.
 //!
 //! # Performance history
 //! The original Plan 271 implementation used 8 manual scalar accumulators
 //! (the `dot_8wide` name). This was empirically refuted on Apple Silicon M3
 //! Max (2026-07-29): the 8-wide pattern ran 1.26× SLOWER than a simple
-//! auto-vectorizable `for` loop because the manual accumulators prevented
-//! LLVM from emitting the optimal `fmla` sequence. The kernel was simplified
-//! to trust the compiler; the name `dot_8wide` is retained for call-site
-//! compatibility (5+ callers). See `dot_8wide` doc comment for the full
-//! analysis.
+//! `for` loop. The mechanism at the time was attributed to "preventing LLVM
+//! from emitting the optimal `fmla` sequence" — **that attribution was wrong**:
+//! the strict loop never emits `fmla` on any target (aarch64 cross-emit shows
+//! packed `fmul.4s` + ordered scalar `fadd`s, no `fmla`; the win was the
+//! removed per-element bounds checks and the `iter().sum()` horizontal
+//! reduction, not the accumulator count — reasoned, Issue 871). The kernel
+//! was simplified anyway; the name `dot_8wide` is retained for call-site
+//! compatibility (5+ callers). See `dot_8wide` doc comment for the measured
+//! codegen truth per target.
 
 #![allow(clippy::too_many_arguments)]
 
@@ -65,7 +76,8 @@ pub fn compute_score_matrix_simd(
     assert_eq!(out.len(), n * t, "output buffer size mismatch");
 
     // Stage 1: compute raw dot products into `out` (we reuse it as scratch).
-    // Auto-vectorizing inner loop via `dot_8wide` (NEON `fmla` / AVX2).
+    // Strict ordered reduction via `dot_8wide` — scalar on x86_64, mul-only
+    // vectorized on aarch64 (see module doc; Issue 871).
     for i in 0..n {
         let q_row = &queries[i * d..(i + 1) * d];
         let out_row = &mut out[i * t..(i + 1) * t];
@@ -97,23 +109,49 @@ pub fn compute_score_matrix_simd(
     }
 }
 
-/// Dot product kernel — auto-vectorizing inner loop.
+/// Dot product kernel — strict ordered reduction.
 ///
 /// The name `dot_8wide` is retained for call-site compatibility (5+ callers);
-/// the implementation is now a plain `for` loop that LLVM auto-vectorizes to
-/// optimal SIMD (NEON `fmla` / AVX2 `vfmadd`) on release builds.
+/// the implementation is a plain single-accumulator `for` loop. **Strict
+/// IEEE semantics: adds apply in exact element order.** That order is the
+/// bit-stability property — cross-arch and cross-build bit-equality hold
+/// *because* the chain is serial, and it cannot be vectorized without
+/// changing the summation order (and therefore the bits).
+///
+/// # Measured codegen (Issue 871 / Bench 871, rustc 1.98.1, 2026-09-22)
+/// - **x86_64-pc-windows-msvc, in-crate `--emit asm`** (`-C lto=off`,
+///   `--features attn_match`): **scalar-only at BOTH arms** — default SSE2
+///   baseline and `-C target-feature=+avx2,+fma` both emit 0 packed float-math
+///   instructions for the whole crate (no `vmulps`/`vaddps`/`vfmadd…ps`;
+///   scalar `mulss`/`addss` or VEX `vmulss`/`vaddss` chains only). LLVM does
+///   not reassociate strict FP reductions, and its x86 backend does not even
+///   split out the multiply half here.
+/// - **aarch64-apple-darwin cross-emit (standalone twin of this exact loop —
+///   blake3's build script blocks a cross crate build from Windows)**: packed
+///   `fmul.4s` products + per-lane `mov sN, vM[k]` extracts feeding an ordered
+///   scalar `fadd s0` chain in exact element order — **bit-identical to the
+///   serial order, and no `fmla`**. The historical "optimal `fmla` sequence"
+///   claim was never codegen-true; NEON gets multiply-throughput only and the
+///   add chain stays serial on every target.
+///
+/// Consequence: on x86_64 the kernel runs a scalar serial chain in every
+/// ordinary build. Recovering SIMD throughput requires changing summation
+/// order — the opt-in `algebraic_*` lane (Issue 871 T4, owner-gated feature
+/// flag) — not "fixing" strict codegen: there is no strict vectorized add.
+/// The one bit-preserving partial vectorization (packed mul + ordered scalar
+/// adds) is what aarch64 already emits and buys ~nothing where the add chain
+/// binds (reasoned: the `fadd` latency chain dominates; measured: the AVX2
+/// arm's strict time is flat vs baseline, Bench 871 G2).
 ///
 /// **Why not manual unrolling (historical note, Plan 271 era):** the original
 /// implementation used 8 scalar accumulators (`acc[0]..acc[7]`) under the
 /// assumption that manual unrolling beats auto-vectorization. Empirically
 /// refuted on Apple Silicon M3 Max (LLVM 21.1.8, stable 1.93): the 8-wide
-/// pattern ran **1.26× slower** than the simple loop because (a) the 8
-/// separate accumulators prevented LLVM from recognizing the dot-product
-/// idiom, (b) the horizontal `acc.iter().sum()` reduction added overhead the
-/// simple loop doesn't have, and (c) on NEON (4-wide f32) the 8 accumulators
-/// don't map cleanly to SIMD registers. The simple single-accumulator `for`
-/// loop lets LLVM emit the optimal `fmla` sequence with a single vector
-/// accumulator + one final horizontal reduce.
+/// pattern ran **1.26× slower** than the simple loop. The then-attributed
+/// mechanism ("blocked the optimal `fmla` sequence") is corrected above — no
+/// `fmla` ever existed for the strict loop; the confounders were per-element
+/// bounds checks (the pre-`..d`-slice era, see below) and the horizontal
+/// `iter().sum()` reduction, not the accumulator count.
 ///
 /// # Panics
 /// Caller guarantees `a.len() == b.len() == d`.
@@ -122,15 +160,16 @@ pub fn dot_8wide(a: &[f32], b: &[f32], d: usize) -> f32 {
     debug_assert_eq!(a.len(), d);
     debug_assert_eq!(b.len(), d);
 
-    // Simple loop — LLVM auto-vectorizes this to optimal SIMD FMA on every
-    // target we ship (NEON, AVX2). The single accumulator maps to one SIMD
-    // register; the final reduction is a single horizontal add.
+    // Simple strict loop — the serial `dot += x * y` order IS the kernel's
+    // bit-stability contract (see the doc comment above for the measured
+    // per-target codegen; Issue 871).
     //
     // The lengths are only `debug_assert`ed, so in release builds `a[k]`/`b[k]`
     // carried per-element bounds checks against unknown slice lengths. Slicing
     // the `..d` prefixes up front turns those `2·d` checks into two range checks
-    // outside the loop, leaving a clean unguarded FMA chain for the vectorizer.
-    // Same k order, same single accumulator → bit-identical.
+    // outside the loop, leaving a clean unguarded loop for the target backend
+    // to schedule (packed `fmul.4s` + ordered scalar adds on aarch64; scalar on
+    // x86_64). Same k order, same single accumulator → bit-identical.
     let mut dot = 0.0f32;
     for (&x, &y) in a[..d].iter().zip(b[..d].iter()) {
         dot += x * y;
@@ -141,7 +180,6 @@ pub fn dot_8wide(a: &[f32], b: &[f32], d: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Instant;
 
     /// SIMD kernel must match the scalar reference within 1e-6.
     #[test]
@@ -228,93 +266,22 @@ mod tests {
         }
     }
 
-    /// GOAT G8: SIMD kernel must be ≥4× faster than scalar at t=512.
-    /// Throughput smoke test (release-only). Documents the actual ns/call of
-    /// `compute_score_matrix_simd` at the Plan 271 reference size (`n=8, t=512,
-    /// d=64`). Skipped under `debug_assertions` (debug SIMD is not representative).
-    ///
-    /// Historical note: this was originally `test_simd_4x_speedup` which asserted
-    /// ≥1.5× speedup of the (then manually-unrolled) `dot_8wide` kernel over a
-    /// scalar reference. The assertion was empirically refuted on Apple Silicon
-    /// M3 Max (2026-07-29): the manual 8-accumulator pattern ran 1.26× SLOWER
-    /// than the simple auto-vectorizable loop. The kernel was simplified to trust
-    /// the compiler; the speedup comparison is now meaningless (both paths use
-    /// the same auto-vectorized inner loop). This test now serves as a
-    /// throughput smoke guard — it documents the absolute perf without asserting
-    /// a false relative-speedup gate. The GOAT-level gate lives in
-    /// `bench_271_attn_match_goat.rs::g8_simd_vs_scalar` (which SKIPs on <1.5×).
-    #[test]
-    fn test_simd_throughput_smoke() {
-        if cfg!(debug_assertions) {
-            eprintln!("skipping simd throughput test in debug build");
-            return;
-        }
-        let n = 8;
-        let t = 512;
-        let d = 64;
-        let mut seed = 98765u32;
-        let mut rng = || {
-            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
-            (seed as f32) / (u32::MAX as f32) * 2.0 - 1.0
-        };
-        let queries: Vec<f32> = (0..n * d).map(|_| rng()).collect();
-        let keys: Vec<f32> = (0..t * d).map(|_| rng()).collect();
-        let inv_sqrt_d = 1.0f32 / (d as f32).sqrt();
-
-        let mut simd_buf = vec![0.0f32; n * t];
-
-        // Use black_box to prevent the compiler from eliminating the loop.
-        use std::hint::black_box;
-
-        // Warmup.
-        for _ in 0..3 {
-            compute_score_matrix_simd(
-                black_box(&queries),
-                black_box(&keys),
-                n,
-                t,
-                d,
-                inv_sqrt_d,
-                &mut simd_buf,
-                false,
-            );
-        }
-
-        let iters = 200;
-        let start = Instant::now();
-        for _ in 0..iters {
-            compute_score_matrix_simd(
-                black_box(&queries),
-                black_box(&keys),
-                n,
-                t,
-                d,
-                inv_sqrt_d,
-                &mut simd_buf,
-                false,
-            );
-        }
-        let _: f32 = black_box(simd_buf[0]);
-        let total_ns = start.elapsed().as_nanos();
-        let per_call_ns = total_ns / iters as u128;
-        eprintln!(
-            "simd_throughput: n={n}, t={t}, d={d}, {iters} iters, {total_ns} ns total, {per_call_ns} ns/call"
-        );
-        // Throughput guard: each call must complete in under 5 ms at this size
-        // (n=8, t=512, d=64 = 262K multiply-adds + the max-shift pass). This is a
-        // generous ceiling — the auto-vectorized kernel typically runs in
-        // ~50-90 µs/call on Apple Silicon NEON. The guard catches catastrophic
-        // regressions (e.g., accidental debug-mode emission, a broken unroll)
-        // without asserting a false speedup claim.
-        assert!(
-            per_call_ns < 5_000_000,
-            "simd throughput regression: {per_call_ns} ns/call > 5 ms ceiling"
-        );
-    }
+    // (Issue 874, 2026-09-22) The throughput smoke that lived here was
+    // RELOCATED to `tests/bench_271_attn_match_goat.rs::g8_throughput_floor`:
+    // this in-crate copy was executed by NO lane — `katgpt-attn-match` has no
+    // test_gate row and no x86_64-matrix floors row (the `katgpt-attn` row is
+    // a different package), and the `cfg!(debug_assertions)` skip bypassed
+    // even dev lib runs — while the bench_271 binary executes in the x86_64
+    // execution matrix integration cell (release). Same size (n=8, t=512,
+    // d=64), same 5 ms/call ceiling, upgraded timing defence (best_of_us
+    // min-of-200 + result consumption instead of a sequential 200-iteration
+    // window). The old `g8_simd_vs_scalar` relative-speedup gate it pointed
+    // at is retired the same day — see Issue 874 / Bench 871 §Addendum.
 
     /// Scalar reference for cross-checking correctness (used by
     /// `test_simd_matches_scalar`). Uses a simple `for k in 0..d` dot product —
-    /// the same shape `dot_8wide` now uses internally (both auto-vectorize).
+    /// the same strict shape `dot_8wide` uses internally (both are strict
+    /// ordered reductions; scalar on x86_64 — Issue 871).
     /// Kept as a separate function so the correctness test has an independent
     /// reference, not to assert a speedup.
     fn scalar_dot_matmul(

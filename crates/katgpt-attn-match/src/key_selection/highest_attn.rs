@@ -23,6 +23,10 @@ use crate::{
 /// Descending comparator that can never rank NaN into a top-t selection.
 /// Mirrors `katgpt_core::float_order::desc` (the workspace substrate for this
 /// shape) — duplicated locally ONLY because that crate is an optional dep here.
+/// The total_cmp args are REVERSED (key(b) vs key(a)): the f2c305dd sweep
+/// wrote them forward, which made this ASCENDING — top-t selection picked
+/// the LOWEST-attention keys for 9 days (katgpt-rs Issue 729 regression;
+/// caught by the riir-ai all-features lane, Issue 957).
 #[inline]
 fn desc_nan_last(a: &f32, b: &f32) -> core::cmp::Ordering {
     let key = |x: &f32| {
@@ -34,7 +38,7 @@ fn desc_nan_last(a: &f32, b: &f32) -> core::cmp::Ordering {
             *x
         }
     };
-    key(a).total_cmp(&key(b))
+    key(b).total_cmp(&key(a))
 }
 
 /// Select top-t keys by aggregated attention score.
@@ -82,7 +86,8 @@ pub fn select_highest_attn_keys(
     // Queries are the outer loop so reads from `scratch_attn` are sequential
     // (row-major) and writes to `per_key_score` are sequential — cache-friendly
     // for large `t_len`. The iterator form (`chunks_exact` + `zip`) lets LLVM
-    // elide bounds checks and auto-vectorize the FMA inner loop.
+    // elide bounds checks. Strict ordered accumulation — scalar adds on
+    // x86_64 (Issue 871).
     let mut per_key_score = vec![0.0f32; t_len];
     let inv_n = 1.0f32 / (n as f32);
     match score_method {
@@ -99,7 +104,8 @@ pub fn select_highest_attn_keys(
         ScoreMethod::Rms => {
             for row in scratch_attn.chunks_exact(t_len) {
                 for (acc, &val) in per_key_score.iter_mut().zip(row) {
-                    // FMA pattern: acc += val * val — auto-vectorizes to SIMD.
+                    // Strict ordered reduction (`acc += val * val`) — scalar
+                    // adds on x86_64 (Issue 871); bit-stable by add order.
                     *acc += val * val;
                 }
             }

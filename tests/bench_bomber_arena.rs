@@ -209,7 +209,7 @@ fn run_game_collecting_events(
     seed: u64,
     tick_limit: u32,
 ) -> (GameEventLog, u32) {
-    use bevy_ecs::event::Events;
+    use bevy_ecs::message::Messages;
 
     let mut world = init_world(seed);
     let entities = spawn_players(&mut world);
@@ -224,7 +224,7 @@ fn run_game_collecting_events(
     for _ in 0..tick_limit {
         // Drain events from previous tick
         let tick_events: Vec<GameEvent> = {
-            let mut event_reader = world.resource_mut::<Events<GameEvent>>();
+            let mut event_reader = world.resource_mut::<Messages<GameEvent>>();
             event_reader.drain().collect()
         };
         for event in &tick_events {
@@ -255,7 +255,7 @@ fn run_game_collecting_events(
 
     // Drain remaining events
     let remaining: Vec<GameEvent> = {
-        let mut event_reader = world.resource_mut::<Events<GameEvent>>();
+        let mut event_reader = world.resource_mut::<Messages<GameEvent>>();
         event_reader.drain().collect()
     };
     for event in &remaining {
@@ -275,7 +275,7 @@ fn run_game_per_tick_events(
     seed: u64,
     tick_limit: u32,
 ) -> (GameEventLog, TickEventLog, u32) {
-    use bevy_ecs::event::Events;
+    use bevy_ecs::message::Messages;
 
     let mut world = init_world(seed);
     let entities = spawn_players(&mut world);
@@ -295,7 +295,7 @@ fn run_game_per_tick_events(
 
         // Drain events from previous tick
         let tick_events: Vec<GameEvent> = {
-            let mut event_reader = world.resource_mut::<Events<GameEvent>>();
+            let mut event_reader = world.resource_mut::<Messages<GameEvent>>();
             event_reader.drain().collect()
         };
 
@@ -348,7 +348,7 @@ fn run_game_per_tick_events(
 
     // Drain remaining events
     let remaining: Vec<GameEvent> = {
-        let mut event_reader = world.resource_mut::<Events<GameEvent>>();
+        let mut event_reader = world.resource_mut::<Messages<GameEvent>>();
         event_reader.drain().collect()
     };
     for event in &remaining {
@@ -645,7 +645,7 @@ fn test_scoreboard_resource_updates_during_game() {
 
         for _ in 0..TICK_LIMIT {
             let tick_events: Vec<GameEvent> = {
-                let mut event_reader = world.resource_mut::<bevy_ecs::event::Events<GameEvent>>();
+                let mut event_reader = world.resource_mut::<bevy_ecs::message::Messages<GameEvent>>();
                 event_reader.drain().collect()
             };
 

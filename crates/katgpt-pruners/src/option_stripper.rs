@@ -43,6 +43,9 @@ pub struct OptionStripper<S: ScreeningPruner> {
 ///
 /// `repr(C)` for stable binary layout via the freeze/thaw infrastructure
 /// in [`crate::freeze`].
+// Issue 772 S6: `budget_ema_mean` removed — never read; nothing computes or
+// restores a budget EMA on this type (no freeze site exists — the serialized
+// collapse state is collapse_detector::CollapseDetectorFrozen, untouched).
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct CollapseDetectorFrozen {
@@ -50,8 +53,6 @@ pub struct CollapseDetectorFrozen {
     pub threshold: u32,
     /// EMA of per-trace optimal thresholds.
     pub hesitation_ema: f32,
-    /// Mean budget EMA across positions.
-    pub budget_ema_mean: f32,
     /// Efficiency reward preference γ ∈ [0.0, 1.0].
     pub gamma: f32,
 }
@@ -61,7 +62,6 @@ impl Default for CollapseDetectorFrozen {
         Self {
             threshold: 3,
             hesitation_ema: 0.0,
-            budget_ema_mean: 0.5,
             gamma: 0.1,
         }
     }

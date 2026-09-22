@@ -113,6 +113,47 @@ impl DecFlowField {
         }
     }
 
+    /// Build a field from an edge flow already known to be EXACT (a gradient).
+    ///
+    /// `omega = d(phi)` lies in `im(d)`, and the Hodge decomposition is
+    /// orthogonal, so `exact = omega`, `harmonic = 0`, `coexact = 0` — provably,
+    /// in closed form. [`DecFlowField::compute`] would run a full
+    /// `hodge_decompose` to re-derive that, which for a gradient field is a
+    /// solve whose answer is already known.
+    ///
+    /// `combined` is the flow itself: there is nothing to weight.
+    ///
+    /// Returns `None` unless `cx` is a 2D grid complex. That restriction is the
+    /// point of the constructor rather than a limitation of it:
+    /// [`to_flow_vectors`](Self::to_flow_vectors) indexes edges by the
+    /// `grid_2d` layout (every horizontal edge, then every vertical one), so on
+    /// a general zone graph it would return well-formed WRONG vectors.
+    /// `compute` infers the dimensions from vertex and edge COUNTS, which
+    /// cannot tell those two cases apart; this asks the complex.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `edge_flow` is not a rank-1 single-channel cochain.
+    #[must_use]
+    pub fn from_exact_flow(cx: &CellComplex, edge_flow: &CochainField) -> Option<Self> {
+        assert_eq!(edge_flow.rank, 1, "from_exact_flow: edge_flow must be rank-1");
+        assert_eq!(
+            edge_flow.dim, 1,
+            "from_exact_flow: edge_flow must be single-channel"
+        );
+        let (width, height) = cx.grid_dims()?;
+        let n_edges = edge_flow.n_cells();
+        Some(Self {
+            width,
+            height,
+            exact: edge_flow.data.clone(),
+            coexact: vec![0.0; n_edges],
+            harmonic: vec![0.0; n_edges],
+            combined: edge_flow.data.clone(),
+            topology_version: Some(cx.topology_version()),
+        })
+    }
+
     /// Recompute the flow field only if the cell complex topology changed since
     /// the last computation (Plan 261 Phase 4).
     ///

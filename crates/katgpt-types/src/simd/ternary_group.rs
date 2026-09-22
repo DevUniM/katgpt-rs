@@ -657,7 +657,12 @@ unsafe fn avx2_row_range(w: &TernaryGroupWeights, x: &[f32], y: &mut [f32], row_
 /// the binary kernel uses a two-state FMA identity
 /// (`fmadd(neg_2scale, bs_f, neg_scale)` → ±scale), but ternary has three
 /// states so the sign must be computed explicitly:
-/// `sign_f = cvt(neg_set − pos_set)` → +1/0/−1, then `scaled = sign_f · scale`.
+/// `sign_f = cvt(neg_set − pos_set)` → +1/0,−1, then `scaled = sign_f · scale`.
+///
+/// `pub(super)`: also consumed by [`super::bitcos`]'s pdep arm — the decode
+/// (presence+signs → planes) differs, the dot from reconstructed planes is
+/// byte-for-byte the same arithmetic, and a second copy would be a second
+/// thing to get subtly wrong.
 ///
 /// No `#[target_feature]` here — it would conflict with `#[inline(always)]`
 /// (rust-lang/rust#145574). The `avx2,fma` feature is in force on the caller,
@@ -665,7 +670,7 @@ unsafe fn avx2_row_range(w: &TernaryGroupWeights, x: &[f32], y: &mut [f32], row_
 /// intrinsics. Same shape as [`super::binary`]'s helper.
 #[cfg(all(feature = "ternary_group_scale", target_arch = "x86_64"))]
 #[inline(always)]
-unsafe fn fma_scaled_nibble8_avx2(
+pub(super) unsafe fn fma_scaled_nibble8_avx2(
     acc: &mut core::arch::x86_64::__m256,
     pos_word: u64,
     neg_word: u64,

@@ -1,0 +1,8 @@
+# Tracked `scripts/*.py` that do NOT import on this contract (Issue 848 T3).
+# Format: `<module> = <reason>`. A row without a reason is REFUSED, and a row
+# whose module imports again reds too — so this file cannot only ever loosen.
+#
+# The bar for a row is an ENVIRONMENT fact, never a defect: a module that
+# cannot import because of its own code is broken and gets fixed. A module
+# that needs a third-party package the contract does not require is a
+# different statement, and it is the only one this file is for.

@@ -95,34 +95,42 @@ pub fn forward_set_causal_positions(
     let kvd = kv_dim(config);
     let seq_len = tokens.len().min(config.block_size);
     let scale = 1.0 / (hd as f32).sqrt();
-    let layer = &weights.layers[0];
+    let l_total = config.n_layer;
 
-    // Phase A: K/V projections for all positions (mask-independent — identical
+    // Phase A(0): K/V projections for all positions (mask-independent — identical
     // to forward_block_causal_positions. The set-causal constraint only
     // affects which keys a query attends to, not how keys are computed.)
-    let mut k_cache = vec![0.0f32; seq_len * kvd];
-    let mut v_cache = vec![0.0f32; seq_len * kvd];
+    // Issue 869 T5: one `seq_len * kvd` plane per layer.
+    let kv_stride = seq_len * kvd;
+    let n_stride = seq_len * n;
+    let mut k_cache = vec![0.0f32; l_total * kv_stride];
+    let mut v_cache = vec![0.0f32; l_total * kv_stride];
     let mut x_norm2_all = vec![0.0f32; seq_len * n];
     let mut xr_all = vec![0.0f32; seq_len * n];
+    let mut x_norm_rest = vec![0.0f32; (l_total - 1) * n_stride];
+    let mut xr_rest = vec![0.0f32; (l_total - 1) * n_stride];
 
     let mut x_buf = vec![0.0f32; n];
     let mut k_buf = vec![0.0f32; kvd];
     let mut v_buf = vec![0.0f32; kvd];
 
-    for (p, &token) in tokens.iter().enumerate().take(seq_len) {
-        simd::simd_add_into(
-            &mut x_buf,
-            &weights.wte[token * n..(token + 1) * n],
-            &weights.wpe[p * n..(p + 1) * n],
-        );
-        rmsnorm(&mut x_buf);
-        xr_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
-        rmsnorm(&mut x_buf);
-        x_norm2_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
-        matmul(&mut k_buf, &layer.attn_wk, &x_buf, kvd, n);
-        matmul(&mut v_buf, &layer.attn_wv, &x_buf, kvd, n);
-        k_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&k_buf);
-        v_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&v_buf);
+    {
+        let layer = &weights.layers[0];
+        for (p, &token) in tokens.iter().enumerate().take(seq_len) {
+            simd::simd_add_into(
+                &mut x_buf,
+                &weights.wte[token * n..(token + 1) * n],
+                &weights.wpe[p * n..(p + 1) * n],
+            );
+            rmsnorm(&mut x_buf);
+            xr_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
+            rmsnorm(&mut x_buf);
+            x_norm2_all[p * n..(p + 1) * n].copy_from_slice(&x_buf);
+            matmul(&mut k_buf, &layer.attn_wk, &x_buf, kvd, n);
+            matmul(&mut v_buf, &layer.attn_wv, &x_buf, kvd, n);
+            k_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&k_buf);
+            v_cache[p * kvd..(p + 1) * kvd].copy_from_slice(&v_buf);
+        }
     }
 
     // Phase B: Set-causal attention with masked softmax.
@@ -155,107 +163,145 @@ pub fn forward_set_causal_positions(
     // per-query heap traffic.
     let mut eligible: Vec<usize> = Vec::with_capacity(seq_len);
 
-    for q in 0..seq_len {
-        x_buf.copy_from_slice(&x_norm2_all[q * n..(q + 1) * n]);
-        matmul(&mut q_buf, &layer.attn_wq, &x_buf, n, n);
+    for (l, layer) in weights.layers.iter().take(l_total).enumerate() {
+        let kv_base = l * kv_stride;
+        let last = l + 1 == l_total;
 
-        let q_gen_step = position_order[q];
-        // Ascending `t`, so every loop below still visits the eligible positions
-        // in exactly the original order — the `max_score` scan and the `sum_exp`
-        // reduction see the identical sequence of values, hence bit-identical.
-        eligible.clear();
-        eligible.extend((0..seq_len).filter(|&t| position_order[t] <= q_gen_step));
-
-        // Per-head masked attention. attn_out_buf accumulates across heads
-        // (same layout as attention_forward_safe_into's output).
-        attn_out_buf.fill(0.0);
-        for h in 0..config.n_head {
-            let kv_group = h * config.n_kv_head / config.n_head;
-            let q_off = h * hd;
-            let kv_off = kv_group * hd;
-            // Loop-invariant across `t`: slice (and bounds-check) once per head.
-            let q_head = &q_buf[q_off..q_off + hd];
-
-            // Ineligible slots must read back as exactly 0.0 (the old pass 1 and
-            // pass 2 both wrote 0.0 there and passes 3/4 skipped them). One `fill`
-            // establishes that up front; the loops below only touch eligible slots.
-            scores_buf[..seq_len].fill(0.0);
-
-            // Pass 1: compute raw scores for ELIGIBLE positions only, find max.
-            // (Position q itself is always eligible since position_order[q] <= q_gen_step,
-            // so max_score is guaranteed to advance past -inf.)
-            let mut max_score = f32::NEG_INFINITY;
-            for &t in &eligible {
-                let dot = simd::simd_dot_f32(
-                    q_head,
-                    &k_cache[t * kvd + kv_off..t * kvd + kv_off + hd],
-                    hd,
-                );
-                let s = dot * scale;
-                scores_buf[t] = s;
-                if s > max_score {
-                    max_score = s;
-                }
-            }
-
-            // Pass 2: exp(score - max) for eligible positions, 0 for ineligible.
-            // Scalar exp (not SIMD) because the eligible set is typically
-            // non-contiguous and we must not feed garbage to the polynomial exp.
-            // Uses Cephes-backed `fast_exp` instead of libm `.exp()`.
-            let mut sum_exp = 0.0f32;
-            for &t in &eligible {
-                let e = simd::fast_exp(scores_buf[t] - max_score);
-                scores_buf[t] = e;
-                sum_exp += e;
-            }
-
-            // Normalize over eligible positions.
-            let inv_sum = 1.0 / sum_exp;
-            for &t in &eligible {
-                scores_buf[t] *= inv_sum;
-            }
-
-            // Persist weights for inspection/debugging. Ineligible positions
-            // are exactly 0.0 (never touched in passes 2/3).
-            let attn_base = q * attn_row_stride + h * seq_len;
-            all_attn_weights[attn_base..attn_base + seq_len]
-                .copy_from_slice(&scores_buf[..seq_len]);
-
-            // Weighted value sum over eligible positions only. The `s > 0.0`
-            // guard is retained: it previously also filtered the ineligible
-            // (exactly-0.0) slots, and it still filters eligible slots whose
-            // normalised weight underflowed to 0.0 — same set of skipped terms,
-            // same ascending order, so the accumulation is bit-identical.
-            let out_head = &mut attn_out_buf[q_off..q_off + hd];
-            for &t in &eligible {
-                let s = scores_buf[t];
-                if s > 0.0 {
-                    let v_row = &v_cache[t * kvd + kv_off..t * kvd + kv_off + hd];
-                    simd::simd_fused_scale_acc(out_head, v_row, s, hd);
-                }
+        // Phase A(l ≥ 1): K/V from rmsnorm(h_l).
+        if l > 0 {
+            let h_base = (l - 1) * n_stride;
+            for p in 0..seq_len {
+                x_buf.copy_from_slice(&xr_rest[h_base + p * n..h_base + (p + 1) * n]);
+                rmsnorm(&mut x_buf);
+                x_norm_rest[h_base + p * n..h_base + (p + 1) * n].copy_from_slice(&x_buf);
+                matmul(&mut k_buf, &layer.attn_wk, &x_buf, kvd, n);
+                matmul(&mut v_buf, &layer.attn_wv, &x_buf, kvd, n);
+                k_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&k_buf);
+                v_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&v_buf);
             }
         }
 
-        // Output projection + residual + MLP + logits (identical to
-        // forward_block_causal_positions — set-causal only changes the
-        // attention output, not the downstream pipeline).
-        matmul(&mut x_proj, &layer.attn_wo, &attn_out_buf, n, n);
-        simd::simd_add_inplace(&mut x_proj, &xr_all[q * n..(q + 1) * n]);
+        for q in 0..seq_len {
+            if l == 0 {
+                x_buf.copy_from_slice(&x_norm2_all[q * n..(q + 1) * n]);
+            } else {
+                let h_base = (l - 1) * n_stride;
+                x_buf.copy_from_slice(&x_norm_rest[h_base + q * n..h_base + (q + 1) * n]);
+            }
+            matmul(&mut q_buf, &layer.attn_wq, &x_buf, n, n);
 
-        xr2_buf[..n].copy_from_slice(&x_proj[..n]);
-        rmsnorm(&mut x_proj);
-        matmul_relu(&mut hidden, &layer.mlp_w1, &x_proj, config.mlp_hidden, n);
-        matmul(&mut x_mlp, &layer.mlp_w2, &hidden, n, config.mlp_hidden);
-        simd::simd_add_inplace(&mut x_mlp[..n], &xr2_buf[..n]);
+            let q_gen_step = position_order[q];
+            // Ascending `t`, so every loop below still visits the eligible positions
+            // in exactly the original order — the `max_score` scan and the `sum_exp`
+            // reduction see the identical sequence of values, hence bit-identical.
+            eligible.clear();
+            eligible.extend((0..seq_len).filter(|&t| position_order[t] <= q_gen_step));
 
-        let logit_base = q * vocab;
-        matmul(
-            &mut all_logits[logit_base..logit_base + vocab],
-            &weights.lm_head,
-            &x_mlp,
-            vocab,
-            n,
-        );
+            // Per-head masked attention. attn_out_buf accumulates across heads
+            // (same layout as attention_forward_safe_into's output).
+            attn_out_buf.fill(0.0);
+            for h in 0..config.n_head {
+                let kv_group = h * config.n_kv_head / config.n_head;
+                let q_off = h * hd;
+                let kv_off = kv_group * hd;
+                // Loop-invariant across `t`: slice (and bounds-check) once per head.
+                let q_head = &q_buf[q_off..q_off + hd];
+
+                // Ineligible slots must read back as exactly 0.0 (the old pass 1 and
+                // pass 2 both wrote 0.0 there and passes 3/4 skipped them). One `fill`
+                // establishes that up front; the loops below only touch eligible slots.
+                scores_buf[..seq_len].fill(0.0);
+
+                // Pass 1: compute raw scores for ELIGIBLE positions only, find max.
+                // (Position q itself is always eligible since position_order[q] <= q_gen_step,
+                // so max_score is guaranteed to advance past -inf.)
+                let mut max_score = f32::NEG_INFINITY;
+                for &t in &eligible {
+                    let dot = simd::simd_dot_f32(
+                        q_head,
+                        &k_cache[kv_base + t * kvd + kv_off..kv_base + t * kvd + kv_off + hd],
+                        hd,
+                    );
+                    let s = dot * scale;
+                    scores_buf[t] = s;
+                    if s > max_score {
+                        max_score = s;
+                    }
+                }
+
+                // Pass 2: exp(score - max) for eligible positions, 0 for ineligible.
+                // Scalar exp (not SIMD) because the eligible set is typically
+                // non-contiguous and we must not feed garbage to the polynomial exp.
+                // Uses Cephes-backed `fast_exp` instead of libm `.exp()`.
+                let mut sum_exp = 0.0f32;
+                for &t in &eligible {
+                    let e = simd::fast_exp(scores_buf[t] - max_score);
+                    scores_buf[t] = e;
+                    sum_exp += e;
+                }
+
+                // Normalize over eligible positions.
+                let inv_sum = 1.0 / sum_exp;
+                for &t in &eligible {
+                    scores_buf[t] *= inv_sum;
+                }
+
+                // Persist weights for inspection/debugging. Ineligible positions
+                // are exactly 0.0 (never touched in passes 2/3).
+                if last {
+                    let attn_base = q * attn_row_stride + h * seq_len;
+                    all_attn_weights[attn_base..attn_base + seq_len]
+                        .copy_from_slice(&scores_buf[..seq_len]);
+                }
+
+                // Weighted value sum over eligible positions only. The `s > 0.0`
+                // guard is retained: it previously also filtered the ineligible
+                // (exactly-0.0) slots, and it still filters eligible slots whose
+                // normalised weight underflowed to 0.0 — same set of skipped terms,
+                // same ascending order, so the accumulation is bit-identical.
+                let out_head = &mut attn_out_buf[q_off..q_off + hd];
+                for &t in &eligible {
+                    let s = scores_buf[t];
+                    if s > 0.0 {
+                        let v_row =
+                            &v_cache[kv_base + t * kvd + kv_off..kv_base + t * kvd + kv_off + hd];
+                        simd::simd_fused_scale_acc(out_head, v_row, s, hd);
+                    }
+                }
+            }
+
+            // Output projection + residual + MLP + logits (identical to
+            // forward_block_causal_positions — set-causal only changes the
+            // attention output, not the downstream pipeline).
+            matmul(&mut x_proj, &layer.attn_wo, &attn_out_buf, n, n);
+            if l == 0 {
+                simd::simd_add_inplace(&mut x_proj, &xr_all[q * n..(q + 1) * n]);
+            } else {
+                let h_base = (l - 1) * n_stride;
+                simd::simd_add_inplace(&mut x_proj, &xr_rest[h_base + q * n..h_base + (q + 1) * n]);
+            }
+
+            xr2_buf[..n].copy_from_slice(&x_proj[..n]);
+            rmsnorm(&mut x_proj);
+            matmul_relu(&mut hidden, &layer.mlp_w1, &x_proj, config.mlp_hidden, n);
+            matmul(&mut x_mlp, &layer.mlp_w2, &hidden, n, config.mlp_hidden);
+            simd::simd_add_inplace(&mut x_mlp[..n], &xr2_buf[..n]);
+
+            if last {
+                let logit_base = q * vocab;
+                matmul(
+                    &mut all_logits[logit_base..logit_base + vocab],
+                    &weights.lm_head,
+                    &x_mlp,
+                    vocab,
+                    n,
+                );
+            } else {
+                // The stream handed to layer l+1: h_{l+1} = x_mlp.
+                let h_base = l * n_stride;
+                xr_rest[h_base + q * n..h_base + (q + 1) * n].copy_from_slice(&x_mlp);
+            }
+        }
     }
 
     (all_logits, all_attn_weights)

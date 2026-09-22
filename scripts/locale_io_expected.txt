@@ -1,0 +1,10 @@
+# Issue 829 — files exempt from the locale-io gate, by MEMBERSHIP with a
+# REASON per row (`<repo-relative path>  # <reason>`). A reasonless row is
+# REFUSED and a STALE row (its file has no offending site now) REDS, so this
+# file cannot only ever loosen.
+#
+# DELIBERATELY EMPTY. A row reading "not repaired yet" is a backlog wearing a
+# pin — Issue 785's rule — and the repair here is one mechanical, idempotent,
+# 14-arm pass: `scripts/locale_io_fix.py <paths>`. The only row that could
+# ever belong is a file that must genuinely read a NON-UTF-8 encoding, and
+# that file should name the encoding it means rather than inherit the box's.

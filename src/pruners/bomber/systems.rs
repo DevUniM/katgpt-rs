@@ -95,7 +95,7 @@ pub fn init_world(seed: u64) -> World {
     world.insert_resource(GameRng { seed });
     world.insert_resource(TickCounter::default());
     world.insert_resource(ScoreBoard::default());
-    world.init_resource::<Events<GameEvent>>();
+    world.init_resource::<Messages<GameEvent>>();
     world
 }
 
@@ -106,7 +106,7 @@ pub fn init_world_with_arena(arena: ArenaGrid) -> World {
     world.insert_resource(GameRng { seed: 0 });
     world.insert_resource(TickCounter::default());
     world.insert_resource(ScoreBoard::default());
-    world.init_resource::<Events<GameEvent>>();
+    world.init_resource::<Messages<GameEvent>>();
     world
 }
 
@@ -212,7 +212,7 @@ fn tick_bomb_fuses(world: &mut World) -> Vec<PendingExplosion> {
     let mut result = Vec::with_capacity(to_explode.len());
     for (entity, pos, range, owner, bomb_type) in to_explode {
         world.entity_mut(entity).despawn();
-        world.send_event(GameEvent::BombExploded { pos, range });
+        world.write_message(GameEvent::BombExploded { pos, range });
         result.push(PendingExplosion {
             pos,
             range,
@@ -270,7 +270,7 @@ fn detonate_remote_bombs(
     let mut result = Vec::with_capacity(to_explode.len());
     for (entity, pos, range, owner) in to_explode {
         world.entity_mut(entity).despawn();
-        world.send_event(GameEvent::BombExploded { pos, range });
+        world.write_message(GameEvent::BombExploded { pos, range });
         result.push(PendingExplosion {
             pos,
             range,
@@ -426,12 +426,12 @@ fn process_explosions(world: &mut World, queue: Vec<PendingExplosion>) -> Vec<(i
         }
     }
     for &(x, y) in &walls_destroyed {
-        world.send_event(GameEvent::WallDestroyed { pos: (x, y) });
+        world.write_message(GameEvent::WallDestroyed { pos: (x, y) });
     }
 
     for (kind, (x, y)) in powerups_revealed {
         world.spawn((PowerUp { kind }, GridPos { x, y }));
-        world.send_event(GameEvent::PowerUpRevealed { pos: (x, y), kind });
+        world.write_message(GameEvent::PowerUpRevealed { pos: (x, y), kind });
     }
 
     for be in bombs_to_despawn {
@@ -447,7 +447,7 @@ fn process_explosions(world: &mut World, queue: Vec<PendingExplosion>) -> Vec<(i
         }
         if fresh && world.get::<Alive>(pe).is_some() {
             world.entity_mut(pe).remove::<Alive>();
-            world.send_event(GameEvent::PlayerKilled {
+            world.write_message(GameEvent::PlayerKilled {
                 victim: pid,
                 killer,
             });
@@ -523,7 +523,7 @@ fn apply_movement(world: &mut World, actions: [Option<BomberAction>; 4]) {
             pos.x = to.0;
             pos.y = to.1;
         }
-        world.send_event(GameEvent::PlayerMoved {
+        world.write_message(GameEvent::PlayerMoved {
             player: pid,
             from,
             to,
@@ -578,7 +578,7 @@ fn trigger_landmines(world: &mut World) -> Vec<PendingExplosion> {
         world.entity_mut(entity).despawn();
         // Landmine always has range 1 regardless of BombRange
         let range = 1;
-        world.send_event(GameEvent::BombExploded { pos, range });
+        world.write_message(GameEvent::BombExploded { pos, range });
         result.push(PendingExplosion {
             pos,
             range,
@@ -636,7 +636,7 @@ fn place_bombs(world: &mut World, actions: [Option<BomberAction>; 4]) {
             c.active += 1;
         }
         let pid = world.get::<Player>(owner).map_or(0, |p| p.id);
-        world.send_event(GameEvent::BombPlaced {
+        world.write_message(GameEvent::BombPlaced {
             player: pid,
             pos: (x, y),
         });
@@ -707,7 +707,7 @@ fn collect_powerups(world: &mut World) {
             collected_entities.push(pu_entity);
             let pu_pos = world
                 .get::<GridPos>(pu_entity).map_or((0, 0), |g| (g.x, g.y));
-            world.send_event(GameEvent::PowerUpCollected {
+            world.write_message(GameEvent::PowerUpCollected {
                 player: pid,
                 kind,
                 pos: pu_pos,
@@ -760,7 +760,7 @@ fn cleanup_and_check(world: &mut World, blast_cells: Vec<(i32, i32)>) -> bool {
             let mut q = world.query_filtered::<(Entity, &Player), With<Alive>>();
             q.iter(world).map(|(_, p)| p.id).collect()
         };
-        world.send_event(GameEvent::RoundEnd { survivors: alive });
+        world.write_message(GameEvent::RoundEnd { survivors: alive });
         return false;
     }
     true
@@ -780,7 +780,7 @@ mod tests {
         assert!(world.contains_resource::<ArenaGrid>());
         assert!(world.contains_resource::<TickCounter>());
         assert!(world.contains_resource::<ScoreBoard>());
-        assert!(world.contains_resource::<Events<GameEvent>>());
+        assert!(world.contains_resource::<Messages<GameEvent>>());
     }
 
     #[test]
@@ -1108,7 +1108,7 @@ mod tests {
         let _ = run_tick(&mut world, [Some(BomberAction::Right), None, None, None]);
 
         // Verify the BombExploded event has range 1
-        let events = world.resource::<Events<GameEvent>>();
+        let events = world.resource::<Messages<GameEvent>>();
         let mut cursor = events.get_cursor();
         let mut found_landmine_explosion = false;
         for event in cursor.read(events) {

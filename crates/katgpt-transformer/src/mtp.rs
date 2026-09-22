@@ -226,7 +226,10 @@ mod mtp_projection_binary_tests {
         let checksum = u32::from_le_bytes(hash.as_bytes()[..4].try_into().unwrap());
         buf.extend_from_slice(&checksum.to_le_bytes());
 
-        let path = std::env::temp_dir().join("microgpt_test_mtp_projection.bin");
+        let path = std::env::temp_dir().join(format!(
+            "microgpt_test_mtp_projection_{}.bin",
+            std::process::id()
+        ));
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(&buf).unwrap();
         path
@@ -249,7 +252,10 @@ mod mtp_projection_binary_tests {
 
     #[test]
     fn test_load_mtp_projection_invalid_magic() {
-        let path = std::env::temp_dir().join("microgpt_test_mtp_bad_magic.bin");
+        let path = std::env::temp_dir().join(format!(
+            "microgpt_test_mtp_bad_magic_{}.bin",
+            std::process::id()
+        ));
         let mut buf = vec![0u8; 24]; // header(16) + min data(4) + checksum(4)
         buf[0..4].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
 
@@ -268,7 +274,10 @@ mod mtp_projection_binary_tests {
 
     #[test]
     fn test_load_mtp_projection_bad_checksum() {
-        let path = std::env::temp_dir().join("microgpt_test_mtp_bad_checksum.bin");
+        let path = std::env::temp_dir().join(format!(
+            "microgpt_test_mtp_bad_checksum_{}.bin",
+            std::process::id()
+        ));
         let mut buf = Vec::new();
 
         buf.extend_from_slice(&MTP_PROJ_MAGIC.to_le_bytes());

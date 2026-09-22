@@ -79,6 +79,14 @@ from cfg_gated_target_audit import (  # noqa: E402
     manifests,
 )
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 # `#[test]`, `#[tokio::test]`, `#[async_std::test]`, `#[bench]`, and the
 # `#[test]`-alike attribute macros used across the workspace. Anchored at the
 # attribute start so `#[should_panic]` and friends do not match.
@@ -312,7 +320,10 @@ def scan_manifest(repo: Path, manifest: Path, rep: RepoReport) -> None:
             ign = sum(1 for t in live if t.ignored)
             t = Target(
                 repo=rep.repo,
-                path=str(f.relative_to(repo)),
+                # as_posix: match the committed allowlist's forward-slash rows
+                # on every platform (str() emits backslashes on Windows and
+                # the membership pin in cfg_gated_floor_gate goes blind).
+                path=f.relative_to(repo).as_posix(),
                 tests=len(tests),
                 compiled=len(live),
                 ignored=ign,
@@ -444,12 +455,12 @@ def selftest() -> None:
         root = Path(td)
         (root / "tests").mkdir()
         (root / "tests" / "armed_goat.rs").write_text(
-            '#![cfg(feature = "opt")]\n#[test]\n#[ignore]\nfn a() {}\n'
+            '#![cfg(feature = "opt")]\n#[test]\n#[ignore]\nfn a() {}\n', encoding="utf-8"
         )
         (root / "Cargo.toml").write_text(
             '[package]\nname = "p"\nversion = "0.0.0"\n\n'
             "[features]\nopt = []\n\n"
-            '[[test]]\nname = "armed_goat"\nrequired-features = ["opt"]\n'
+            '[[test]]\nname = "armed_goat"\nrequired-features = ["opt"]\n', encoding="utf-8"
         )
         r = RepoReport(repo="p")
         scan_manifest(root, root / "Cargo.toml", r)
@@ -469,10 +480,10 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "tests").mkdir()
-        (root / "tests" / "driver.rs").write_text("fn main() {}\n")
+        (root / "tests" / "driver.rs").write_text("fn main() {}\n", encoding="utf-8")
         (root / "Cargo.toml").write_text(
             '[package]\nname = "p"\nversion = "0.0.0"\n\n'
-            '[[test]]\nname = "driver"\nharness = false\n'
+            '[[test]]\nname = "driver"\nharness = false\n', encoding="utf-8"
         )
         r = RepoReport(repo="p")
         scan_manifest(root, root / "Cargo.toml", r)

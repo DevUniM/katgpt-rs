@@ -1,0 +1,28 @@
+# shared_temp_path_gate.py — fixed `env::temp_dir().join("literal")` sites that
+# are DELIBERATE. Issue 832.
+#
+# Format:  <relpath>::<literal>::<count> # reason
+#
+# A reasonless row is REFUSED. The file reds in BOTH directions: a row whose
+# site is gone, or whose per-(file, literal) count moved, is STALE — so it
+# cannot only ever loosen. Repairing a site is expected to red its row; delete
+# the row in the same commit.
+#
+# The DEFAULT for a test is to make the path process-unique:
+#
+#     env::temp_dir().join(format!("name_{}", std::process::id()))
+#
+# which is the form `katgpt-transformer/src/contiguous.rs`,
+# `katgpt-core/src/content_store/fetcher.rs` and the three `katgpt-pruners`
+# sites already use. Adding a row here instead is an adjudication, not a
+# shortcut — a row reading "not fixed yet" is a backlog wearing a pin
+# (Issue 785's rule).
+#
+# ── examples/ ───────────────────────────────────────────────────────────────
+# Both rows are demos, not tests. The hazard this gate exists for needs two
+# CONCURRENT processes, and no gate in this repo runs two examples at once; the
+# cost of a pid in the name is real and falls on the human who runs the demo and
+# then goes looking for what it wrote. That trade is the reason, and it does not
+# transfer to anything under a `#[test]`.
+examples/collapse_aware_thinking_demo.rs::collapse_aware_demo::1 # demo scratch dir a human inspects after the run; no gate runs two examples concurrently
+examples/gpart_adapter_demo.rs::gpart_adapter_demo.bin::1 # demo artifact a human inspects after the run; no gate runs two examples concurrently

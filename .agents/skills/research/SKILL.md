@@ -1,6 +1,6 @@
 ---
 name: research
-description: Research workflow for distilling ML/AI papers into modelless inference primitives, freeze/thaw runtime patterns, latent-space operations, AND model-based training plans across the multi-repo stack. Use when reading arxiv papers, deciding which repo a paper belongs in, creating .research/ notes or .plans/ files, implementing modelless inference primitives, or routing training-vs-inference insights. Enforces the commercial strategy (public engine / private runtime / private chain / private neuron-db / private training / private SDK facade / private product-domain), three-track system (modelless inference + self-adaptive runtime + model-based trained weights — all three exist across the stack, not just riir-train), latent-to-latent preference, and freeze/thaw-over-fine-tuning rule.
+description: Research workflow for distilling ML/AI papers into modelless inference primitives, freeze/thaw runtime patterns, latent-space operations, AND model-based training plans across the multi-repo stack. Use when reading arxiv papers, deciding which repo a paper belongs in, creating .research/ notes or .plans/ files, implementing modelless inference primitives, or routing training-vs-inference insights. Enforces the commercial strategy (public engine / private runtime / private chain / private neuron-db / private training / private SDK facade / private product-domain), three-track system (modelless inference + self-adaptive runtime + model-based trained weights — all three exist across the stack, not just riir-train), latent-to-latent preference, and freeze/thaw-over-fine-tuning rule. Every task ends with a mandatory Claude verdict ping-pong (§5) before any file is committed.
 ---
 
 # Research Workflow — Modelless Inference, Freeze/Thaw, Latent-to-Latent
@@ -16,7 +16,7 @@ Do NOT activate for: pure refactor, bug fixes with no research angle, or ordinar
 ## Repos
 
 **Canonical count + membership: `katgpt-rs/AGENTS.md` §"Repo count"** — the
-product/distillation set is **7** (first block below); the workspace is **18
+product/distillation set is **7** (first block below); the workspace is **20
 contract repos** (all with a root `BOUNDARY.md`). Derive the set, never type it:
 
 ```bash
@@ -35,7 +35,7 @@ The product/distillation set (7):
 - `riir-game-sdk/` — private facade + dev-tool workspace; downstream consumer, rarely a distillation target.
 - `riir-dapps/` — private dApp layer (added 2026-08-20). Game outcome → generic chain settlement (`Settlement`, `MultiClaimEscrow` composition) + the KAT ledger/service SERVER plane (kat_ledger, epoch settle, payment rails, CF worker/DO shell). Route settlement-composition + service-economy papers here, NOT riir-chain.
 
-The wider workspace (the other 11 — route here only when the insight is
+**The wider workspace (the other 13 — route here only when the insight is
 inseparable from that surface):
 
 - `riir-clippy/` — private multi-domain code healer. **Fusion priority #2** (see the ladder below) — the workspace's densest latent-state consumer per LOC; healer-domain distills file their `.research/` notes HERE (MOAT row below).
@@ -46,8 +46,7 @@ inseparable from that surface):
 - `riir-esp32/` — private POC/fun, **not prod**: the ESP32 Satellite device tier (esp-hal firmware, on-device crypto timing). Device-tier papers only.
 - `riir-viewbridge/` — private Unity FFI seam, **PARKED 2026-09-03** (Bevy is the shipping render path). FFI raw/latent-wall papers only; expect no consumer until unfreeze.
 - `katgpt-web/` — PUBLIC explainer site ("The Anatomy of KatGPT-RS"). Presentation surface only — **nothing private may ever appear here**; never a distillation target.
-- `riir-mmorpg-examples/`, `seal-remake/` — game PRODUCT consumers (POC orchard multiplayer; the seal remaster). Paper insights land substrate-side (riir-ai / riir-game-sdk), not here.
-- `seal-game-editor/` — the read-only content authoring tool (READ-ONLY per owner rule). Not a research target.
+- `riir-shader/` — private shader surface (workspace member per `scripts/repo_set.txt`; no established research routing yet).
 - (`riir-armageddon/` sat in the product set until it was retired 2026-09-02, owner
   act — the directory is gone; do not route to it.)
 
@@ -111,7 +110,7 @@ The highest-value latent Super-GOATs cluster in seven module trees. `list_direct
 
 | Module | What ships | Super-GOAT angle |
 |---|---|---|
-| `katgpt-rs/crates/katgpt-core/src/sense/` | belief-state kernels (`evolve_belief`, `SenseModule::project`, ternary bit-plane projection) | Per-NPC recurrent latent state — runtime substrate for any "hidden state"/"belief"/"activation" paper |
+| `katgpt-rs/crates/katgpt-sense/src/` (NOT katgpt-core/src/sense — that dir does not exist; only `sense_threat.rs` lives in katgpt-core) | belief-state kernels (`evolve_belief`, `reconstruction.rs`), ternary bit-plane projection | Per-NPC recurrent latent state — runtime substrate for any "hidden state"/"belief"/"activation" paper |
 | `riir-ai/crates/riir-engine/src/latent_functor/` | `zone_gating.rs`, `reestimation.rs`, `arithmetic.rs`, `cross_game.rs`, `k_selector.rs`, `quality_gate.rs` | **Game-theory in latent space** — vector-op functors, coherence-driven re-estimation, zone-gated activation. Maps "stage"/"application"/"bypass"/"collapse" papers |
 | `riir-ai/crates/riir-engine/src/hla/` | `kernel.rs`, `forward.rs`, `types.rs` — **Higher-order Linear Attention** (Transformer attention-layer replacement). Paper: Zhang et al. 2026. **NOT the per-NPC belief** (different layer, different repo). | Maps "attention layer"/"linear attention"/"recurrent state" papers to Transformer-scale ops |
 | `riir-ai/crates/riir-engine/src/cgsp_runtime/` | Curiosity-guided self-play, latent prediction SSL, MCTS collapse bridge | Runtime curiosity/exploration — maps "self-learn"/"entropy-driven"/"collapse recovery" |
@@ -135,6 +134,8 @@ The highest-value latent Super-GOATs cluster in seven module trees. `list_direct
 Runtime GRPO self-play stays in `riir-ai` (self-adaptive track — updates latent state, not weights). Model-based training (LoRA/SFT/GRPO on actual weights) lives in BOTH `riir-train` AND in-repo training pipelines (`quest_grammar/grammar_training.rs` in riir-ai, `TernaryDraftModel` `.bits` files in riir-ai/riir-clippy). Quant-aware **inference** stays here; quant-aware **training** → riir-train. **Never assume a repo is modelless-only** — grep for existing training/model-based code first (pre-flight #5).
 
 ## Workflow
+
+Every path through this workflow terminates at **§5 — the Claude verdict ping-pong** — before anything commits. §1.5 / §1.55 / §1.6 grade the verdict; §5 is what makes it final.
 
 ### 0. Read & classify
 
@@ -357,13 +358,41 @@ Before claiming a mechanism "already ships", achieves "parity", or "covers" the 
 
 If §4 surfaces rich landscape, use web search for deeper exploration of specific papers/authors/follow-ups. Not mandatory, valuable when prior-art landscape is dense.
 
+### 5. Final verdict — Claude ping-pong (MANDATORY before any commit)
+
+**A verdict is not DONE until the Claude reviewer has seen it.** The gates above (§1.5 / §1.55 / §1.6) are your self-grade. Before anything commits, negotiate the verdict against the Claude reviewer sub-agent. This is the research-side merge gate and it operationalizes the standing owner rule — *ask Claude for verdict and make decision for any owner gated*. A self-graded verdict that never met the reviewer is the research analogue of an unreviewed merge.
+
+**Availability premise (measured, not assumed):** the reviewer rides the harness tool `request_verdict` (the claude-sub-agent-verdict reviewer; round cap `agent.verdict_max_rounds`, default 3) — a harness capability rather than repo substrate, so it is cited to a WORKED RUN, not a spec document: the executed precedent is mmorpg-editor Proposal 007 (on disk `seal-game-editor/` — the contract-name rule), which ran this exact gate through two `#Verdict:` rounds to the cap-3 contract on the claude backend, recorded in its Status + the plan/issue trail. A harness without the tool does NOT skip the gate — it takes the sub-agent path below, a first-class route to the same binding verdict, never a degraded one. The note records which path ran.
+
+**Protocol** (the tool enforces the mechanics; the Summary is YOUR job):
+
+1. **Compose the `## Summary`** — complete, because the reviewer CANNOT see your context. It carries: paper ID + full title · the pinned one-sentence novelty claim (§1.5's precondition form) · per-track verdicts with tiers (never pooled) · the Path 0 inventory outcome (analog / extracted / deferred per component) · routing (repo + every file created or edited, exact `{NNN}_{Short_Title}.md` names) · the 2–3 closest cousins considered and why they don't kill the claim · and **the weakest point you know of, named by you** — the reviewer finds it anyway, and naming it first costs one round instead of two.
+2. **Round 1** — call `request_verdict` with the Summary + the note's file paths (so the reviewer can read the note itself) + the literal instruction: "Reply with a verdict that MUST start with `#Verdict: AGREE` or `#Verdict: REVISE` followed by bullet-point reasons."
+3. **REVISE** → address EVERY bullet with EVIDENCE — a grep result, a verbatim quote at the pinned sha, a bench number, a file path — then call again with the SAME `session_id` (the negotiation stays in one thread). Rephrasing your position without new evidence does not address a reason.
+4. **AGREE (and you agree)** → state your own agreement, restate the final agreed `## Summary`, pass `final_round: true` on that closing call, and only then stage the NAMED files + commit + push.
+5. **Round cap (default 3)** → the tool refuses further calls. STOP. Present the remaining disagreement to the USER with both positions — the user is the owner gate, never a tiebreak you award yourself. A capped disagreement escalates; it does not self-resolve by picking your side.
+
+**Scope — mandatory vs optional:**
+
+- **Mandatory:** Super-GOAT and GOAT verdicts · every `riir-train` Plan filing (Path 0.5) · every verdict that creates or rewrites a `.research/` note, `.plans/` file, or architectural guide · every advocate-finding discard (§3.5) · every "already ships"/parity claim granted without the PoC (§3.6 exemptions) · every owner-gated call (feature promotion/demotion, default-on flips, §1.6 tier re-routing).
+- **Optional (encouraged):** a plain PASS whose §4 sweep found zero redirect-worthy cousins — a checkable claim, since the searches are in the Summary and auditable next round; a routing call the owner already made in-conversation this session.
+
+**What the reviewer checks — hand it the hooks:** novelty claim vs the §4 searches actually cited (never asserted) · §3.6 signal-diffs on every coverage dismissal · routing vs the MOAT table + fusion priority ladder · per-track separation (no cascade from a training-track kill) · discard reasons surviving mechanism-level scrutiny (§3.5) · file hygiene (numbers from `.highwater`, PASS-Redirects lines present, no "candidate" escape-hatch wording).
+
+**Standing failure modes (how this gate dies quietly — pre-registered, not yet measured):**
+
+- **Self-AGREE drift** — summarizing your way to AGREE by omitting the weak axis. The Summary must name the weakest point explicitly; an omission voids the verdict, and a re-opened verdict after files shipped costs a renumber + citation rewrite (the exact cost the numbering rules exist to price).
+- **Cap-racing** — burning rounds re-arguing instead of producing evidence. Each REVISE round must ADD something checkable; a round that adds nothing is a round the user now has to arbitrate.
+- **Post-AGREE drift** — editing a verdict-bearing section after AGREE without re-running the gate. A material post-AGREE edit re-opens the negotiation on the SAME `session_id` before the next commit; the commit after a `final_round` close is byte-frozen to what was agreed.
+- **Reviewer-unavailable** — no `request_verdict` in the toolset? Run the SAME negotiation through a generic sub-agent reviewer (`spawn_agent` in this harness; `Agent`/`SendMessage` in Claude Code — the capability is a fresh reviewer that cannot see your context, whatever the local spelling) with the same Summary + the same `#Verdict:` reply contract. It is an equal verdict, not a weaker one — record which path ran, and never label a fallback verdict provisional (a permanently-provisional gate is an unexecutable mandatory, this file's own most-repeated shape).
+
 ## Constraints (non-negotiable)
 
 1. **Three-track system (not modelless-only)** — the stack runs three concurrent tracks: (a) **modelless inference** (primary hot path — no weights, BLAKE3-deterministic, zero-alloc), (b) **self-adaptive** (runtime latent updates — `self_evolve`, EMA direction vectors, freeze/thaw cycles, CommittedFieldBlend — NO base weight mutation), (c) **model-based** (trained weights — ternary `.bits` files via `TernaryDraftModel`, LoRA/QLoRA adapters, Bonsai model comparison, quest_grammar training pipelines). Do NOT characterize any repo as "modelless only" without checking pre-flight #5. Closest to "training" for the modelless track: freeze/thaw cycles, raw/lora hot-swap with **deterministically constructed** adapters (not trained), latent direction-vector updates at runtime. **Before any riir-train deferral, exhaust §3.5. AND check for existing model-based code in the target repo.**
 2. **Latent-to-latent preferred** — operate in latent space as long as possible. Decode/project only at boundary. **Sigmoid, never softmax**, for projections onto learned directions. Semantic (emotion/mood/curiosity/style) → latent. Physical (position/HP/wallet) → raw, deterministic, synced.
 3. **Freeze/thaw over fine-tuning** — only runtime weight mutation is swapping a frozen snapshot (atomic, versioned, BLAKE3-checked) or applying a deterministically-constructed LoRA overlay (raw/lora hot-swap, no GD). Never mutate weights in-place during inference. Gradient updates (after §3.5) → riir-train.
 4. **Self-learn / adaptive CoT welcome** — runtime curiosity, latent prediction, trajectory folding, collapse detection. Update latent state / direction vectors / routing tables, NOT base weights.
-5. **7-repo discipline** (the product/distillation set; canonical list in `katgpt-rs/AGENTS.md` §"Repo count") — katgpt-rs (public) → riir-ai → riir-chain → riir-neuron-db → riir-train (all private) + riir-game-sdk (facade) + riir-dapps (dApp layer: game outcome → generic chain settlement, added 2026-08-20). It read "8-repo" and included `riir-armageddon` until 2026-09-03; that repo was retired 2026-09-02 (owner act, directory gone). The WORKSPACE around that set is 18 contract repos — `riir-clippy`, `riir-auth`, `riir-dao`, `riir-viewbridge` carry `.research/` too (healer-domain notes file in riir-clippy per the MOAT table), and the rest (riir-kat, riir-deployer, riir-esp32, katgpt-web, riir-mmorpg-examples, seal-remake, seal-game-editor) are consumers/protocol/POC/presentation surfaces — routing targets of last resort. **Read a count in prose as a claim, not a fact — derive the set (§Repos).** Training how never leaks to katgpt-rs; chain IP in riir-chain; shard IP in riir-neuron-db; SDK stays facade over `riir-games-shared`.
+5. **7-repo discipline** (the product/distillation set; canonical list in `katgpt-rs/AGENTS.md` §"Repo count") — katgpt-rs (public) → riir-ai → riir-chain → riir-neuron-db → riir-train (all private) + riir-game-sdk (facade) + riir-dapps (dApp layer: game outcome → generic chain settlement, added 2026-08-20). It read "8-repo" and included `riir-armageddon` until 2026-09-03; that repo was retired 2026-09-02 (owner act, directory gone). The WORKSPACE around that set is 20 contract repos — `riir-clippy`, `riir-auth`, `riir-dao`, `riir-viewbridge` carry `.research/` too (healer-domain notes file in riir-clippy per the MOAT table), and the rest (riir-kat, riir-deployer, riir-esp32, katgpt-web, riir-mmorpg-examples, riir-shader) are consumers/protocol/POC/presentation surfaces — routing targets of last resort. **Read a count in prose as a claim, not a fact — derive the set (§Repos).** Training how never leaks to katgpt-rs; chain IP in riir-chain; shard IP in riir-neuron-db; SDK stays facade over `riir-games-shared`.
 6. **SOLID, DRY** — per `katgpt-rs/.contexts/optimization.md`. Zero-alloc hot paths. Pre-computed lookup tables. Fixed-size arrays for bounded domains.
 7. **Tests/examples** — before/after showing the gain. Latent ops: projection preserves ranking. Freeze/thaw: readers never see torn snapshots.
 8. **CPU/GPU/ANE auto-route** — threshold-adaptive. Plasma (µs SIMD) → Hot (sub-ms GPU) → Warm/Cold (ms+ GPU/ANE). L1-fitting latent ops stay SIMD; batched matmul goes GPU.

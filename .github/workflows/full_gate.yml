@@ -96,6 +96,8 @@ jobs:
       # would resolve the pin file and the gate would silently freeze at the
       # pinned channel. A weekly red on a toolchain bump is the gate working,
       # not flaking — read the diagnostic before assuming the code changed.
+      # toolchain-override-deliberate: rot-gate — probe stable weekly; the pin
+      # file header + AGENTS.md document the exception.
       RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@v6

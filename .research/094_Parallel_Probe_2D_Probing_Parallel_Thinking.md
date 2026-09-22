@@ -248,3 +248,5 @@ enum ProbeDecision {
 - Aggarwal et al. (2023) — Adaptive Self-Consistency (ASC) baseline
 - Liu & Wang (2025) — Self-Adaptive Consistency (SAC) per-trajectory stopping
 - Zheng et al. (2025) — Parallel-R1: parallel thinking via RL
+
+> **PASS-Redirects (synthesis):** Park et al. [arXiv:2609.21032 "Scaling Discovery through Test-Time Communication"] — external validation + the missing law: this module's consensus-early-stop + deviation-pruning IS the paper's "communicating team@k" arm; the paper adds the conditions law (m>1 × verifier accessibility × per-agent compute) and the team@k ≈ best@4k–6.6k multiplier. See [.research/583](583_Test_Time_Communication_Verified_Progress_Sharing.md).

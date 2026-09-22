@@ -183,6 +183,15 @@ pub struct SetDiffusionResult {
     pub confidence_history: Vec<f32>,
     /// Whether all decode-region positions were decoded (no mask_token remaining).
     pub converged: bool,
+    /// Per-position unmask step π (Plan 602 T1.3, `decode_order_metrics`):
+    /// `unmask_steps[di]` = the 0-based forward-pass index at which decode-
+    /// region position `di` committed, or `u32::MAX`
+    /// (`katgpt_core::dllm::UNMASKED_NEVER`) when it never committed. Ties
+    /// are parallel commits within one pass — exactly what AR-ness
+    /// measures. Consumed by [`SetDiffusionResult::local_ar_ness`] /
+    /// [`SetDiffusionResult::global_ar_ness`].
+    #[cfg(feature = "decode_order_metrics")]
+    pub unmask_steps: Vec<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +267,11 @@ pub fn set_diffusion_decode<F: SetCausalForwardFn>(
     let mut confidence_history = Vec::with_capacity(max_gen_step as usize + 1);
     let mut all_committed = false;
 
+    // Plan 602 T1.3: per-position unmask step (forward-pass index at commit;
+    // sentinel = never committed).
+    #[cfg(feature = "decode_order_metrics")]
+    let mut unmask_steps = vec![katgpt_core::dllm::UNMASKED_NEVER; decode_len];
+
     // Hoisted out of both loops: gen_steps doesn't change between iterations,
     // so the full gen-steps buffer (prompt zeros + decode gen_steps) is invariant.
     let mut full_gen_steps = vec![0u32; prompt_len];
@@ -304,6 +318,17 @@ pub fn set_diffusion_decode<F: SetCausalForwardFn>(
                 if chosen_prob >= tau_conf && chosen_token != mask {
                     tokens[p] = chosen_token;
                     n_committed_this_pass += 1;
+                    // Plan 602 T1.3: record the pass (0-based — the counter
+                    // was incremented before this position loop) at which
+                    // the position committed. Commit time is the last moment
+                    // a masked position is visited (the q-capture contract).
+                    // (Indexed via `p - prompt_len` == `di` to keep the
+                    // needless_range_loop lint quiet on this multi-index
+                    // loop.)
+                    #[cfg(feature = "decode_order_metrics")]
+                    {
+                        unmask_steps[p - prompt_len] = (forward_passes - 1) as u32;
+                    }
                 }
             }
 
@@ -333,6 +358,24 @@ pub fn set_diffusion_decode<F: SetCausalForwardFn>(
         forward_passes,
         confidence_history,
         converged: all_committed,
+        #[cfg(feature = "decode_order_metrics")]
+        unmask_steps,
+    }
+}
+
+/// AR-ness readouts over the emitted trajectory π (Plan 602).
+#[cfg(feature = "decode_order_metrics")]
+impl SetDiffusionResult {
+    /// Local AR-ness (ALR): fraction of adjacent position pairs committed in
+    /// increasing pass order — see `katgpt_core::dllm::local_ar_ness`.
+    pub fn local_ar_ness(&self) -> f32 {
+        katgpt_core::dllm::local_ar_ness(&self.unmask_steps)
+    }
+
+    /// Global AR-ness (AGR): fraction of all position pairs committed in
+    /// increasing pass order — see `katgpt_core::dllm::global_ar_ness`.
+    pub fn global_ar_ness(&self) -> f32 {
+        katgpt_core::dllm::global_ar_ness(&self.unmask_steps)
     }
 }
 
@@ -1262,5 +1305,101 @@ mod tests {
         let result = set_diffusion_decode_scheduled(&mock, &config, &[], &schedule, 4, &mut rng);
 
         assert!(result.converged, "AR + strong signal should converge");
+    }
+
+    /// Plan 602 T1.3: π emission + AR-ness readouts over the decode loop.
+    #[cfg(feature = "decode_order_metrics")]
+    mod decode_order {
+        use super::*;
+
+        #[test]
+        fn unmask_steps_block_causal_strong_signal() {
+            // Block-causal gen_steps [0,0,1,1] with a strong signal: block 0
+            // commits at pass 0 (inner loop breaks once all eligible are
+            // committed), block 1 at pass 1 → π = [0,0,1,1].
+            let mock = MockForward {
+                vocab: 8,
+                mask: 0,
+                confidence_gap: 5.0,
+            };
+            let config = SetDiffusionConfig {
+                mask_token: 0,
+                vocab_size: 8,
+                denoise_steps: 4,
+                confidence_threshold: 0.5,
+                temperature: 1.0,
+            };
+            let gen_steps = vec![0u32, 0, 1, 1];
+            let mut rng = Rng::new(42);
+
+            let result = set_diffusion_decode(&mock, &config, &[], &gen_steps, &mut rng);
+
+            assert_eq!(result.unmask_steps, vec![0, 0, 1, 1]);
+            // ALR: (0,1) tie ✗, (1,2) ✓, (2,3) tie ✗ → 1/3.
+            assert!((result.local_ar_ness() - 1.0 / 3.0).abs() < 1e-6);
+            // AGR: (0,2) ✓ (0,3) ✓ (1,2) ✓ (1,3) ✓ of 6 → 2/3.
+            assert!((result.global_ar_ness() - 2.0 / 3.0).abs() < 1e-6);
+        }
+
+        #[test]
+        fn unmask_steps_never_committed_sentinel() {
+            // Uniform logits (gap 0) under a high threshold: nothing ever
+            // commits → every π entry keeps the sentinel and both readouts
+            // are NaN (no valid pair — the empty measurement is visible).
+            let mock = MockForward {
+                vocab: 8,
+                mask: 0,
+                confidence_gap: 0.0,
+            };
+            let config = SetDiffusionConfig {
+                mask_token: 0,
+                vocab_size: 8,
+                denoise_steps: 2,
+                confidence_threshold: 0.99,
+                temperature: 1.0,
+            };
+            let gen_steps = vec![0u32, 0, 1, 1];
+            let mut rng = Rng::new(7);
+
+            let result = set_diffusion_decode(&mock, &config, &[], &gen_steps, &mut rng);
+
+            assert!(!result.converged);
+            assert!(result.unmask_steps.iter().all(|&s| s == u32::MAX));
+            assert!(result.local_ar_ness().is_nan());
+            assert!(result.global_ar_ness().is_nan());
+        }
+
+        #[test]
+        fn unmask_steps_partial_commit_excludes_sentinel_pairs() {
+            // Vocab 2 (mask + one real token): the real token always has
+            // prob 1.0 → commits whenever eligible. Same shape as the
+            // strong-signal arm but with an explicit mid-trajectory check:
+            // committed entries are pass indices < forward_passes.
+            let mock = MockForward {
+                vocab: 2,
+                mask: 0,
+                confidence_gap: 5.0,
+            };
+            let config = SetDiffusionConfig {
+                mask_token: 0,
+                vocab_size: 2,
+                denoise_steps: 3,
+                confidence_threshold: 0.5,
+                temperature: 1.0,
+            };
+            let gen_steps = vec![0u32, 0, 1, 1];
+            let mut rng = Rng::new(3);
+
+            let result = set_diffusion_decode(&mock, &config, &[], &gen_steps, &mut rng);
+
+            assert!(result.converged);
+            for &s in &result.unmask_steps {
+                assert!(
+                    s < result.forward_passes as u32,
+                    "unmask step {s} outside pass count {}",
+                    result.forward_passes
+                );
+            }
+        }
     }
 }

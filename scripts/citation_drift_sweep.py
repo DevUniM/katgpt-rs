@@ -107,8 +107,8 @@ plausible address that is wrong beats no address, and the directory-name path
 from that argument with no measurement behind the exemption.
 
 The repair also tightened the name match to segment boundaries: a plain
-`"seal-remake" in ctx` read riir-viewbridge's `seal-remake-unity` as naming
-**seal-remake** and qualified a `Plan 031` citation on a different repo's name.
+`"mmorpg-remake" in ctx` read riir-viewbridge's `mmorpg-remake-unity` as naming
+**mmorpg-remake** and qualified a `Plan 031` citation on a different repo's name.
 
 Two adjudications the per-repo filings forced, recorded so they stay decided
 ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ lives in no document the reader has, and the measurement refutes the weaker
 claim too: of the 45 CROSS rows carrying a crate name in the window, **4
 resolve to a repo that does NOT own the cited number** (riir-game-sdk's
 `Issue 097` sits next to `riir-games-mmorpg::sync_facades::avatar_sync` while
-097 belongs to riir-mmorpg-examples/riir-chain/seal-game-editor). Accepting
+097 belongs to riir-mmorpg-examples/riir-chain/mmorpg-editor). Accepting
 crate names as qualifiers would certify those four as clean, and they are the
 worst rows in the corpus — a plausible address that is wrong. So the rows are
 counted as findings and sub-labelled `crate-hint` / `⛔MISLEADING` to ORDER
@@ -229,6 +229,7 @@ the commit that changes it.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -240,6 +241,13 @@ sys.path.insert(0, str(HERE))
 # document list are the GATE's, so the sweep and the per-push gate can never
 # disagree about what a citation IS.
 import issue_citation_gate as icg  # noqa: E402
+from sweep_population import population_verdict, pin_row_exempt  # noqa: E402
+
+# Issue 842: the derived handles are CONTRACT-named; reads resolve to disk.
+import repo_alias  # noqa: E402
+from worktree_state import (  # noqa: E402
+    STALE_FETCH_HOURS, behind_origin, deferral_line, dirty_files,
+    fetch_age_hours, head_text, upstream_axis, worktree_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -250,6 +258,14 @@ GATE = HERE / "issue_citation_gate.py"
 FIELDS = ("min_citations", "max_cross", "max_in_local_range", "max_orphan")
 
 CROSS, IN_RANGE, ORPHAN = "CROSS", "IN-LOCAL-RANGE", "ORPHAN"
+# Issue 794. A SUBSET of IN_RANGE, kept in that bucket for the `max_in_local_range`
+# ceiling (the undecided population did not change) and listed separately so the
+# 4-row display truncation cannot hide a finding behind undecided noise.
+MISATTR_IN_RANGE = "MISATTRIBUTED-IN-RANGE"
+# The finding classes, as a tuple, for the Issue-796 worktree-vs-HEAD diff.
+# MISATTR_IN_RANGE is deliberately absent: it is a SUBSET of IN_RANGE, and
+# including it would count its rows twice on both sides of the comparison.
+_CLASSES = (CROSS, IN_RANGE, ORPHAN)
 
 # A crate token is only usable as a REPO HINT when it cannot collide with
 # ordinary prose: hyphenated and >= 6 characters. `xtask`, `core`, `cli` are
@@ -287,11 +303,13 @@ def crate_map(repos: list[Path]) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for r in repos:
-        ls = subprocess.run(["git", "-C", str(r), "ls-files", "*Cargo.toml"],
-                            capture_output=True, text=True)
+        # Issue 842: git reads the on-disk directory.
+        rs = repo_alias.real(r)
+        ls = subprocess.run(["git", "-C", str(rs), "ls-files", "*Cargo.toml"],
+                            capture_output=True, encoding="utf-8", errors="replace")
         for rel in ls.stdout.split():
             try:
-                text = (r / rel).read_text(encoding="utf-8", errors="replace")
+                text = (rs / rel).read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
             m = _PKG_NAME.search(text)
@@ -329,12 +347,106 @@ def top_allocated(repo: Path, alloc: dict[str, set[int]]) -> dict[str, int]:
 FULL = "--full" in sys.argv
 
 
+_ROW_KEY = re.compile(r"^(\S+?):(\d+)\s+(\S+)\s+(\d+)\s")
+
+
+def _row_key(row: str) -> tuple[str, str, str]:
+    """A finding row's identity ACROSS two reads of the same document.
+
+    `(document, kind, number)` — deliberately NOT the line number. Comparing
+    a worktree row with a HEAD row is the whole point, and any edit above a
+    citation shifts its line, so a line-bearing key would report every row in
+    an edited document as both UNCOMMITTED and MASKED at once (Issue 797).
+    """
+    m = _ROW_KEY.match(row)
+    return (m.group(1), m.group(3), m.group(4)) if m else ("", "", row[:80])
+
+
+def _worktree_read(p: Path) -> str | None:
+    """The default document source: the WORKING TREE, or None if absent."""
+    if not p.is_file():
+        return None         # not every repo carries a HISTORY.md — absence
+    return p.read_text(encoding="utf-8", errors="replace")
+
+
+ORACLE_STALE = "ORACLE-STALE"
+
+# The globs naming every directory a number can be allocated in. An oracle
+# repo is unreliable for THIS question only if its upstream moved inside one
+# of these — a sibling that is behind on source code still answers
+# "do you own Plan 226" correctly.
+NUMBERED_GLOBS = tuple(f"{d}/*" for d in icg.KINDS.values())
+
+
+def unreliable_oracles(sibs: list[Path]) -> dict[str, str]:
+    """Sibling repos whose "I do not own that number" cannot be believed.
+
+    Issue 827. `is_qualified()` asks a sibling's checkout whether it owns a
+    number, and a checkout answers for the commits it has. Measured: a citation
+    reading `seal-game-editor Plan 226` — correct, and the qualified form this
+    family prescribes — was reported ⛔MISATTRIBUTED and counted CROSS in
+    **riir-shader**, because seal-game-editor's checkout sat 260 commits behind
+    origin and the allocation landed in that gap. The repo being blamed was
+    clean, current, and not the repo whose state produced the verdict.
+
+    Two ways an oracle stops being credible, and they are NOT the same fact:
+
+    * it is BEHIND its upstream on commits touching a numbered directory — the
+      allocation may be sitting in those commits;
+    * it reports up to date, but from a remote-tracking ref nobody has
+      refreshed (Issue 827 T5). `(0, 0)` means "as of the last fetch", and
+      before the fetch that exposed it seal-game-editor read exactly `0 behind`
+      while hiding those 260 commits.
+
+    ⛔ No network call. Fetching to make our own verdict true would mutate
+    another session's refs, which on a box running five concurrent sessions is
+    a race — T2's standing refusal.
+
+    Returns `{repo name: why}`, empty when every oracle is current. A repo with
+    no upstream is NOT listed: `behind_origin` answers `None` there and the
+    repo claims nothing, so its allocation set is simply what it has.
+    """
+    out: dict[str, str] = {}
+    for s in sibs:
+        # Issue 842: git reads the on-disk directory; the printed key is the
+        # CONTRACT spelling.
+        beh = behind_origin(repo_alias.real(s), NUMBERED_GLOBS)
+        if beh is None:
+            continue
+        if beh[1]:
+            out[repo_alias.display(s.name)] = (
+                f"{beh[0]} commits behind upstream, {beh[1]} of "
+                f"them touching a numbered directory")
+            continue
+        if beh == (0, 0):
+            age = fetch_age_hours(repo_alias.real(s))
+            if age is None:
+                out[repo_alias.display(s.name)] = (
+                    "reports up to date, but has never been fetched")
+            elif age > STALE_FETCH_HOURS:
+                out[repo_alias.display(s.name)] = (
+                    f"reports up to date from a remote-tracking ref "
+                    f"last refreshed {age:.0f}h ago")
+    return out
+
+
 def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
           docs: list[str], crates: dict[str, str],
-          patterns: dict[str, re.Pattern]) -> dict:
-    """One repo -> the three finding classes + BOTH populations under them."""
+          patterns: dict[str, re.Pattern], read=_worktree_read,
+          unreliable: dict[str, str] | None = None) -> dict:
+    """One repo -> the three finding classes + BOTH populations under them.
+
+    `read(path) -> str | None` is injected (Issue 797) so the SAME classifier
+    can be pointed at HEAD's blobs instead of the working tree. `None` means
+    "this document does not exist in the source being read", and it is not a
+    finding either way — but it must stay distinguishable from empty text, or
+    a repo with no HISTORY.md and a repo whose HISTORY.md is empty read alike.
+    """
     mine = alloc[repo.name]
-    top = top_allocated(repo, mine)
+    # Issue 842: the reads go to the ON-DISK directory; every NAME (alloc
+    # keys, qualifier matching) stays the CONTRACT spelling of the handle.
+    disk = repo_alias.real(repo)
+    top = top_allocated(disk, mine)
     elsewhere: dict[str, dict[int, list[str]]] = {k: {} for k in icg.KINDS}
     for s in sibs:
         for kind in icg.KINDS:
@@ -342,15 +454,15 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
                 elsewhere[kind].setdefault(n, []).append(s.name)
 
     got = {"n_docs": 0, "n_cites": 0, "ambiguous": set(), "misleading": 0,
-           "misattributed": 0, "cross_units": set(), "repeat": 0,
+           "misattributed": 0, MISATTR_IN_RANGE: [],
+           "cross_units": set(), "repeat": 0,
            "unseen_width": 0, "alias_trailing": 0,
-           CROSS: [], IN_RANGE: [], ORPHAN: []}
+           CROSS: [], IN_RANGE: [], ORPHAN: [], ORACLE_STALE: []}
     for doc in docs:
-        p = repo / doc
-        if not p.is_file():
-            continue          # not every repo carries a HISTORY.md — absence
-        got["n_docs"] += 1    # is not a finding, but the doc COUNT is printed
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = read(disk / doc)
+        if text is None:
+            continue          # absence is not a finding, but the doc COUNT is
+        got["n_docs"] += 1    # printed, so it must not silently include it
         lines = text.splitlines()
         # The width bound's complement, re-counted every run rather than
         # remembered from one dated measurement (Issue 753).
@@ -380,12 +492,71 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
             named, adj = icg.qualifiers(lines, ln, lead, sibs)
             if icg.is_qualified(named, owners):
                 continue
+            # ── Issue 827: the ORACLE's freshness is part of the verdict ────
+            # Qualification just failed, and it failed by asking sibling
+            # checkouts who owns this number. If the author named a repo whose
+            # answer this box cannot believe, the failure is not evidence about
+            # the citation — it is evidence about our checkout of that repo.
+            # UNDECIDED: never clean (the citation may really be wrong), never
+            # counted (a ceiling breached by another repo's fetch schedule is
+            # the cries-wolf failure this family refuses).
+            #
+            # ⛔ It must sit HERE and not on the ⛔MISATTRIBUTED tag below.
+            # The measured case was counted as CROSS, and the tag is only its
+            # sub-label — suppressing the label alone would have left the
+            # ceiling breached and the red standing.
+            stale_named = sorted(set(named) & set(unreliable or {}))
+            if stale_named:
+                why = "; ".join(f"{nm}: {(unreliable or {})[nm]}"
+                                for nm in stale_named)
+                got[ORACLE_STALE].append(
+                    f"{doc}:{ln}  {kind} {n} names {'/'.join(stale_named)} "
+                    f"[⚠ ORACLE-STALE — {why}. This box cannot say whether "
+                    f"that repo owns the number, so this row is UNDECIDED: "
+                    f"not clean, not counted. `git fetch` there and re-run]")
+                continue
             ctx = "\n".join(lines[max(0, ln - 3):ln])
             hint = _crate_hits(ctx, crates, patterns) - {repo.name}
             cls = (IN_RANGE if n <= top[kind] else CROSS if owners else ORPHAN)
             tag = ""
-            bad = adj - set(owners)
-            if cls is CROSS and bad:
+            # ⛔ `written_names`, NOT `adj`. The accusation half must be able
+            # to QUOTE the address it says was written, and `adj` pools full
+            # directory names with short-form ALIASES. An alias match that
+            # qualifies a citation is a leniency; one that attributes it is a
+            # false accusation in a class walled at 0. Measured 2026-09-15:
+            # riir-game-sdk's "the Active-preview mirror client chain (Plan 199
+            # …)" was reported as naming riir-chain, a string absent from that
+            # file, and hard-failed that repo's sweep.
+            bad = icg.written_names(lead, sibs) - set(owners)
+            if cls is IN_RANGE and bad:
+                # Issue 794. IN-LOCAL-RANGE is "UNDECIDED, never clean"
+                # because a local referent that was skipped or never committed
+                # is plausible. This row REFUTES that premise with its own
+                # text: it reached this bucket only because `n not in mine`
+                # (the Issue-754 oracle — worktree AND git log AND headings —
+                # found no local allocation), and the author wrote a DIFFERENT
+                # repo's name directly ON the citation. Followable, to the
+                # wrong place. Its own class, never pooled into CROSS: CROSS
+                # is unfollowable, and the two repairs read differently.
+                #
+                # ⛔ The boundary is MEASURED and it is NOT the obvious one.
+                # The same predicate at the `n in mine` short-circuit one
+                # branch up is 19 rows workspace-wide and 19 of them are
+                # FALSE — the prose contrasting a local number with a remote
+                # one, the 40-char lead catching the NEIGHBOUR's address
+                # (`riir-ai Issue 853 / this repo's Issue 093`, ``in
+                # `riir-neuron-db/src/local_kv.rs` (Issue 043``). That is the
+                # mechanism, not luck: a locally-allocated number HAS a local
+                # referent for the prose to contrast against. So the rule
+                # stops here, and the exemption is a measurement rather than
+                # an oversight. The IN-RANGE column is n = 1 — "0 false" there
+                # is one row's worth of evidence, not a rate.
+                got[MISATTR_IN_RANGE].append(f"{doc}:{ln}  {kind} {n}")
+                tag = (f"  [⛔MISATTRIBUTED-IN-RANGE: names "
+                       f"{'/'.join(sorted(bad))}, which does NOT own {n}; "
+                       f"the local-range excuse does not apply — {repo.name} "
+                       f"never allocated {n}]")
+            elif cls is CROSS and bad:
                 # An explicit attribution sitting ON the citation that names a
                 # repo without the number. Same standing as the crate hint: it
                 # ORDERS the repair, it is not a verdict. Hand-adjudicated at
@@ -429,13 +600,141 @@ def audit(repo: Path, sibs: list[Path], alloc: dict[str, dict[str, set[int]]],
 
 def gate_says() -> tuple[int, int, int]:
     """Run the per-push gate and READ its numbers. The sweep re-states a
-    quantity the gate owns; asserting beats trusting. -> (rc, scanned, findings)"""
-    r = subprocess.run([sys.executable, str(GATE)], capture_output=True, text=True)
+    quantity the gate owns; asserting beats trusting. -> (rc, scanned, findings)
+
+    `scanned` is **-2** when the gate DEFERRED its cross-repo adjudication
+    (Issue 793 T3). Under `DOCS_GATE_PARTIAL_CLONE=1` the gate prints
+    `partial: N citations scanned in …` rather than `scanned N citations`, and
+    a regex that knows only the second shape returns -1 — which this sweep
+    reads as "the instrument is untrustworthy" and exits 2. That is a correct
+    refusal reached for the wrong reason: the gate is fine and said so. -2 is
+    a THIRD state, not folded into either neighbour, because "the gate could
+    not be read" and "the gate declined to adjudicate" call for opposite
+    responses.
+    """
+    # Both halves of Issue 778: `encoding=` pins OUR decode (text=True would
+    # use the system locale and hand back mojibake, or None with rc intact),
+    # and PYTHONIOENCODING pins the gate's own stdout encoder so its `✓`
+    # survives the write on a non-UTF-8 box.
+    r = subprocess.run([sys.executable, str(GATE)], capture_output=True,
+                       encoding="utf-8", errors="replace",
+                       env={**os.environ, "PYTHONIOENCODING": "utf-8"},)
     scanned = re.search(r"scanned (\d+) citations", r.stdout)
     failed = re.search(r"FAILED — (\d+) unqualified", r.stdout)
+    deferred = re.search(r"partial-clone scope \(DOCS_GATE_PARTIAL_CLONE", r.stdout)
+    if scanned is None and deferred:
+        return (r.returncode, -2, 0)
     return (r.returncode,
             int(scanned.group(1)) if scanned else -1,
             int(failed.group(1)) if failed else (0 if r.returncode == 0 else -1))
+
+
+def worktree_arms() -> list[str]:
+    """Issue 797 — the worktree-vs-HEAD split, against a REAL git repository.
+
+    A known-answer arm in BOTH directions, because either alone certifies the
+    wrong thing: UNCOMMITTED alone would pass on an instrument that simply
+    ignored HEAD, and MASKED alone would pass on one that ignored the worktree.
+    The fixtures are real commits — a stubbed `head_text` would test the stub,
+    and the `.git` probe is the part most likely to go wrong.
+    """
+    import subprocess
+    import tempfile
+
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    CLEAN = "nothing to cite here\n"
+    CITE = "a bare cross reference to Issue 500 with no owner named\n"
+
+    with tempfile.TemporaryDirectory() as td:
+        ws = Path(td)
+        me, sib = ws / "fake-repo", ws / "riir-fakesib"
+        for r in (me, sib):
+            (r / ".issues").mkdir(parents=True)
+            (r / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (me / ".issues" / "010_local.md").write_text("x", encoding="utf-8")
+        (sib / ".issues" / "500_sib.md").write_text("x", encoding="utf-8")
+        alloc = {"fake-repo": {k: ({10} if k == "Issue" else set())
+                               for k in icg.KINDS},
+                 "riir-fakesib": {k: ({500} if k == "Issue" else set())
+                                  for k in icg.KINDS}}
+        docs = ["AGENTS.md"]
+
+        def run(read=_worktree_read):
+            return audit(me, [sib], alloc, docs, {}, {}, read=read)
+
+        # ── the COMMITTED state carries the finding ───────────────────────
+        (me / "AGENTS.md").write_text(CITE, encoding="utf-8")
+        git(me, "init", "-q", "-b", "main")
+        git(me, "config", "user.email", "t@t")
+        git(me, "config", "user.name", "t")
+        git(me, "add", "-A")
+        git(me, "commit", "-qm", "init")
+
+        base = run()
+        check(len(base[CROSS]) == 1,
+              f"the fixture does not produce a CROSS row at all, so neither "
+              f"direction below can mean anything: {base[CROSS]}")
+
+        def head_read(p: Path) -> str | None:
+            return head_text(me, p.name)
+
+        # ── MASKED: the worktree HIDES a committed finding ─────────────────
+        (me / "AGENTS.md").write_text(CLEAN, encoding="utf-8")
+        wt, hd = run(), run(head_read)
+        check(dirty_files(me) == {"AGENTS.md"},
+              f"the dirty set did not see the edit: {dirty_files(me)}")
+        check(len(wt[CROSS]) == 0 and len(hd[CROSS]) == 1,
+              f"MASKED direction: worktree={len(wt[CROSS])} HEAD={len(hd[CROSS])} "
+              f"— expected a clean worktree over a dirty HEAD")
+        wt_keys = {_row_key(r) for c in _CLASSES for r in wt[c]}
+        masked = [r for c in _CLASSES for r in hd[c] if _row_key(r) not in wt_keys]
+        check(len(masked) == 1,
+              f"the MASKED diff did not recover the committed row: {masked}")
+
+        # ── UNCOMMITTED: the worktree INVENTS a finding HEAD does not have ──
+        # Two citations, so the row count moves AND the line numbers shift —
+        # the arm that reds if `_row_key` ever grows a line number back.
+        (me / "AGENTS.md").write_text("padding line\n" + CITE + CITE,
+                                      encoding="utf-8")
+        wt, hd = run(), run(head_read)
+        check(len(wt[CROSS]) == 2 and len(hd[CROSS]) == 1,
+              f"UNCOMMITTED direction: worktree={len(wt[CROSS])} "
+              f"HEAD={len(hd[CROSS])} — expected 2 over 1")
+        wt_keys = {_row_key(r) for c in _CLASSES for r in wt[c]}
+        hd_keys = {_row_key(r) for c in _CLASSES for r in hd[c]}
+        check(wt_keys == hd_keys,
+              f"_row_key is not line-free — a shifted line reported the SAME "
+              f"citation as both UNCOMMITTED and MASKED: {wt_keys} vs {hd_keys}")
+
+        # ── the injected reader must be able to say "not in HEAD" ──────────
+        # A document added but never committed has no HEAD blob, and `None`
+        # must skip it rather than read the worktree behind the caller's back.
+        # Restored to HEAD's bytes, so the repo is clean again and the only
+        # difference below is the document git has never heard of.
+        (me / "AGENTS.md").write_text(CITE, encoding="utf-8")
+        check(dirty_files(me) == frozenset(),
+              f"restoring HEAD's bytes did not clean the repo: {dirty_files(me)}")
+        (me / "NEW.md").write_text(CITE, encoding="utf-8")
+        two = audit(me, [sib], alloc, ["AGENTS.md", "NEW.md"], {}, {})
+        check(two["n_docs"] == 2 and len(two[CROSS]) == 2,
+              f"the worktree read did not see the new document: {two['n_docs']}")
+        hd2 = audit(me, [sib], alloc, ["AGENTS.md", "NEW.md"], {}, {},
+                    read=lambda p: head_text(me, p.name))
+        check(hd2["n_docs"] == 1 and len(hd2[CROSS]) == 1,
+              f"a document absent from HEAD was not skipped — n_docs="
+              f"{hd2['n_docs']}, cross={len(hd2[CROSS])}; a reader that fell "
+              f"back to the worktree here would report a committed finding "
+              f"that does not exist")
+    return fails
 
 
 def selftest() -> list[str]:
@@ -451,11 +750,11 @@ def selftest() -> list[str]:
         me, sib = ws / "fake-repo", ws / "riir-fakesib"
         (me / ".issues").mkdir(parents=True)
         (sib / ".issues").mkdir(parents=True)
-        (me / ".issues" / "010_local.md").write_text("x")
+        (me / ".issues" / "010_local.md").write_text("x", encoding="utf-8")
         for n in ("010", "500", "600"):
-            (sib / ".issues" / f"{n}_sib.md").write_text("x")
+            (sib / ".issues" / f"{n}_sib.md").write_text("x", encoding="utf-8")
         (me / "crates" / "thing").mkdir(parents=True)
-        (me / "crates" / "thing" / "Cargo.toml").write_text('[package]\nname = "sibcrate-x"\n')
+        (me / "crates" / "thing" / "Cargo.toml").write_text('[package]\nname = "sibcrate-x"\n', encoding="utf-8")
         crates = {"sibcrate-x": "riir-fakesib"}
         pats = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                 for c in crates}
@@ -469,7 +768,7 @@ def selftest() -> list[str]:
             "Issue 900 belongs to nobody at all.\n"            # ORPHAN
             "Issue 010 is local and the sibling has one.\n"    # AMBIGUOUS
             "riir-fakesib Issue 600 names its repo.\n"         # QUALIFIED (window)
-            "`sibcrate-x` ships it; Issue 600 rides the crate.\n")  # crate-hint
+            "`sibcrate-x` ships it; Issue 600 rides the crate.\n", encoding="utf-8")  # crate-hint
         got = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
 
         if got["n_cites"] != 6:
@@ -485,7 +784,7 @@ def selftest() -> list[str]:
 
         # CONTROL: a qualified citation must produce NO finding, or the sweep
         # reds on every correct repair and gets switched off.
-        (me / "AGENTS.md").write_text("riir-fakesib Issue 500 is qualified.\n")
+        (me / "AGENTS.md").write_text("riir-fakesib Issue 500 is qualified.\n", encoding="utf-8")
         ctl = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if ctl[CROSS] or ctl[IN_RANGE] or ctl[ORPHAN]:
             fails.append(f"control: a QUALIFIED citation produced a finding: {ctl}")
@@ -502,72 +801,249 @@ def selftest() -> list[str]:
         crates2 = dict(crates, **{"othercrate-y": "riir-otherlib"})
         pats2 = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                  for c in crates2}
-        (me / "AGENTS.md").write_text("`sibcrate-x` ships it; Issue 500 rides the crate.\n")
+        (me / "AGENTS.md").write_text("`sibcrate-x` ships it; Issue 500 rides the crate.\n", encoding="utf-8")
         hint = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2)
         if len(hint[CROSS]) != 1 or "crate-hint" not in hint[CROSS][0]:
             fails.append(f"crate-hint sub-class did not fire: {hint[CROSS]}")
         if hint["misleading"]:
             fails.append("crate naming the OWNER was counted as misleading")
 
-        (me / "AGENTS.md").write_text("`othercrate-y` moved it; Issue 500 is elsewhere.\n")
+        (me / "AGENTS.md").write_text("`othercrate-y` moved it; Issue 500 is elsewhere.\n", encoding="utf-8")
         mis = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2)
         if mis["misleading"] != 1 or len(mis[CROSS]) != 1:
             fails.append(f"MISLEADING sub-class did not fire: {mis['misleading']} "
                          f"{mis[CROSS]}")
+
+        # ── Issue 827: the ORACLE's freshness is part of the verdict ────────
+        # The measured shape, exactly: the citation NAMES a repo, that repo
+        # really owns the number, and this box's checkout of it has not seen
+        # the allocation — so `owners` lists somebody ELSE and the named repo
+        # reads as a wrong address. `riir-fakesib` owns 500 here, so naming
+        # `riir-otherlib` is the accusation; injecting `unreliable` is what
+        # says "we cannot believe that answer".
+        #
+        # `unreliable` is INJECTED rather than derived, so the arm tests the
+        # RULE and not this box's fetch schedule — the whole defect was a
+        # verdict that moved with a checkout's age.
+        (me / "AGENTS.md").write_text("riir-otherlib Issue 500 moved there.\n", encoding="utf-8")
+
+        # (a) oracle believed current -> the ordinary accusation. Without this
+        #     side the rule could suppress everything and still pass.
+        fresh = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2)
+        if not fresh[CROSS] or not fresh["misattributed"]:
+            fails.append(f"827 control: the fixture did not produce the "
+                         f"accusation it must suppress — cross={fresh[CROSS]} "
+                         f"misat={fresh['misattributed']}")
+        if fresh[ORACLE_STALE]:
+            fails.append(f"827: a CURRENT oracle was called stale: "
+                         f"{fresh[ORACLE_STALE]}")
+
+        # (b) the SAME text, that oracle unreliable -> UNDECIDED. Not merely
+        #     unlabelled: it must leave the COUNTED buckets. The measured case
+        #     breached a ceiling, and suppressing the ⛔ tag alone would have
+        #     left the red standing.
+        st = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2,
+                   unreliable={"riir-otherlib": "260 commits behind upstream"})
+        if len(st[ORACLE_STALE]) != 1:
+            fails.append(f"827: a stale oracle did not produce an UNDECIDED "
+                         f"row: {st[ORACLE_STALE]}")
+        if st[CROSS] or st[ORPHAN] or st[IN_RANGE] or st[MISATTR_IN_RANGE]:
+            fails.append(
+                f"827: a stale-oracle row was still COUNTED — cross="
+                f"{st[CROSS]} orphan={st[ORPHAN]} in_range={st[IN_RANGE]} "
+                f"wrong_addr={st[MISATTR_IN_RANGE]}; the ceiling stays "
+                f"breachable by another repo's fetch schedule")
+        if st["misattributed"] or st["misleading"]:
+            fails.append("827: a stale oracle still produced an accusation "
+                         "sub-count")
+        if st["n_cites"] != fresh["n_cites"]:
+            fails.append("827: the citation left the POPULATION — UNDECIDED "
+                         "must not shrink the denominator")
+
+        # (c) staleness in a repo the citation does NOT name changes nothing.
+        #     Without this the rule could suppress on any staleness anywhere.
+        un = audit(me, [sib, other], alloc, ["AGENTS.md"], crates2, pats2,
+                   unreliable={"riir-somebody-else": "never fetched"})
+        if un[ORACLE_STALE]:
+            fails.append(f"827: staleness in an UNNAMED repo suppressed a row: "
+                         f"{un[ORACLE_STALE]}")
+        if not un[CROSS]:
+            fails.append("827: an unrelated stale repo suppressed the finding")
 
         # ── the two RULE-COST probes must FIRE, and their controls must NOT
         # (Issue 753). Both report a 0 in the live workspace, which is exactly
         # the shape a probe wired to nothing also reports.
         (me / "AGENTS.md").write_text(
             "## Bench 1: a section heading, not a citation\n"
-            "Issue 500 is the real one.\n")
+            "Issue 500 is the real one.\n", encoding="utf-8")
         w = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if w["unseen_width"] != 1:
             fails.append(f"width complement did not fire: {w['unseen_width']} != 1")
         if w["n_cites"] != 1:
             fails.append(f"width: `Bench 1` must NOT enter the walk, got "
                          f"{w['n_cites']} citations")
-        (me / "AGENTS.md").write_text("Issue 500 alone.\n")
+        (me / "AGENTS.md").write_text("Issue 500 alone.\n", encoding="utf-8")
         if audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)["unseen_width"]:
             fails.append("width complement counted a 3-digit citation")
 
         # an alias AFTER the citation: still CROSS (the rule is lead-only), and
         # counted as the cost of that decision.
-        (me / "AGENTS.md").write_text("Issue 500, over in fakesib somewhere.\n")
+        (me / "AGENTS.md").write_text("Issue 500, over in fakesib somewhere.\n", encoding="utf-8")
         tr = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if len(tr[CROSS]) != 1:
             fails.append(f"a TRAILING alias must not qualify: {tr[CROSS]}")
         if tr["alias_trailing"] != 1:
             fails.append(f"alias-trailing cost did not fire: {tr['alias_trailing']}")
         # CONTROL A: the same alias in the LEAD qualifies, so no row and no cost.
-        (me / "AGENTS.md").write_text("fakesib Issue 500 is addressed.\n")
+        (me / "AGENTS.md").write_text("fakesib Issue 500 is addressed.\n", encoding="utf-8")
         lead = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if lead[CROSS] or lead["alias_trailing"]:
             fails.append(f"lead alias must qualify: {lead[CROSS]} {lead['alias_trailing']}")
         # CONTROL B: a trailing alias of a NON-owner is not a suppression cost.
-        (me / "AGENTS.md").write_text("Issue 500, over in otherlib somewhere.\n")
+        (me / "AGENTS.md").write_text("Issue 500, over in otherlib somewhere.\n", encoding="utf-8")
         if audit(me, [sib, other], alloc, ["AGENTS.md"], crates, pats)["alias_trailing"]:
             fails.append("alias-trailing counted a NON-owner alias")
 
+        # ── Issue 846: the ON-DISK spellings of the aliased repos ─────────
+        # The contract names mmorpg-editor / mmorpg-remake / mmorpg-remaster
+        # exist only in repo_set.txt; the directories are on disk as
+        # seal-game-editor / seal-remake / seal-online-remaster on every box
+        # measured, and the docs name them that way. A spelling qualifies via
+        # the lead OR the window (which reads the citation's own line
+        # forward), never accuses, and a longer name does not match. The
+        # fixture resolves its files through repo_alias.disk() so the arms
+        # are box-independent: identity on a clean box, the aliased spelling
+        # on one that carries the mapping.
+        import repo_alias as ra
+        alias_disk = ws / ra.disk("mmorpg-remake")
+        (alias_disk / ".issues").mkdir(parents=True, exist_ok=True)
+        (alias_disk / ".issues" / "011_spelled.md").write_text("x", encoding="utf-8")
+        alias_sib = ws / "mmorpg-remake"          # the CONTRACT handle
+        alloc["mmorpg-remake"] = {k: (set() if k != "Issue" else {11})
+                                  for k in icg.KINDS}
+
+        (me / "AGENTS.md").write_text("seal-remake Issue 011 is addressed.\n", encoding="utf-8")
+        sp = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if sp[CROSS] or sp["misattributed"]:
+            fails.append(f"846: a spelling ON the lead must qualify: "
+                         f"{sp[CROSS]} {sp['misattributed']}")
+
+        (me / "AGENTS.md").write_text("authored at seal-remake:\nIssue 011 came from there.\n", encoding="utf-8")
+        spw = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if spw[CROSS]:
+            fails.append(f"846: a spelling in the WINDOW must qualify: {spw[CROSS]}")
+
+        (me / "AGENTS.md").write_text("Issue 011 landed in seal-remake later.\n", encoding="utf-8")
+        spt = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if spt[CROSS]:
+            fails.append(f"846: a spelling TRAILING on the citation's own line "
+                         f"must qualify through the window: {spt[CROSS]}")
+        if spt["alias_trailing"]:
+            fails.append("846: a spelling must not count as alias-trailing "
+                         "cost — the window already settles it")
+
+        (me / "AGENTS.md").write_text("seal-remake-unity Issue 011 is the longer name.\n", encoding="utf-8")
+        spb = audit(me, [sib, alias_sib], alloc, ["AGENTS.md"], crates, pats)
+        if len(spb[CROSS]) != 1:
+            fails.append(f"846: seal-remake-unity must NOT name seal-remake: {spb[CROSS]}")
+
+        del alloc["mmorpg-remake"]
+
         # padding is the SAME number (Issue 751 T2b) — `006` must read as 6
-        (me / "AGENTS.md").write_text("Issue 0500 no; Issue 500 yes.\n")
+        (me / "AGENTS.md").write_text("Issue 0500 no; Issue 500 yes.\n", encoding="utf-8")
         pad = audit(me, [sib], alloc, ["AGENTS.md"], crates, pats)
         if len(pad[CROSS]) != 2:
             fails.append(f"zero-padding: `Issue 0500` and `Issue 500` must be "
                          f"ONE number, got {len(pad[CROSS])} CROSS rows")
 
+        # ── Issue 794: MISATTRIBUTED-IN-RANGE, and the boundary that keeps it
+        # honest. Four arms, because the class is defined as much by what it
+        # must NOT promote as by what it must. A third sibling is required:
+        # the number has to be IN this repo's range, unallocated here, and
+        # owned by a repo the prose does NOT name — one sibling cannot build
+        # that (`is_qualified` accepts any named repo when NOTHING owns the
+        # number, which is the ORPHAN rule, not this one).
+        third = ws / "riir-thirdlib"
+        (third / ".issues").mkdir(parents=True)
+        (third / ".issues" / "006_theirs.md").write_text("x", encoding="utf-8")
+        alloc["riir-thirdlib"] = {k: (set() if k != "Issue" else {6})
+                                  for k in icg.KINDS}
+        s3 = [sib, third]
+        (me / "AGENTS.md").write_text("riir-fakesib Issue 006 is the wrong address.\n", encoding="utf-8")
+        wa = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if len(wa[MISATTR_IN_RANGE]) != 1:
+            fails.append(f"MISATTRIBUTED-IN-RANGE did not fire: "
+                         f"{wa[MISATTR_IN_RANGE]} / {wa[IN_RANGE]}")
+        if len(wa[IN_RANGE]) != 1 or "MISATTRIBUTED-IN-RANGE" not in wa[IN_RANGE][0]:
+            fails.append(f"the row must stay in IN_RANGE and carry its tag: "
+                         f"{wa[IN_RANGE]}")
+        if wa[CROSS]:
+            fails.append(f"MISATTRIBUTED-IN-RANGE must not also count as CROSS: "
+                         f"{wa[CROSS]} — the two repairs read differently")
+
+        # CONTROL A: the named repo OWNS it -> not a finding at all.
+        (me / "AGENTS.md").write_text("riir-thirdlib Issue 006 is addressed.\n", encoding="utf-8")
+        ca = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if ca[MISATTR_IN_RANGE] or ca[IN_RANGE] or ca[CROSS] or ca[ORPHAN]:
+            fails.append(f"control A: a correctly-addressed in-range citation "
+                         f"produced a finding: {ca}")
+
+        # CONTROL B: bare, no attribution -> still UNDECIDED, never promoted.
+        (me / "AGENTS.md").write_text("Issue 006 is bare.\n", encoding="utf-8")
+        cb = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if cb[MISATTR_IN_RANGE] or len(cb[IN_RANGE]) != 1:
+            fails.append(f"control B: a bare in-range citation must stay "
+                         f"UNDECIDED: {cb[MISATTR_IN_RANGE]} / {cb[IN_RANGE]}")
+
+        # CONTROL C: the repo name is in the 3-line WINDOW but not ON the
+        # citation. `adj` is lead-only by design (Issue 752) and the promotion
+        # inherits that — a name that was never an attribution must not become
+        # a wrong address.
+        (me / "AGENTS.md").write_text("riir-fakesib ships other things.\n"
+                                      "Issue 006 is bare here.\n", encoding="utf-8")
+        cc = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if cc[MISATTR_IN_RANGE]:
+            fails.append(f"control C: a WINDOW-only repo name must not promote "
+                         f"an in-range row: {cc[MISATTR_IN_RANGE]}")
+
+        # CONTROL D: the MEASURED exemption (19 rows, 19 false). A number this
+        # repo DID allocate, with a non-owner sibling named right on it — the
+        # prose contrasting a local number with a remote one. Must stay
+        # AMBIGUOUS, promoted by nothing.
+        (me / "AGENTS.md").write_text("riir-thirdlib Issue 010 is this repo's own.\n", encoding="utf-8")
+        cd = audit(me, s3, alloc, ["AGENTS.md"], crates, pats)
+        if cd[MISATTR_IN_RANGE] or cd[IN_RANGE] or cd[CROSS]:
+            fails.append(f"control D: a LOCALLY-ALLOCATED number must not be "
+                         f"promoted by an adjacent non-owner name — that is "
+                         f"the 19/19-false exemption: {cd}")
+        if len(cd["ambiguous"]) != 1:
+            fails.append(f"control D: the row must remain AMBIGUOUS: {cd['ambiguous']}")
+
         # pin parser: globals + 5-field rows, comments stripped, arity enforced
         pins = ws / "pins.txt"
-        pins.write_text("# c\nmin_repos = 15\nrepo-a 10 0 0 0  # trailing\n\n")
+        pins.write_text("# c\nmin_repos = 15\nrepo-a 10 0 0 0  # trailing\n\n", encoding="utf-8")
         g, rows = parse_pins(pins)
         if g != {"min_repos": 15} or rows != {"repo-a": dict(zip(FIELDS, (10, 0, 0, 0)))}:
             fails.append(f"pin parse: got {g} {rows}")
-        pins.write_text("repo-a 1 2\n")
+        pins.write_text("repo-a 1 2\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
+
+        # ── Issue 823 T6: the width bound's own floor is READ from the pin
+        # file and is a real global, not a default nobody set. A floor that is
+        # silently absent is the same as no floor, and this one exists because
+        # the quantity it guards fails by looking PERFECT.
+        live_glob, _ = parse_pins(PINS)
+        if "min_heading_shaped" not in live_glob:
+            fails.append("min_heading_shaped is not pinned — the heading meter "
+                         "has no blindness detector, and its blind output "
+                         "(0/0) reads as perfect coverage")
+        elif live_glob["min_heading_shaped"] < 1:
+            fails.append("min_heading_shaped pinned at 0 or less — a floor that "
+                         "cannot fail")
 
         # ── heading-only allocations (Issue 754). The one path in this
         # instrument that can SUPPRESS a finding, so all four arms are pinned:
@@ -581,15 +1057,64 @@ def selftest() -> list[str]:
             "## Issue 043 follow-up (2026-01-01) — about a FOREIGN number\n"
             "## Issue 044 (riir-fakesib) — an explicit foreign owner\n"
             "# Issue 045 (2026-01-01) — H1, a document title\n"
-            "## Plan 046 (2026-01-01) — a different KIND\n")
+            "## Plan 046 (2026-01-01) — a different KIND\n"
+            # Issue 828: the delimiter axis, on the SAME fixture rather
+            # than a second one. 047 is the 56-record house style the
+            # oracle could not spell; 048 is this issue's load-bearing
+            # negative (the discriminator must survive the NEW delimiter,
+            # or this IS the widening AGENTS.md calls unsound); 049 is a
+            # live riir-ai shape where the ASCII hyphen is inside a WORD;
+            # 050 is the dated form's `(`, which the leading form always
+            # accepted -- an asymmetry between two patterns documented as
+            # the same rule at two positions.
+            "## Issue 047 — the dash delimiter, nothing interstitial\n"
+            "## Issue 048 follow-up — commentary, NOT an allocation\n"
+            "## Issue 049-class — the hyphen is inside a word\n"
+            "## 2026-01-01 — Issue 050 (a parenthetical): the dated form\n", encoding="utf-8")
         names = ["riir-headrepo", "riir-fakesib"]
+        # Issue 781 T2: the style blind spot is a PROBE, and a probe wired to
+        # nothing reports 0 exactly like a clean tree (Issue 753). Both
+        # directions over the SAME fixture: 042 is the style the oracle reads,
+        # 043 is the style it rejects, and 044 is rejected for NAMING a
+        # sibling — which must NOT be counted as a style loss, or the quantity
+        # stops meaning what its label says.
+        acc, shp = icg.heading_style_blind(hd, ".issues", names)
+        if (acc, shp) != (3, 6):
+            fails.append(f"heading style blind spot: got {(acc, shp)}, expected "
+                         f"(3, 6) — 042/047/050 read, 043/048/049 are the "
+                         f"style loss, 044 is a FOREIGN-name rejection and is "
+                         f"excluded from both")
+
         got_h = icg.heading_allocated(hd, ".issues", names)
-        if got_h != {42}:
-            fails.append(f"heading allocation: got {sorted(got_h)}, expected [42] "
-                         f"— 43/44/45 are the measured negatives, 46 is a Plan")
+        if got_h != {42, 47, 50}:
+            fails.append(f"heading allocation: got {sorted(got_h)}, expected "
+                         f"[42, 47, 50] — 43/44/45/48/49 are the measured "
+                         f"negatives, 46 is a Plan")
         if icg.heading_allocated(hd, ".plans", names) != {46}:
             fails.append("heading allocation: the KIND is not read from the subdir")
-        if icg.allocated(hd, ".issues", names) != {42}:
+        # Issue 828 T4: the COST meter, both directions on the SAME fixture.
+        # It is the quantity that decides whether the `resolved --` family is
+        # worth an unsound rule, so a meter that always says 0 would retire
+        # the question by looking like an answer.
+        nov = icg.heading_unread_novel(hd, ".issues", names, known=set())
+        if nov != 3:
+            fails.append(f"heading unread COST: got {nov}, expected 3 -- "
+                         f"43/48/49 are unread and no other oracle knows them")
+        nov = icg.heading_unread_novel(hd, ".issues", names, known={43, 48, 49})
+        if nov != 0:
+            fails.append(f"heading unread COST: got {nov} with every unread "
+                         f"number already KNOWN -- a record another oracle "
+                         f"covers cannot change a verdict and must not be "
+                         f"priced as if it could")
+        # The ACCEPTED ones are never priced: 42/47/50 are already in the
+        # owners set, so counting them would inflate the blast radius by
+        # exactly the records the rule change does not touch.
+        nov = icg.heading_unread_novel(hd, ".issues", names, known={43, 48})
+        if nov != 1:
+            fails.append(f"heading unread COST: got {nov}, expected 1 -- only "
+                         f"the still-unknown unread record prices anything")
+
+        if icg.allocated(hd, ".issues", names) != {42, 47, 50}:
             fails.append("allocated() does not union the heading path")
 
         # ── fenced headings are QUOTED, not allocated. Same standing as the
@@ -600,6 +1125,10 @@ def selftest() -> list[str]:
         # run must not either.
         fz = ws / "riir-fencerepo"
         (fz / ".issues").mkdir(parents=True)
+        # Fixture IO is pinned UTF-8 — pathlib text IO defaults to the LOCALE
+        # codec, so an unpinned em-dash fixture round-trips on a Thai-locale
+        # box (cp874 carries U+2014) but the same bytes read as UTF-8 elsewhere
+        # diverge. The selftest must not be locale-dependent by construction.
         (fz / "HISTORY.md").write_text(
             "## Issue 042 (2026-01-01) — a REAL local allocation\n"
             "```markdown\n"
@@ -613,7 +1142,7 @@ def selftest() -> list[str]:
             "```\n"
             "## Issue 048 (2026-01-01) — a SHORTER run cannot close it\n"
             "````\n"
-            "## Issue 049 (2026-01-01) — closed at equal width, a REAL allocation\n")
+            "## Issue 049 (2026-01-01) — closed at equal width, a REAL allocation\n", encoding="utf-8")
         got_f = icg.heading_allocated(fz, ".issues", ["riir-fencerepo"])
         if got_f != {42, 45, 49}:
             fails.append(f"fenced headings: got {sorted(got_f)}, expected [42, 45, 49] "
@@ -624,8 +1153,10 @@ def selftest() -> list[str]:
         # level over) and is reported as its own hazard.
         (fz / "AGENTS.md").write_text(
             "```text\n"
-            "## Issue 046 (2026-01-01) — inside an UNTERMINATED fence\n")
-        inside, open_at = icg.fenced_lines((fz / "AGENTS.md").read_text())
+            "## Issue 046 (2026-01-01) — inside an UNTERMINATED fence\n",
+            encoding="utf-8")
+        inside, open_at = icg.fenced_lines(
+            (fz / "AGENTS.md").read_text(encoding="utf-8"))
         if inside or open_at != 0:
             fails.append(f"unterminated fence: got inside={sorted(inside)} open_at={open_at}, "
                          f"expected an EMPTY exclusion set and open_at=0")
@@ -636,14 +1167,14 @@ def selftest() -> list[str]:
             fails.append("unterminated_fences() does not report the hazard it creates")
 
         # population derivation: BOUNDARY.md + a .git DIRECTORY, both required
-        (me / "BOUNDARY.md").write_text("x")
+        (me / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (me / ".git").mkdir()
-        (sib / "BOUNDARY.md").write_text("x")
-        (sib / ".git").write_text("gitdir: elsewhere")   # worktree-shaped
+        (sib / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (sib / ".git").write_text("gitdir: elsewhere", encoding="utf-8")   # worktree-shaped
         if [p.name for p in icg.contract_repos(ws)] != ["fake-repo"]:
             fails.append(f"population derivation wrong: "
                          f"{[p.name for p in icg.contract_repos(ws)]}")
-    return fails
+    return fails + worktree_arms()
 
 
 def main() -> int:
@@ -693,20 +1224,114 @@ def main() -> int:
               f"below would pass vacuously")
         return 2
 
+    # Issue 794. A MISSING ceiling is refused, never defaulted: a wall that
+    # silently reads as "absent, so anything passes" is the green-zero shape
+    # this whole family exists to refuse.
+    if "max_misattributed_in_range" not in glob:
+        print(f"✗ INSTRUMENT: {PINS.name} declares no "
+              f"`max_misattributed_in_range` — the Issue 794 class would have "
+              f"no ceiling and every row would pass silently")
+        return 2
+    glob_wall = glob["max_misattributed_in_range"]
+
     crates = crate_map(repos)
     patterns = {c: re.compile(r"\b" + re.escape(c).replace(r"\-", "[-_]") + r"\b")
                 for c in crates}
-    alloc = {r.name: {k: icg.allocated(r, d) for k, d in icg.KINDS.items()}
+    # Issue 842: allocations and the heading-oracle cost read the ON-DISK
+    # directories, keyed by the CONTRACT name of the handle.
+    alloc = {r.name: {k: icg.allocated(repo_alias.real(r), d)
+                      for k, d in icg.KINDS.items()}
              for r in repos}
+    # Issue 781: how much of each repo's own allocation record the heading
+    # oracle declines to read, ON STYLE ALONE. Summed over kinds; a triage
+    # quantity with the standing of AMBIGUOUS, never a verdict and never
+    # folded into a finding count. Printed because the direction that HURTS is
+    # currently 0 (an incomplete OWNERS set manufactures a FALSE
+    # ⛔MISATTRIBUTED — Issue 754's failure, inherited by Issue 794's
+    # in-range class), and a latent cost that is only remembered is one that
+    # gets forgotten.
+    #
+    # Issue 828 T4 prices it. A record whose number is ALREADY known from a
+    # file - in the worktree or in `git log` - contributes nothing whichever
+    # way the rule goes, so only the residue can change a verdict and the
+    # residue IS the blast radius. `novel` is that residue, and it is what
+    # decides Issue 823 T5's open question: the unread COUNT looks like a
+    # backlog and the unread COST is two rows workspace-wide.
+    blind = {}
+    for r in repos:
+        acc = shp = nov = 0
+        for k, d in icg.KINDS.items():
+            a, t = icg.heading_style_blind(repo_alias.real(r), d,
+                                           [q.name for q in repos])
+            acc += a
+            shp += t
+            # `alloc` holds the FULL union (heading path included), so the
+            # non-heading half is recomputed rather than subtracted: a number
+            # in both halves must not be credited to the heading oracle, and
+            # a set difference cannot tell the two apart.
+            nov += icg.heading_unread_novel(repo_alias.real(r), d,
+                                            [q.name for q in repos])
+        blind[r.name] = (acc, shp, nov)
+
+    # Issue 827: which sibling checkouts cannot be trusted to answer "do you
+    # own this number?" — computed ONCE for the whole run, because it is a
+    # property of the oracle repos and not of the repo being audited.
+    unreliable = unreliable_oracles(repos)
 
     bad = False
     tot = {"docs": 0, "cites": 0, "amb": 0, "mis": 0, "misat": 0,
-           "units": 0, "rep": 0, "width": 0, "trail": 0,
-           CROSS: 0, IN_RANGE: 0, ORPHAN: 0}
+           "units": 0, "rep": 0, "width": 0, "trail": 0, MISATTR_IN_RANGE: 0,
+           CROSS: 0, IN_RANGE: 0, ORPHAN: 0, ORACLE_STALE: 0}
     mine_row = None
+    dirty_scope: dict[str, int] = {}
+    n_uncommitted = n_masked = 0
     for repo in repos:
+        # Issue 842: the handle is CONTRACT-named, the directory on-disk. All
+        # git/filesystem reads go through `repo_disk`; every NAME (alloc keys,
+        # pins, printouts) stays the contract spelling.
+        repo_disk = repo_alias.real(repo)
         sibs = [s for s in repos if s != repo]
-        got = audit(repo, sibs, alloc, docs, crates, patterns)
+        # A repo is never its own oracle — `n in mine` short-circuits first —
+        # so its own staleness is irrelevant here and is filtered out rather
+        # than left to confuse the disclosure line.
+        got = audit(repo, sibs, alloc, docs, crates, patterns,
+                    unreliable={k: v for k, v in unreliable.items()
+                                if k != repo.name})
+
+        # ── Issue 797: the worktree is not the repo ──────────────────────────
+        # This workspace runs concurrent sessions against SHARED worktrees, so
+        # a row here may sit on a line no commit contains. Measured 2026-09-15:
+        # the workspace's ENTIRE standing CROSS finding — 1 of 1 — was an
+        # uncommitted edit stripping a `riir-train` qualifier HEAD carries.
+        #
+        # The split of responsibility: the DISPLAY shows the worktree (that is
+        # what you see if you open the file, and it is what `gate_says()` reads,
+        # so the T4 cross-check below must stay worktree-vs-worktree), while the
+        # PINS adjudicate HEAD. A tracked expectations file is a claim about a
+        # repo, and a repo's state is its commits — a ceiling re-pinned against
+        # somebody's in-flight edit reds on every other box.
+        scope = sorted(set(dirty_files(repo_disk)) & set(docs))
+        judge = got
+        if scope:
+            dirty_scope[repo.name] = len(scope)
+            heads = {d: head_text(repo_disk, d) for d in scope}
+
+            def _read(p: Path, _heads=heads, _repo=repo_disk) -> str | None:
+                rel = p.name if p.parent == _repo else str(p.relative_to(_repo))
+                if rel in _heads:
+                    return _heads[rel]      # None = not in HEAD (a NEW file)
+                return _worktree_read(p)
+
+            judge = audit(repo, sibs, alloc, docs, crates, patterns, read=_read)
+            wt_keys = {_row_key(r) for c in _CLASSES for r in got[c]}
+            hd_keys = {_row_key(r) for c in _CLASSES for r in judge[c]}
+            n_uncommitted += len(wt_keys - hd_keys)
+            masked = [r for c in _CLASSES for r in judge[c]
+                      if _row_key(r) not in wt_keys]
+            n_masked += len(masked)
+            for r in masked:
+                print(f"⛔ MASKED  {repo.name}: {r}")
+
         row = pins.get(repo.name)
         tot["docs"] += got["n_docs"]
         tot["cites"] += got["n_cites"]
@@ -721,23 +1346,45 @@ def main() -> int:
         # is TWO adjudications in two documents, not one. A union reported 142
         # where the work is 164.
         tot["units"] += units
-        for cls in (CROSS, IN_RANGE, ORPHAN):
+        # ORACLE_STALE rides this loop for the TOTAL only. It is deliberately
+        # absent from every pin comparison: a ceiling that can be breached by
+        # another repo's fetch schedule is the cries-wolf failure Issue 827
+        # exists to stop, and a ratchet on an UNDECIDED bucket is a backlog
+        # wearing a pin (Issue 785's rule).
+        for cls in (CROSS, IN_RANGE, ORPHAN, MISATTR_IN_RANGE, ORACLE_STALE):
             tot[cls] += len(got[cls])
-        if repo.resolve() == REPO_ROOT:
+        if repo_disk.resolve() == REPO_ROOT:
             mine_row = got
 
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(repo.name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
-            if got["n_cites"] < row["min_citations"]:
-                flags.append(f"walk FLOOR breached: {got['n_cites']} citations < "
+            # `judge`, not `got` — the pins adjudicate HEAD (Issue 797). On a
+            # clean repo the two ARE the same object, so this is a no-op in the
+            # ordinary case and the distinction costs nothing.
+            if judge["n_cites"] < row["min_citations"]:
+                flags.append(f"walk FLOOR breached: {judge['n_cites']} citations < "
                              f"{row['min_citations']} — prose was removed, or the "
                              f"citation regex went blind (which reads as clean)")
             for cls, key in ((CROSS, "max_cross"), (IN_RANGE, "max_in_local_range"),
                              (ORPHAN, "max_orphan")):
-                if len(got[cls]) > row[key]:
-                    flags.append(f"{cls} {len(got[cls])} > pinned {row[key]}")
+                if len(judge[cls]) > row[key]:
+                    flags.append(f"{cls} {len(judge[cls])} > pinned {row[key]}")
+        # Issue 794 — a GLOBAL wall, deliberately not a per-repo ratchet field:
+        # the class has no backlog anywhere (1 row workspace-wide at landing,
+        # repaired in the same commit), so per-repo pins would be 16 zeros and
+        # a 5th field on every row for a quantity that is 0 by contract.
+        if len(judge[MISATTR_IN_RANGE]) > glob_wall:
+            flags.append(f"{MISATTR_IN_RANGE} {len(judge[MISATTR_IN_RANGE])} > "
+                         f"pinned {glob_wall} — a citation that is FOLLOWABLE "
+                         f"to the WRONG repo; the local-range excuse does not "
+                         f"apply (this repo never allocated the number)")
         findings = got[CROSS] + got[IN_RANGE] + got[ORPHAN]
         status = "✗" if flags else ("·" if findings else "✓")
         # `cross` counts EDITS, `over N num` counts ADJUDICATIONS — and they are
@@ -749,10 +1396,18 @@ def main() -> int:
         # riir-viewbridge's 17 rows are FOUR decisions. Same standing as tail
         # support in the percentile audit — it ORDERS the work, it is not a
         # second verdict, and neither number is the finding count on its own.
+        acc, shp, nov = blind[repo.name]
+        # `novel` is the part of `heading_unread` that could change ANY
+        # verdict (Issue 828 T4): the rest is already known from a file. Shown
+        # beside the count, never instead of it - the count is what says
+        # whether this repo's IN-LOCAL-RANGE figure can be read as an
+        # editorial quantity at all.
+        style = (f" heading_unread={shp - acc}/{shp} novel={nov}") if shp else ""
         print(f"{status} {repo.name:22s} docs={got['n_docs']} cites={got['n_cites']:<5d} "
               f"cross={len(got[CROSS]):<4d} over {units:<3d} num "
               f"in_local_range={len(got[IN_RANGE]):<3d} "
-              f"orphan={len(got[ORPHAN])} ambiguous={len(got['ambiguous'])}")
+              f"orphan={len(got[ORPHAN])} ambiguous={len(got['ambiguous'])}"
+              f"{style}")
         # 12 rows keeps the whole-workspace run readable; `--full` is for the
         # one job the truncated view cannot do — writing the OWNING repo's
         # issue, which needs every row it is being asked to repair.
@@ -762,44 +1417,154 @@ def main() -> int:
         if len(got[CROSS]) > cap:
             print(f"      … {len(got[CROSS]) - cap} more cross row(s) "
                   f"(re-run with --full)")
+        # ahead of the undecided list, and NEVER truncated: these are findings.
+        for r in got[MISATTR_IN_RANGE]:
+            print(f"      ⛔wrong-addr:{r}")
         for r in got[IN_RANGE][:(len(got[IN_RANGE]) if FULL else 4)]:
             print(f"      undecided:{r}")
         for r in got[ORPHAN]:
             print(f"      orphan:   {r}")
+        # Issue 827. Never truncated and never counted: a row here is a
+        # statement about OUR checkout of somebody else's repo, and the reader
+        # needs the whole list to know which fetch would settle it.
+        for r in got[ORACLE_STALE]:
+            print(f"      ⚠oracle:  {r}")
         for f in flags:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - {r.name for r in repos}):
+    # The population axis, shared (Issue 793): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, {r.name for r in repos})
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
+
+    # Issue 797. Rides the FINAL line in BOTH directions, the `deferred`
+    # precedent — a notice printed only on failure is one nobody reads on the
+    # run that passes. ADVISORY and not a failure: a sweep that hard-reds on an
+    # ordinary dirty worktree is a sweep nobody runs. MASKED is the exception
+    # and it already reds through the pins, because `judge` counts it.
+    # ⛔ The UPSTREAM axis, which this sweep did not have. It calls the
+    # low-level `worktree_advisory()` rather than `sweep_advisory()` — for a
+    # good reason, its scope is `dirty_files` intersected with its OWN
+    # document set, which is sharper than any glob — and the cost was that it
+    # got the worktree axis and NOTHING about being behind origin, in the one
+    # sweep whose rows carry a `file:line` address and name another repo.
+    #
+    # Measured: it reported a CROSS finding at riir-neuron-db `HISTORY.md:49`
+    # with no advisory at all, while `origin/develop` already carried the
+    # repair and that checkout was 4 commits behind with one of them touching
+    # that very file. Issue 798's founding class, *a committed FIX read
+    # dirty*, and it cost an investigation before `git show origin/develop`
+    # settled it.
+    #
+    # `upstream_axis` is the shared half of `sweep_advisory`, so the two entry
+    # points now mean the same thing — which is what
+    # `sweep_advisory_membership_gate` has been asserting all along by
+    # accepting either. The patterns are the sweep's OWN documents, not a
+    # glob: `behind_origin` should be asked about exactly the files whose
+    # staleness could move a row.
+    _stale, _unver = upstream_axis([repo_alias.real(r) for r in repos],
+                                   tuple(docs))
+    deferred.extend(worktree_advisory(dirty_scope, n_uncommitted, n_masked,
+                                      stale=_stale, unverified=_unver))
 
     # ── T4, second half: the katgpt-rs row must EQUAL the gate's own run ─────
     rc, scanned, findings = gate_says()
-    if rc == 2 or scanned < 0:
+    if scanned == -2:
+        # The gate DEFERRED its cross-repo adjudication on this box. Its own
+        # numbers are not an adjudication, so there is nothing to cross-check
+        # against — recorded as a deferral, never as an agreement and never as
+        # a broken instrument.
+        deferred.append(f"the {GATE.name} cross-check — the gate DEFERRED its "
+                        "cross-repo adjudication on this partial clone, so "
+                        "there is no number to assert this sweep's row against")
+    elif rc == 2 or scanned < 0:
         print(f"✗ INSTRUMENT: {GATE.name} itself reported untrustworthy (rc={rc}) "
               f"— its numbers cannot cross-check this sweep's")
         return 2
-    mine_total = sum(len(mine_row[c]) for c in (CROSS, IN_RANGE, ORPHAN))
-    if (scanned, findings) != (mine_row["n_cites"], mine_total):
-        bad = True
-        print(f"✗ CROSS-CHECK: {GATE.name} scanned {scanned} / found {findings}; "
-              f"this sweep's {REPO_ROOT.name} row is {mine_row['n_cites']} / "
-              f"{mine_total}. Same documents, same regex — they cannot disagree. "
-              f"(The sweep PARTITIONS the gate's finding set into "
-              f"{CROSS}/{IN_RANGE}/{ORPHAN}; the total must match.)")
     else:
-        print(f"\n  cross-check vs {GATE.name}: {scanned} citations / {findings} "
-              f"finding(s) — AGREE (asserted, not assumed)")
+        mine_total = sum(len(mine_row[c]) for c in (CROSS, IN_RANGE, ORPHAN))
+        if (scanned, findings) != (mine_row["n_cites"], mine_total):
+            bad = True
+            print(f"✗ CROSS-CHECK: {GATE.name} scanned {scanned} / found "
+                  f"{findings}; this sweep's {REPO_ROOT.name} row is "
+                  f"{mine_row['n_cites']} / {mine_total}. Same documents, same "
+                  f"regex — they cannot disagree. (The sweep PARTITIONS the "
+                  f"gate's finding set into {CROSS}/{IN_RANGE}/{ORPHAN}; the "
+                  f"total must match.)")
+        else:
+            print(f"\n  cross-check vs {GATE.name}: {scanned} citations / "
+                  f"{findings} finding(s) — AGREE (asserted, not assumed)")
 
     print(f"{len(repos)} contract repo(s) · {tot['docs']} document(s) · "
           f"{tot['cites']} citation(s) · {tot[CROSS]} CROSS over "
           f"{tot['units']} per-repo adjudication(s) · "
-          f"{tot[IN_RANGE]} IN-LOCAL-RANGE · {tot[ORPHAN]} ORPHAN")
+          f"{tot[IN_RANGE]} IN-LOCAL-RANGE · {tot[ORPHAN]} ORPHAN · "
+          f"{tot[ORACLE_STALE]} ORACLE-STALE")
+    if tot[ORACLE_STALE]:
+        detail = ", ".join(f"{k} ({v})" for k, v in sorted(unreliable.items()))
+        print(f"  ⚠ ORACLE-STALE is UNDECIDED, never clean and never counted "
+              f"(Issue 827): {tot[ORACLE_STALE]} row(s) name a repo whose "
+              f"checkout here cannot answer whether it owns the number — "
+              f"{detail}. Measured once already as four ⛔MISATTRIBUTED rows "
+              f"and a breached ceiling in riir-shader, over citations that "
+              f"were CORRECT. `git fetch` in the named repo and re-run.")
     print(f"  AMBIGUOUS (local AND sibling — undecidable by number, NOT a pass): "
           f"{tot['amb']}  ·  ⛔MISLEADING crate hints: {tot['mis']}"
-          f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}")
+          f"  ·  ⛔MISATTRIBUTED (names a NON-owner repo): {tot['misat']}"
+          f"  ·  ⛔MISATTRIBUTED-IN-RANGE (Issue 794 — FOLLOWABLE to the wrong "
+          f"repo, walled at {glob_wall}): {tot[MISATTR_IN_RANGE]}")
+    b_acc = sum(a for a, _, _ in blind.values())
+    b_shp = sum(t for _, t, _ in blind.values())
+    b_nov = sum(n for _, _, n in blind.values())
+    # Issue 823 T6. The meter's own blindness detector. Its failure mode is a
+    # PERFECT-LOOKING score: a regressed shaped pattern takes `b_shp` to 0 and
+    # the line below reads `0/0 records read, 0 UNREAD`. GLOBAL, because
+    # per-repo is legitimately 0 wherever a repo has no self-allocation
+    # headings. Deliberately NOT gated on the partial-clone marker: this floor
+    # asserts the PARSER, not the population, and it is pinned far enough under
+    # a partial-clone measurement that an absent repo cannot breach it.
+    if b_shp < glob["min_heading_shaped"]:
+        bad = True
+        print(f"✗ heading WIDTH BOUND breached: {b_shp} heading-shaped "
+              f"self-allocation record(s) < pinned "
+              f"{glob['min_heading_shaped']} — the meter that prints the "
+              f"oracle's blindness has itself gone blind, and its output in "
+              f"that state ({b_acc}/{b_shp}) reads as PERFECT COVERAGE. This "
+              f"is a PARSE regression, not a population change.")
+    # Issue 828 T4 - the COST of the unread, which decides Issue 823 T5's
+    # open question and had never been taken. Printed every run because it
+    # moves whenever a sibling edits a heading, and because a bare UNREAD
+    # count reads as a backlog while its price reads as a rounding error.
+    print(f"  heading oracle COST (Issue 828 T4): of the {b_shp - b_acc} "
+          f"UNREAD, {b_nov} contribute a number NO other oracle knows "
+          f"(worktree file or `git log`). Only those can change a verdict, "
+          f"so that is the entire blast radius of the `## Issue NNN resolved "
+          f"— title (date)` family Issue 823 T5 left open. The rule stays "
+          f"UNSOUND to widen (arm 2 pins `follow-up` as a negative, and no "
+          f"punctuation rule separates commentary from allocation) — and now "
+          f"it is also not worth widening. Take both figures from THIS line.")
+    print(f"  heading oracle (Issue 781): {b_acc}/{b_shp} self-allocation "
+          f"records read, {b_shp - b_acc} UNREAD **on style alone** — a "
+          f"triage quantity, never a verdict. `heading_allocated()` requires "
+          f"the number to be followed IMMEDIATELY by its delimiter, so "
+          f"`## Issue 042 (date) — title`, (Issue 823) the date-led "
+          f"`## <date> — Issue 113: title` and (Issue 828) the "
+          f"dash-delimited `## Issue 788 — title` all read, while `## Issue 097 "
+          f"resolved — title (date)` does not: the split is by HOUSE STYLE "
+          f"rather than correctness. Dropping that DISCRIMINATOR is still "
+          f"UNSOUND and selftest arm 2 proves it — `## Issue 043 follow-up "
+          f"(date)` is a pinned negative, in both positions. Adding a "
+          f"POSITION is not that widening; Issue 823 measured 74 date-led "
+          f"records the meter itself could not see, two repos printing a "
+          f"PERFECT score over 20+ unread. The residual cost lands as "
+          f"UNDECIDED noise on the local side and as a FALSE ⛔MISATTRIBUTED "
+          f"on the owners side.")
     print(f"  of the {tot[CROSS]} CROSS: {tot['rep']} carry the REPEAT label — "
           f"the same document already attributes that number elsewhere, so the "
           f"repair is mechanical (copy it), not a lookup. The labels are "
@@ -844,10 +1609,15 @@ def main() -> int:
 
     if bad:
         print("✗ citation sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  {deferral_line(_d)}")
         print("    Fix: name the owning repo in the prose — `riir-ai Issue 750`, "
               "`riir-train Issue 513`. The number alone is not an address.")
         return 1
-    print("✓ citation sweep PASSED — every repo at or under its pinned ratchet")
+    _line = "✓ citation sweep PASSED — every repo at or under its pinned ratchet"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

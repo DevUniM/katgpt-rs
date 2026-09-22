@@ -33,7 +33,7 @@ bytemuck = { version = "1", features = ["extern_crate_alloc"] }
 half = "2"
 
 # Optional — feature-gated
-bevy_ecs = { version = "0.15", optional = true }    # bomber (no, bomber stays) / monopoly
+bevy_ecs = { version = "0.19", optional = true }    # monopoly (its only consumer here; bomber stayed in the root crate) — bumped 0.15→0.19, Issue 799
 wasmi = { version = "2", optional = true, features = ["simd"] }          # reserved — bomber feature is in main crate; `simd`: hosts load +simd128-built modules
 papaya = { version = "0.2", optional = true }         # lock-free HashMap (bfcf_lfu_shard, rosetta, dynamic_rank, decision_explainer, belief_drafter)
 rustfft = { version = "6", optional = true }          # reserved
@@ -134,6 +134,15 @@ egcs = []
 # this feature) uses BanditStats — without this, `lodestar` alone breaks the
 # bandit feature combo (the merkle_root / can_freeze class of bug).
 lodestar = ["katgpt-speculative/lodestar", "bandit"]
+
+# legal_token_set (Issue 841): give LodestarPruner the legal-set enumeration
+# hooks, so a consumer asks "which tokens are legal here" in O(deg) instead of
+# scanning the vocabulary with is_valid. Builds a CsrLegalSet alongside the
+# dense transition table at automaton-build time. The budget filter is applied
+# during enumeration through one shared predicate — a degree read off the raw
+# transition row would be a superset of what is_valid admits, and the contract
+# forbids the caller re-filtering.
+legal_token_set = ["lodestar", "katgpt-core/legal_token_set"]
 bt_rank = []
 rosetta_pruner = ["papaya"]  # Universal cross-domain meta-pruner (Plan 201); root forwards via katgpt-pruners/rosetta_pruner
 future_probe = []

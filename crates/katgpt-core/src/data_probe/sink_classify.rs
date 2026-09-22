@@ -66,6 +66,33 @@
 //!   logit level.
 //!
 //! See `data_probe::gold_share` for the content-specific diagnostic.
+//!
+//! ## Sink stability forecast (Issue 819 T1, Research 566)
+//!
+//! When the `sink_margin_forecast` feature is also enabled,
+//! [`SinkDiagnostic`] carries an optional [`margin`](SinkDiagnostic::margin)
+//! and the module exposes [`forecast_stable_positions`]. The paper's margin
+//! law (arXiv:2601.15380 Thm 5.4; sigmoid analog derived in Research 566 §2)
+//! turns this classifier from *descriptive* into *predictive*: a measured
+//! total-logit margin δ̂ forecasts the context length a sink protects —
+//! `N ≈ e^δ̂` at the ε = ½ sensitivity budget (`Ψ ≤ (L−1)/(e^δ + L−1)`;
+//! sigmoid amplifies the stakes: uniform-prior context mass grows linearly,
+//! so the margin is the only structural protection).
+//!
+//! **Estimator (documented definition).** δ̂ is the mean per-query
+//! sink-minus-context-centroid logit margin: with `c_is = logit(A_is)` and
+//! `C_i = mean_{k≠s} c_ik`, `δ̂ = mean_i [c_is − C_i]`, computed in closed
+//! form as `δ̂ = (n·c̄_s − R̄)/(n−1)` (c̄_s = mean sink-column logit,
+//! R̄ = mean row-logit sum — algebraically identical, one O(n²) pass +
+//! O(n) per candidate; same asymptotic class as the col_sums pass). Logits
+//! invert through a `[1e-6, 1−1e-6]` clamp (sigmoid gates live in (0,1);
+//! saturated/normalized maps degrade gracefully — rectangular maps give the
+//! exact algebra, ragged rows an approximation). Reading: under the
+//! sigmoid-gate model `g = σ(content + prior)` this is the PRIOR margin plus
+//! the sink's content margin (a conservative proxy); under a uniform prior
+//! it IS the content margin. Computed only by the full-map paths
+//! ([`classify_all_sinks`] / [`classify_all_sinks_flat`]); single-column
+//! classifiers have no context columns and leave `margin = None`.
 
 use crate::simd;
 
@@ -117,6 +144,15 @@ pub struct SinkDiagnostic {
     /// See the module-level cross-reference doc above.
     #[cfg(feature = "gold_share_probe")]
     pub gold_share: Option<crate::data_probe::GoldShareReport>,
+    /// Estimated total-logit margin δ̂ between this sink and the context
+    /// (Issue 819 T1, Research 566 — gated `sink_margin_forecast`;
+    /// estimator + reading documented at the module level). Pair with
+    /// [`forecast_stable_positions`] to read "this head's sink protects
+    /// ≈ e^δ̂ context positions at the ε = ½ noise budget". `None` when the
+    /// scan saw fewer than 2 positions (no context to centroid against) or
+    /// the diagnostic came from a single-column classifier.
+    #[cfg(feature = "sink_margin_forecast")]
+    pub margin: Option<f32>,
 }
 
 /// Configuration thresholds for [`classify_sink_at`].
@@ -540,6 +576,8 @@ fn classify_sink_at_with_stats(
         kind,
         #[cfg(feature = "gold_share_probe")]
         gold_share: None,
+        #[cfg(feature = "sink_margin_forecast")]
+        margin: None,
     }
 }
 
@@ -623,9 +661,21 @@ pub fn classify_all_sinks(
     // Position-invariant value statistics: one O(n·d) pass for the whole head
     // instead of one per candidate.
     let stats = value_norm_stats(values);
+    // Issue 819 T1: one O(n²) logit pass for the margin estimator's row sums
+    // (same asymptotic class as the col_sums pass above; scalar accumulator —
+    // no scratch buffer needed).
+    #[cfg(feature = "sink_margin_forecast")]
+    let mean_row_logit = mean_row_logit_sum(attn, n);
     for &(j, strength_j) in process {
         let col = [strength_j];
-        let diag = classify_sink_at_with_stats(j, &col, values, None, cfg, scratch, stats);
+        // `mut` is consumed only under sink_margin_forecast (the margin write
+        // below); without it this combo would carry unused_mut under -D warnings.
+        #[cfg_attr(not(feature = "sink_margin_forecast"), allow(unused_mut))]
+        let mut diag = classify_sink_at_with_stats(j, &col, values, None, cfg, scratch, stats);
+        #[cfg(feature = "sink_margin_forecast")]
+        {
+            diag.margin = margin_for_candidate(attn, j, n, mean_row_logit);
+        }
         out.push(diag);
     }
 }
@@ -884,6 +934,114 @@ pub fn apply_dual_policy_gate_cached(
 }
 
 // ── Small helpers ───────────────────────────────────────────────
+
+// ── Sink stability forecast (Issue 819 T1, Research 566) ──────
+
+/// Probability clamp band for logit inversion. Sigmoid gates live in (0,1);
+/// the band keeps `logit` finite for saturated / discretized maps (softmax
+/// rows can hold exact 0.0/1.0 entries) at a documented, deterministic
+/// floor/ceiling instead of ±inf.
+#[cfg(feature = "sink_margin_forecast")]
+const MARGIN_CLAMP_MIN: f32 = 1e-6;
+#[cfg(feature = "sink_margin_forecast")]
+const MARGIN_CLAMP_MAX: f32 = 1.0 - 1e-6;
+
+/// `ln(p/(1−p))` with `p` clamped to the documented band — the logit side of
+/// the margin estimator's gate inversion `logit(g) = content + prior`.
+#[cfg(feature = "sink_margin_forecast")]
+#[inline]
+fn logit_clamped(p: f32) -> f32 {
+    let p = p.clamp(MARGIN_CLAMP_MIN, MARGIN_CLAMP_MAX);
+    (p / (1.0 - p)).ln()
+}
+
+/// Mean over rows of `Σ_j logit(A_ij)` — the R̄ of the margin closed form.
+/// One O(n²) pass (the same asymptotic class as the caller's col_sums pass);
+/// scalar accumulator, zero allocation.
+#[cfg(feature = "sink_margin_forecast")]
+fn mean_row_logit_sum(attn: &[Vec<f32>], n: usize) -> f32 {
+    let mut total = 0.0f32;
+    for row in attn.iter() {
+        let m = row.len().min(n);
+        let mut acc = 0.0f32;
+        for &p in &row[..m] {
+            acc += logit_clamped(p);
+        }
+        total += acc;
+    }
+    total / n as f32
+}
+
+/// δ̂ for candidate column `s`: the mean per-query sink-minus-context-centroid
+/// logit margin, in the closed form `δ̂ = (n·c̄_s − R̄)/(n−1)` (derivation:
+/// `mean_i[c_is − (R_i − c_is)/(n−1)]` telescopes to the two means — exactly
+/// the issue's "measured sink-key logit minus context logit centroid").
+/// `None` for `n < 2` (no context). Ragged maps (rows shorter than `n`)
+/// degrade to a documented approximation; rectangular maps are exact.
+#[cfg(feature = "sink_margin_forecast")]
+fn margin_for_candidate(attn: &[Vec<f32>], s: usize, n: usize, mean_row_logit: f32) -> Option<f32> {
+    if n < 2 {
+        return None;
+    }
+    let mut col_logit_sum = 0.0f32;
+    let mut counted = 0usize;
+    for row in attn.iter() {
+        if let Some(&p) = row.get(s) {
+            col_logit_sum += logit_clamped(p);
+            counted += 1;
+        }
+    }
+    if counted == 0 {
+        return None;
+    }
+    let c_bar = col_logit_sum / counted as f32;
+    Some((c_bar * n as f32 - mean_row_logit) / (n - 1) as f32)
+}
+
+/// Flat-layout [`mean_row_logit_sum`] (`attn` is `(n, n)` row-major).
+#[cfg(feature = "sink_margin_forecast")]
+fn mean_row_logit_sum_flat(attn: &[f32], n: usize) -> f32 {
+    let mut total = 0.0f32;
+    for row in attn.chunks(n) {
+        let mut acc = 0.0f32;
+        for &p in row {
+            acc += logit_clamped(p);
+        }
+        total += acc;
+    }
+    total / n as f32
+}
+
+/// Flat-layout [`margin_for_candidate`] (strided column read).
+#[cfg(feature = "sink_margin_forecast")]
+fn margin_for_candidate_flat(attn: &[f32], n: usize, s: usize, mean_row_logit: f32) -> Option<f32> {
+    if n < 2 {
+        return None;
+    }
+    let mut col_logit_sum = 0.0f32;
+    for i in 0..n {
+        col_logit_sum += logit_clamped(attn[i * n + s]);
+    }
+    let c_bar = col_logit_sum / n as f32;
+    Some((c_bar * n as f32 - mean_row_logit) / (n - 1) as f32)
+}
+
+/// Forecast the context length a sink with measured logit margin `delta`
+/// protects, at the ε = ½ context-noise sensitivity budget: solving the
+/// margin law `Ψ ≤ (L−1)/(e^δ + L−1) ≤ ½` gives `L ≤ 1 + e^δ ≈ e^δ`
+/// (Research 566 §2 — the sigmoid amplification of arXiv:2601.15380 Thm 5.4:
+/// sigmoid has no normalization to absorb noise, so the margin is the only
+/// structural protection). Feed it [`SinkDiagnostic::margin`].
+///
+/// O(1), zero-allocation. A negative `delta` (sink logit below the context
+/// centroid) honestly forecasts `< 1` — such a "sink" protects nothing.
+/// NaN propagates.
+#[cfg(feature = "sink_margin_forecast")]
+#[must_use]
+#[inline]
+pub fn forecast_stable_positions(delta: f32) -> f32 {
+    delta.exp()
+}
 
 /// Sigmoid via Cephes polynomial (~1.7× faster than libm on aarch64).
 #[inline]
@@ -1189,6 +1347,8 @@ fn classify_sink_at_flat_with_sum_sq(
         kind,
         #[cfg(feature = "gold_share_probe")]
         gold_share: None,
+        #[cfg(feature = "sink_margin_forecast")]
+        margin: None,
     }
 }
 
@@ -1274,11 +1434,20 @@ pub fn classify_all_sinks_flat(
     // Position-invariant `Σ_i ‖v_i‖²`: one O(n·d) pass for the whole head
     // instead of one per candidate.
     let sum_sq = value_norm_sum_sq_flat(values, n, d);
+    // Issue 819 T1: one O(n²) logit pass for the margin estimator (mirrors
+    // the Vec path above; scalar accumulator, zero allocation).
+    #[cfg(feature = "sink_margin_forecast")]
+    let mean_row_logit = mean_row_logit_sum_flat(attn, n);
     for &(j, strength_j) in process {
         let col = [strength_j];
-        let diag = classify_sink_at_flat_with_sum_sq(
-            j, &col, values, n, d, None, cfg, scratch, sum_sq,
-        );
+        // Same feature-conditional `mut` as the Vec path above.
+        #[cfg_attr(not(feature = "sink_margin_forecast"), allow(unused_mut))]
+        let mut diag =
+            classify_sink_at_flat_with_sum_sq(j, &col, values, n, d, None, cfg, scratch, sum_sq);
+        #[cfg(feature = "sink_margin_forecast")]
+        {
+            diag.margin = margin_for_candidate_flat(attn, n, j, mean_row_logit);
+        }
         out.push(diag);
     }
 }

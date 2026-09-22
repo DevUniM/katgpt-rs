@@ -7,6 +7,7 @@
 //!
 //! Plan 285 (Research 256, revised to GOAT).
 
+use lz4_flex::block::{CompressTable, compress_into_with_table, get_maximum_output_size};
 use lz4_flex::compress_prepend_size;
 
 /// Score candidate continuations by compressed length under a frozen corpus.
@@ -46,13 +47,28 @@ pub struct Lz4FlexDrafter {
     /// Reusable scratch buffer for `corpus + ctx + candidate` concatenation.
     /// Pre-allocated once, cleared and refilled per call. Zero allocation on hot path.
     scratch: Vec<u8>,
+    /// Hot-scorer state for [`Lz4FlexDrafter::score_into`] — one reusable
+    /// LZ4 compress table + two reusable output buffers, built lazily on
+    /// the first hot call (snapshot/append callers never pay for it).
+    hot: Option<HotState>,
+}
+
+/// [`Lz4FlexDrafter::score_into`]'s reusable buffers (see that method).
+struct HotState {
+    table: CompressTable,
+    baseline_out: Vec<u8>,
+    with_out: Vec<u8>,
 }
 
 impl Lz4FlexDrafter {
     /// Create with an initial corpus.
     pub fn new(corpus: Vec<u8>) -> Self {
         let scratch = Vec::with_capacity(corpus.len() + 1024); // corpus + ctx + candidate headroom
-        Self { corpus, scratch }
+        Self {
+            corpus,
+            scratch,
+            hot: None,
+        }
     }
 
     /// Create with empty corpus (caller will append).
@@ -91,6 +107,60 @@ impl Lz4FlexDrafter {
         self.scratch.extend_from_slice(&self.corpus);
         self.scratch.extend_from_slice(ctx);
         compress_prepend_size(&self.scratch).len()
+    }
+
+    /// Zero-alloc hot-path scoring — the SAME compressed-length-delta
+    /// quantity as [`CompressionDrafter::score`], with the LZ4 compress
+    /// table and both output buffers held REUSABLE on the drafter: a warm
+    /// caller allocates NOTHING (the bench-811 counting-allocator
+    /// convention — the gate is `tests/compression_drafter_alloc_gate.rs`).
+    ///
+    /// The first call sizes the buffers (one-time growth, then stable);
+    /// a later call at a LARGER shape may grow once (the resize keeps
+    /// capacity, so warm-at-shape is the alloc-free posture). The table is
+    /// cleared inside every `compress_into_with_table` call, so the dedup
+    /// state is fresh per compress — deterministic, and the delta is
+    /// pinned equal to `score` by the module test `score_into_matches_score`
+    /// (both paths run the same lz4_flex `compress_internal`). For inputs
+    /// ≥ 64 KiB the table transparently upgrades Small→Large (one alloc,
+    /// then stable) — the corpus-as-model scale here stays far below.
+    pub fn score_into(&mut self, ctx: &[u8], candidate: &[u8]) -> i32 {
+        let Self {
+            corpus,
+            scratch,
+            hot,
+        } = self;
+        let hot = hot.get_or_insert_with(|| HotState {
+            table: CompressTable::default(),
+            baseline_out: Vec::new(),
+            with_out: Vec::new(),
+        });
+
+        // Baseline: corpus + ctx.
+        scratch.clear();
+        scratch.extend_from_slice(corpus);
+        scratch.extend_from_slice(ctx);
+        let bound = get_maximum_output_size(scratch.len());
+        if hot.baseline_out.len() < bound {
+            hot.baseline_out.resize(bound, 0);
+        }
+        let baseline =
+            compress_into_with_table(&scratch[..], &mut hot.baseline_out[..], &mut hot.table)
+                .expect("baseline output sized by get_maximum_output_size");
+
+        // With candidate: corpus + ctx + candidate.
+        scratch.clear();
+        scratch.extend_from_slice(corpus);
+        scratch.extend_from_slice(ctx);
+        scratch.extend_from_slice(candidate);
+        let bound = get_maximum_output_size(scratch.len());
+        if hot.with_out.len() < bound {
+            hot.with_out.resize(bound, 0);
+        }
+        let with = compress_into_with_table(&scratch[..], &mut hot.with_out[..], &mut hot.table)
+            .expect("with-candidate output sized by get_maximum_output_size");
+
+        baseline as i32 - with as i32
     }
 }
 
@@ -424,6 +494,38 @@ pub fn corpus_alphabet(data: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn score_into_matches_score() {
+        // The zero-alloc hot path must return the SAME delta as the
+        // allocating `score` — same input bytes, same lz4_flex
+        // `compress_internal`, cleared table each call. Pinned across
+        // shapes: empty ctx, matching ctx, unseen bytes, long ctx.
+        let corpus =
+            b"guard needs sword\nguard needs potion\nking finds amulet\nsage seeks quest\n\
+              the quick brown fox jumps over the lazy dog\nthe quick brown fox\n";
+        let mut a = Lz4FlexDrafter::new(corpus.to_vec());
+        let mut b = Lz4FlexDrafter::new(corpus.to_vec());
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"", b"guard needs"),
+            (b"guard needs", b" sword"),
+            (b"the quick", b"brown fox"),
+            (b"", b"totally unseen zanzibar bytes"),
+            (b"long context long context long context ", b"guard"),
+            (b"sage seeks", b"quest"),
+        ];
+        for (ctx, cand) in cases {
+            let s_alloc = CompressionDrafter::score(&mut a, ctx, cand);
+            let s_hot = b.score_into(ctx, cand);
+            assert_eq!(
+                s_alloc, s_hot,
+                "score_into must match score at ctx={ctx:?} cand={cand:?}"
+            );
+            // Determinism: a repeat call (table already warm) is identical.
+            let s_hot2 = b.score_into(ctx, cand);
+            assert_eq!(s_hot, s_hot2, "repeat hot call must be deterministic");
+        }
+    }
 
     #[test]
     fn score_test_repeated_pattern_dominates() {

@@ -1,0 +1,49 @@
+# Issue 829 — locale-dependent text I/O, per contract repo.
+#
+#   repo  min_py_files  min_io_calls  max_locale_io
+#
+# `max_locale_io` is a RATCHET on the DERIVATIVE everywhere but katgpt-rs: the
+# standing rows are 118 sites in seven repos this instrument's owner does not
+# own, and ratcheting a bucket nobody has read is a backlog wearing a pin
+# (Issue 785). The commit that adds ANOTHER locale-dependent read reds; the
+# existing rows stay their owners' to adjudicate. Lower a row when a repo
+# repairs — never raise one.
+#
+# katgpt-rs is 0 and is NOT a ratchet: the repair is one mechanical,
+# idempotent, 14-arm pass (`scripts/locale_io_fix.py <paths>`), so there is
+# nothing here to adjudicate. Its two floors must EQUAL
+# `locale_io_gate.FLOOR_PY_FILES` / `FLOOR_IO_CALLS`; the sweep ASSERTS that
+# rather than trusting it.
+#
+# ⚠ `min_io_calls` is 0 in the six repos with no tracked `*.py` at all, so it
+# cannot detect anything there — in exactly those repos `min_py_files` is the
+# only blindness detector, which is why both are pinned and neither is derived
+# from the other.
+#
+# Measured 2026-09-18 on this box (16 of 20 repos present).
+# Issue 830 widened the classifier from three call NAMES to the text-mode
+# file-object class and found 11 more sites; the `repaired` SHAs below carry
+# both passes where a repo needed both.
+katgpt-rs               60    450    0
+riir-ai                  8      0   0    # repaired 4df109c65
+riir-auth                0      0    0
+riir-chain               3      0    0    # repaired bebf78a
+riir-clippy              5      0   0    # repaired 638fa224, 54b999de
+riir-dapps               1      0    0
+riir-game-sdk            0      0    0
+riir-kat                 0      0    0
+riir-llm                 0      0    0  # observed 2026-09-18: joined the workspace 2026-09-18; no .py
+riir-mmorpg-examples     2      0    0    # repaired 36005d2
+riir-neuron-db           0      0    0
+riir-shader              2      0    0    # repaired 7a65dd4
+riir-train              60      0   0    # repaired 39d0b8d4, 15db2c67
+riir-viewbridge          0      0    0
+katgpt-web               0      0    0
+mmorpg-editor            0      0    0
+mmorpg-remake            0      0    0
+mmorpg-remaster          0      0    0
+riir-dao                 0      0    0
+riir-deployer            0      0    0
+riir-esp32               0      0    0
+riir-reflex            0      0    0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-infer             0      0    0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired)

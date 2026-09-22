@@ -161,7 +161,8 @@ fn bench_tiled_attention_throughput() {
     );
     eprintln!("╠══════════════════════════════════════════════════════════════╣");
     eprintln!(
-        "║ {{'seq_len':>8}} │ {{'ref (μs)':>10}} │ {{'tiled (μs)':>11}} │ {{'ratio':>8}} │ {{'cos_sim':>8}} │"
+        "║ {:>8} │ {:>10} │ {:>11} │ {:>8} │ {:>8} │",
+        "seq_len", "ref (μs)", "tiled (μs)", "ratio", "cos_sim"
     );
     eprintln!("╟──────────┼────────────┼─────────────┼──────────┼──────────╢");
 
@@ -232,7 +233,8 @@ fn bench_tiled_attention_peak_memory_estimate() {
     eprintln!("║  Memory Estimate per Head (Plan 115)                  ║");
     eprintln!("╠════════════════════════════════════════════════════════╣");
     eprintln!(
-        "║ {{'seq_len':>8}} │ {{'full (KB)':>10}} │ {{'tiled (KB)':>11}} │ {{'savings':>8}} │"
+        "║ {:>8} │ {:>9} │ {:>10} │ {:>9} │",
+        "seq_len", "full (KB)", "tiled (KB)", "savings"
     );
     eprintln!("╟──────────┼────────────┼─────────────┼──────────╢");
 

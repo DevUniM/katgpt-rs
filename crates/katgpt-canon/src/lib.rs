@@ -42,6 +42,7 @@
 //! | `canon` (P0) | [`CanonicalIntent`] + [`ModelAdapter`] + [`ProcrustesAdapter`] | opt-in |
 //! | `canon_subspace` (P1) | [`SubspaceAdapter`] (cross-arch joint-SVD) | opt-in |
 //! | `canon_mask` (P4) | [`MaskAdapter`] (lottery-ticket application) | opt-in |
+//! | `canon_source_features` (Issue 867 P1+P2) | [`source_features`] AST histogram extractor + [`SourceFeatureAdapter`] ridge-fit steering adapter | opt-in |
 //!
 //! ## The P1 result (Bench 423, G5 GO)
 //!
@@ -86,13 +87,15 @@
 #![cfg_attr(not(feature = "canon"), no_std)]
 // We need `alloc` for Vec in every adapter. katgpt-core already pulls alloc
 // transitively; spell it out so this crate compiles under no_std + alloc.
+// Issue 867 T2: `canon_source_features` joins the gate — the SourceFeatureAdapter
+// owns weight Vecs while keeping the feature standalone (no implied `canon`).
 #![cfg_attr(not(feature = "canon"), allow(dead_code, unused_imports))]
 
 // blake3 is non-optional in Cargo.toml — it's used by every adapter for
 // commitment. The feature gates below only gate the ADAPTER IMPLS, not
 // blake3 itself.
 
-#[cfg(feature = "canon")]
+#[cfg(any(feature = "canon", feature = "canon_source_features"))]
 extern crate alloc;
 
 /// Architecture-neutral intent direction + adapter trait.
@@ -121,3 +124,23 @@ pub use subspace_adapter::{
 pub mod mask_adapter;
 #[cfg(feature = "canon_mask")]
 pub use mask_adapter::MaskAdapter;
+
+/// Deterministic AST node-type histogram extractor (Issue 867 Phase 1 —
+/// Proposal 010 §Feature 1). Architecture-independent source features; the
+/// fixture corpus lives riir-train-side (`data/canon_rust_contrastive/`).
+#[cfg(feature = "canon_source_features")]
+pub mod source_features;
+#[cfg(feature = "canon_source_features")]
+pub use source_features::{ast_histogram, AstBin, AstHistogram, N_AST_BINS};
+
+/// Issue 867 Phase 2 — `SourceFeatureAdapter`: the ridge-fit linear map from
+/// the Phase 1 AST histogram into a model's latent steering space (Proposal
+/// 010 §Feature 2). Setup-time f64 fit, zero-alloc f32 apply. Deliberately
+/// NOT a `ModelAdapter` impl — the input space is source features, not
+/// canonical intent (this is the construction side of Proposal 010).
+#[cfg(feature = "canon_source_features")]
+pub mod source_adapter;
+#[cfg(feature = "canon_source_features")]
+pub use source_adapter::{
+    SourceAdapterFit, SourceFeatureAdapter, fit_linear_adapter, fit_source_adapter,
+};

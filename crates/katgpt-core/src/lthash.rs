@@ -359,11 +359,11 @@ mod tests {
                 }
                 1 => {
                     // remove if present
-                    if let Some(old_v) = model.get(&key).copied() {
-                        if old_v != 0 {
-                            incremental.remove(&elem(&key.to_le_bytes(), &[old_v]));
-                            model.remove(&key);
-                        }
+                    if let Some(old_v) = model.get(&key).copied()
+                        && old_v != 0
+                    {
+                        incremental.remove(&elem(&key.to_le_bytes(), &[old_v]));
+                        model.remove(&key);
                     }
                 }
                 _ => {

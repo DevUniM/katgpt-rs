@@ -61,6 +61,14 @@ sr2am_configurator = ["katgpt-types/sr2am_configurator"]
 # both halves.
 lodestar = []
 
+# legal_token_set (Issue 841): let the Lodestar tree builder ask the horizon
+# to NAME its legal continuation set instead of scanning the vocabulary with
+# is_valid — which re-walks the prefix inside every one of those calls, so a
+# heap pop costs O(vocab x prefix). Bit-identical by construction: both paths
+# visit ascending token ids, so the heap receives the same pushes in the same
+# order. Pure dispatch; the index itself lives in katgpt-core/katgpt-pruners.
+legal_token_set = ["lodestar", "katgpt-core/legal_token_set"]
+
 # PPoT core primitives (types, knowledge, entropy, rank). The `resample`
 # orchestrator stays in katgpt-rs root (12 root-only refs); this crate owns the
 # four zero-root-coupling leaves (Issue 003). Forwarded from root `ppot`.
@@ -168,6 +176,12 @@ acceptance_forecast = []
 # NextLat Belief-State Speculative Drafter (Plan 217). Forwards to katgpt-core
 # so BeliefDrafterConfig/traits resolve + pulls papaya (belief_cache) + fastrand.
 belief_drafter = ["katgpt-core/belief_drafter", "dep:papaya", "dep:blake3", "fastrand", "dep:bytemuck"]
+# Weak-side probe artifact (Issue 865 T2): the BLAKE3-committed freeze/thaw
+# wire (`probe_artifact` module) around a LatentDynamicsMLP connector + shared
+# trunk lm_head + tap metadata, consumed by katgpt-forward's `probe_guidance`
+# lane (which forwards this feature). Implies `belief_drafter` — the connector
+# IS that class. blake3 arrives transitively via belief_drafter.
+probe_artifact = ["belief_drafter"]
 # Best Buddies Drafting — mutual NN filter (Plan 199). Zero deps beyond katgpt-core traits.
 best_buddies = []
 # Bigram Markov head — the modelless sequential drafter (Issue 659, Research

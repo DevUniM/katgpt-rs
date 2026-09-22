@@ -1,0 +1,85 @@
+# Unguarded timed regions that were RUN and measured NON-ZERO (Issue 855 T3).
+#
+# Format: <repo-relative path>::<enclosing fn>  |  <reason>
+#
+# ── What a row means ───────────────────────────────────────────────────────
+# The region loops >= 1000 times, asserts something, and carries NO loud-zero
+# defence (neither `tests/common/ab_timing.rs`'s `best_of_us` / `ab_median_ratio`,
+# which panic when an arm measures 0, nor its own non-zero assertion). A row
+# says: SOMEBODY EXECUTED IT AND READ THE PRINTED NUMBER. The reason carries
+# that number, so the pin is a measurement record and not a backlog.
+#
+# ⛔ This is an EYES LIST, not an absolution. Every row here is still one
+# refactor away from becoming Issue 855's class — the loop is alive today
+# because the work happens to escape, not because anything enforces it. The
+# repair, when one is wanted, is `best_of_us` (one-arm ceilings) or
+# `ab_median_ratio` (A/B ratios); both turn a future vanished arm into a NAMED
+# instrument failure instead of a pass with maximum margin.
+#
+# ⚠ A row is NOT a licence to skip the reading. `black_box` on the result is
+# the weakest of the three defences — Issue 855 T3 measured two arms that
+# vanished WITH a sink, because the optimiser proved the loop's effect through
+# a loop-invariant ARGUMENT (a pure fn of hoistable inputs) and through an
+# identity RECEIVER (an even number of `mem::swap`es). The invariant is that
+# the optimiser must not be able to prove the loop's effect; the sink is one of
+# three sources.
+#
+# ── The measurement these came from ────────────────────────────────────────
+# 2026-09-19, M3 Max, release, per-target `required-features`, never
+# `--all-features`. All 34 asserting regions at n >= 1000 were run: 7 VANISHED
+# (repaired in `796fabfac` / `9c40c49aa` / `aeaf016d6`) and these 27 SURVIVED.
+# Screening ran under load (a screen for a ZERO is load-tolerant — no load
+# manufactures one); the figures below are therefore ORDERS OF MAGNITUDE and
+# must not be quoted as latency measurements. Several were confirmed by a 4x
+# loop-scaling probe, noted per row: a deleted loop does not scale with its bound.
+#
+# Both directions: an unpinned in-scope region reds, and a row whose region is
+# gone or has since been guarded reds STALE — the file cannot only ever loosen.
+
+# ── The UNREAD tier, and why it is a RATCHET and not a membership wall ─────
+# The READ tier above is every region whose loop bound is a LITERAL >= 1000 —
+# the population Issue 855 T3 executed end to end, 34 of 34, so every row in it
+# is adjudicated and a wall is honest.
+#
+# ⛔ A literal-only predicate could not see Issue 855's OWN founding
+# specimens. `tests/bench_regime_transition.rs` writes `let n = 100_000; for _
+# in 0..n`, and BOTH arms T1 filed sit in that shape — a gate blind to the
+# cases that motivated it is a gate that would have shipped them. So the bound
+# is resolved ONE hop, which brings in 93 more regions that are real, in scope,
+# and **nobody has run**.
+#
+# Pinning those by membership would be a backlog wearing a pin, which Issue 785
+# forbids; so they are a RATCHET on the DERIVATIVE. The commit that adds a NEW
+# unguarded timed region reds; the existing 93 stay somebody's afternoon with a
+# terminal. Lowering it is free and the gate asks for the tightening; raising
+# it requires the number you MEASURED as the reason.
+__max_unread_resolved  |  92 — RAISED 2026-09-23 from 91 in the commit that added `bench_878_state_option_head_goat::main` (Plan 607 T3), per this gate's own instruction — the region was RUN at landing: G2 per-decision-SET p99 printed 42 / 84 / 167 ns at K=9/17/34, D=12, with `black_box` on the timed loop's result AND the G1a loop's data (the loud-zero defence the 855 execution measured as 0-vanished). Prior line: TIGHTENED 2026-09-19 from 93 in the commit that lowered it, per this gate's own instruction. The two rows that left are `three_mode_router_goat`'s `goat_mode_selection_under_50ns` and `goat_mixing_weights_under_100ns`: both read `0.00 ns/call` over 10 000 iterations against a `< 50_000` bar the first time they were made to PRINT, and both now carry `assert!(elapsed.as_nanos() > 0)` plus `black_box` on the loop-invariant argument (3.36 and 12.28 ns/call). They were found by the SILENT bucket, not by this ratchet — which is the argument for reporting that bucket
+
+
+crates/katgpt-core/benches/bench_377_local_branch_routing_goat.rs::main  |  measured 10.4 and 22.8 ns/call (route_argmax, route_sampled)
+crates/katgpt-core/tests/bench_412_subspace_steering_goat.rs::g4_structural_size_and_latency_smoke  |  prints NO number; a temporary probe measured 407.459us over 100k = 4.07 ns/call, then restored byte-identically
+crates/katgpt-core/tests/switch_cost_663_poc.rs::g2_lookup_latency_single_digit_ns  |  measured 1.39 ns/op (best of 3 x 1M)
+crates/katgpt-core/tests/switch_cost_663_poc.rs::g2_sequence_entropy_under_300ns  |  measured 13.99 ns/eval
+crates/katgpt-dec/benches/bench_815_coulomb_redistribution_poc.rs::run_case  |  measured solve = 2.04 / 13.76 / 74.61 us across the three cases
+crates/katgpt-ruliology/src/tests/benchmarks.rs::bench_irreducibility_gate_fsm2  |  measured 2.188us per check
+tests/bench_164_gepa_reflective_goat.rs::bench_164_gepa_reflective_goat_proof  |  measured 1000 inserts in 30.708us (0.030 us avg); the two relevance arms print 3.3 ns/call at +0.3% — that pair is Issues 833/834's SEQUENTIAL A/B class, deliberately not this one
+tests/bench_235_slod_goat.rs::g1_pruner_overhead_under_100ns  |  measured 0.8 ns/call; 4x loop-scaling probe 3.98x (a single 4x sample first read 10x — three medians per bound settled it)
+tests/bench_250_breakeven_goat.rs::t1_overhead_per_forward  |  measured 81.542us over 10k = 8.2 ns/call. NOTE: the whole file is a `#[cfg] mod tests`, so `-- --exact t1_overhead_per_forward` reports `running 0 tests`, exit 0 — the filter is `tests::t1_overhead_per_forward` (Issue 856's class, met live)
+tests/bench_274_cgsp_goat.rs::g4_per_cycle_overhead  |  measured 71.588166ms over 100k = 715.9 ns/cycle
+tests/bench_replaid_variance_schedules.rs::bench_variance_minimizer_overhead  |  measured 3.5 ns/obs over 1001000 observations
+tests/bench_trust_region.rs::bench_trust_arm_roundtrip  |  measured 17.0 ns/call; 4x loop-scaling probe 4.03x
+tests/bench_trust_region.rs::bench_trust_tracker_record  |  measured 0.8 ns/call; 4x loop-scaling probe 3.9x
+tests/bench_trust_region.rs::goat_trust_region_overhead_acceptable  |  measured 0.20 us/token
+tests/bfcf_lsh_cms_goat.rs::g5_roaring_batch_speedup  |  both arms cleared the target's OWN 1us floor, which is a loud-zero defence this classifier's predicate cannot see (it tests a duration against a literal, not against zero)
+tests/goat_195_chain_fold.rs::goat1_zero_perf_hurt_noop_baseline  |  measured 1000 empty folds in 5.9us; 4x loop-scaling probe 3.2x
+tests/goat_195_chain_fold.rs::goat4_attention_importance_no_redundant_allocations  |  measured 277.958us
+tests/goat_195_chain_fold.rs::goat4_binary_search_fold_throughput  |  measured 553.75us
+tests/goat_195_chain_fold.rs::summary_goat_195_chain_fold  |  measured 270.208us
+tests/goat_234_manifold_pruner.rs::g9_kernel_score_simd_vs_scalar_benchmark  |  measured Scalar 11.79ms vs SIMD 2.08ms; its `let _ =` is in the WARMUP only, and both timed loops accumulate into values an assertion consumes
+tests/pipeline_pruner_goat.rs::test_classify_code_fast  |  measured 514us over 10k
+tests/pipeline_pruner_goat.rs::test_classify_long_context_fast  |  measured 128us over 10k
+tests/pipeline_pruner_goat.rs::test_classify_reasoning_fast  |  measured 126us over 10k
+tests/pipeline_pruner_goat.rs::test_classify_simple_fast  |  measured 126us over 10k
+tests/pipeline_pruner_goat.rs::test_pipeline_latency_no_regression  |  measured 43 ns per query; 4x loop-scaling probe 4.02x
+tests/precision_aware_draft_goat.rs::test_boundary_detection_speed  |  measured 1711us over 10k
+tests/precision_aware_draft_goat.rs::test_boundary_penalty_overhead  |  measured 7665us over 1000

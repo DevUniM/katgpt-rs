@@ -221,7 +221,6 @@ impl ParallaxBuffers {
             scratch: ParallaxScratch::new(N, D),
             cfg: ParallaxConfig {
                 gate_scale: 1.0,
-                zero_init: false,
                 activation,
                 ..Default::default()
             },

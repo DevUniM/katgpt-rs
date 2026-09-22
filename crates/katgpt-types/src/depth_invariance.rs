@@ -89,11 +89,6 @@ pub struct DepthInvarianceConfig {
     pub min_samples: usize,
     /// `|magnitude_slope| > this` → `DepthSpecificRefinement` (default 0.05).
     pub magnitude_slope_drift: f32,
-    /// **Reserved:** magnitude slope below this was originally part of the
-    /// Collapsed AND-condition. Current decision rule uses
-    /// [`Self::effective_rank_collapse`] as the primary collapse trigger
-    /// (see module decision-rule note). Kept for API stability / future use.
-    pub magnitude_slope_collapse: f32,
     /// `effective_rank_slope < this` → `Collapsed` (default -0.05).
     pub effective_rank_collapse: f32,
     /// Cos-step threshold above which a `DepthSpecificRefinement` chain is
@@ -106,7 +101,6 @@ impl Default for DepthInvarianceConfig {
         Self {
             min_samples: 4,
             magnitude_slope_drift: 0.05,
-            magnitude_slope_collapse: -0.05,
             effective_rank_collapse: -0.05,
             cos_step_drift_lock: 0.95,
         }
@@ -220,8 +214,8 @@ fn least_squares_slope_vs_index(ys: &[f32]) -> f32 {
 /// magnitude and expects [`Collapsed`](DepthInvarianceKind::Collapsed) — the literal AND-rule would classify
 /// it as [`DepthSpecificRefinement`](DepthInvarianceKind::DepthSpecificRefinement). Per the delegation instruction "fix the
 /// rule, not the test", rank collapse is the sole Collapsed trigger.
-/// `magnitude_slope_collapse` is retained in [`DepthInvarianceConfig`] for API
-/// stability.
+/// (`magnitude_slope_collapse` was removed — Issue 772 S6: never read; the
+/// AND-condition it documented was replaced by the rank-only rule above.)
 ///
 /// **SIMD inner loop (T7.4 revisit):** the per-timestep magnitude +
 /// participation-ratio pass is now fused into a single

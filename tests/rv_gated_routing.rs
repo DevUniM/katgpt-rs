@@ -4,6 +4,13 @@
 //! Note: `rv_gated_thinking` tests also need `thinking_cot` for module access.
 //! Run with: `cargo test --test rv_gated_routing --features rv_gated_routing,rv_gated_thinking,rv_bandit_pruning,thinking_cot,inference_router,freq_bandit`
 
+// Issue 855: the load-invariant timing treatment. `best_of_us` panics on an
+// all-zero reading instead of letting a ceiling be satisfied by a loop the
+// optimiser deleted.
+#[cfg(feature = "rv_gated_routing")]
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 // ── Phase 1: AcceptanceVarianceTracker (T2) ──────────────────────
 
 #[cfg(feature = "rv_gated_routing")]
@@ -354,12 +361,30 @@ mod goat_structural_proof {
         assert!(rv.is_finite(), "RV should be finite");
         assert!(rv >= 0.0, "RV should be non-negative");
 
-        // Reset should be instant
-        let start = std::time::Instant::now();
-        for _ in 0..10_000 {
-            tracker.reset();
-        }
-        let elapsed = start.elapsed();
+        // Reset should be instant.
+        //
+        // Issue 855: the previous loop called `tracker.reset()` 10 000 times
+        // with `tracker` dead afterwards, so rustc deleted the whole timed
+        // region — measured `0ns`, and the < 10 ms bar below passed with
+        // maximum margin on work that never ran. `best_of_us` FAILS loudly on
+        // an all-zero reading; `black_box(&mut tracker)` makes the receiver
+        // opaque so the 10 000 identical stores cannot be collapsed either,
+        // and the post-loop state is consumed through `black_box`. The bar is
+        // unchanged and each round is still 10 000 resets.
+        const RESET_ROUNDS: usize = 10;
+        const RESET_ITERS: usize = 10_000;
+
+        let best_us = crate::ab_timing::best_of_us(2, RESET_ROUNDS, || {
+            let t0 = std::time::Instant::now();
+            for _ in 0..RESET_ITERS {
+                std::hint::black_box(&mut tracker).reset();
+            }
+            let e = t0.elapsed();
+            std::hint::black_box(tracker.rv());
+            e
+        });
+        let elapsed = std::time::Duration::from_secs_f64(best_us * 1e-6);
+        eprintln!("10K resets: {elapsed:?} (best of {RESET_ROUNDS})");
         assert!(
             elapsed.as_millis() < 10,
             "10K resets should be < 10ms, took {elapsed:?}"

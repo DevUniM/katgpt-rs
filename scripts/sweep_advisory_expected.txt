@@ -1,0 +1,47 @@
+# Sweeps deliberately NOT calling a FAMILY-WIDE MECHANISM — Issues 797 T5, 824.
+#
+# One row per (mechanism, sweep): `<mechanism> <sweep>  # reason`.
+# A reasonless row is REFUSED, an unknown mechanism slug is REFUSED, and a row
+# whose sweep has since been wired REDS: a pin file that only ever loosens is a
+# backlog wearing a pin (Issue 785).
+#
+# Mechanisms (the live set is `MECHANISMS` in the gate — this list is prose):
+#   worktree-advisory       sweep_advisory() / worktree_advisory()  (Issue 797)
+#   known-extra-exemption   pin_row_exempt()                        (Issue 815/821)
+#   head-provenance         head_delta() / head_overlay() / head_tree() /
+#                           head_text()                             (Issue 822)
+#   alias-open              open_repo() / repo_alias.real()          (Issue 842)
+#
+# ⛔ The row is QUALIFIED by mechanism, and that is not bookkeeping. A bare
+# per-sweep row would excuse that sweep from the NEXT mechanism too — the one
+# nobody has looked at — which is exactly the `DOCS_GATE_KNOWN_EXTRA` asymmetry
+# one file over: NAMES, never `=1`. Issue 824 exists because `pin_row_exempt`
+# landed in 16 of 19 sweeps and a close-out said "16" instead of gating it.
+#
+# ⛔ NO LONGER EMPTY — one row, and reading why is the point of the format.
+# `alias-open len_derived_drift_sweep.py` is not an exemption from the RULE;
+# it is a sweep that satisfies the rule ONE HOP AWAY, constructing no repo
+# path of its own and delegating every walk to `len_derived_binding_audit`,
+# which calls `repo_alias.real()` at each read seam. The alternative was to
+# teach `calls_any` to follow delegation, which is PERMISSIVE for all four
+# mechanisms at once — it would credit a sweep for a call some imported
+# module happens to make for its own reasons, and `check_validation_gate`
+# credits delegation only because its delegate IS the classifier the check
+# imports. A row a human read once is the tighter instrument here, and it
+# reds if the delegation goes away.
+#
+# The first three mechanisms have the same argument for staying empty:
+#   - every sweep in the family reads the WORKING TREE, so every one has the
+#     Issue-797 exposure; a row would say "this sweep may report a finding no
+#     commit contains, and that is fine".
+#   - every sweep adjudicates PER-REPO PINS, so every one can hard-red on a
+#     repo the contract does not claim; a row would say "this sweep may fail
+#     over a repo nobody owns, with zero content findings, and that is fine".
+#   - every sweep reads a WORKTREE and compares counts to a tracked ceiling, so
+#     every one can count a row that sits on a line no commit contains; a row
+#     would say "this sweep may red on another session's in-flight edit, and
+#     the reader may re-pin from it". The fan-out reached 19 of 19 before this
+#     mechanism was registered, deliberately: a registry row added over unwired
+#     sweeps reds the docs gate on develop, and pinning them meanwhile is a
+#     backlog wearing a pin (Issue 785).
+alias-open len_derived_drift_sweep.py  # WIRED one hop away, not exempt from the rule: this sweep constructs no repo path of its own — it delegates every walk to len_derived_binding_audit, which calls repo_alias.real() at each of its four read seams (lines 238, 304, 641, 690). Crediting `calls_any` here would need delegation following, which is PERMISSIVE for all four mechanisms and would let a sweep be credited for a call some imported module makes for its own reasons. A row read once by a human is the tighter instrument, and it reds if the delegation goes away.

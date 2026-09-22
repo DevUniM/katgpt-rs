@@ -104,9 +104,6 @@ pub struct ConsensusConfig {
     /// Confidence threshold for WARM path (winner conf > τ_w).
     /// Default: 0.3
     pub warm_threshold: f32,
-    /// If true, use `simd_ternary_matvec` fusion gate instead of heuristic.
-    /// Requires `plasma_path` feature.
-    pub use_ternary_gate: bool,
     /// Warm/Cold acceptance policy (Issue 651). Default `SoftmaxArgmax`
     /// (FLARE Eq 21 — the verified paths are distribution-preserving).
     /// `PrefixMatch` is the legacy Plan 166 mode-biasing control.
@@ -122,7 +119,6 @@ impl Default for ConsensusConfig {
             plasma_threshold: 0.7,
             hot_threshold: 0.5,
             warm_threshold: 0.3,
-            use_ternary_gate: false,
             accept_policy: DraftAcceptPolicy::SoftmaxArgmax,
         }
     }
@@ -323,34 +319,11 @@ pub fn route_thermal_paths(
 // ---------------------------------------------------------------------------
 // T5: Ternary SIMD fusion gate (optional, requires plasma_path)
 // ---------------------------------------------------------------------------
-
-#[cfg(feature = "plasma_path")]
-use katgpt_core::TernaryWeights;
-
-/// Compute fusion gate scores using ternary SIMD matvec.
-///
-/// Uses `simd_ternary_matvec` from the `plasma_path` feature — zero multiplication.
-/// The gate_weights have rows=1, cols=6 (one row per position, 6 SamplerFeatures).
-/// Output is a per-position score: higher → more confident routing.
-#[cfg(feature = "plasma_path")]
-pub fn ternary_fusion_gate(
-    gate_weights: &TernaryWeights,
-    features: &[f32], // flat [positions * 6]
-) -> Vec<f32> {
-    let n_positions = features.len() / 6;
-    let mut scores = vec![0.0f32; n_positions];
-    let feature_dim = 6;
-
-    for pos in 0..n_positions {
-        let x = &features[pos * feature_dim..(pos + 1) * feature_dim];
-        let mut score = [0.0f32; 1];
-        // gate_weights has rows=1, cols=6
-        katgpt_core::simd_ternary_matvec(gate_weights, x, &mut score);
-        scores[pos] = score[0];
-    }
-
-    scores
-}
+// REMOVED (Issue 772 B2): `ternary_fusion_gate` + `ConsensusConfig.use_ternary_gate`
+// shipped with zero callers and no weight source — a linear 6-feature gate
+// cannot encode route_one's threshold-cascade semantics, and this lane is
+// opt-in after its G1 quality FAIL (Issue 136). `simd_ternary_matvec` remains
+// plasma-path substrate with its own consumers.
 
 // top1_prob helper removed — not used in current implementation
 
@@ -714,7 +687,6 @@ mod tests {
         assert!((config.plasma_threshold - 0.7).abs() < 1e-6);
         assert!((config.hot_threshold - 0.5).abs() < 1e-6);
         assert!((config.warm_threshold - 0.3).abs() < 1e-6);
-        assert!(!config.use_ternary_gate);
         // Issue 651: Eq 21 (SoftmaxArgmax) is the default verified-path policy.
         assert_eq!(config.accept_policy, DraftAcceptPolicy::SoftmaxArgmax);
     }

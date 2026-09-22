@@ -96,7 +96,8 @@ every platform.
 
 Honestly **not** covered, which is the point of stating the scope: the 480
 integration-test targets, the 176 bench targets, and every Metal / ANE / 4090
-surface. Expanding is a one-line `ROWS` addition.
+surface. Expanding the lib coverage is a one-line `ROWS` addition; the one
+affordable integration exception below rides `PERF_ROWS`.
 
 **(a) The full-workspace `--all-features --release` execution stays
 DISPATCH-ONLY.** It was priced on a quiet box first, because a scheduled job
@@ -126,7 +127,7 @@ The three honest options, priced (owner picks; **(i) is the standing state**):
 
 - **(i) keep the scoped job** — landed, ~zero marginal cost, machine-invariant
   core; the full run stays dispatch-only for triage campaigns.
-- **(ii) a per-target triaged weekly integration job** — the seal-remake
+- **(ii) a per-target triaged weekly integration job** — the mmorpg-remake
   `e1ead85` shape over the ~470 default-runnable integration targets. Machine
   cost ≈ the execution half (~2,300 CPU-s) + one feature-set compile;
   engineering cost = triaging `.issues/723`'s reds into expect-red pins.
@@ -151,7 +152,7 @@ stream. No compile gate can find that.
 **Price in CPU-seconds, not wall-clock.** A wall-clock figure from this
 workstation is uninterpretable — the box ran at load average 44-87 for a whole
 day from sibling work. CPU time and peak RSS measure what a process *consumed*
-rather than how long it *waited*; seal-remake
+rather than how long it *waited*; mmorpg-remake
 `.benchmarks/002_png_vs_ktx2_host_cpu_rss.md` measured that directly (over a 2x
 load swing the CPU ratios moved by under 0.11 and never reordered an arm).
 `/usr/bin/time -l` on the cargo invocation is the whole instrument, and
@@ -181,3 +182,34 @@ Full taxonomy, per-class actions and the open tasks: **`.issues/723`**.
   execution too. This was written down *before* the run and then measured by
   it: 9 `issue_698_*` targets red on fixture pins that a default-features run
   may well satisfy (`.issues/723` Class C).
+
+## 2026-09-21 — the first PERF_ROWS row (Issue 858): an arch-conditional perf
+bar gets an executing lane on every arch the gate runs on
+
+Issue 858's finding, one axis over from the ones above: `g8` in
+`tests/belief_drafter_goat.rs` carries an **arch-conditional** GOAT bar (since
+its T2: aarch64 0.75 / everything else 0.5 — the sanctioned Bench-806-T7 dual-
+pin form). A bar like that needs an executing lane on EVERY arch it can run
+on, and the lane map left aarch64 with nothing over this target: `full_gate`
+is macOS/aarch64 but compile+lint; the x86_64 execution matrix executes the
+integration cell but **refuses off x86_64**; this gate's lib rows never reach
+integration targets. The M3's g8 red (0.68–0.71 against the then-universal
+0.5 bar) existed for one day and was found by accident — the instrument map
+predicted exactly that.
+
+The fix is a new row kind in `scripts/test_gate.sh`: `PERF_ROWS`, format
+`pkg:floor:target`, executed at `--release --test-threads=1` (timing rows
+measure; the lib rows' `--test-threads=2` is a runner-noise compromise for
+count floors, not a measurement posture). First row:
+`katgpt-rs:12:belief_drafter_goat` — whole target 0.03 s in release on
+x86_64, so the row's cost is the build, not the run. The count floor is 12
+(the target's full test inventory, platform- and profile-invariant — no
+`#[ignore]`, no cfg-gated test fns, the only arch-conditional item is the
+`G8_BAR` const). `--canary` now floor-bombs the first row of EACH list, so
+the new parse path's floor is proven live too.
+
+Measured on the 4090 box (x86_64, Windows, no concurrent cargo — recorded
+per the box-state rule): full gate PASS 207/2063/249/150 + **12/12** on the
+new row; canary FAILS on both lists as designed. The aarch64 reading lands
+the next time the gate runs on the M3 — that is the point: the state goes
+from *unknown* to *executed*, on both arches, wherever the gate runs.

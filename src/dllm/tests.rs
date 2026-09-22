@@ -1161,3 +1161,288 @@ mod replaid_tests {
         values.iter().sum::<f32>() / values.len() as f32
     }
 }
+
+// ── Issue 869 T5: multi-layer training honesty ─────────────────────
+
+/// Two-layer micro config (the `micro_dllm_text` shape at the pattern lane's
+/// dimensions — the point is the LAYER COUNT, not the corpus).
+mod multi_layer_training_tests {
+    use super::*;
+
+    fn two_layer_config() -> Config {
+        Config {
+            n_layer: 2,
+            ..Config::micro_dllm()
+        }
+    }
+
+    /// Reference loss: SUM of per-masked-position cross-entropy in f64 — the
+    /// quantity `backward` differentiates (its `d_logits` carries no 1/count
+    /// factor; `masked_loss_into` divides only for reporting).
+    fn reference_sum_loss(
+        weights: &TransformerWeights,
+        tokens: &[usize],
+        is_masked: &[bool],
+        config: &Config,
+        fwd_ctx: &mut ForwardSaveContext,
+    ) -> f64 {
+        let act = forward_save(weights, tokens, config, fwd_ctx);
+        let vocab = config.vocab_size;
+        let mut total = 0.0f64;
+        for (p, &masked) in is_masked.iter().enumerate() {
+            if !masked {
+                continue;
+            }
+            let row = &act.logits[p * vocab..(p + 1) * vocab];
+            let m = row.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let sum: f64 = row.iter().map(|&l| f64::from((l - m).exp())).sum();
+            let lse = f64::from(m) + sum.ln();
+            total += lse - f64::from(row[tokens[p]]);
+        }
+        total
+    }
+
+    #[test]
+    fn two_layer_forward_save_matches_bidirectional_forward() {
+        // Train/serve consistency at depth: the training forward (saving
+        // activations) and the inference bidirectional forward (the
+        // `denoise_loop`/`evaluate_accuracy` kernel) must agree BIT-IDENTICALLY
+        // on a 2-layer config — same op sequence per position, both generalized
+        // by T5. A mismatch would mean the lane trains one model and evals
+        // another.
+        let config = two_layer_config();
+        let mut rng = Rng::new(42);
+        let weights = TransformerWeights::new(&config, &mut rng);
+        let tokens = vec![0, 5, 3, 7, 1, 2, 9, 4];
+
+        let mut fwd_ctx = ForwardSaveContext::new(&config);
+        let act = forward_save(&weights, &tokens, &config, &mut fwd_ctx);
+
+        let mut bctx = katgpt_forward::forward_positions::BidirectionalContext::new(&config);
+        let (logits_len, _) =
+            katgpt_forward::forward_positions::forward_bidirectional_positions_into(
+                &weights, &tokens, &config, &mut bctx,
+            );
+
+        assert_eq!(act.logits.len(), logits_len);
+        assert_eq!(
+            act.logits,
+            &bctx.all_logits[..logits_len],
+            "training forward and inference forward must be bit-identical at n_layer=2"
+        );
+    }
+
+    #[test]
+    fn two_layer_training_moves_every_layers_weights() {
+        // The Issue-869 finding, closed: pre-T5, layer 1 of a 2-layer config was
+        // allocated, never trained, never read. Post-T5 the trainer must move
+        // EVERY layer's parameters.
+        let config = two_layer_config();
+        let mut rng = Rng::new(42);
+        let train = generate_pattern_dataset(&mut rng, 40, 8, 8);
+        let test = generate_pattern_dataset(&mut rng, 8, 8, 8);
+        let (weights, _) = train_mini_dllm(&config, &train, &test, 60, 0.01, 0.3, 42);
+
+        let init = TransformerWeights::new(&config, &mut Rng::new(42));
+        for l in 0..config.n_layer {
+            let moved_wq = weights.layers[l].attn_wq != init.layers[l].attn_wq;
+            let moved_w1 = weights.layers[l].mlp_w1 != init.layers[l].mlp_w1;
+            assert!(moved_wq, "layer {l} attn_wq must move under training (T5)");
+            assert!(moved_w1, "layer {l} mlp_w1 must move under training (T5)");
+        }
+    }
+
+    #[test]
+    fn two_layer_sgd_update_reduces_loss() {
+        let config = two_layer_config();
+        let mut rng = Rng::new(42);
+        let mut weights = TransformerWeights::new(&config, &mut rng);
+        let mut fwd_ctx = ForwardSaveContext::new(&config);
+        let mut bwd_ctx = BackwardContext::new(&config);
+
+        let tokens = vec![0, 1, 2, 3];
+        let is_masked = vec![false, true, false, true];
+
+        let loss0 = reference_sum_loss(&weights, &tokens, &is_masked, &config, &mut fwd_ctx);
+        let act = forward_save(&weights, &tokens, &config, &mut fwd_ctx);
+        backward(&act, &weights, &tokens, &is_masked, &config, &mut bwd_ctx);
+        sgd_update(&mut weights, &bwd_ctx.grads, 0.01);
+        let loss1 = reference_sum_loss(&weights, &tokens, &is_masked, &config, &mut fwd_ctx);
+
+        assert!(
+            loss1 < loss0,
+            "2-layer loss should decrease after SGD step: before={loss0:.4} after={loss1:.4}"
+        );
+    }
+
+    #[test]
+    fn two_layer_backward_matches_finite_differences() {
+        // THE honesty proof for the per-layer backward: analytic gradients vs
+        // central finite differences on the SUM loss, sampled across every
+        // gradient family INCLUDING layer 1's matrices and at both 1 and 2
+        // layers. This instrument caught the T5 landing's one real bug: the
+        // pre-869 `!is_masked[p]` skip in Phases 1/2 is valid ONLY at the
+        // readout layer — inner layers receive gradient at UNMASKED positions
+        // too (their stream feeds downstream attention k/v), and skipping them
+        // corrupted every layer-0 attention-path gradient under partial
+        // masking (~10-150% errors; exact at full masking, which is why the
+        // loss-decreases gates never saw it).
+        backward_matches_finite_differences_at(&Config::micro_dllm());
+        backward_matches_finite_differences_at(&two_layer_config());
+    }
+
+    fn backward_matches_finite_differences_at(config: &Config) {
+        use std::fmt::Write as _;
+
+        let mut rng = Rng::new(7);
+        let mut weights = TransformerWeights::new(config, &mut rng);
+        let tokens = vec![2, 9, 14, 4];
+        let is_masked = vec![false, true, true, false];
+
+        let mut fwd_ctx = ForwardSaveContext::new(config);
+        let mut bwd_ctx = BackwardContext::new(config);
+        let act = forward_save(&weights, &tokens, config, &mut fwd_ctx);
+        backward(&act, &weights, &tokens, &is_masked, config, &mut bwd_ctx);
+        let grads = &bwd_ctx.grads;
+
+        // Perturbation scale: h = 1e-3 keeps the f32 noise floor
+        // (eps·|L|/h ≈ 6e-4 absolute at |L| ~ 6 nats) an order of magnitude
+        // below the smallest sampled gradient while keeping the central-
+        // difference truncation error under ~1.5% (measured worst case across
+        // all families at both depths).
+        let h = 1e-3f32;
+        // Single-owner helper (enum dispatch keeps the whole `weights` inside
+        // one mutable borrow — no split-borrow conflicts with the closure-free
+        // loss recomputation).
+        #[derive(Clone, Copy)]
+        enum Family {
+            Wte,
+            Wpe,
+            LmHead,
+            Wq,
+            Wk,
+            Wv,
+            Wo,
+            W1,
+            W2,
+        }
+        let mut grad_check = |family: Family, l: usize, idx_in_plane: usize| {
+            let (analytic, numeric) = {
+                let g = match family {
+                    Family::Wte => &grads.wte[idx_in_plane],
+                    Family::Wpe => &grads.wpe[idx_in_plane],
+                    Family::LmHead => &grads.lm_head[idx_in_plane],
+                    Family::Wq => {
+                        &grads.attn_wq[l * (config.n_embd * config.n_embd) + idx_in_plane]
+                    }
+                    Family::Wk | Family::Wv => {
+                        let stride = kv_dim(config) * config.n_embd;
+                        let g_plane = if matches!(family, Family::Wk) {
+                            &grads.attn_wk
+                        } else {
+                            &grads.attn_wv
+                        };
+                        &g_plane[l * stride + idx_in_plane]
+                    }
+                    Family::Wo => {
+                        &grads.attn_wo[l * (config.n_embd * config.n_embd) + idx_in_plane]
+                    }
+                    Family::W1 => {
+                        &grads.mlp_w1[l * (config.mlp_hidden * config.n_embd) + idx_in_plane]
+                    }
+                    Family::W2 => {
+                        &grads.mlp_w2[l * (config.n_embd * config.mlp_hidden) + idx_in_plane]
+                    }
+                };
+                let mut get_set = |delta: f32| -> f64 {
+                    // Scoped borrows: the mutable slot borrow must END before
+                    // the loss recomputation takes `&weights` (and vice versa).
+                    let orig;
+                    {
+                        let slot: &mut Vec<f32> = match family {
+                            Family::Wte => &mut weights.wte,
+                            Family::Wpe => &mut weights.wpe,
+                            Family::LmHead => &mut weights.lm_head,
+                            Family::Wq => &mut weights.layers[l].attn_wq,
+                            Family::Wk => &mut weights.layers[l].attn_wk,
+                            Family::Wv => &mut weights.layers[l].attn_wv,
+                            Family::Wo => &mut weights.layers[l].attn_wo,
+                            Family::W1 => &mut weights.layers[l].mlp_w1,
+                            Family::W2 => &mut weights.layers[l].mlp_w2,
+                        };
+                        orig = slot[idx_in_plane];
+                        slot[idx_in_plane] = orig + delta;
+                    }
+                    let loss =
+                        reference_sum_loss(&weights, &tokens, &is_masked, config, &mut fwd_ctx);
+                    {
+                        let slot: &mut Vec<f32> = match family {
+                            Family::Wte => &mut weights.wte,
+                            Family::Wpe => &mut weights.wpe,
+                            Family::LmHead => &mut weights.lm_head,
+                            Family::Wq => &mut weights.layers[l].attn_wq,
+                            Family::Wk => &mut weights.layers[l].attn_wk,
+                            Family::Wv => &mut weights.layers[l].attn_wv,
+                            Family::Wo => &mut weights.layers[l].attn_wo,
+                            Family::W1 => &mut weights.layers[l].mlp_w1,
+                            Family::W2 => &mut weights.layers[l].mlp_w2,
+                        };
+                        slot[idx_in_plane] = orig;
+                    }
+                    loss
+                };
+                let lp = get_set(h);
+                let lm = get_set(-h);
+                (*g as f64, (lp - lm) / f64::from(2.0 * h))
+            };
+            let scale = analytic.abs().max(numeric.abs()).max(1e-6);
+            let rel = (analytic - numeric).abs() / scale;
+            let mut name = String::new();
+            let fam = match family {
+                Family::Wte => "wte",
+                Family::Wpe => "wpe",
+                Family::LmHead => "lm_head",
+                Family::Wq => "attn_wq",
+                Family::Wk => "attn_wk",
+                Family::Wv => "attn_wv",
+                Family::Wo => "attn_wo",
+                Family::W1 => "mlp_w1",
+                Family::W2 => "mlp_w2",
+            };
+            let _ = write!(
+                &mut name,
+                "[n_layer={}] layer{l}.{fam}[{idx_in_plane}]",
+                config.n_layer
+            );
+            assert!(
+                rel < 0.05,
+                "{name}: analytic {analytic:.6} vs numeric {numeric:.6} (rel {rel:.4})"
+            );
+        };
+
+        // Shared matrices (live indices: token 9 sits at masked position 1;
+        // position 0 is an unmasked context slot).
+        grad_check(Family::Wte, 0, tokens[1] * config.n_embd + 3);
+        grad_check(Family::Wpe, 0, 5);
+        grad_check(Family::LmHead, 0, 11);
+
+        // Per-layer matrices: layer 0 AND layer 1 (the new math), each family.
+        let n = config.n_embd;
+        let kvd = kv_dim(config);
+        let mh = config.mlp_hidden;
+        let strides: &[(Family, usize)] = &[
+            (Family::Wq, n * n),
+            (Family::Wk, kvd * n),
+            (Family::Wv, kvd * n),
+            (Family::Wo, n * n),
+            (Family::W1, mh * n),
+            (Family::W2, n * mh),
+        ];
+        for &(family, stride) in strides {
+            for l in 0..config.n_layer {
+                let idx_in_plane = (l * 7 + 3) % stride; // deterministic spread
+                grad_check(family, l, idx_in_plane);
+            }
+        }
+    }
+}

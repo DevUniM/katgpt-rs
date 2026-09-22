@@ -46,10 +46,6 @@ pub struct MuxLatentConfig {
     /// Whether to keep system/instruction tokens uncompressed.
     /// These are typically short and high-value, so no compression.
     pub preserve_instructions: bool,
-
-    /// Layer index for domain_latent injection.
-    /// Defaults to mid-layer (half of total layers).
-    pub injection_layer: Option<usize>,
 }
 
 impl Default for MuxLatentConfig {
@@ -60,7 +56,6 @@ impl Default for MuxLatentConfig {
             mux_decay: 0.9,
             max_latent_slots: 0,
             preserve_instructions: false,
-            injection_layer: None,
         }
     }
 }

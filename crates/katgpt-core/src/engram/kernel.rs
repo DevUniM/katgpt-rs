@@ -171,6 +171,20 @@ pub struct SigmoidFusionConfig {
     /// identity and the gated writes specialize gradually. Also the inject
     /// point for per-step gate-logit noise (εg, train-only). The hot path
     /// costs one f32 add; the default path stays bit-identical.
+    ///
+    /// Issue 819 T3 (Research 566, arXiv:2601.15380): this constant bias is
+    /// the constant-prior special case of the sigmoid KL-prior gate
+    /// `g* = σ(s/τ + logit π_j)` — per-key priors π_j live in
+    /// `ParallaxConfig::prior_logits` (`prior_logit_lane`), and a per-call
+    /// prior for THIS single-key kernel is expressible by assignment
+    /// (`config.logit_bias = lane[j]` — the xHC forward already composes
+    /// per-step bias this way). The negative-bias default is a stability
+    /// requirement, not a training convenience: the sigmoid margin law
+    /// bounds context-noise sensitivity by `‖Δo‖ ≲ ε·(L−1)·e^{ω−δ}`, and with
+    /// a uniform prior (δ = 0) sigmoid context mass grows LINEARLY in L —
+    /// the prior margin is the only structural protection a sigmoid gate
+    /// stack has. Any structural margin δ ≳ ω + ln L is load-bearing.
+    /// Law + derivation: `parallax_attn` module docs / Research 566 §2.
     pub logit_bias: f32,
 }
 
@@ -426,7 +440,9 @@ mod tests {
             vec![1e-30; d],
             vec![1e6; d],
             vec![-1e6; d],
-            (0..d).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect(),
+            (0..d)
+                .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+                .collect(),
             (0..d)
                 .map(|i| (((i * 37 + 11) % 23) as i32 - 11) as f32 / 7.0)
                 .collect(),
@@ -446,7 +462,13 @@ mod tests {
                 let gate_ref = fast_sigmoid(ndot / cfg.tau);
                 // gate · v[0] is injective in gate for v[0] = 1.5 ≠ 0.
                 let got = out[0] / 1.5;
-                assert_eq!(got.to_bits(), gate_ref.to_bits(), "q[0]={} k[0]={}", q[0], k[0]);
+                assert_eq!(
+                    got.to_bits(),
+                    gate_ref.to_bits(),
+                    "q[0]={} k[0]={}",
+                    q[0],
+                    k[0]
+                );
             }
         }
     }
@@ -472,9 +494,15 @@ mod tests {
             let mut out = vec![0.0f32; d];
             sigmoid_fuse_into(&q, &k, &v, &mut out, &cfg);
             let g = out[0]; // gate · 1.0
-            assert!(g > prev, "gate must be strictly monotone in logit_bias: b={b} g={g}");
+            assert!(
+                g > prev,
+                "gate must be strictly monotone in logit_bias: b={b} g={g}"
+            );
             let expect = 1.0 / (1.0 + (-b).exp());
-            assert!((g - expect).abs() < 1e-5, "b={b}: gate {g} vs σ(b) {expect}");
+            assert!(
+                (g - expect).abs() < 1e-5,
+                "b={b}: gate {g} vs σ(b) {expect}"
+            );
             prev = g;
         }
         // The −4 closed-init value, pinned against the closed-form:

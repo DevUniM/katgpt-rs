@@ -39,11 +39,6 @@ pub struct CgspConfig {
     pub tau_low: f32,
     /// Exploration injection magnitude when collapse triggers (in `[0, 1]`).
     pub exploration_magnitude: f32,
-    /// Estimated solve-rate floor — drop candidates below this as "trivially
-    /// solved" (already-known) per the breakeven router.
-    pub solve_rate_floor: f32,
-    /// Estimated solve-rate ceiling — drop candidates above this as "too hard".
-    pub solve_rate_ceiling: f32,
     /// Variable-duration planning horizon per NPC (Issue 365).
     ///
     /// 1 = single-cycle plan (default — no staleness correction). Values > 1
@@ -68,8 +63,6 @@ impl Default for CgspConfig {
             k: 4,
             tau_low: 0.30,
             exploration_magnitude: 0.35,
-            solve_rate_floor: 0.05,
-            solve_rate_ceiling: 0.95,
             k_npc: 1,
             staleness_lambda: 0.0,
         }

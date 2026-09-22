@@ -15,6 +15,12 @@
 //! with the same self-play loop shape.
 
 pub mod board;
+// Issue 868 / Plan 605: engram-fused PUCT memory (Proposal 013 POC).
+// Native-gated — the browser/wasm build never carries the engram consumer
+// path (T2.1: the default wasm artifact is unchanged; the katgpt-core dep
+// is optional and absent from the default feature resolution).
+#[cfg(all(feature = "engram_puct", not(target_arch = "wasm32")))]
+pub mod engram_fuse;
 pub mod moka;
 pub mod moka_int8;
 pub mod puct;

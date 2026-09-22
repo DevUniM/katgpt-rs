@@ -282,6 +282,46 @@ impl FuncAttnSnapshotStore {
     }
 }
 
+/// The SUPPLY side of the calibration-staleness seam (Issue 841 §B-3).
+///
+/// `katgpt_core::calibration_staleness::SnapshotBound` refuses by default —
+/// `SnapshotId::UNVERSIONED` is never fresh — so a caller with no way to
+/// obtain a real identity reads the guard as a no-op rather than as a rule.
+/// This is where a real one comes from.
+///
+/// ⛔ The ordinal is [`FuncAttnWeightsSnapshot::version`], the caller-managed
+/// generation counter, and it is the right one **because it is deliberately
+/// not part of the hash input** — a format version (`SWTF_VERSION` and
+/// friends) is `1` for every snapshot ever written, and an identity built
+/// from one holds its generation constant while the guard degrades silently
+/// to the commitment check alone.
+///
+/// The commitment is [`FuncAttnWeightsSnapshot::blake3`], which
+/// [`FuncAttnSnapshotStore::swap`] verifies BEFORE installing, so a live
+/// snapshot's identity is one a corrupted weight set cannot forge.
+#[cfg(feature = "calibration_staleness")]
+impl katgpt_core::calibration_staleness::SnapshotIdentity for FuncAttnWeightsSnapshot {
+    #[inline]
+    fn snapshot_id(&self) -> katgpt_core::calibration_staleness::SnapshotId {
+        katgpt_core::calibration_staleness::SnapshotId::new(self.version, self.blake3)
+    }
+}
+
+#[cfg(feature = "calibration_staleness")]
+impl FuncAttnSnapshotStore {
+    /// The identity a calibration fitted against the CURRENT snapshot must
+    /// carry — the read a `SnapshotBound` holder re-checks on every use.
+    ///
+    /// Takes the same brief read lock as [`Self::current`] and propagates
+    /// poison identically; it does not clone the weights.
+    pub fn snapshot_id(
+        &self,
+    ) -> Result<katgpt_core::calibration_staleness::SnapshotId, FuncAttnSnapshotStoreError> {
+        use katgpt_core::calibration_staleness::SnapshotIdentity;
+        Ok(self.current()?.snapshot_id())
+    }
+}
+
 /// Errors from [`FuncAttnSnapshotStore`] operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -302,6 +342,150 @@ mod tests {
         let w_k: Vec<f32> = (0..d * d).map(|i| seed + 0.2 + i as f32 * 0.001).collect();
         let w_v: Vec<f32> = (0..d * d).map(|i| seed + 0.3 + i as f32 * 0.001).collect();
         (w_basis, w_q, w_k, w_v)
+    }
+
+    /// Issue 841 §B-3 seam 1 — the SUPPLY side. These arms exist because the
+    /// primitive they feed refuses by DEFAULT: without a real `SnapshotId` a
+    /// `SnapshotBound` returns `None` on every call, and a guard that always
+    /// refuses is indistinguishable, at the call site, from one that is not
+    /// wired. Each arm therefore asserts a DISTINCTION, never just a value.
+    #[cfg(feature = "calibration_staleness")]
+    mod calibration_staleness_seam {
+        use super::*;
+        use katgpt_core::calibration_staleness::{
+            SnapshotBound, SnapshotId, SnapshotIdentity, Staleness,
+        };
+
+        fn snap(seed: f32, version: u64) -> FuncAttnWeightsSnapshot {
+            let (wb, wq, wk, wv) = make_weights(8, 4, seed);
+            FuncAttnWeightsSnapshot::from_weights(
+                8,
+                4,
+                FuncAttnBasis::Sigmoid,
+                0.5,
+                0.1,
+                wb,
+                wq,
+                wk,
+                wv,
+                version,
+            )
+        }
+
+        /// The ordinal is the GENERATION counter and the commitment is the
+        /// verified BLAKE3 — the two fields `SnapshotId` is specified over.
+        #[test]
+        fn identity_is_the_generation_ordinal_and_the_verified_commitment() {
+            let s = snap(1.0, 7);
+            let id = s.snapshot_id();
+            assert_eq!(id.version, 7, "the ordinal must be the generation counter");
+            assert_eq!(id.commitment, s.blake3, "the commitment must be the verified hash");
+            assert!(!id.is_unversioned());
+        }
+
+        /// ⛔ The `t14` trap, asserted at THIS seam rather than assumed from
+        /// the primitive's own arm: a FORMAT version is constant across every
+        /// snapshot ever written, so an identity built from one would hold
+        /// `version` still and degrade the guard, silently, to the commitment
+        /// check alone. Two snapshots with DIFFERENT generations must produce
+        /// different identities — the property a format version cannot have.
+        #[test]
+        fn a_bumped_generation_moves_the_identity() {
+            let a = snap(1.0, 1).snapshot_id();
+            let b = snap(1.0, 2).snapshot_id();
+            assert_eq!(a.commitment, b.commitment, "same weights, same commitment");
+            assert_ne!(a, b, "a generation bump must move the identity");
+            assert_eq!(a.version + 1, b.version);
+        }
+
+        /// A store seeded at version 0 hands out an UNVERSIONED identity, and
+        /// the guard refuses. This is the unwired caller — the one the whole
+        /// primitive exists for — and refusal is the correct default.
+        #[test]
+        fn a_version_zero_store_is_never_fresh() {
+            let store = FuncAttnSnapshotStore::new(snap(1.0, 0));
+            let id = store.snapshot_id().expect("uncontended read");
+            assert!(id.is_unversioned());
+            let bound = SnapshotBound::new(0.73f32, id);
+            assert_eq!(bound.staleness(id), Staleness::Unversioned);
+            assert!(bound.get(id).is_none(), "an unversioned identity must refuse");
+        }
+
+        /// The whole point, end to end: a calibration fitted under the live
+        /// snapshot is handed back until a swap lands, and refuses after.
+        #[test]
+        fn a_swap_invalidates_a_calibration_fitted_under_the_old_snapshot() {
+            let store = FuncAttnSnapshotStore::new(snap(1.0, 1));
+            let fitted = store.snapshot_id().expect("uncontended read");
+            let bound = SnapshotBound::new(0.73f32, fitted);
+
+            assert_eq!(bound.staleness(fitted), Staleness::Fresh);
+            assert_eq!(bound.get(fitted), Some(&0.73), "fresh must be handed back");
+
+            store.swap(snap(2.0, 2)).expect("verified swap installs");
+            let now = store.snapshot_id().expect("uncontended read");
+            assert_ne!(now, fitted, "the swap must move the identity");
+            assert_eq!(bound.staleness(now), Staleness::VersionMoved);
+            assert!(
+                bound.get(now).is_none(),
+                "a calibration describing weights that are no longer there must \
+                 refuse — a stale head returns a CONFIDENT WRONG number, not a NaN"
+            );
+        }
+
+        /// The caller BUG the generation alone cannot see: weights swapped,
+        /// generation not bumped. Reported as its own verdict, because the
+        /// repair is a broken bump site and not a refit.
+        #[test]
+        fn a_swap_that_forgot_to_bump_reports_commitment_moved() {
+            let store = FuncAttnSnapshotStore::new(snap(1.0, 3));
+            let fitted = store.snapshot_id().expect("uncontended read");
+            let bound = SnapshotBound::new(0.73f32, fitted);
+
+            store.swap(snap(2.0, 3)).expect("verified swap installs");
+            let now = store.snapshot_id().expect("uncontended read");
+            assert_eq!(now.version, fitted.version, "the generation was NOT bumped");
+            assert_eq!(bound.staleness(now), Staleness::CommitmentMoved);
+            assert!(bound.get(now).is_none());
+        }
+
+        /// ⚠ A reader holding an `Arc` across a swap keeps the OLD snapshot
+        /// alive by design (the freeze/thaw no-torn-read invariant), and its
+        /// identity travels with it. So the guard is keyed to the snapshot a
+        /// caller is actually using, not to whatever the store now holds.
+        #[test]
+        fn a_held_arc_keeps_its_own_identity_across_a_swap() {
+            let store = FuncAttnSnapshotStore::new(snap(1.0, 1));
+            let held = store.current().expect("uncontended read");
+            let held_id = held.snapshot_id();
+
+            store.swap(snap(2.0, 2)).expect("verified swap installs");
+
+            assert_eq!(held.snapshot_id(), held_id, "the held snapshot is unchanged");
+            assert_ne!(store.snapshot_id().expect("read"), held_id);
+            let bound = SnapshotBound::new(0.73f32, held_id);
+            assert_eq!(bound.get(held_id), Some(&0.73));
+        }
+
+        /// A rejected swap must not move the identity — otherwise a corrupted
+        /// snapshot could invalidate every live calibration without ever
+        /// becoming the thing they describe.
+        #[test]
+        fn a_refused_swap_leaves_the_identity_alone() {
+            let store = FuncAttnSnapshotStore::new(snap(1.0, 1));
+            let before = store.snapshot_id().expect("uncontended read");
+            let mut bad = snap(2.0, 2);
+            bad.blake3 = [0u8; 32];
+            assert!(store.swap(bad).is_err(), "an unverifiable snapshot must be refused");
+            assert_eq!(store.snapshot_id().expect("read"), before);
+        }
+
+        /// `SnapshotId::UNVERSIONED` is what a caller that wired nothing has,
+        /// and it must not accidentally equal a real identity.
+        #[test]
+        fn a_real_identity_is_never_the_unwired_one() {
+            assert_ne!(snap(1.0, 1).snapshot_id(), SnapshotId::UNVERSIONED);
+        }
     }
 
     #[test]

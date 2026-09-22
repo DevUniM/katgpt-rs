@@ -166,6 +166,57 @@ pub(crate) fn fill_cluster_exact(
     best
 }
 
+/// Logits for a caller-supplied set of vocabulary rows, and nothing else
+/// (Issue 841 — the grammar-forced vocabulary-projection skip).
+///
+/// A structural constraint — a grammar state, a JSON schema, a tool-call DFA —
+/// knows its legal continuation set before the LM head runs. Scoring the other
+/// 32 000 rows to then mask them off is work whose result is discarded, and
+/// `katgpt_core::legal_token_set::ProjectionPlan` is the decision that says
+/// when to stop doing it. This is the pass that decision selects.
+///
+/// Untouched rows are left at [`f32::NEG_INFINITY`], the same convention the
+/// clustered head uses, so a downstream `argmax` / softmax / sampler needs no
+/// change and a token outside the legal set cannot be produced.
+///
+/// # ⛔ A gather is not free, and "smaller than the vocabulary" is not the bar
+///
+/// Gathered rows run at ~20.6 GB/s against ~108 GB/s for the dense contiguous
+/// pass (Issue 661, module docs above), so this wins on a *fraction* of the
+/// vocabulary, not on any saving at all. Take the crossover from
+/// `RestrictionPolicy::max_active_fraction` — which carries the measurement as
+/// data — rather than calling this whenever `tokens.len() < vocab_size`.
+///
+/// # Contract
+///
+/// - `tokens` may be in any order and may repeat; duplicates cost a recompute
+///   and change nothing. A caller coming from
+///   `CsrLegalSet` already holds them sorted and deduplicated.
+/// - `token_idx >= vocab_size` is skipped, not clamped — a legal set is a
+///   property of the grammar's alphabet, which may be wider than this model's.
+/// - `logits` must be `vocab_size` wide and is **fully overwritten**.
+///
+/// Zero allocation. Returns the largest logit written, or
+/// [`f32::NEG_INFINITY`] when `tokens` selected nothing.
+///
+/// # DRY
+///
+/// The gather loop is [`fill_cluster_exact`] — the same one
+/// [`clustered_lm_head`](crate::forward::clustered_lm_head) and
+/// [`clustered_lm_head_bounded`] use. A second transcription of a SIMD dot
+/// over scattered rows is a second thing to get wrong.
+pub fn restricted_lm_head(
+    logits: &mut [f32],
+    hidden: &[f32],
+    lm_head: &[f32],
+    tokens: &[usize],
+    vocab_size: usize,
+    n_embd: usize,
+) -> f32 {
+    logits[..vocab_size].fill(f32::NEG_INFINITY);
+    fill_cluster_exact(logits, hidden, lm_head, tokens, vocab_size, n_embd)
+}
+
 /// Stage 1: score every cluster and sort `scratch.indexed` by score descending.
 ///
 /// Shared by the scattered and packed stage-2 implementations so the ranking —
@@ -862,5 +913,148 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+// ── restricted_lm_head (Issue 841) ─────────────────────────────────────
+
+#[cfg(test)]
+mod restricted_tests {
+    use super::*;
+    use crate::forward::standard_lm_head;
+
+    struct Lcg(u64);
+    impl Lcg {
+        fn next_f32(&mut self) -> f32 {
+            self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((self.0 >> 33) as f32 / (1u64 << 31) as f32) - 1.0
+        }
+    }
+
+    const VOCAB: usize = 512;
+    const N_EMBD: usize = 64;
+
+    fn fixture() -> (Vec<f32>, Vec<f32>) {
+        let mut r = Lcg(0x841);
+        let lm_head: Vec<f32> = (0..VOCAB * N_EMBD).map(|_| r.next_f32()).collect();
+        let hidden: Vec<f32> = (0..N_EMBD).map(|_| r.next_f32()).collect();
+        (lm_head, hidden)
+    }
+
+    #[test]
+    fn r01_selected_rows_are_bit_identical_to_the_dense_pass() {
+        // The claim that makes the skip sound: the rows it DOES compute are
+        // the same numbers the dense pass would have produced. Bit-identical,
+        // because both go through `simd_dot_f32` over the same row.
+        let (lm_head, hidden) = fixture();
+        let mut dense = vec![0.0f32; VOCAB];
+        standard_lm_head(&mut dense, &hidden, &lm_head, VOCAB, N_EMBD);
+
+        let tokens: Vec<usize> = vec![0, 7, 13, 64, 255, 511];
+        let mut restricted = vec![0.0f32; VOCAB];
+        let best = restricted_lm_head(&mut restricted, &hidden, &lm_head, &tokens, VOCAB, N_EMBD);
+
+        for &t in &tokens {
+            assert_eq!(
+                restricted[t].to_bits(),
+                dense[t].to_bits(),
+                "token {t}: {} vs {}",
+                restricted[t],
+                dense[t]
+            );
+        }
+        let expect_best = tokens.iter().map(|&t| dense[t]).fold(f32::NEG_INFINITY, f32::max);
+        assert_eq!(best.to_bits(), expect_best.to_bits());
+    }
+
+    #[test]
+    fn r02_unselected_rows_are_neg_infinity_so_a_sampler_cannot_reach_them() {
+        let (lm_head, hidden) = fixture();
+        let tokens = [3usize, 100, 400];
+        let mut logits = vec![0.0f32; VOCAB];
+        restricted_lm_head(&mut logits, &hidden, &lm_head, &tokens, VOCAB, N_EMBD);
+        for (t, &l) in logits.iter().enumerate() {
+            match tokens.contains(&t) {
+                true => assert!(l.is_finite(), "token {t} should be scored"),
+                false => assert_eq!(l, f32::NEG_INFINITY, "token {t} leaked"),
+            }
+        }
+    }
+
+    #[test]
+    fn r03_argmax_over_the_legal_set_matches_the_masked_dense_argmax() {
+        // What a constrained decoder actually asks of the pass.
+        let (lm_head, hidden) = fixture();
+        let mut dense = vec![0.0f32; VOCAB];
+        standard_lm_head(&mut dense, &hidden, &lm_head, VOCAB, N_EMBD);
+        let tokens: Vec<usize> = (0..VOCAB).filter(|t| t % 37 == 5).collect();
+        assert!(tokens.len() > 3);
+
+        let mut restricted = vec![0.0f32; VOCAB];
+        restricted_lm_head(&mut restricted, &hidden, &lm_head, &tokens, VOCAB, N_EMBD);
+
+        let pick = |v: &[f32]| {
+            v.iter()
+                .enumerate()
+                .fold((0usize, f32::NEG_INFINITY), |(bi, bv), (i, &x)| {
+                    match x > bv {
+                        true => (i, x),
+                        false => (bi, bv),
+                    }
+                })
+                .0
+        };
+        let masked_dense = pick(
+            &(0..VOCAB)
+                .map(|t| match tokens.contains(&t) {
+                    true => dense[t],
+                    false => f32::NEG_INFINITY,
+                })
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(pick(&restricted), masked_dense);
+    }
+
+    #[test]
+    fn r04_an_out_of_range_token_is_skipped_not_clamped() {
+        // A grammar alphabet can be wider than the model's vocabulary; a
+        // clamp would silently score the wrong row.
+        let (lm_head, hidden) = fixture();
+        let mut a = vec![0.0f32; VOCAB];
+        let mut b = vec![0.0f32; VOCAB];
+        restricted_lm_head(&mut a, &hidden, &lm_head, &[9, VOCAB, VOCAB + 5], VOCAB, N_EMBD);
+        restricted_lm_head(&mut b, &hidden, &lm_head, &[9], VOCAB, N_EMBD);
+        assert_eq!(a, b);
+        assert_eq!(a[VOCAB - 1], f32::NEG_INFINITY);
+    }
+
+    #[test]
+    fn r05_empty_and_duplicate_selections_behave() {
+        let (lm_head, hidden) = fixture();
+        let mut empty = vec![0.0f32; VOCAB];
+        let best = restricted_lm_head(&mut empty, &hidden, &lm_head, &[], VOCAB, N_EMBD);
+        assert_eq!(best, f32::NEG_INFINITY);
+        assert!(empty.iter().all(|&x| x == f32::NEG_INFINITY));
+
+        let mut once = vec![0.0f32; VOCAB];
+        let mut twice = vec![0.0f32; VOCAB];
+        restricted_lm_head(&mut once, &hidden, &lm_head, &[42], VOCAB, N_EMBD);
+        restricted_lm_head(&mut twice, &hidden, &lm_head, &[42, 42, 42], VOCAB, N_EMBD);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn r06_the_buffer_is_fully_overwritten_between_calls() {
+        // A reused buffer must not leak the previous position's legal set —
+        // a stale finite logit outside the new legal set is a token a sampler
+        // can reach and the grammar forbids.
+        let (lm_head, hidden) = fixture();
+        let mut logits = vec![0.0f32; VOCAB];
+        restricted_lm_head(&mut logits, &hidden, &lm_head, &[1, 2, 3], VOCAB, N_EMBD);
+        restricted_lm_head(&mut logits, &hidden, &lm_head, &[400], VOCAB, N_EMBD);
+        assert_eq!(logits[1], f32::NEG_INFINITY);
+        assert_eq!(logits[2], f32::NEG_INFINITY);
+        assert_eq!(logits[3], f32::NEG_INFINITY);
+        assert!(logits[400].is_finite());
     }
 }

@@ -15,7 +15,7 @@
 //! so when tests run in parallel, allocations from *other* tests bleed into
 //! G7's counter. Always run with `--test-threads=1` for accurate G7 numbers.
 //! In release builds G7 falls back to a timing-based sanity check that's
-//! parallel-safe.
+//! parallel-safe, defended against constant-folding (black_box both ends).
 //!
 //! # Gate Summary
 //!
@@ -28,7 +28,7 @@
 //! | G5 | Reconstruction quality (ppl proxy)      | rel error < 5% |
 //! | G6 | Router determinism                      | same input → same output (100×) |
 //! | G7 | No allocation in `pick_backend` hot path| 0 bytes allocated |
-//! | G8 | SIMD vs scalar speedup                  | ≥ 1.5× (Apple NEON auto-vectorizes scalar too) |
+//! | G8 | Route bit-agreement + throughput floor  | bit-identical routes; < 5 ms/call @ n=8,t=512,d=64 (release-only floor) |
 //!
 //! G1–G5 thresholds are slightly relaxed from the paper's strict targets
 //! because synthetic data doesn't have real attention structure — the
@@ -41,6 +41,11 @@
 // existed only to keep the root's library-level shim linked.
 #[path = "common/alloc_tracking.rs"]
 mod alloc_tracking;
+
+// Issue 874: the shared timing harness (best_of_us — the loud-zero-defended
+// best-of-N absolute timer the timed_region_guard gate recognizes).
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
 
 /// Liveness sentinel (Issue 682): FAIL the audit if the TrackingAllocator
 /// is not actually installed (debug builds only).
@@ -55,9 +60,6 @@ fn assert_alloc_tracking_live() {
     );
     katgpt_core::alloc::reset_alloc_stats();
 }
-
-#[cfg(not(debug_assertions))]
-fn assert_alloc_tracking_live() {}
 
 use katgpt_attn_match::{
     beta_fitter::{BetaFitConfig, fit_beta_nnls},
@@ -436,14 +438,23 @@ fn g7_no_allocation_in_hot_loops() {
         // Release build: TrackingAllocator is compiled out, so we fall back
         // to a timing sanity check — `pick_backend` should be sub-microsecond
         // (it's a pure function with no allocation).
+        // Issue-855 defence (mirrors G8b): black_box the varying args AND
+        // consume the result inside the timed region -- a bare `let _ =`
+        // let LLVM delete the loop and print "100000 calls in 0ns".
+        use std::hint::black_box;
         let n_calls = 100_000usize;
         let start = std::time::Instant::now();
         for i in 0..n_calls {
             let t = 64 + (i % 256);
-            let _ = pick_backend(t, 1024, i % 2 == 0, &cfg);
+            let backend = pick_backend(black_box(t), 1024, black_box(i % 2 == 0), &cfg);
+            black_box(&backend);
         }
         let elapsed = start.elapsed();
         let per_call_ns = elapsed.as_nanos() as f64 / n_calls as f64;
+        assert!(
+            elapsed.as_nanos() > 0,
+            "G7 FAIL (release timing): 0 ns over {n_calls} calls -- work eliminated, fix the harness (Issue 855 class)"
+        );
         println!(
             "  release build (no TrackingAllocator): {n_calls} calls in {elapsed:?} ({per_call_ns:.1} ns/call)"
         );
@@ -457,17 +468,47 @@ fn g7_no_allocation_in_hot_loops() {
 }
 
 // ============================================================================
-// G8: SIMD ≥ 1.5× scalar (platform-dependent)
+// G8: route bit-agreement + absolute throughput floor (Issue 874)
 // ============================================================================
+//
+// History (Issue 874, 2026-09-22): this gate originally asserted a ≥1.5×
+// "SIMD vs scalar" speedup of `compute_score_matrix_simd` over
+// `compute_score_matrix`. The Plan-271-era kernel consolidation routed BOTH
+// routes through `dot_8wide`, and Issue 871 T5 measured that kernel
+// scalar-only on x86_64 (0 packed float-math crate-wide at BOTH compile
+// arms) and mul-only-vectorized on aarch64 — no SIMD exists in this crate,
+// and a strict ordered f32 reduction cannot vectorize without changing the
+// bits ("there is no strict vectorized add"). The timed "SIMD" arm
+// additionally ran the stabilize pass, so the ratio was structurally <1 and
+// the old gate deterministically SKIPped — it could never fail.
+// Pre-consolidation PASS entries in the Plan 271 record were real;
+// post-consolidation ones were timer noise between identical binaries.
+//
+// Repaired per the Issue 874 verdict (Option 3 — retire the relative claim):
+//   G8a — the two public routes must stay BIT-IDENTICAL (the documented
+//         "bit-identical by construction" contract; reds if either route
+//         ever diverges).
+//   G8b — absolute throughput floor, RELOCATED from the in-crate
+//         `test_simd_throughput_smoke` (which no lane executed:
+//         `katgpt-attn-match` has no test_gate row and no matrix floors row
+//         — the `katgpt-attn` row is a different package — and its
+//         `cfg!(debug_assertions)` skip bypassed even dev lib runs). This
+//         test binary executes in the x86_64 execution matrix integration
+//         cell (release, --no-fail-fast).
+//
+// The only real speed contrast in this crate is strict-vs-`algebraic_dot` —
+// that has its own lane (feature `algebraic_dot`, Bench 871), not this gate.
 
 #[test]
-fn g8_simd_vs_scalar() {
-    println!("\n=== G8: SIMD vs scalar speedup ===");
+fn g8_route_bit_agreement() {
+    println!("\n=== G8a: route bit-agreement (scalar route == simd route, exact bits) ===");
 
-    // Pick a size where SIMD should help: n=32, t=512, d=64.
+    // Plan 271 reference shape; fixed seed for reproducibility.
     let n = 32usize;
     let t = 512usize;
     let d = 64usize;
+    // Derived exactly as `compute_score_matrix` derives it internally — a red
+    // below can ALSO mean this derivation drifted (see the assert message).
     let inv_sqrt_d = 1.0f32 / (d as f32).sqrt();
 
     let queries = synth_queries(n, d, 1);
@@ -476,15 +517,13 @@ fn g8_simd_vs_scalar() {
     let mut out_scalar = vec![0.0f32; n * t];
     let mut out_simd = vec![0.0f32; n * t];
 
-    // Warm up.
+    // stabilize=false so the SIMD route output is raw qK^T * inv_sqrt_d —
+    // directly comparable to the scalar route (no max-shift).
     compute_score_matrix(&queries, &keys, n, t, d, &mut out_scalar);
-    // stabilize=false so SIMD output is raw qK^T * inv_sqrt_d (no max-shift).
-    // This makes it directly comparable to scalar * inv_sqrt_d.
     compute_score_matrix_simd(&queries, &keys, n, t, d, inv_sqrt_d, &mut out_simd, false);
 
-    // Correctness check.
-    // Both `compute_score_matrix` and `compute_score_matrix_simd` multiply
-    // by `inv_sqrt_d` internally, so outputs are directly comparable.
+    // Diagnostic rel_err (kept from the old gate for continuity; the assert
+    // below is strictly stronger than the old rel_err < 1e-3 check).
     let mut max_diff = 0.0f32;
     let mut max_val = 0.0f32;
     for i in 0..n * t {
@@ -503,39 +542,99 @@ fn g8_simd_vs_scalar() {
         0.0
     };
     println!("  correctness: max |scalar − simd| = {max_diff:.6} (rel {rel_err:.4e})");
-    assert!(
-        rel_err < 1e-3,
-        "G8 FAIL: SIMD/scalar rel disagreement {rel_err} > 1e-3"
-    );
 
-    // Benchmark.
-    let iterations = 100usize;
-    let start_scalar = std::time::Instant::now();
-    for _ in 0..iterations {
-        compute_score_matrix(&queries, &keys, n, t, d, &mut out_scalar);
-    }
-    let elapsed_scalar = start_scalar.elapsed();
-
-    let start_simd = std::time::Instant::now();
-    for _ in 0..iterations {
-        compute_score_matrix_simd(&queries, &keys, n, t, d, inv_sqrt_d, &mut out_simd, true);
-    }
-    let elapsed_simd = start_simd.elapsed();
-
-    let speedup = elapsed_scalar.as_secs_f64() / elapsed_simd.as_secs_f64();
-    println!("  scalar: {elapsed_scalar:?}, simd: {elapsed_simd:?}, speedup: {speedup:.3}×");
-
-    // On Apple Silicon (NEON) the scalar loop also auto-vectorizes, so the
-    // explicit SIMD path may only be ~1.5–2× faster. Document the actual.
-    // Gate at 1.5× — if below, we log SKIP rather than fail (the SIMD path
-    // is still correct and the scalar is just unusually well-optimized).
-    if speedup < 1.5 {
-        println!(
-            "  G8: SKIP (speedup {speedup:.3}× < 1.5× threshold — scalar auto-vectorizes well on this platform)"
+    // Bit-equality pin — the documented by-construction contract
+    // (score_matrix.rs: "Keeps the scalar and SIMD paths … bit-identical by
+    // construction"). Same binary, same inputs, deterministic strict FP ⇒
+    // identical bits; anything else is a contract break.
+    for i in 0..n * t {
+        assert!(
+            out_scalar[i].to_bits() == out_simd[i].to_bits(),
+            "G8a FAIL at flat index {i}: scalar={} (bits {:#x}) vs simd={} (bits {:#x}) \
+             — the two public score-matrix routes diverged. Two distinct causes: \
+             (1) one route's summation order changed — the serial strict chain IS the \
+             cross-arch/cross-build bit-equality contract (score_matrix_simd.rs: 'there \
+             is no strict vectorized add'; Issue 871 T5); or (2) the internal inv_sqrt_d \
+             derivation changed — `compute_score_matrix` derives it internally while \
+             `compute_score_matrix_simd` takes it as a parameter, and this test derives \
+             it the same way, so a red here can also mean the INTERNAL derivation moved. \
+             Contract: score_matrix.rs 'bit-identical by construction' / Issue 874.",
+            out_scalar[i],
+            out_scalar[i].to_bits(),
+            out_simd[i],
+            out_simd[i].to_bits()
         );
+    }
+    println!(
+        "  G8a: PASS (bit-identical over {} outputs, rel {rel_err:.4e})",
+        n * t
+    );
+}
+
+/// G8b — absolute throughput floor (release-only; Issue 874).
+///
+/// Relocated verbatim in bar and size from the in-crate
+/// `score_matrix_simd::tests::test_simd_throughput_smoke` (n=8, t=512, d=64,
+/// 5 ms/call ceiling), which was executed by NO lane. Defence stack per the
+/// Issue-855 lesson (black_box on arguments ALONE is the weakest of three):
+/// black_box on the arguments AND the result consumed inside the timed
+/// region; `best_of_us` itself asserts against the 0 ns loud-zero (work
+/// eliminated by the optimiser). The 5 ms bar is a generous regression
+/// ceiling (typical tens of µs/call; scalar-only on x86_64 per Issue 871) —
+/// it catches catastrophic rot (debug-emission, a broken unroll, paging-class
+/// regressions), not box load, and asserts NO relative-speedup claim.
+#[test]
+fn g8_throughput_floor() {
+    if cfg!(debug_assertions) {
+        eprintln!("G8b: skipping throughput floor in debug build (not representative)");
         return;
     }
-    println!("  G8: PASS");
+    println!("\n=== G8b: absolute throughput floor (relocated in-crate smoke) ===");
+
+    // Same fixture recipe as the original in-crate smoke (seed 98765).
+    let n = 8usize;
+    let t = 512usize;
+    let d = 64usize;
+    let mut seed = 98765u32;
+    let mut rng = || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        (seed as f32) / (u32::MAX as f32) * 2.0 - 1.0
+    };
+    let queries: Vec<f32> = (0..n * d).map(|_| rng()).collect();
+    let keys: Vec<f32> = (0..t * d).map(|_| rng()).collect();
+    let inv_sqrt_d = 1.0f32 / (d as f32).sqrt();
+    let mut buf = vec![0.0f32; n * t];
+
+    use std::hint::black_box;
+
+    // best_of_us(warmup, timed_calls) — min-of-200 single calls (µs); its own
+    // loud-zero assert fires if the work is eliminated (Issue 855 class).
+    let us_per_call = ab_timing::best_of_us(3, 200, || {
+        let t0 = std::time::Instant::now();
+        compute_score_matrix_simd(
+            black_box(&queries),
+            black_box(&keys),
+            n,
+            t,
+            d,
+            inv_sqrt_d,
+            &mut buf,
+            false,
+        );
+        black_box(buf[0]);
+        t0.elapsed()
+    });
+    let ns_per_call = us_per_call * 1000.0;
+    println!(
+        "  G8b: {ns_per_call:.0} ns/call at n={n},t={t},d={d} (ceiling 5_000_000 ns = 5 ms)"
+    );
+    assert!(
+        ns_per_call < 5_000_000.0,
+        "G8b FAIL: throughput regression — {ns_per_call:.0} ns/call > 5 ms ceiling at \
+         n=8,t=512,d=64 (262K multiply-adds). This is a regression floor, not a speedup \
+         claim (Issue 874): typical readings are tens of µs/call."
+    );
+    println!("  G8b: PASS");
 }
 
 // ============================================================================

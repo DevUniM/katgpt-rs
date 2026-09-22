@@ -80,7 +80,7 @@ multi-agent closure) run in riir-ai/489 and are NOT blocking for this plan.
       per agent, near-zero cost in practice.
 - [x] **T1.8** `position.rs` — `Position` trait. Default impl for `(usize,
       usize)` grid cells. Document the extension point for 3D / NavMesh
-      positions (seal-core `NavMesh` integration is a consumer concern, not
+      positions (mmorpg-core `NavMesh` integration is a consumer concern, not
       substrate).
 - [x] **T1.9** Feature flag wiring. `Cargo.toml`:
       ```toml

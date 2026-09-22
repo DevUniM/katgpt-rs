@@ -1,0 +1,81 @@
+# Pins for scripts/timed_region_drift_sweep.py — EVERY contract repo.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_files> <min_regions> <max_unguarded>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── max_unguarded is a RATCHET, and the ratchet is EARNED ───────────────────
+# katgpt-rs's own READ tier is pinned by MEMBERSHIP with a reason per row in
+# scripts/timed_region_survivors_expected.txt — the per-push gate, over the
+# population Issue 855 T3 executed end to end (34 regions RUN).
+#
+# That standard cannot be exported. T5 DID execute all 33 sibling rows
+# (2026-09-19): 1 UNBUILDABLE, 32 run, 2 VANISHED = 6.3%, against this repo's
+# own 7 of 34 = 20.6%. That is enough to constrain the DERIVATIVE — the commit
+# that adds ANOTHER unguarded region reds — and NOT enough for a membership
+# wall: most of the 32 are single readings on a loaded box without T3's 4x
+# scaling probe, so `fast` and `partly eliminated` are not separated for them.
+#
+# ⚑ The FOUR most exposed of those — every sibling row that printed a
+# sub-nanosecond figure, where `fast` and `partly eliminated` are least
+# distinguishable — were 4x-probed on 2026-09-20 and all four are LIVE:
+#   riir-chain bench_013 g2_quorum       0.430 ns @1M -> 0.334 ns @4M  FLAT
+#   riir-chain sufficiency_gates g2      2 ns    @1M -> 2 ns    @4M    FLAT
+#   riir-ai bench_133_hla_conflict       1.08/0.78 @100k -> 1.38/1.11/0.82 @400k
+# A flat per-iteration figure across a 4x bound means elapsed scaled with the
+# bound; a deleted loop reads ~0 at both. Each file was restored
+# byte-identically (`git diff --quiet`, verified).
+#
+# ⚠ Issue 785's rule is respected, not skirted: it forbids ratcheting a bucket
+# meaning *unanswered*. This bucket means *no loud-zero defence*, every row has
+# an owner, and the population behind the number has been RUN.
+#
+# ── the TOTALS row is RESERVED and is not a repo ────────────────────────────
+# 8 of 21 repos have 0 timed regions and 3 have 0 tracked test/bench files, so
+# BOTH per-repo floors are vacuous there (Issue 783's population shape). TOTALS
+# floors the population globally — the wasm32_surface_drift_sweep answer to the
+# same problem. A repo genuinely named TOTALS would collide; the sweep's own
+# arm asserts none exists.
+#
+# ── measured 2026-09-19 (Issue 855 T6), M3, tracked walk ────────────────────
+# katgpt-rs's min_files / min_regions are the GATE's constants, asserted equal
+# by the sweep's self-test — change both or it reds.
+#
+# repo                     min_files  min_regions  max_unguarded
+katgpt-rs                        400          300             27
+katgpt-web                         0            0              0
+mmorpg-editor                     15            0              0
+mmorpg-remake                     25            0              0
+mmorpg-remaster                   12            0              0
+riir-ai                          600          400             16
+riir-auth                          0            0              0
+riir-chain                       120           30              6
+riir-clippy                       70           15              2
+riir-dao                           0            0              0
+riir-dapps                        35            5              0
+riir-deployer                      0            0              0
+riir-esp32                         0            0              0
+riir-game-sdk                     50           20              1
+riir-kat                           0            0              0
+riir-llm                           0            0              0
+riir-mmorpg-examples              25           10              0
+# riir-neuron-db 3 -> 4 on 2026-09-20: `local_kv/tests.rs::g2_compact_1000_
+# entries_under_50ms` is a classifier FALSE POSITIVE, not a new defect. Its
+# `for i in 0..1000` populates the store and the timed region is a single
+# `compact_wal()` call, so the bound and the timer are unrelated and the
+# `n >= 1000` premise does not apply. Read at HEAD, MASKED by a sibling's
+# in-flight edits at the time. See the gate's STATED blind spot on FN-scope vs
+# REGION-scope matching.
+riir-neuron-db                    65           40              4
+riir-shader                        0            0              1
+riir-train                       220           90              2
+riir-viewbridge                    0            0              0
+# The global population floor. Both halves break separately: a `git ls-files`
+# regression takes files to ~0 with the classifier intact, a masker or regex
+# regression takes regions to 0 over an unchanged walk.
+TOTALS                          1800         1000              0
+riir-reflex                          1            1              0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-infer                           2            0              0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired); measured via the sweep's own classifier (files=2 regions=0 unguarded=0) — its UNPINNED line hides values

@@ -764,11 +764,39 @@ mod tests {
         );
     }
 
+    /// Every player type constructs and returns a USABLE action.
+    ///
+    /// ⛔ **This test used to draw from an UNSEEDED `fastrand::Rng::new()` and
+    /// assert `Place` on a single draw, and it was a ~2% coin flip.**
+    /// `GoRandomPlayer` passes deliberately — `PASS_PROBABILITY = 0.02`,
+    /// "2% pass to avoid infinite games" — so the assertion contradicted a
+    /// documented design constant. Measured over 400 seeds x 6 player types:
+    /// **9 failures** (Random 5, MCTS 4), Random's 5/400 matching the 2%
+    /// constant. The x86_64 execution matrix caught one of those, re-ran it
+    /// alone, saw it pass and filed it TRANSIENT — correct reasoning for a
+    /// load-sensitive perf bar and empty for a coin flip, which is the third
+    /// class that verdict has been wrong about (Issues 831, 832).
+    ///
+    /// The repair is BOTH halves, because either alone is a trap:
+    /// - **Seed explicitly.** An unseeded draw makes the failure unreproducible
+    ///   and the pass meaningless (`global_rng_gate`'s whole subject).
+    /// - **Assert what is actually claimed.** Seeding alone would pin whichever
+    ///   side of the coin the chosen range landed on: seeds 0..32 are clean
+    ///   today, so a 32-seed sweep would have looked like a fix and been one
+    ///   seed-range edit from breaking again. What the test means is "the
+    ///   player plays rather than handing the game away", so it asserts every
+    ///   action is LEGAL and that placements dominate. A player that always
+    ///   passes, or returns a coordinate off the legal list, still reds.
     #[test]
     fn player_type_creates_instances() {
-        let mut rng = fastrand::Rng::new();
+        const SEEDS: u64 = 256;
+        // 2% pass => ~251/256 expected for Random, sd ~2.2. A 90% bar is ~9 sd
+        // below that, and 0% for a degenerate always-pass player.
+        const MIN_PLACE_PCT: u64 = 90;
+
         let state = GoState::new(9);
         let legal = state.legal_moves();
+        assert_eq!(legal.len(), 81, "empty 9x9 board must offer 81 placements");
 
         for pt in [
             GoPlayerType::Random,
@@ -778,12 +806,31 @@ mod tests {
             GoPlayerType::GZero,
             GoPlayerType::MCTS,
         ] {
-            let mut p = pt.create_player();
-            let action = p.select_move(&state, &legal, &mut rng);
+            let mut placed = 0u64;
+            for seed in 0..SEEDS {
+                let mut rng = fastrand::Rng::with_seed(seed);
+                let mut p = pt.create_player();
+                match p.select_move(&state, &legal, &mut rng) {
+                    GoAction::Place(r, c) => {
+                        assert!(
+                            legal.contains(&(r, c)),
+                            "{} played ({r}, {c}) at seed {seed}, which is not a legal move",
+                            p.name()
+                        );
+                        placed += 1;
+                    }
+                    // Exhaustive on purpose — no `_` arm. `GoAction` is
+                    // Place|Pass today, so a catch-all is an UNREACHABLE
+                    // pattern (a warning the full gate counts), and if a third
+                    // variant is ever added this match should be a compile
+                    // ERROR here rather than a silently-ignored case.
+                    GoAction::Pass => {}
+                }
+            }
             assert!(
-                matches!(action, GoAction::Place(_, _)),
-                "{} returned Pass on empty board",
-                p.name()
+                placed * 100 >= SEEDS * MIN_PLACE_PCT,
+                "{} placed on only {placed}/{SEEDS} seeds (bar {MIN_PLACE_PCT}%) — a player                  that mostly passes hands the game away. PASS_PROBABILITY is 0.02, so ~98%                  is expected; a rate near 0 means the player is degenerate, not unlucky.",
+                pt.label()
             );
         }
     }

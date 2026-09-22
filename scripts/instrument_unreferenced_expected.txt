@@ -1,0 +1,41 @@
+# Tracked `scripts/**/*.py` that NO root and no documented instrument names,
+# pinned by MEMBERSHIP with a reason per row (Issue 787).
+#
+# Format, 2+ whitespace-separated fields:
+#
+#   <repo-relative path>   <reason>
+#
+# The reason is REQUIRED and the parser refuses a row without one: an exemption
+# nobody can adjudicate is worse than no exemption, and this file's entire job
+# is to hold judgement calls somebody made on purpose.
+#
+# ── reds in BOTH directions ─────────────────────────────────────────────────
+# A new unreachable script is a finding. A pinned row that became reachable is
+# a finding too — wire-up and row-removal belong in the same commit. A count
+# would go green the day one is documented and another is added.
+#
+# ⛔ The default for a real instrument is to make it FINDABLE, not to add a row
+# here. Two of the nine measured on 2026-09-14 were instruments and both were
+# wired into AGENTS.md instead of exempted:
+#
+#   list_unresolved_percentile_sites.py  -> the percentile section (it is the
+#                                           per-site-read input for the one
+#                                           bucket that audit never prints)
+#   citation_weight.py                   -> Numbering Discipline (it is how a
+#                                           duplicated number's owner is
+#                                           decided, and the by-name count is
+#                                           MEASURED to be the wrong one)
+#
+# "Reachable" is transitive: a helper invoked by a documented instrument needs
+# no row. HISTORY.md is NOT a root — it is the archive, it is not loaded into a
+# session, and an instrument findable only from it is the instrument that stops
+# being run (Issue 786 is the measured case).
+#
+# <path>                                  <reason>
+scripts/kimi_ref/dump_kda_internals.py    reference-implementation drop: dumps upstream Kimi KDA internals for a numeric A/B, run by hand against an external checkout
+scripts/kimi_ref/dump_layer0.py           reference-implementation drop: same harness, layer 0
+scripts/kimi_ref/dump_layer3.py           reference-implementation drop: same harness, layer 3
+scripts/kimi_ref/fla_stub.py              reference-implementation drop: import shim so the upstream reference runs without the real flash-linear-attention package
+scripts/kimi_ref/run_reference.py         reference-implementation drop: the driver the other four serve
+scripts/generate_npc_brain_model.py       manual CoreML generator (coremltools, macOS-only, not an audit): produces a model artifact, asserts nothing about this tree
+scripts/gguf_header_audit.py              model-file introspection, not a class audit — `1a5b6571` already records it as outside this family; it reads a GGUF a human points it at and has no population to floor

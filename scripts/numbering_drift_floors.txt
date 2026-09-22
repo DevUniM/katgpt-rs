@@ -4,7 +4,7 @@
 # here; deriving both from one walk is what makes a cross-repo gate permanently
 # green (the Issue 702 lesson, one instrument over).
 #
-# Format:  <repo>  <min_files>  <max_dup>  <max_above>  <max_malformed>
+# Format:  <repo>  <min_files>  <max_dup>  <max_above>  <max_malformed>  <max_resets>  <min_numbers>  <max_hist>
 #
 #   min_files      FLOOR over the ALLOCATOR-SERIAL dirs only
 #                  (.plans/.issues/.research/.proposals). Every other column is
@@ -19,6 +19,47 @@
 #   max_above      .highwater below its dir max: `value + 1` is already taken,
 #                  so the next allocation is GUARANTEED to collide.
 #   max_malformed  .highwater present but not a bare integer.
+#   max_resets     commits (or merge resolutions) whose counter value landed
+#                  below max(parent values) — Issue 770's per-commit-parent
+#                  walk. After `517→511` the re-climb re-spends numbers: the
+#                  never-reuse rule broken at counter granularity. A RATCHET
+#                  at the measured count — a NEW reset reds, the standing
+#                  history stays visible here. The unit is reset ROWS (one
+#                  commit each), NOT distinct incidents: `627→614 ×2` is two
+#                  commits, and one incident can surface as more than one
+#                  row (e.g. the lower-side resolution on a branch and again
+#                  at the merge that carries it). Lower a pin by the rows the
+#                  repair removes, never by the incidents you counted.
+#   min_numbers    FLOOR on the HISTORY walk (Issue 820) — distinct numbers
+#                  recovered by `git log -M --diff-filter=D` PLUS what is on
+#                  disk. It is NOT a second min_files and the two break
+#                  SEPARATELY, which is the whole reason both exist: min_files
+#                  counts tracked documents in the worktree, so a git-log
+#                  regression leaves it untouched while collapsing this one to
+#                  the on-disk count — and max_hist below then passes green
+#                  over a blind instrument. Pinned at ~85% of measured, the
+#                  min_files reasoning (numbers leave the walk only by a
+#                  history rewrite, so the slack is smaller).
+#   max_hist       numbers held by 2+ documents across HISTORY. A RATCHET at
+#                  the measured count, for max_dup's reasons below and one
+#                  more: 113 of the 183 are in repos this session does not own.
+#                  ⛔ This column is NOT a stricter max_dup — it is the class
+#                  max_dup CANNOT SEE. A document closed under the
+#                  noise-reduction rule is DELETED, so a collision where both
+#                  holders have closed leaves nothing in the worktree and
+#                  max_dup reads 0. Measured 2026-09-17: max_dup totalled 0
+#                  workspace-wide against 183 here. Never pool them.
+#
+# ── the UNMEASURED rows, and why their ceiling is 0 rather than something safe
+#
+# Seven repos are absent from this box (partial clone) and their two new
+# columns could not be measured. They carry `0 0` and say so on the row. The
+# min_numbers 0 is a floor that cannot fire and is disclosed as such; the
+# max_hist 0 will RED for any of them that has collisions, on the first
+# canonical-workstation run. That is deliberate and it is the lesser evil: a
+# ceiling invented to be comfortable is a ceiling that never fires, which is
+# this file's own stated failure mode one column up. Re-pin all seven from one
+# full-checkout run — the wasm32_surface_drift_floors TOTALS precedent.
 #
 # ── why max_dup is a ratchet at the measured value, not 0 ───────────────────
 #
@@ -26,12 +67,12 @@
 # (2026-09-05); ALL now resolved — riir-ai's 6 the same day (T4b), riir-clippy's
 # 4 via its Issue 069 (58e7c1d, owner go), riir-train's 13 via its Issue 514
 # (103ed351, hand reads overturned the UNDECIDABLE verdicts) — so the standing
-# backlog is 12 in seal-game-editor, which is READ-ONLY to these sessions
+# backlog is 12 in mmorpg-editor, which is READ-ONLY to these sessions
 # (report only). Resolving one is a citation-weight arbitration, not a rename:
 # Issue 724 T2's precedent is that the file with the most inbound mentions
 # KEEPS the number and the other moves to a fresh one, which requires reading
 # the corpus and updating every citation. Three of the four repos are owned by
-# other sessions and seal-game-editor is read-only to this one. A pin of 0
+# other sessions and mmorpg-editor is read-only to this one. A pin of 0
 # would red on landing and be ignored by the next reader — the failure mode
 # docs_gate.sh's preamble records. Pinned at measured, so a NEW collision reds
 # immediately while the standing backlog stays visible in this file instead of
@@ -40,27 +81,60 @@
 # LOWER a repo's pin in the commit that resolves one of its collisions. Never
 # raise one without the reason in the commit message.
 #
-# ── the zeros are load-bearing ─────────────────────────────────────────────
+# ── the zeros are load-bearing ──────────────────────────────────────────────
 #
 # max_above and max_malformed are 0 EVERYWHERE because all seven were repaired
 # in the sweep's landing commit (5 malformed + 2 stale). Those are one-line,
 # value-preserving repairs with no arbitration attached, so there is no reason
 # to tolerate a single one. A regression reds.
+#
+# ── max_resets: the 770 correction, and why the 769 numbers were wrong ─────
+#
+# The Issue-769 landing pinned resets from a walker that ordered ALL refs'
+# hunks by commit DATE around one `current`: 15 of its 31 rows named
+# FORWARD-stepping commits (phantoms from lineage interleaving — riir-chain's
+# entire ×4 and riir-train Issue's ×2 were phantoms), and it could not see
+# MERGE commits at all (`git log -p` emits no merge diffs), so its "all 31 are
+# non-merge stale-lineage writebacks" adjudication was true BY CONSTRUCTION.
+# The Issue-770 walk (verdict-review findings 1+2) judges every HEAD-reachable
+# commit against its OWN parents' blob values: merge resolutions taking the
+# lower side are now visible and correctly blamed (riir-ai Issue 627→614 at a
+# Merge commit; mmorpg-editor Plan 152→150 ×3 at merges). Corrected count:
+# 27 workspace-wide. Same doctrine as max_dup — the standing history is
+# COMMITTED (un-committing it rewrites every repo's past; the hazard was
+# absorbed by gap fast-forwards and push-wins renumbers; the max_dup column
+# proves no live file duplicates). A pin of 0 would red on landing for seven
+# repos and be ignored. The ratchet catches the NEXT one.
+#
+# The walk is HEAD-reachable only, never --all: pins are a function of the
+# branch the box carries, not of which refs happen to be fetched.
+#
+# ⛔ There is deliberately NO max_unbumped column (Issue 770 finding 4): the
+# worktree-below-history-max quantity is checkout state — mmorpg-editor's
+# bevy worktree reads 191 while other refs sit at 194 — a pin would be ref-set
+# dependent and red on a box that owes nothing. It is PRINTED by the sweep
+# every run, never gated.
 
-katgpt-rs           	795	0	0	0	# observed 2026-09-05: 994 files
-katgpt-web          	0	0	0	0	# observed 2026-09-05: 0 files (no .plans/.research yet)
-riir-ai             	493	0	0	0	# 2026-09-05: all 6 duplicates RESOLVED (Issue 725 T4b) — .plans 175->568, 182->567, 229->566, 313->569; .research 020->362, 148->363
-riir-auth           	0	0	0	0	# observed 2026-09-05: 0 files
-riir-chain          	48	0	0	0	# observed 2026-09-05: 60 files · .proposals allocator repaired 007->008
-riir-clippy         	183	0	0	0	# 2026-09-05: all 4 duplicates RESOLVED (Issue 069 T2, citation weight) — .plans 015->084, 026->085; .research 083->135, 086->136 · allocator repaired 78->80
-riir-dao            	3	0	0	0	# observed 2026-09-05: 4 files
-riir-dapps          	15	0	0	0	# observed 2026-09-05: 19 files
-riir-deployer        	4	0	0	0	# observed 2026-09-05: 5 files
-riir-esp32           	1	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content
-riir-game-sdk        	6	0	0	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
-riir-mmorpg-examples	28	0	0	0	# observed 2026-09-06: 36 files · malformed .issues allocator repaired 097 (adc8877, push-wins after a same-unit collision)
-riir-neuron-db      	37	0	0	0	# observed 2026-09-05: 47 files
-riir-train          	258	0	0	0	# 2026-09-05: all 13 duplicates RESOLVED (Issue 514, citation weight + hand reads + creation-order tie-breaks) — .plans 186 (ldt→377), 250 (d2f→379), 252 (wf→380), 253 (memory_soup→385), 255 (quant_robust→378), 264 (lclm_lora→381, lclm_rim→382, posterior_gpu→383), 267 (manifold_bake→386), 363 (chat_dflash2→384); .research 073 (and_or→448), 083 (code_lora→446), 084 (workflow→447), 086 (rat_plus→444, smt→445), 095 (lclm→443 · pushed 103ed351
-riir-viewbridge     	0	0	0	0	# observed 2026-09-05: 0 files
-seal-game-editor    	175	12	0	0	# observed 2026-09-05: 219 files · READ-ONLY to these sessions — report only
-seal-remake         	1	0	0	0	# observed 2026-09-05: 1 file
+katgpt-rs           	795	0	0	0	5	1200	71	# resets (770 walk): Issue 577→25 + Plan 572→526 + Bench 427→205 (the promote-to-main merge), 564→204, 585→584
+katgpt-web          	0	0	0	0	0	0	0	# observed 2026-09-05: 0 files (no .plans/.research yet)  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-ai             	493	0	0	0	9	1200	71	# resets: Issue 627→614 ×2 (one at a Merge), 763→762 + Bench ×6 (incl. 641→640 ×2, one at a Merge); 2026-09-05 dups RESOLVED (T4b)
+riir-auth           	0	0	0	0	0	0	0	# observed 2026-09-05: 0 files
+riir-chain          	0	0	0	0	0	180	6	# resets 0 under the 770 walk — the 769 walker's ×4 rows were ALL phantoms (forward bumps on diverged lineages); allocator repaired 007->008 2026-09-05
+riir-clippy         	183	0	0	0	5	350	3	# resets: Issue 82→81 + Research 57→54, 87→86 + Bench 16→13, 42→41; 2026-09-05 dups RESOLVED (Issue 069 T2)
+riir-dao            	3	0	0	0	0	0	0	# observed 2026-09-05: 4 files  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-dapps          	15	0	0	0	0	70	0	# observed 2026-09-05: 19 files
+riir-deployer        	4	0	0	0	0	0	0	# observed 2026-09-05: 5 files  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-esp32           	1	0	0	0	0	0	0	# observed 2026-09-09: 2 files (.issues/110_satellite_on_device_measurement + its allocator) — row added when the repo first carried tracked content  ⛔ min_numbers/max_hist UNMEASURED on this box (absent — partial clone); max_hist 0 reds on the canonical workstation BY DESIGN, demanding a measurement rather than inventing a ceiling that cannot fire
+riir-game-sdk        	6	0	0	0	0	33	0	# observed 2026-09-05: 8 files · 2 malformed allocators repaired
+riir-kat              	0	0	0	0	0	0	0	# observed 2026-09-12: 0 allocator-serial files
+riir-llm	0	0	0	0	0	0	0  # observed 2026-09-18: joined the workspace 2026-09-18; no numbered documents
+riir-mmorpg-examples	28	0	0	0	1	108	4	# reset: Plan (1) — first pinned under the 770 walk (invisible to the 769 one); malformed .issues allocator repaired 097 2026-09-06 (adc8877, push-wins)
+riir-neuron-db      	37	0	0	0	0	88	4	# observed 2026-09-05: 47 files  • max_hist 3→4 2026-09-19: .issues/621 ADJUDICATED as a real, unrepairable recycle — 621_artb_leaf_extraction (filed d4f1ac9, closed aa02669) then 621_large_d_naive_dots_844_read (filed 67735b4, closed 5d86dd3), the second allocated after the first was closed and REMOVED, which is why the worktree dup column reads 0 (Issues 795 + 820). Neither is renumberable — both files are deleted and the HISTORY records are all that survive — so the repair landed in the SIBLING as a heading disambiguation, riir-neuron-db ca71723, not as a renumber here
+riir-shader           	2	0	0	0	1	18	0	# reset: Issue 11→9; 2026-09-13 issues 011/013/014 resolved+removed per noise-reduction (floor was 3, observed 5 files 2026-09-12)
+riir-train          	258	0	0	0	2	440	11	# resets (770 walk): Bench 523→518, 570→569 — the 769 walker's other 8 rows (Issue ×2, Bench ×6) were phantoms; 2026-09-05 dups RESOLVED (Issue 514)
+riir-viewbridge     	0	0	0	0	0	6	0	# observed 2026-09-05: 0 files
+mmorpg-editor     	175	13	1	0	5	379	12	# Issue 842: first REAL measurement 2026-09-19 (314 files · 379 numbers) — the alias-mapped open used to measure nothing. max_above 0->1 (measured 1 stale allocator, READ-ONLY per owner rule); max_hist 0->12 (measured families: .plans 044×2, 061×3, 076×2, 132×2, 133×2, 154×2, 180×2, 241×2 — historical, pre-dating the numbering gate; renumber is the editor owners' repair, every bump here is a measured event, never a silent tolerance)  • 2026-09-19 (later the same day): the row above was measured on a checkout that sat BEHIND origin, so it was never true of the REPO — only of this box's stale view of it (Issue 798's class, reached by a PIN rather than by a finding). Re-measured after `git merge --ff-only`: resets 4→5 (.plans 243→242 @ f6ba32df68, a NEW reset that arrived with the 18 commits this box was missing)
+mmorpg-remaster   	49	0	0	0	0	72	5	# Issue 842: first REAL measurement 2026-09-19 (50 files · 72 numbers · hist 5: .issues 008×2, 009×2 families — historical; the renumber is the repo owners')  • 2026-09-19 (later the same day): the row above was measured on a checkout that sat BEHIND origin, so it was never true of the REPO — only of this box's stale view of it (Issue 798's class, reached by a PIN rather than by a finding). Re-measured after `git merge --ff-only`: min_files 50→49 — a legitimate closure under the noise-reduction rule (.issues/023 removed @ 49f6706, HISTORY record kept); the walk is NOT blind, nums holds at 72
+mmorpg-remake         	19	0	0	0	0	45	0	# Issue 842: first REAL measurement 2026-09-19 (21 files · 45 numbers · hist 0)  • 2026-09-19 (later the same day): the row above was measured on a checkout that sat BEHIND origin, so it was never true of the REPO — only of this box's stale view of it (Issue 798's class, reached by a PIN rather than by a finding). Re-measured after `git merge --ff-only`: min_files 21→19 — two legitimate closures (.issues/030 @ 156c373, /032 @ 1e3342c), HISTORY records kept; the walk is NOT blind, nums holds at 46
+riir-reflex       	0	0	0	0	0	0	0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth); the row was first pinned min_files=3 (the three .highwater seeds) and MEASURED 0 — the allocator-serial walk counts NUMBERED DOCUMENTS, not .highwater files (the riir-llm 0-row is the correct small-repo shape); re-pinned same session from the sweep's own measurement
+riir-infer        	0	0	0	0	0	0	0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired); no numbered documents yet (the riir-llm/reflex 0-row shape)

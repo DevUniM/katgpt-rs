@@ -1,0 +1,78 @@
+# Failing tests PINNED BY NAME for scripts/x86_64_execution_matrix.sh — Issue 806.
+#
+# Format: `<test name>  # reason`. A row with NO reason is REFUSED, not
+# accepted — a row nobody had to justify is a backlog wearing a pin (Issue
+# 785's rule). Reds in BOTH directions: a pinned test that PASSES now is
+# STALE and reds too, because a pin file that only ever loosens is not a wall.
+#
+# ── Why a membership set and not a count ────────────────────────────────────
+# *A set is gateable where its cardinality is not* — this repo's own rule, from
+# cfg_gated_floor_gate. A count is green on a swap: one row closing while
+# another opens reads as no change.
+#
+# ── Why there are rows here at all ──────────────────────────────────────────
+# The first full x86_64 run of the root integration cell (2026-09-16, 232
+# targets, 1509 assertions) was **0 correctness failures and 7 failing tests**,
+# and six of the seven are PERF BARS calibrated on the M3. Fixing them is not
+# this matrix's job and not a decision one machine can make; a gate that always
+# reds is a gate nobody runs (AGENTS.md's cries-wolf rule). The seventh is a
+# fixture-identity pin that needs the M3 to adjudicate.
+#
+# ⛔ Read the box conditions with every one of these: the run was taken while
+# four other agent sessions had cargo and clippy resident. AGENTS.md says a
+# gate whose verdict the box can invalidate should REFUSE — these rows are the
+# honest alternative for a cell that is 99% correctness assertions and 1%
+# latency bars, and the latency bars are the part to distrust.
+
+# ⛔ TWO ROWS CAME OUT ON THE VERY FIRST SCRIPTED RUN, and that is the finding,
+# not a bookkeeping detail. `bench_176_router_forward_cpu` (27.7% overhead) and
+# `g7_throughput_gain_over_plan_218_baseline` (-69.9%) both PASSED on a rerun of
+# the same commit on the same box an hour later, with fewer sibling agent
+# sessions resident — so they are **LOAD-SENSITIVE**, not x86_64-uncalibrated,
+# and pinning them would have written a box condition into a tracked file as if
+# it were a property of the code. The stale-pin wall is what caught it: a pin
+# file that only ever loosens would have kept both forever.
+#
+# ⛔ AND `g5_roaring_batch_speedup` came out on the FOURTH run, for the same
+# reason — it is the 0.00 µs / 0.00 µs row, so of course it is load-sensitive:
+# under load both arms fall below the clock granularity and the ratio is 0/0,
+# and alone they do not. Four runs of one commit produced four different
+# failing sets, which is why the script now RE-RUNS each failure alone before
+# adjudicating it. Only rows that fail TWICE reach this file.
+#
+# Read a future red on either as a BOX-CONDITIONS question first. AGENTS.md
+# says the same thing about its own docs-gate CPU figure — cite a number with
+# the load class it was measured under, or it carries a quiet-box premise onto
+# a busy box.
+#
+# RESOLVED 2026-09-16 (T6, the M3 run): t698_t5_kv_mean_gates was adjudicated
+# by arch-conditional dual pins (the same commit that removed this row) — the M3 run reproduces the pin
+# 23d0daab3f087159 (test green), this box measures 4d0b592740db9358, so the
+# fixture IS arch-dependent (Box-Muller libm ulps somewhere in the ~260k-draw
+# stream; the n_layer=1 t1 agreement covers too few divergent draws to see it).
+# The test passes on BOTH platforms now; the row left per the stale-pin rule.
+
+# ⛑ `g5_roaring_batch_speedup` is GONE from this file because the TEST was
+# fixed, not because the box got quiet. It oscillated TRANSIENT/CONFIRMED
+# across runs 4-6 and no pin could express that honestly. Its two measured
+# loops discarded their results (`let _count = …`), so in release LLVM deleted
+# both and the assertion divided 0 by 0 — the same defect as the llmexec_guard
+# benchmark this matrix found on the same day. With `black_box` on both sides
+# the measurement is real (roaring 2.6 ns/call vs linear 13 µs/call, ~5000×
+# against a 2× bar) and the test carries an UNMEASURED assertion above the
+# ratio, so a future elision reports "this measured nothing" instead of a
+# plausible 0.0× that sends the reader after the wrong thing.
+#
+# RESOLVED 2026-09-16 (T7, quiet-box calibration on the 4090 — both rows were
+# ISA-real, not load): proof_g3b_swar_speedup measured 4.49×/4.52× at +avx2
+# (load 3%) and 4.38× at +avx2,+fma — FMA does NOT close the gap, so the 5.0×
+# bar was a NEON number this ISA never calibrates to; landed as an
+# arch-conditional dual pin (aarch64 5.0×, x86_64 4.0×) in the same commit
+# that removed this row. t09_throughput_inv_sqrt_16x16 measured 80.5 µs quiet
+# at +avx2 (11.3 µs at +avx2,+fma — FMA closes most of the gap, but +fma
+# changes rounding, a bit-identity hazard for every other kernel, and is not
+# this matrix's knob to turn); landed as an arch-conditional absolute gate
+# (aarch64 10 µs, x86_64 100 µs — also clears the 88.7 µs loaded reading, so
+# a busy box does not red the cell). Both are the t698 T6 precedent. The
+# two-sided table lives in Bench 806's addendum.
+#

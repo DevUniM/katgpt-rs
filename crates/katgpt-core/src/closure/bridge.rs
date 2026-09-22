@@ -148,7 +148,7 @@ pub fn motif_embedding_to_tar_score(emb: &[f32]) -> f32 {
 /// downstream `K × N` projection absorbs the collision (each direction still
 /// gets a distinct linear combination).
 #[inline(always)]
-fn feature_index(p: PrimitiveKind, n: usize) -> usize {
+pub(crate) fn feature_index(p: PrimitiveKind, n: usize) -> usize {
     if n == 0 { 0 } else { (p.to_u32() as usize) % n }
 }
 

@@ -108,6 +108,34 @@ pub struct LshApproximateCache {
     bucket_bits: u32,
 }
 
+/// Deterministic seed for the LSH projection matrix (Issue 809 T3).
+///
+/// FNV-1a over the constructor's four configuration scalars — the same
+/// pattern as `vocab_channel_pruner::seed_from_input`. The only property it
+/// needs is that the same configuration yields the same projection stream;
+/// it is NOT a hash anybody should rely on for anything else.
+fn seed_from_config(
+    logit_dim: usize,
+    num_buckets: usize,
+    bucket_capacity: usize,
+    hamming_radius: u32,
+) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut h = OFFSET;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(PRIME);
+        }
+    };
+    feed(&(logit_dim as u64).to_le_bytes());
+    feed(&(num_buckets as u64).to_le_bytes());
+    feed(&(bucket_capacity as u64).to_le_bytes());
+    feed(&(u64::from(hamming_radius)).to_le_bytes());
+    h
+}
+
 impl LshApproximateCache {
     /// Create a new LSH cache.
     ///
@@ -115,6 +143,12 @@ impl LshApproximateCache {
     /// - `num_buckets`: number of LSH buckets (must be power of 2).
     /// - `bucket_capacity`: max entries per bucket before FIFO eviction.
     /// - `hamming_radius`: max Hamming distance for approximate hit.
+    ///
+    /// The ±1 projection — the LSH hash function itself — is seeded from the
+    /// configuration (Issue 809 T3): an unseeded draw made the same
+    /// constructor arguments produce different fingerprints every process,
+    /// so the GOAT-recorded capture rate (`tests/bfcf_lsh_cms_goat.rs` g2)
+    /// was not comparable across runs. Same config → same projection.
     pub fn new(
         logit_dim: usize,
         num_buckets: usize,
@@ -124,8 +158,14 @@ impl LshApproximateCache {
         let num_buckets = num_buckets.max(1).next_power_of_two();
         let bucket_bits = num_buckets.trailing_zeros();
 
-        // Random projection matrix: logit_dim × 64, entries ∈ {-1, +1}
-        let mut rng = fastrand::Rng::new();
+        // Random projection matrix: logit_dim × 64, entries ∈ {-1, +1},
+        // deterministic in the configuration (Issue 809 T3).
+        let mut rng = fastrand::Rng::with_seed(seed_from_config(
+            logit_dim,
+            num_buckets,
+            bucket_capacity,
+            hamming_radius,
+        ));
         let projection: Vec<[f32; 64]> = (0..logit_dim)
             .map(|_| {
                 let mut row = [0.0f32; 64];
@@ -545,5 +585,20 @@ mod tests {
             "Miss rate should be < 25%, got {:.1}%",
             miss_rate * 100.0
         );
+    }
+
+    /// Issue 809 T3: the ±1 projection is the LSH hash function — it must be
+    /// a function of the configuration, not of the process. Bit identity (not
+    /// a tolerance), and a different config must NOT reproduce it (so a
+    /// constant seed masquerading as input-derived cannot satisfy this).
+    #[test]
+    fn test_lsh_projection_is_config_deterministic() {
+        let fp = |c: &LshApproximateCache| c.projection.clone();
+        let a = fp(&LshApproximateCache::new(32, 16, 8, 4));
+        let b = fp(&LshApproximateCache::new(32, 16, 8, 4));
+        assert_eq!(a, b, "same config must give the identical projection");
+
+        let c = fp(&LshApproximateCache::new(32, 16, 8, 8));
+        assert_ne!(a, c, "a different config must give a different projection");
     }
 }

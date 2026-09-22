@@ -37,6 +37,7 @@ zero. That inheritance is asserted in `selftest()` below, not assumed.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -70,7 +71,7 @@ def read_lb_allow() -> set[str]:
     """
     allowed = {
         line.split("#", 1)[0].strip()
-        for line in LB_ALLOW_FILE.read_text().splitlines()
+        for line in LB_ALLOW_FILE.read_text(encoding="utf-8").splitlines()
     }
     allowed.discard("")
     if not allowed:
@@ -116,7 +117,7 @@ def check_membership(measured: set[str], allowed: set[str]) -> list[str]:
 def read_pins() -> dict[str, int]:
     """Committed expectations. A missing pin is an error, never a skip."""
     pins: dict[str, int] = {}
-    for raw in PINS_FILE.read_text().splitlines():
+    for raw in PINS_FILE.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
@@ -242,7 +243,11 @@ def run_auditor(script: Path) -> dict:
     proc = subprocess.run(
         [sys.executable, str(script), "--json", str(REPO_ROOT)],
         capture_output=True,
-        text=True,
+        encoding="utf-8", errors="replace",
+        # The CHILD's encoder matters too (Issue 778): this auditor prints
+        # `✓`/`⛔`, and on a non-UTF-8 box its own stdout write raises before
+        # anything reaches the pipe we just pinned.
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if proc.returncode != 0:
         raise SystemExit(
@@ -253,26 +258,31 @@ def run_auditor(script: Path) -> dict:
     return json.loads(proc.stdout)
 
 
-def measure() -> dict[str, int]:
-    """Both auditors, merged into one measurement dict."""
-    data = run_auditor(AUDITOR)
-    # Keyed by directory NAME, and the checkout directory is not guaranteed to
-    # be `katgpt-rs` (a fork, a worktree, a rename). Exactly one repo was
-    # requested, so exactly one row is the correct answer regardless of what it
-    # is called; anything else is refused rather than averaged.
+def sole_row(data: dict, label: str) -> dict:
+    """The ONE row an auditor must return for the ONE repo it was given.
+
+    Keyed by directory NAME, and the checkout directory is not guaranteed to
+    be `katgpt-rs` (a fork, a worktree, a rename). Exactly one repo was
+    requested, so exactly one row is the correct answer regardless of what it
+    is called; anything else is refused rather than averaged.
+
+    Extracted from `measure()` by Issue 790 T2, for the reason T4 found in
+    four other gates: the refusal arithmetic sat inline beside its own error
+    message and beside the `subprocess.run` that produces its input, so no arm
+    could reach it without spawning the auditor. It was also written twice.
+    """
     if len(data) != 1:
         raise SystemExit(
-            f"✗ auditor returned {len(data)} rows for one repo ({list(data)}) — "
+            f"✗ {label} returned {len(data)} rows for one repo ({list(data)}) — "
             "refusing to report a verdict over an ambiguous population"
         )
-    m = dict(next(iter(data.values())))
+    return next(iter(data.values()))
 
-    ig = run_auditor(IGNORE_AUDITOR)
-    if len(ig) != 1:
-        raise SystemExit(
-            f"✗ ignore auditor returned {len(ig)} rows for one repo ({list(ig)})"
-        )
-    igm = next(iter(ig.values()))
+
+def measure() -> dict[str, int]:
+    """Both auditors, merged into one measurement dict."""
+    m = dict(sole_row(run_auditor(AUDITOR), "auditor"))
+    igm = sole_row(run_auditor(IGNORE_AUDITOR), "ignore auditor")
     m["reasonless_targets"] = igm["reasonless_targets"]
     m["ignore_scanned"] = igm["scanned"]
     m["all_ignored"] = igm["all_ignored"]
@@ -327,6 +337,26 @@ def selftest() -> None:
     # report of all zeroes satisfies both ceilings.
     assert check({**ok, "reasonless_targets": 1}, pins), "a reasonless ignore passed"
 
+    # ⚑ …but AT THE BOUNDARY, added by Issue 790 T3. The `blind` fixture below
+    # drives every floor to 0, which a `<` and a `<=` both reject, so
+    # `arm_reach_audit` reported all three floor comparisons SURVIVING a
+    # `< -> <=` flip. A floor is only pinned by the two values either side of
+    # it: exactly AT the pin must pass, one BELOW must fail. Each floor is
+    # driven separately because a copy-paste reading one pin for two checks
+    # passes any test that moves them together.
+    for key, pin_key in (("scanned", "min_targets"),
+                         ("gated", "min_gated"),
+                         ("ignore_scanned", "min_ignore_targets")):
+        at = pins[pin_key]
+        assert check({**ok, key: at}, pins) == [], (
+            f"{key} exactly AT its floor {at} failed — a `<=` comparison reds "
+            f"the very value the pin declares acceptable"
+        )
+        assert check({**ok, key: at - 1}, pins), (
+            f"{key} one BELOW its floor {at} passed — the floor is written the "
+            f"wrong way round, and a shrinking population would read as clean"
+        )
+
     # The PROFILE dimension, both directions and both boundaries. Driven
     # separately because the two pins have DIFFERENT values (0 and 1), so a
     # copy-paste that reads one pin for both checks would still pass a
@@ -371,6 +401,71 @@ def selftest() -> None:
     # catching total death and not degradation.
     assert check({**ok, "gated": 399}, pins), "a degraded gate-recogniser passed"
 
+    # ⚑ The SILENT-NOW message carries the OVERSHOOT, and a wrong number there
+    # sends whoever reads it looking for the wrong quantity of new targets.
+    # Nothing asserted it: every arm above only tests whether `check` returned
+    # a non-empty list, so `arm_reach_audit` reported the `sn - pin`
+    # subtraction surviving an off-by-one flip (Issue 790 T3).
+    over = check({**ok, "silent_now": pins["max_silent_now"] + 5}, pins)
+    assert len(over) == 1 and "5 newly-added target(s)" in over[0], (
+        f"the SILENT-NOW overshoot is misreported: {over}"
+    )
+
+    # ── the pin READERS, added by Issue 790 T3 ──────────────────────────
+    # Every floor gate in this repo had an unarmed pin reader; this was the
+    # fifth found by one run of `arm_reach_audit`. The reader is load-bearing
+    # in the QUIET direction: a filter that drops a real row hands `check` a
+    # dict with a missing key, and a `KeyError` is the good case — the bad one
+    # is a REQUIRED_PINS check that passes on an incomplete file.
+    #
+    # ⚠ Note this file's grammar is `key value` (whitespace), NOT `key = value`
+    # like the other four. That difference is why the five readers were NOT
+    # unified: three distinct grammars, and merging them would have meant
+    # rewriting pin files to suit the refactor.
+    import tempfile
+    global PINS_FILE, LB_ALLOW_FILE
+    _pins_file, _lb_file = PINS_FILE, LB_ALLOW_FILE
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            PINS_FILE = Path(td) / "pins.txt"
+            rows = "\n".join(f"{k} {v}" for k, v in pins.items())
+            PINS_FILE.write_text(f"# a comment\n\n{rows}\n   \n", encoding="utf-8")
+            got = read_pins()
+            assert got == pins, (
+                f"read_pins parsed {got}, want {pins} — comments, blanks and "
+                f"whitespace-only lines must all be dropped and every real row kept"
+            )
+            # A file missing ONE required pin must refuse, not return a partial
+            # dict for `check` to KeyError on somewhere less legible.
+            PINS_FILE.write_text(rows.replace("min_targets 700", ""), encoding="utf-8")
+            try:
+                read_pins()
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError("read_pins ACCEPTED a file missing a required pin")
+
+            # read_lb_allow: an EMPTY allowlist is refused rather than read as
+            # a ceiling of zero (its own docstring's rule, unasserted until now).
+            LB_ALLOW_FILE = Path(td) / "lb.txt"
+            LB_ALLOW_FILE.write_text("# only a comment\n\n   \n", encoding="utf-8")
+            try:
+                read_lb_allow()
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError(
+                    "read_lb_allow ACCEPTED an empty allowlist — a deleted pin "
+                    "file would then pass only while the auditor is also broken, "
+                    "and the two failures would cancel"
+                )
+            LB_ALLOW_FILE.write_text("# a comment\n\nalpha\nbeta   # why\n",
+                                     encoding="utf-8")
+            got_lb = read_lb_allow()
+            assert got_lb == {"alpha", "beta"}, got_lb
+    finally:
+        PINS_FILE, LB_ALLOW_FILE = _pins_file, _lb_file
+
 
     # ── the membership check, both directions + the blindness case ──
     #
@@ -395,6 +490,32 @@ def selftest() -> None:
     assert check_membership({"tests/a_goat.rs", "tests/z_goat.rs"}, allow), (
         "a same-size membership SWAP passed — the pin is behaving like a count"
     )
+
+    # ── the one-row refusal (Issue 790 T2) ──────────────────────────────
+    #
+    # `sole_row` was inline in `measure()`, written twice, wedged between two
+    # `subprocess.run` calls — so no arm could reach it without spawning both
+    # auditors over the real tree, where the branch is unreachable by
+    # construction. Extracted, it arms in three lines. BOTH directions of
+    # "not exactly one" matter and they fail differently: ZERO rows is a
+    # blind auditor, and TWO is a population the gate would otherwise average
+    # over silently.
+    assert sole_row({"katgpt-rs": {"scanned": 1}}, "x") == {"scanned": 1}, (
+        "the sole row of a one-row payload was not returned"
+    )
+    for bad, why in (({}, "a BLIND auditor (zero rows)"),
+                     ({"a": {}, "b": {}}, "an AMBIGUOUS population (two rows)")):
+        try:
+            sole_row(bad, "x")
+            raise AssertionError(f"{why} was accepted as one repo")
+        except SystemExit:
+            pass
+    # The row must be returned VERBATIM: the checkout directory name is not
+    # guaranteed, so keying on anything but "there is exactly one" is wrong.
+    assert sole_row({"some-fork-name": {"gated": 7}}, "x") == {"gated": 7}, (
+        "the row was matched by repo NAME rather than by being the only one"
+    )
+
 
 def main() -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked

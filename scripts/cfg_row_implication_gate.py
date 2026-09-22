@@ -60,6 +60,104 @@ def read_pins(path: Path) -> dict[str, int]:
     return pins
 
 
+def pin_failures(measured: dict[str, int], pins: dict[str, int]) -> list[str]:
+    """The gate's VERDICT arithmetic, extracted so an arm can reach it.
+
+    Issue 790 T4. `cria.selftest()` runs first on every invocation and it is
+    the CLASSIFIER's arm — it cannot reach a line of this file, which is Issue
+    775's sentence and why `arm_reach_audit` reported all 12 of this module's
+    mutants as NO-ARM. The four comparisons were inline in `main` with their
+    messages, so the direction of each one was asserted by nothing: a ceiling
+    compared as a floor passes on every count, and a floor compared as a
+    ceiling passes on a walk that went blind — the exact failure the two floors
+    exist to catch.
+
+    The messages stay here with the arithmetic rather than in `main`: a reader
+    who needs to know why a floor is a floor needs it next to the comparison.
+    """
+    ceilings = {
+        "max_empty_at_row": ("empty_at_row", "EMPTY-AT-ROW", ""),
+        "max_unresolved": ("unresolved", "UNRESOLVED", ""),
+    }
+    floors = {
+        "min_rows_scanned": (
+            "rows_scanned", "rows scanned",
+            " — the manifest walk shrank, so both ceilings above are vacuous"),
+        "min_with_cfg": (
+            "with_cfg", "rows carry a leading #![cfg]",
+            " — the source scanner narrowed, so a green here is a green over nothing"),
+    }
+    out: list[str] = []
+    for key, (m_key, label, tail) in ceilings.items():
+        if measured[m_key] > pins[key]:
+            out.append(f"{label} {measured[m_key]} > pinned {pins[key]}{tail}")
+    for key, (m_key, label, tail) in floors.items():
+        if measured[m_key] < pins[key]:
+            out.append(f"only {measured[m_key]} {label} < floor {pins[key]}{tail}")
+    return out
+
+
+def gate_selftest() -> list[str]:
+    """Arms over THIS file's pin arithmetic, which `cria.selftest` cannot reach."""
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    pins = {"max_empty_at_row": 0, "max_unresolved": 2,
+            "min_rows_scanned": 700, "min_with_cfg": 400}
+    ok = {"empty_at_row": 0, "unresolved": 2, "rows_scanned": 710, "with_cfg": 479}
+
+    eq("the live shape passes", pin_failures(ok, pins), [])
+    # Each ceiling, one at a time: equal passes, over fails.
+    eq("a ceiling at its pin passes",
+       pin_failures({**ok, "unresolved": 2}, pins), [])
+    eq("a ceiling over its pin fails",
+       len(pin_failures({**ok, "unresolved": 3}, pins)), 1)
+    eq("the empty-at-row ceiling fails on ONE row",
+       len(pin_failures({**ok, "empty_at_row": 1}, pins)), 1)
+    # Each floor, one at a time: equal passes, under fails. A floor compared
+    # the wrong way is the blind-walk green these exist to prevent.
+    eq("a floor at its pin passes",
+       pin_failures({**ok, "rows_scanned": 700}, pins), [])
+    eq("a floor under its pin fails",
+       len(pin_failures({**ok, "rows_scanned": 699}, pins)), 1)
+    eq("the with-cfg floor is independent of the row floor",
+       len(pin_failures({**ok, "with_cfg": 399}, pins)), 1)
+    # A walk that collapses to nothing must red on BOTH floors, not neither.
+    eq("a fully blind walk fails both floors",
+       len(pin_failures({"empty_at_row": 0, "unresolved": 0,
+                         "rows_scanned": 0, "with_cfg": 0}, pins)), 2)
+    # The pin keys and the measured keys must stay in step.
+    eq("every REQUIRED_PIN is consumed by the arithmetic",
+       REQUIRED_PINS - set(ceiling_and_floor_keys()), set())
+
+    # read_pins: comments, blanks and whitespace. Nothing reached this — the
+    # `if not line: continue` skip survived a dropped-`not` mutation, which
+    # processes blank lines and skips real ones.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "pins.txt"
+        p.write_text("# a comment\n\n  max_unresolved = 2   # trailing\n"
+                     "min_with_cfg=400\n", encoding="utf-8")
+        eq("pins parse: comments, blanks and whitespace dropped",
+           read_pins(p), {"max_unresolved": 2, "min_with_cfg": 400})
+    return fails
+
+
+def ceiling_and_floor_keys() -> set[str]:
+    """The pin keys `pin_failures` actually compares against.
+
+    Named rather than inlined so `gate_selftest` can assert that every
+    REQUIRED_PIN is CONSUMED: a required pin nobody compares is a pin that
+    asserts nothing, and it reads as coverage — the same hazard
+    `percentile_floor_gate.pin_failures` now refuses for an undirected key.
+    """
+    return {"max_empty_at_row", "max_unresolved",
+            "min_rows_scanned", "min_with_cfg"}
+
+
 def main(argv: list[str]) -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked
     # 2026-09-06 on cp874: check/cross/middot/arrow FAIL, em-dash OK); keep the
@@ -73,6 +171,15 @@ def main(argv: list[str]) -> int:
     # The report's selftest exits 2 on its own; run it first so an
     # untrustworthy instrument is never mistaken for moved pins.
     cria.selftest()
+    # …and THIS file's own pin arithmetic, which that selftest cannot reach
+    # (Issue 775's sentence, Issue 790 T4).
+    arm_failures = gate_selftest()
+    if arm_failures:
+        print("✗ INSTRUMENT: cfg_row_implication_gate's own pin arithmetic does not "
+              "pass its arms, so the verdict below would be unreadable:")
+        for f in arm_failures:
+            print(f)
+        return 2
 
     if not FLOORS.is_file():
         print(f"✗ pins file missing: {FLOORS}")
@@ -90,21 +197,9 @@ def main(argv: list[str]) -> int:
     unres = sum(1 for f in found if f.verdict == cria.UNRESOLVED)
     with_cfg = sum(1 for f in found if f.verdict != cria.NO_CFG)
 
-    fails: list[str] = []
-    if empty > pins["max_empty_at_row"]:
-        fails.append(f"EMPTY-AT-ROW {empty} > pinned {pins['max_empty_at_row']}")
-    if unres > pins["max_unresolved"]:
-        fails.append(f"UNRESOLVED {unres} > pinned {pins['max_unresolved']}")
-    if n_rows < pins["min_rows_scanned"]:
-        fails.append(
-            f"only {n_rows} rows scanned < floor {pins['min_rows_scanned']} — "
-            f"the manifest walk shrank, so both ceilings above are vacuous"
-        )
-    if with_cfg < pins["min_with_cfg"]:
-        fails.append(
-            f"only {with_cfg} rows carry a leading #![cfg] < floor {pins['min_with_cfg']} — "
-            f"the source scanner narrowed, so a green here is a green over nothing"
-        )
+    fails = pin_failures(
+        {"empty_at_row": empty, "unresolved": unres,
+         "rows_scanned": n_rows, "with_cfg": with_cfg}, pins)
 
     if fails:
         print("✗ cfg-row-implication gate FAILED:")

@@ -229,7 +229,16 @@ pub fn newton_schulz5(g: &[f32], rows: usize, cols: usize, out: &mut [f32]) {
 /// per-call heap allocations when processing non-square matrices.
 ///
 /// Updates the momentum buffer: `m = β * m + grad`, then computes
-/// `update = newton_schulz5(m) * scaling` where `scaling = 1.0 / (rows as f32)`.
+/// `update = newton_schulz5(m) * √max(rows, cols)` — the RMS-1.0 step scale:
+/// the pre-LR update has RMS ≈ 1.0 at every shape, because the NS5 output of
+/// a full-rank `[rows, cols]` input has RMS `√(1/max(rows, cols))` (Moonlight,
+/// arXiv:2502.16982, Lemma 1). The Muon family's three conventions — Keller
+/// Jordan `√max(1, A/B)` (update RMS `√(1/D)` at square D×D), Moonlight
+/// `0.2·√max(A,B)` (RMS 0.2, matched to AdamW), and this crate's `√max(A,B)`
+/// (RMS 1.0, the same family as riir-train `muon_step_dense`) — differ only
+/// by constants the learning rate absorbs; a d-dependent deviation is NOT
+/// absorbable that way (riir-train Bench 492). Issue 851: was
+/// `1/max(rows, cols)` — a d-dependent D× deviation from all three.
 ///
 /// `grad` and `momentum` must have `rows * cols` elements.
 /// `out` receives the orthogonalized update (`rows * cols` elements).
@@ -253,8 +262,10 @@ pub fn muon_update(
     // Orthogonalize the momentum
     newton_schulz5(momentum, rows, cols, out);
 
-    // Scale by 1/max(rows, cols) — standard Muon scaling
-    let scale = 1.0 / (rows.max(cols) as f32);
+    // Scale by √max(rows, cols) — the RMS-1.0 step scale (Issue 851): the NS5
+    // output RMS is √(1/max(rows, cols)), so the product has RMS ≈ 1.0 at
+    // every shape (the Muon family convention; was 1/max — d-dependent).
+    let scale = (rows.max(cols) as f32).sqrt();
     crate::simd::simd_scale_inplace(out, scale);
 }
 
@@ -281,8 +292,10 @@ pub fn muon_update_into(
     // Orthogonalize the momentum (zero-alloc)
     newton_schulz5_into(momentum, rows, cols, out, scratch);
 
-    // Scale by 1/max(rows, cols) — standard Muon scaling
-    let scale = 1.0 / (rows.max(cols) as f32);
+    // Scale by √max(rows, cols) — the RMS-1.0 step scale (Issue 851): the NS5
+    // output RMS is √(1/max(rows, cols)), so the product has RMS ≈ 1.0 at
+    // every shape (the Muon family convention; was 1/max — d-dependent).
+    let scale = (rows.max(cols) as f32).sqrt();
     crate::simd::simd_scale_inplace(out, scale);
 }
 
@@ -1230,11 +1243,47 @@ mod tests {
         let mut out = vec![0.0f32; 64];
         muon_update(&grad, &mut momentum, 0.9, 8, 8, &mut out);
 
-        let off_diag = max_off_diagonal(&out, 8, 8);
+        // Scale-invariant orthogonality (Issue 851): the step scale is now
+        // √max(rows, cols), so an absolute Gram threshold would test the
+        // scale, not the geometry. Normalize the Gram by its mean diagonal
+        // first — the ratio is the orthogonality statement.
+        let mut gram = vec![0.0f32; 64];
+        matmul_xtx(&out, 8, 8, &mut gram);
+        let mean_diag = (0..8).map(|i| gram[i * 8 + i]).sum::<f32>() / 8.0;
+        let mut off_ratio = 0.0f32;
+        for i in 0..8 {
+            for j in 0..8 {
+                if i != j {
+                    off_ratio = off_ratio.max((gram[i * 8 + j] / mean_diag).abs());
+                }
+            }
+        }
         assert!(
-            off_diag < 0.2,
-            "Muon output should have small off-diagonal, max = {off_diag}"
+            off_ratio < 0.35,
+            "Muon output Gram off-diagonal/mean-diagonal = {off_ratio}"
         );
+    }
+
+    #[test]
+    fn test_muon_update_rms_one_invariant() {
+        // Issue 851 regression: the pre-LR update has RMS ≈ 1.0 at EVERY
+        // shape — the √max(rows, cols) step scale. NS5 maps singular values
+        // into ≈[0.68, 1.12] (Bench 050), so RMS(out) = √(mean sv²) lands in
+        // that band — not exactly 1.0. The old 1/max scale put it at
+        // max(rows, cols)^{-3/2} instead: d-dependent, the exact class
+        // riir-train Bench 492 measured as un-absorbable by an LR grid.
+        for (seed, rows, cols) in [(11u64, 64, 64), (12, 128, 64), (13, 64, 128)] {
+            let grad = seeded_random_matrix(seed, rows, cols);
+            let mut momentum = vec![0.0f32; rows * cols];
+            let mut out = vec![0.0f32; rows * cols];
+            muon_update(&grad, &mut momentum, 0.9, rows, cols, &mut out);
+            let sum_sq: f32 = out.iter().map(|v| v * v).sum();
+            let rms = (sum_sq / (rows * cols) as f32).sqrt();
+            assert!(
+                (0.68..=1.12).contains(&rms),
+                "{rows}×{cols}: update RMS {rms} outside the NS5 band [0.68, 1.12]"
+            );
+        }
     }
 
     #[test]

@@ -35,6 +35,25 @@ from bench_doc_audit import iter_cargo_manifests
 SWEEP = (r"\b(\d+)\+?\s+(?:[A-Za-z][\w-]*\s+){0,3}flags?\b"
          r"|\b(\d+)\+?\s+(?:[A-Za-z][\w-]*\s+){0,3}default(?:-on|\s+features)\b")
 
+# The RECOGNISED phrasings, with the field each capture group carries. One
+# canonical pair (total, default-on) is asserted everywhere it appears; a doc
+# wanting a different scope must add a named pattern here, which makes the new
+# quantity reviewable instead of silently authoritative. Anything SWEEP finds
+# and no pattern here covers is a hard failure, not a silent skip.
+#
+# Module-level since Issue 789: `selftest` asserts each pattern still matches
+# the shape it was written for, and a second copy of the list would be a second
+# thing to get wrong (Issue 755's rule, one file over).
+CLAIMS = [
+    (r"(\d+)\s+feature flags\s*\((\d+)\s+default-on", ("total", "default")),
+    (r"\*\*(\d+)\s+GOAT-proved default-on features\*\*\s*\((\d+)\s+total flags\)",
+     ("default", "total")),
+    (r"\*\*(\d+)\s+feature flags\*\*\s+with\s+\*\*(\d+)\s+default-on",
+     ("total", "default")),
+    (r"feature flag table\s*\((\d+)\s+flags\)", ("total",)),
+    (r"The full set\s*\((\d+)\s+flags\b", ("total",)),
+]
+
 
 def load_features(path: Path) -> tuple[set[str], set[str], dict[str, list[str]]]:
     """Return (default_on, all_flags, raw_map) for a Cargo.toml [features] table."""
@@ -55,6 +74,161 @@ def load_features(path: Path) -> tuple[set[str], set[str], dict[str, list[str]]]
     return default_on, all_flags, feats
 
 
+def line_of(text: str, idx: int) -> int:
+    """1-indexed line number of offset `idx` in `text`.
+
+    ONE copy since Issue 790 T3. There were two identical closures — `line_of`
+    inside the per-doc loop and `line_of_readme` below it — and
+    `arm_reach_audit` reported the `+ 1` in BOTH surviving an off-by-one flip,
+    because neither was reachable from any arm. The `+ 1` is the 0-to-1-indexed
+    conversion, and getting it wrong sends whoever reads a finding to the wrong
+    line: the "reported line is not the defect" hazard `markdown_fence_gate`'s
+    docstring warns about, one file over.
+    """
+    return text.count("\n", 0, idx) + 1
+
+
+def outside_parens(line: str) -> str:
+    """`line` with every parenthesised span removed, nesting-aware.
+
+    Only names OUTSIDE parentheses are entries in README's "Default features
+    include:" list. Inside them is commentary that legitimately backticks
+    non-default identifiers — "implies `engram`", "alias for
+    `sense_composition`", function names like `poincare_navigate_into`.
+    Counting those made the check demand that prose mentions be default-on,
+    which is not the rule.
+
+    Extracted from `main` by Issue 789 so the rule has one home and an arm can
+    reach it; `main` is the only caller.
+    """
+    depth, outside = 0, []
+    for ch in line:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        elif depth == 0:
+            outside.append(ch)
+    return "".join(outside)
+
+
+def selftest() -> list[str]:
+    """Known-answer arms over the three rules that decide this gate's verdict.
+
+    Issue 789. The module comments say SWEEP was "canaried at each widening"
+    and they are truthful about the history — but the canary was a person at a
+    terminal, so nothing re-ran it and a later narrowing would be silent. These
+    are the arms, and the inputs are the exact phrasings the comments record
+    having escaped: a regression to any earlier version of SWEEP reds here.
+
+    Pure string work plus one temp manifest — runs unconditionally in `main()`.
+    """
+    import tempfile
+
+    fails: list[str] = []
+
+    def eq(label, got, want):
+        if got != want:
+            fails.append(f"    {label}: got {got!r}, want {want!r}")
+
+    # ── SWEEP: an unrecognised claim-shaped number must NOT slip past ──────
+    def swept(text: str) -> list[str]:
+        return [m.group(0) for m in re.finditer(SWEEP, text)]
+
+    # The two measured escapes the widening was made for. A sweep that only
+    # recognises the shapes already in `claims` is decoration.
+    eq("'999 tunable flags' is claim-shaped", swept("999 tunable flags"),
+       ["999 tunable flags"])
+    eq("'999 default features' is claim-shaped", swept("999 default features"),
+       ["999 default features"])
+    eq("the plain shape", swept("320 flags"), ["320 flags"])
+    eq("the `+` suffix", swept("320+ total flags"), ["320+ total flags"])
+    eq("singular 'flag'", swept("1 flag"), ["1 flag"])
+    eq("'default-on' without 'features'", swept("140+ default-on"), ["140+ default-on"])
+    eq("three intervening words is the documented bound",
+       bool(swept("999 very oddly named flags")), True)
+    eq("FOUR intervening words is past the bound (and so unswept)",
+       swept("999 very oddly named extra flags"), [])
+    eq("a number with no claim noun is not claim-shaped", swept("320 crates"), [])
+    eq("a claim noun with no number is not claim-shaped",
+       swept("the flags are documented"), [])
+
+    # ── CLAIMS: each named pattern still matches the shape it was written for
+    # Indexed by POSITION and floored by length: a reordering that silently
+    # re-pairs a pattern with the wrong (total, default) field order is the
+    # bug this arm exists for, and it is invisible to a set comparison.
+    samples = [
+        ("568 feature flags (197 default-on)", ("568", "197"), ("total", "default")),
+        ("**197 GOAT-proved default-on features** (568 total flags)",
+         ("197", "568"), ("default", "total")),
+        ("**568 feature flags** with **197 default-on**",
+         ("568", "197"), ("total", "default")),
+        ("feature flag table (568 flags)", ("568",), ("total",)),
+        ("The full set (568 flags)", ("568",), ("total",)),
+    ]
+    eq("every CLAIMS row has a sample arm", len(CLAIMS), len(samples))
+    for (rx, fields), (sample, want_groups, want_fields) in zip(CLAIMS, samples):
+        m = re.search(rx, sample)
+        eq(f"CLAIMS pattern {rx[:34]!r}", m.groups() if m else None, want_groups)
+        eq(f"CLAIMS fields  {rx[:34]!r}", fields, want_fields)
+        # The pair must be READ in the pattern's declared order, which is what
+        # `zip(fields, m.groups())` does in `main`. 568 and 197 are not
+        # interchangeable, and two of the five rows declare them reversed.
+        if m:
+            eq(f"CLAIMS pairing {rx[:34]!r}",
+               dict(zip(fields, m.groups())),
+               {"total": "568", "default": "197"} if len(fields) == 2
+               else {"total": "568"})
+
+    # ── load_features: passthrough stripping and the `default` discard ─────
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "Cargo.toml"
+        p.write_text(
+            '[features]\n'
+            # `katgpt-core/default` is the realistic trigger for the `default`
+            # discard: the passthrough strip turns it into the literal name
+            # "default", which is not a flag. Without an entry of this shape
+            # the discard is unreachable and the arm reads INERT (measured).
+            'default = ["alpha", "katgpt-core/beta", "katgpt-core/default"]\n'
+            'alpha = []\n'
+            'beta = []\n'
+            'gamma = []\n', encoding="utf-8")
+        default_on, all_flags, _raw = load_features(p)
+        eq("a passthrough default entry is stripped to its feature name",
+           sorted(default_on), ["alpha", "beta"])
+        eq("`default` itself is not a flag", sorted(all_flags),
+           ["alpha", "beta", "gamma"])
+        eq("opt-in is the complement", sorted(all_flags - default_on), ["gamma"])
+
+        p.write_text("[package]\nname = \"x\"\n", encoding="utf-8")
+        eq("a manifest with no [features] table counts nothing",
+           load_features(p), (set(), set(), {}))
+
+    # ── outside_parens: commentary is not a list entry ────────────────────
+    eq("a parenthesised name is not a list entry",
+       sorted(re.findall(r"`([a-z0-9_]+)`",
+                         outside_parens("`alpha`, `beta` (implies `engram`)"))),
+       ["alpha", "beta"])
+    eq("nesting is tracked",
+       sorted(re.findall(r"`([a-z0-9_]+)`",
+                         outside_parens("`alpha` (a (`nested`) `inner`) `beta`"))),
+       ["alpha", "beta"])
+    eq("an unbalanced closer does not go negative and swallow the tail",
+       outside_parens("a) b"), "a b")
+
+    # ── line_of: the 0-to-1-indexed conversion ────────────────────────────
+    # ⚑ Issue 790 T3. This was two identical closures inside `main`, and the
+    # `+ 1` in both survived an off-by-one flip because no arm could reach
+    # either. A wrong line number sends the reader to the wrong line.
+    eq("offset 0 is line 1", line_of("a\nb\nc", 0), 1)
+    eq("an offset inside the first line is still line 1", line_of("ab\ncd", 1), 1)
+    eq("the offset just past the first newline is line 2", line_of("ab\ncd", 3), 2)
+    eq("the last line", line_of("a\nb\nc", 4), 3)
+    eq("a single-line text is line 1", line_of("no newlines here", 5), 1)
+
+    return fails
+
+
 def main() -> int:
     # Prints carry glyphs the Windows locale codecs cannot encode (checked
     # 2026-09-06 on cp874: check/cross/middot/arrow FAIL, em-dash OK); keep the
@@ -65,6 +239,16 @@ def main() -> int:
             _stream.reconfigure(errors="backslashreplace")
         except (AttributeError, ValueError):
             pass  # not a TextIOWrapper (embedded / detached); keep old behavior
+    # The canary first. SWEEP is what stops an unrecognised phrasing from
+    # passing silently, so a narrowed SWEEP does not produce a finding — it
+    # produces a green over claims nothing read (exit 2, not 1).
+    arm_failures = selftest()
+    if arm_failures:
+        print("✗ INSTRUMENT: count_features' own selftest does not pass, so the "
+              "claim check below would be unreadable:")
+        for f in arm_failures:
+            print(f)
+        return 2
     root = Path(__file__).resolve().parent.parent
     # EVERY workspace manifest, which is what the module docstring has always
     # claimed. It used to hardcode two (root + katgpt-core) and so measured a
@@ -137,15 +321,7 @@ def main() -> int:
     # reviewable instead of silently authoritative.
     docs = ["README.md", "examples/README.md"]
 
-    claims = [
-        (r"(\d+)\s+feature flags\s*\((\d+)\s+default-on", ("total", "default")),
-        (r"\*\*(\d+)\s+GOAT-proved default-on features\*\*\s*\((\d+)\s+total flags\)",
-         ("default", "total")),
-        (r"\*\*(\d+)\s+feature flags\*\*\s+with\s+\*\*(\d+)\s+default-on",
-         ("total", "default")),
-        (r"feature flag table\s*\((\d+)\s+flags\)", ("total",)),
-        (r"The full set\s*\((\d+)\s+flags\b", ("total",)),
-    ]
+    claims = CLAIMS
 
     failures: list[str] = []
     total_sites = 0
@@ -158,16 +334,13 @@ def main() -> int:
             continue
         text = path.read_text(encoding="utf-8")
 
-        def line_of(idx: int, _t: str = text) -> int:
-            return _t.count("\n", 0, idx) + 1
-
         covered: list[tuple[int, int]] = []
         sites = 0
         for rx, fields in claims:
             for m in re.finditer(rx, text):
                 sites += 1
                 covered.append(m.span())
-                ln = line_of(m.start())
+                ln = line_of(text, m.start())
                 for field, raw in zip(fields, m.groups()):
                     got = int(raw)
                     mark = "✓" if got == expect[field] else "✗"
@@ -189,7 +362,7 @@ def main() -> int:
             if any(a <= m.start() < b for a, b in covered):
                 continue
             failures.append(
-                f"{rel}:{line_of(m.start())} unrecognised flag-count phrasing "
+                f"{rel}:{line_of(text, m.start())} unrecognised flag-count phrasing "
                 f"{m.group(0)!r} — add it to `claims` or reword it; NOT checked")
 
     print(f"  … {total_sites} claim site(s) recognised across {len(docs)} doc(s)")
@@ -205,29 +378,16 @@ def main() -> int:
     # it is computable and therefore assertable.
     readme_text = (root / "README.md").read_text(encoding="utf-8")
 
-    def line_of_readme(idx: int) -> int:
-        return readme_text.count("\n", 0, idx) + 1
 
     dm = re.search(r"Default features include:(.*)", readme_text)
     if not dm:
         failures.append("README.md: 'Default features include:' block not found "
                         "— the list check silently covers nothing")
     else:
-        line, ln = dm.group(1), line_of_readme(dm.start())
-        # Only names OUTSIDE parentheses are list entries. Inside them is
-        # commentary that legitimately backticks non-default identifiers —
-        # "implies `engram`", "alias for `sense_composition`", function names
-        # like `poincare_navigate_into`. Counting those made the check demand
-        # that prose mentions be default-on, which is not the rule.
-        depth, outside = 0, []
-        for ch in line:
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth = max(0, depth - 1)
-            elif depth == 0:
-                outside.append(ch)
-        toks = set(re.findall(r"`([a-z0-9_]+)`", "".join(outside)))
+        line, ln = dm.group(1), line_of(readme_text, dm.start())
+        # Parenthesised commentary is not a list entry — rule and rationale at
+        # `outside_parens`, which Issue 789 extracted so an arm can reach it.
+        toks = set(re.findall(r"`([a-z0-9_]+)`", outside_parens(line)))
         listed_default = toks & grand_default
         listed_optin = (toks & grand_total) - grand_default
         if listed_optin:

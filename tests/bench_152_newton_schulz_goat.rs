@@ -396,14 +396,43 @@ fn goat_t3_1_muon_output_8x8() {
     muon_update(&grad, &mut momentum, 0.9, 8, 8, &mut out);
 
     // After momentum accumulation + orthogonalization + scaling,
-    // the output should be approximately orthogonal
-    let err = orthogonality_error(&out, 8, 8);
-    println!("T3.1: Muon 8×8 output orthogonality error = {err:.6e}");
-    // Scaling doesn't change the orthogonality ratio, so same threshold applies
-    // But momentum accumulation means the input to NS is not the raw gradient
+    // the output should be approximately orthogonal. Issue 851 made the
+    // step scale √max(rows, cols) (RMS-1.0), so an absolute Gram-vs-identity
+    // check would test the scale, not the geometry — normalize the Gram by
+    // its mean diagonal. The momentum accumulation means the input to NS is
+    // not the raw gradient (first step from zero momentum: it is).
+    let mut gram = vec![0.0f32; 64];
+    for i in 0..8 {
+        for j in 0..8 {
+            let mut dot = 0.0f32;
+            for k in 0..8 {
+                dot += out[i * 8 + k] * out[j * 8 + k];
+            }
+            gram[i * 8 + j] = dot;
+        }
+    }
+    let mean_diag = (0..8).map(|i| gram[i * 8 + i]).sum::<f32>() / 8.0;
+    let mut err = 0.0f32;
+    for i in 0..8 {
+        for j in 0..8 {
+            let expected = if i == j { mean_diag } else { 0.0 };
+            err = err.max((gram[i * 8 + j] - expected).abs() / mean_diag);
+        }
+    }
+    println!("T3.1: Muon 8×8 normalized orthogonality error = {err:.6e}");
     assert!(
-        err < 1.0,
-        "Muon output should be approximately orthogonal, max error = {err}"
+        err < 0.35,
+        "Muon output should be approximately orthogonal (normalized), max error = {err}"
+    );
+
+    // The RMS-1.0 contract (Issue 851): pre-LR update RMS inside the NS5
+    // singular-value band [0.68, 1.12] (Bench 050) at any shape.
+    let sum_sq: f32 = out.iter().map(|v| v * v).sum();
+    let rms = (sum_sq / 64.0).sqrt();
+    println!("T3.1: Muon 8×8 update RMS = {rms:.4} (NS5 band [0.68, 1.12])");
+    assert!(
+        (0.68..=1.12).contains(&rms),
+        "Muon update RMS should be ≈1.0 within the NS5 band, got {rms}"
     );
 }
 

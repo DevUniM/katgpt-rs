@@ -9,10 +9,8 @@
 pub struct BoundaryPenalty {
     /// Weight of the boundary penalty in draft scoring.
     pub penalty_weight: f32,
-    /// Quantization scale factor (e.g., max_abs / quant_levels).
+    /// Quantization scale factor (e.g., max_abs / 256 for INT8).
     pub quant_scale: f32,
-    /// Number of quantization levels (e.g., 256 for INT8).
-    pub quant_levels: u32,
     /// Epsilon: how close to a boundary counts as "near boundary".
     pub boundary_epsilon: f32,
 }
@@ -22,7 +20,6 @@ impl Default for BoundaryPenalty {
         Self {
             penalty_weight: 0.1,
             quant_scale: 1.0 / 127.0,
-            quant_levels: 256,
             boundary_epsilon: 0.05,
         }
     }
@@ -43,11 +40,14 @@ struct BoundaryInvariants {
 }
 
 impl BoundaryPenalty {
-    pub fn new(quant_levels: u32, quant_scale: f32) -> Self {
+    /// `quant_scale` is the grid step (e.g., `max_abs / 127.0` for a symmetric
+    /// INT8 grid). The level count is implicit in the scale — the boundary
+    /// math reads only `quant_scale`/`boundary_epsilon` (Issue 772 B5 removed
+    /// the never-read `quant_levels` mirror).
+    pub fn new(quant_scale: f32) -> Self {
         Self {
             penalty_weight: 0.1,
             quant_scale,
-            quant_levels,
             boundary_epsilon: 0.05,
         }
     }
@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn test_boundary_proximity_on_grid() {
-        let bp = BoundaryPenalty::new(256, 1.0 / 127.0);
+        let bp = BoundaryPenalty::new(1.0 / 127.0);
         // Value exactly on quantization grid
         let on_grid = bp.boundary_proximity(0.0);
         // Should be low (not near boundary)
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_boundary_proximity_at_boundary() {
-        let bp = BoundaryPenalty::new(256, 1.0 / 127.0);
+        let bp = BoundaryPenalty::new(1.0 / 127.0);
         // Value at midpoint between grid points
         let half = bp.quant_scale * 0.5;
         let at_boundary = bp.boundary_proximity(half);
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let bp = BoundaryPenalty::default();
-        assert_eq!(bp.quant_levels, 256);
+        assert!((bp.quant_scale - 1.0 / 127.0).abs() < 1e-9);
         assert!(bp.penalty_weight > 0.0);
     }
 }

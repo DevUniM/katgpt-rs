@@ -1,6 +1,6 @@
 # Proposal 008 — KARC `karc_forecaster` compute-unblock: path revisit + the `faer` option Issue 186 missed
 
-Status: **draft (analysis + recommendation; no implementation)**
+Status: **ANALYSIS COMPLETE — its open question resolved within a day, by promotion** (Bench 308 Phase 5.2: K=10 threshold 7.36 LT — the 8.5 LT extrapolation was WRONG, plateau confirmed; Phase 5.3: R=1 NRMSE capacity ceiling). The gate was re-specified (Issue 186 Path D3, split-config) and `karc_forecaster` promoted to DEFAULT-ON 2026-07-21 (Cargo.toml Phase 22). **Issue 866 coverage audit COMPLETE 2026-09-22 — VERDICT QUALIFY** ([Bench 849](../.benchmarks/849_karc_deployed_shape_quality.md)): both D3 passing legs sit on Chebyshev configs no consumer constructs; every deployed shape is Fourier R=1 and fails both D3 bars on the D3 fixture; no riir-engine runtime gate substitutes (none measures absolute forecast accuracy); the deployed consumer's own quality record is one-step NRMSE 1.2–4.1e-3 at the deployed λ=1e-4 (one-step from observed rings is what `tick_karc` exercises — never autonomous rollout). No DEMOTE (consumer-relevant properties are separately gated); no promotion change; `faer` (Path E) stays DEFERRED conditional on a second heavy-BLAS consumer (trigger still unmet — audited as part of Issue 866 T2).
 Branch: `develop` (per global rule — no feature branches)
 Owner: unassigned
 Fusion of: [Issue 186](../.benchmarks/308_karc_goat.md) §Phase 5 (Path A–D deliberation, Path B chosen + shipped) × [Issue 187](../.benchmarks/308_karc_goat.md) §Phase 5 (parallelization + actual G1 measurement — supersedes 186's compute framing) × commit `c0830d12` (λ-sweep — recovers NRMSE, threshold 10% short, structural) × prior-art survey (faer / OxiBLAS / LAPACK thread-safety)
@@ -60,7 +60,7 @@ Has the K=10/M=8/R=2 experiment (sibling WIP, d_h=29_160) been run?
             YES ──→ Promote `karc_forecaster` + `karc_householder_eig_par` to default-on.
             │        (Path B is already shipped; no new eigensolver needed.) DONE.
             │
-            NO ──→ Is there a riir-ai consumer (civ NPC, seal-core) that accepts ~7-7.5 LT
+            NO ──→ Is there a riir-ai consumer (civ NPC, mmorpg-core) that accepts ~7-7.5 LT
                    threshold with the λ=5e-2 NRMSE-quality forecast?
                     │
                     YES ──→ Path D2 (gate re-spec) with consumer evidence.

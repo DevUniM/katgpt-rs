@@ -57,6 +57,14 @@ from ci_gate_coverage import (  # noqa: E402
     reachable_triggers,
 )
 
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 GIT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # ── Vocabulary (data, exhaustive) ────────────────────────────────────────────
@@ -144,7 +152,7 @@ def test_sites(repo_dir: Path) -> int:
         if SKIP_DIRS & set(p.parts):
             continue
         try:
-            n += len(TEST_ATTR.findall(p.read_text(errors="replace")))
+            n += len(TEST_ATTR.findall(p.read_text(errors="replace", encoding="utf-8")))
         except OSError:
             continue
     return n
@@ -235,7 +243,7 @@ def selftest() -> None:
     # function and this selftest failed on its first run, which is the point.
     # Pin the COMPOSITION, since that is what the report is downstream of.
     import tempfile
-    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False) as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False, encoding="utf-8") as fh:
         fh.write("# run cargo test --workspace here\n"
                  "  # cargo nextest run --workspace\n"
                  "        run: cargo clippy --workspace\n")

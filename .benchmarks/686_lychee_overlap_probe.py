@@ -604,7 +604,7 @@ def main():
 
     print(json.dumps(s1, indent=2))
     if args.json_out:
-        with open(args.json_out, "w") as f:
+        with open(args.json_out, "w", encoding="utf-8") as f:
             json.dump(s1, f, indent=2)
 
 

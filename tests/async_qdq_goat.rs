@@ -4,6 +4,12 @@
 
 use katgpt_kv::async_qdq::{AsyncQdqScheduler, DoubleBuffer};
 
+// Issue 855: the load-invariant timing treatment. `best_of_us` panics on an
+// all-zero reading instead of letting a ceiling be satisfied by a loop the
+// optimiser deleted.
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 #[test]
 fn test_double_buffer_swap_latency() {
     let size = 128 * 128; // realistic chunk: 128 tokens × 128 dim
@@ -15,14 +21,38 @@ fn test_double_buffer_swap_latency() {
     }
     db.mark_shadow_ready();
 
-    let start = std::time::Instant::now();
-    for _ in 0..10_000 {
-        db.mark_shadow_ready();
-        db.swap();
-    }
-    let elapsed = start.elapsed();
+    // Issue 855: the previous loop called `db.mark_shadow_ready(); db.swap();`
+    // 10 000 times and read neither result — `swap()` returns a bool nobody
+    // consumed and `db` is dead after the loop — so rustc deleted the whole
+    // timed region. `ns` read **0**, and the < 10 000 ns ceiling below passed
+    // with maximum margin on work that never ran. `best_of_us` FAILS loudly on
+    // an all-zero reading; the swap verdict and the swapped-in buffer are both
+    // consumed through `black_box`. The bar below is unchanged, and the total
+    // timed iteration count is raised from 10 000 to 100 000.
+    //
+    // ⛔ The `black_box(&mut db)` receiver is NOT decoration. A sink alone was
+    // measured insufficient here: an even number of `mem::swap`es over the same
+    // two buffers is the identity and `swapped` is a constant, so LLVM folded
+    // the round away again and this still printed `0ns`. Making the receiver
+    // opaque per iteration is what forces each swap to happen.
+    const ROUNDS: usize = 10;
+    const ITERS: usize = 10_000;
 
-    let ns = elapsed.as_secs_f64() * 1e9 / 10_000.0;
+    let best_us = ab_timing::best_of_us(2, ROUNDS, || {
+        let mut swapped = 0usize;
+        let t0 = std::time::Instant::now();
+        for _ in 0..ITERS {
+            let d = std::hint::black_box(&mut db);
+            d.mark_shadow_ready();
+            swapped += d.swap() as usize;
+        }
+        let e = t0.elapsed();
+        std::hint::black_box(swapped);
+        std::hint::black_box(db.active()[0]);
+        e
+    });
+
+    let ns = best_us * 1000.0 / ITERS as f64;
     eprintln!("Double-buffer swap latency: {ns:.0}ns");
 
     // Swap should be < 100ns (just a pointer swap)

@@ -57,13 +57,13 @@ fn g4_zero_alloc_steady_state() {
     // Warm-up (any lazy growth settles).
     for _ in 0..3 {
         let _ = estimate_interval(&dz, 0.1, 0.9, m, 0.1, &mut rng, &mut scratch);
-        bernoulli_unmask_with_grid(&dz, &[0.2, 0.5, 0.8], &mut rng, &mut scratch, &mut out);
+        bernoulli_unmask_with_grid(&dz, &[0.2, 0.5, 0.8], &mut rng, &mut scratch, &mut out, None);
     }
 
     let a0 = ALLOC_COUNT.load(Ordering::Relaxed);
     for _ in 0..50 {
         let _ = estimate_interval(&dz, 0.1, 0.9, m, 0.1, &mut rng, &mut scratch);
-        bernoulli_unmask_with_grid(&dz, &[0.2, 0.5, 0.8], &mut rng, &mut scratch, &mut out);
+        bernoulli_unmask_with_grid(&dz, &[0.2, 0.5, 0.8], &mut rng, &mut scratch, &mut out, None);
     }
     let delta = ALLOC_COUNT.load(Ordering::Relaxed) - a0;
     eprintln!("G4: {delta} allocations across 50 estimate_interval + 50 sampler calls");

@@ -22,6 +22,10 @@ mod asymmetric;
 mod batch;
 #[cfg(feature = "dllm")]
 mod diffusion;
+// Plan 602 T3.1: the AR-ness × w cross-tab callable for the bench-doc /
+// G3-gate tests (the module itself stays private like its siblings).
+#[cfg(feature = "decode_order_metrics")]
+pub use diffusion::bench_ar_ness_w_sweep;
 mod distillation;
 mod games;
 mod heuristic;

@@ -113,6 +113,12 @@ pub struct LodestarAutomaton {
     /// Singular-span length per state (number of forced tokens until a real branch).
     /// Precomputed at build time — zero allocation on hot paths.
     singular_spans: Vec<u32>,
+    /// Per-state legal token sets (Issue 841). The dense `transitions` table
+    /// answers δ(s, t) in O(1) and "which t are legal in s" only in
+    /// O(vocab_size) — a row scan, which is the cost the legal-set seam
+    /// exists to remove. Built once here, read O(deg) forever after.
+    #[cfg(feature = "legal_token_set")]
+    legal: katgpt_core::legal_token_set::CsrLegalSet,
     vocab_size: usize,
     n_states: usize,
     start_state: usize,
@@ -153,6 +159,16 @@ impl LodestarAutomaton {
             Some(&ns) if ns != NO_EDGE => Some(ns),
             _ => None,
         }
+    }
+
+    /// The per-state legal-token index (Issue 841).
+    ///
+    /// Reading a legal set off `transitions` costs a `vocab_size` row scan;
+    /// this costs O(deg). Opt-in (`legal_token_set`).
+    #[cfg(feature = "legal_token_set")]
+    #[inline]
+    pub fn legal_set(&self) -> &katgpt_core::legal_token_set::CsrLegalSet {
+        &self.legal
     }
 
     /// Whether `state` is accepting (a complete, valid output ends here).
@@ -287,11 +303,20 @@ impl LodestarAutomatonBuilder {
             self.n_states,
             self.vocab_size,
         );
+        #[cfg(feature = "legal_token_set")]
+        let legal = katgpt_core::legal_token_set::CsrLegalSet::from_dense(
+            &self.transitions,
+            self.n_states,
+            self.vocab_size,
+            NO_EDGE,
+        );
         LodestarAutomaton {
             transitions: self.transitions,
             accept_states: self.accept_states,
             distances,
             singular_spans,
+            #[cfg(feature = "legal_token_set")]
+            legal,
             vocab_size: self.vocab_size,
             n_states: self.n_states,
             start_state: self.start_state,
@@ -470,6 +495,23 @@ impl LodestarPruner {
     fn current_state(&self, parent_tokens: &[usize]) -> usize {
         self.automaton.follow_path(parent_tokens)
     }
+
+    /// The budget half of `is_valid`, for an edge already known to exist.
+    ///
+    /// One rule, one place: the legal-set enumeration and `is_valid` must
+    /// agree on every token or the exactness contract breaks, and two
+    /// transcriptions of a predicate are two chances to disagree.
+    #[cfg(feature = "legal_token_set")]
+    #[inline]
+    fn fits_budget(&self, state: usize, token: usize, budget_remaining: usize) -> bool {
+        match self.automaton.transition(state, token) {
+            Some(next) => match self.automaton.distance(next) {
+                UNREACHABLE => false,
+                d => (1 + d as usize) <= budget_remaining,
+            },
+            None => false,
+        }
+    }
 }
 
 impl ConstraintPruner for LodestarPruner {
@@ -529,6 +571,57 @@ impl ConstraintPruner for LodestarPruner {
                 }
                 None => true,
             };
+        }
+    }
+
+    /// O(deg(s)) — the CSR row, filtered by the same budget rule
+    /// [`is_valid`](ConstraintPruner::is_valid) applies.
+    ///
+    /// ⛔ The budget filter is not optional here. `is_valid` rejects a token
+    /// whose successor cannot still complete in the remaining steps, so a
+    /// degree taken from the raw transition row would be a SUPERSET of the
+    /// legal set — and the contract says the caller does not re-filter. The
+    /// filter keeps the walk O(deg): one `distance` lookup per legal edge,
+    /// never per vocabulary entry.
+    #[cfg(feature = "legal_token_set")]
+    fn legal_degree(&self, depth: usize, parent_tokens: &[usize]) -> Option<usize> {
+        let state = self.current_state(parent_tokens);
+        let row = self.automaton.legal_set().row(state);
+        let Some(budget) = self.budget else {
+            return Some(row.len());
+        };
+        let Some(br) = budget.checked_sub(depth + 1) else {
+            return Some(0);
+        };
+        let n = row
+            .iter()
+            .filter(|&&t| self.fits_budget(state, t as usize, br))
+            .count();
+        Some(n)
+    }
+
+    /// Ascending by construction — the CSR row is sorted, and the budget
+    /// filter is order-preserving.
+    #[cfg(feature = "legal_token_set")]
+    fn for_each_legal(&self, depth: usize, parent_tokens: &[usize], f: &mut dyn FnMut(usize)) {
+        let state = self.current_state(parent_tokens);
+        let row = self.automaton.legal_set().row(state);
+        let br = match self.budget {
+            None => {
+                for &t in row {
+                    f(t as usize);
+                }
+                return;
+            }
+            Some(budget) => match budget.checked_sub(depth + 1) {
+                Some(br) => br,
+                None => return,
+            },
+        };
+        for &t in row {
+            if self.fits_budget(state, t as usize, br) {
+                f(t as usize);
+            }
         }
     }
 }
@@ -1284,6 +1377,369 @@ mod tests {
             assert_eq!(a.token_idx, b.token_idx);
             assert_eq!(a.parent_path, b.parent_path);
             assert!((a.score - b.score).abs() < 1e-6, "scores should match");
+        }
+    }
+}
+
+// ── Legal-set enumeration arms (Issue 841) ─────────────────────────────
+
+#[cfg(all(test, feature = "legal_token_set"))]
+mod legal_set_tests {
+    use super::*;
+    use katgpt_core::legal_token_set::{ProjectionPlan, RestrictionPolicy, plan_projection};
+
+    /// A branchier DFA than the chain fixtures above: several states with
+    /// different degrees, a dead state, and a token that is legal in one
+    /// state and not another — so an enumeration that ignored `state` or
+    /// ignored the budget would be visibly wrong rather than coincidentally
+    /// right.
+    fn branchy(vocab: usize) -> LodestarAutomaton {
+        let mut b = LodestarAutomaton::builder(vocab, 5, 0);
+        b.add_transition(0, 1, 1);
+        b.add_transition(0, 4, 2);
+        b.add_transition(0, vocab - 1, 3);
+        b.add_transition(1, 0, 4);
+        b.add_transition(2, 2, 4);
+        b.add_transition(2, 3, 4);
+        // state 3 is a long tail: reachable, but its completion distance is
+        // larger, which is what the budget arm bites on.
+        b.add_transition(3, 5 % vocab, 2);
+        b.add_accept(4);
+        b.build()
+    }
+
+    /// The contract, over the FULL product of states and tokens: the
+    /// enumerated set must equal the set a vocabulary scan of `is_valid`
+    /// produces, in the same order.
+    fn assert_agrees(pruner: &LodestarPruner, vocab: usize, depth: usize, parents: &[usize]) {
+        let mut enumerated = Vec::new();
+        pruner.for_each_legal(depth, parents, &mut |t| enumerated.push(t));
+        let scanned: Vec<usize> = (0..vocab)
+            .filter(|&t| pruner.is_valid(depth, t, parents))
+            .collect();
+        assert_eq!(
+            enumerated, scanned,
+            "depth {depth} parents {parents:?}: enumeration must equal the scan"
+        );
+        assert_eq!(
+            pruner.legal_degree(depth, parents),
+            Some(enumerated.len()),
+            "degree must match the yield count"
+        );
+        assert!(
+            enumerated.windows(2).all(|w| w[0] < w[1]),
+            "must be strictly ascending: {enumerated:?}"
+        );
+    }
+
+    #[test]
+    fn t21_unbudgeted_enumeration_equals_the_vocab_scan_everywhere() {
+        let vocab = 16;
+        let pruner = LodestarPruner::new(branchy(vocab));
+        for parents in [
+            vec![],
+            vec![1],
+            vec![4],
+            vec![vocab - 1],
+            vec![1, 0],
+            vec![2],
+        ] {
+            for depth in 0..4 {
+                assert_agrees(&pruner, vocab, depth, &parents);
+            }
+        }
+    }
+
+    #[test]
+    fn t22_budgeted_enumeration_equals_the_vocab_scan_everywhere() {
+        // ⛔ The arm that would catch a degree read off the raw transition
+        // row: under a budget `is_valid` admits a strict SUBSET of the
+        // edges, and the caller does not re-filter.
+        let vocab = 16;
+        for budget in 0..6 {
+            let pruner = LodestarPruner::with_budget(branchy(vocab), budget);
+            for parents in [vec![], vec![1], vec![4], vec![vocab - 1], vec![1, 0]] {
+                for depth in 0..4 {
+                    assert_agrees(&pruner, vocab, depth, &parents);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn t23_a_budget_that_has_already_run_out_enumerates_nothing() {
+        let vocab = 8;
+        let pruner = LodestarPruner::with_budget(branchy(vocab), 1);
+        // depth 3 with budget 1 => checked_sub underflows => no legal token.
+        assert_eq!(pruner.legal_degree(3, &[]), Some(0));
+        let mut seen = Vec::new();
+        pruner.for_each_legal(3, &[], &mut |t| seen.push(t));
+        assert!(seen.is_empty());
+        assert!((0..vocab).all(|t| !pruner.is_valid(3, t, &[])));
+    }
+
+    #[test]
+    fn t24_a_forced_state_plans_to_skip_the_projection() {
+        let vocab = 32_768;
+        let pruner = LodestarPruner::new(branchy(vocab));
+        // State 1 (reached by token 1) has exactly one outgoing edge.
+        let plan = plan_projection(
+            pruner.legal_degree(0, &[1]),
+            vocab,
+            &RestrictionPolicy::default(),
+        );
+        assert_eq!(plan, ProjectionPlan::Forced);
+        assert_eq!(plan.rows_scored(vocab), 0);
+    }
+
+    #[test]
+    fn t25_a_real_vocabulary_grammar_plans_a_gather_not_a_dense_pass() {
+        let vocab = 32_768;
+        let pruner = LodestarPruner::new(branchy(vocab));
+        let plan = plan_projection(
+            pruner.legal_degree(0, &[]),
+            vocab,
+            &RestrictionPolicy::default(),
+        );
+        assert_eq!(plan, ProjectionPlan::Restricted { degree: 3 });
+        // The whole point, as an accounting statement.
+        assert_eq!(plan.rows_scored(vocab), 3);
+    }
+
+    #[test]
+    fn t26_a_dead_state_is_dead_not_unenumerable() {
+        let vocab = 8;
+        let pruner = LodestarPruner::new(branchy(vocab));
+        // State 4 is accepting with no outgoing edges.
+        let degree = pruner.legal_degree(0, &[1, 0]);
+        assert_eq!(degree, Some(0));
+        let plan = plan_projection(degree, vocab, &RestrictionPolicy::default());
+        assert_eq!(plan, ProjectionPlan::Dead);
+        assert!(!plan.is_unenumerable());
+    }
+
+    #[test]
+    fn t27_the_index_is_smaller_than_the_dense_table_at_a_real_vocabulary() {
+        let vocab = 32_768;
+        let a = branchy(vocab);
+        let dense_bytes = size_of::<usize>() * a.n_states() * a.vocab_size();
+        assert!(
+            a.legal_set().memory_bytes() * 1000 < dense_bytes,
+            "csr {} vs dense {dense_bytes}",
+            a.legal_set().memory_bytes()
+        );
+    }
+}
+
+// ── The A/B that proves bit-identity (Issue 841) ───────────────────────
+
+/// One binary, both paths. A feature flag can only give you one arm per
+/// build, so the scan path is reached here by a WRAPPER that hides the
+/// enumeration — `legal_degree` returns `None`, which is exactly the state of
+/// every pruner that has not opted in. Everything else delegates, so the two
+/// runs differ in the dispatch and in nothing else.
+#[cfg(all(test, feature = "legal_token_set"))]
+mod legal_set_equivalence {
+    use super::*;
+    use katgpt_core::traits::NoPruner;
+    use katgpt_speculative::dd_tree::build_dd_tree_lodestar;
+    use katgpt_types::Config;
+
+    struct ScanOnly<'a>(&'a LodestarPruner);
+
+    impl ConstraintPruner for ScanOnly<'_> {
+        fn is_valid(&self, depth: usize, token_idx: usize, parent_tokens: &[usize]) -> bool {
+            self.0.is_valid(depth, token_idx, parent_tokens)
+        }
+        // legal_degree / for_each_legal deliberately LEFT AT THE DEFAULT:
+        // that is the whole point of this wrapper.
+    }
+
+    impl CompletionHorizon for ScanOnly<'_> {
+        fn min_completion_distance(
+            &self,
+            depth: usize,
+            token_idx: usize,
+            parent_tokens: &[usize],
+        ) -> u32 {
+            self.0.min_completion_distance(depth, token_idx, parent_tokens)
+        }
+        fn singular_span_len(&self, depth: usize, parent_tokens: &[usize]) -> u32 {
+            self.0.singular_span_len(depth, parent_tokens)
+        }
+    }
+
+    /// A branching grammar over a 64-token alphabet with a deliberate forced
+    /// span, so both the ordinary expansion and the jump-ahead walk are
+    /// exercised.
+    fn grammar(vocab: usize) -> LodestarAutomaton {
+        let mut b = LodestarAutomaton::builder(vocab, 6, 0);
+        // state 0 branches three ways...
+        b.add_transition(0, 3, 1);
+        b.add_transition(0, 11, 2);
+        b.add_transition(0, vocab - 2, 3);
+        // ...state 1 is a forced chain 1 -> 4 -> 5 (jump-ahead territory).
+        b.add_transition(1, 7, 4);
+        b.add_transition(4, 8, 5);
+        // state 2 branches two ways into the accept state.
+        b.add_transition(2, 1, 5);
+        b.add_transition(2, 2, 5);
+        // state 3 is a longer tail.
+        b.add_transition(3, 9, 2);
+        b.add_accept(5);
+        b.build()
+    }
+
+    /// A deterministic, non-uniform marginal — a flat one would make several
+    /// orderings agree by accident.
+    fn marginals(seq_len: usize, vocab: usize) -> Vec<Vec<f32>> {
+        (0..seq_len)
+            .map(|d| {
+                (0..vocab)
+                    .map(|t| {
+                        let x = ((d * 31 + t * 17) % 101) as f32;
+                        // A few exact zeros, so the `prob > 0.0` guard is live
+                        // on both paths rather than vacuous.
+                        match t % 13 {
+                            0 => 0.0,
+                            _ => (x + 1.0) / 1000.0,
+                        }
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Returns the node count, so a caller sweeping a parameter can assert
+    /// the sweep was not vacuous WITHOUT demanding that every cell be
+    /// non-empty — at a tight budget an empty tree is the correct answer, and
+    /// tuning the guard away is how a vacuous sweep gets to look green.
+    fn assert_identical(
+        pruner: &LodestarPruner,
+        cfg: &Config,
+        lode: &LodestarConfig,
+        vocab: usize,
+    ) -> usize {
+        let owned = marginals(6, vocab);
+        let m: Vec<&[f32]> = owned.iter().map(|v| v.as_slice()).collect();
+        let fast = build_dd_tree_lodestar(&m, cfg, pruner, lode);
+        let slow = build_dd_tree_lodestar(&m, cfg, &ScanOnly(pruner), lode);
+        assert_eq!(fast.len(), slow.len(), "node count");
+        for (i, (a, b)) in fast.iter().zip(slow.iter()).enumerate() {
+            assert_eq!(a.depth, b.depth, "node {i} depth");
+            assert_eq!(a.token_idx, b.token_idx, "node {i} token");
+            assert_eq!(a.parent_path, b.parent_path, "node {i} path");
+            // BIT-identical, not approximately equal: the ascending-order
+            // clause of the contract exists so the f32 accumulation is the
+            // same accumulation, and a tolerance here would hide its loss.
+            assert_eq!(
+                a.score.to_bits(),
+                b.score.to_bits(),
+                "node {i} score: {} vs {}",
+                a.score,
+                b.score
+            );
+        }
+        fast.len()
+    }
+
+    #[test]
+    fn t28_enumerated_tree_is_bit_identical_to_the_scanned_tree() {
+        let vocab = 64;
+        let mut cfg = Config::draft();
+        cfg.tree_budget = 48;
+        let n = assert_identical(
+            &LodestarPruner::new(grammar(vocab)),
+            &cfg,
+            &LodestarConfig::default(),
+            vocab,
+        );
+        assert!(n > 0, "fixture must actually build a tree");
+    }
+
+    #[test]
+    fn t29_bit_identical_under_jump_ahead_and_astar() {
+        // Jump-ahead reaches `find_forced_token`, which is the third call
+        // site the dispatch replaced and the one with early-exit semantics.
+        let vocab = 64;
+        let mut cfg = Config::draft();
+        cfg.tree_budget = 48;
+        for lode in [
+            LodestarConfig {
+                jump_ahead: true,
+                astar_lambda: 0.0,
+            },
+            LodestarConfig::thinking(0.1),
+            LodestarConfig {
+                jump_ahead: true,
+                astar_lambda: 0.25,
+            },
+        ] {
+            let n = assert_identical(&LodestarPruner::new(grammar(vocab)), &cfg, &lode, vocab);
+            assert!(n > 0, "fixture must actually build a tree");
+        }
+    }
+
+    #[test]
+    fn t30_bit_identical_under_a_pruner_budget() {
+        // The budget filter runs inside the enumeration on the fast path and
+        // inside `is_valid` on the slow one — the two most likely places for
+        // the sets to diverge.
+        let vocab = 64;
+        let mut cfg = Config::draft();
+        cfg.tree_budget = 48;
+        let mut total = 0usize;
+        for budget in [2usize, 3, 4, 6, 12] {
+            // Budget 2 admits nothing from the start state and is KEPT: the
+            // empty-vs-empty cell is the one where a wrong enumeration is
+            // easiest to miss, and the sweep total is what guards vacuity.
+            total += assert_identical(
+                &LodestarPruner::with_budget(grammar(vocab), budget),
+                &cfg,
+                &LodestarConfig {
+                    jump_ahead: true,
+                    astar_lambda: 0.1,
+                },
+                vocab,
+            );
+        }
+        assert!(total > 0, "the budget sweep built no tree at any budget");
+    }
+
+    #[test]
+    fn t31_an_unenumerable_horizon_still_takes_the_scan() {
+        // The default hooks must keep every pre-existing consumer on the old
+        // path — the regression this dispatch could most easily cause.
+        let vocab = 32;
+        let mut cfg = Config::draft();
+        cfg.tree_budget = 16;
+        let owned = marginals(4, vocab);
+        let m: Vec<&[f32]> = owned.iter().map(|v| v.as_slice()).collect();
+        let tree = build_dd_tree_lodestar(&m, &cfg, &NoPruner, &LodestarConfig::default());
+        assert_eq!(NoPruner.legal_degree(0, &[]), None);
+        assert_eq!(tree.len(), cfg.tree_budget.min(tree.len()));
+        assert!(!tree.is_empty());
+    }
+
+    #[test]
+    fn t32_a_marginal_shorter_than_the_alphabet_is_bounded_on_both_paths() {
+        // The legal set is a property of the GRAMMAR; it says nothing about
+        // how long this position's marginal is. An unguarded `marginal[i]`
+        // would panic here on the fast path and not on the slow one.
+        let vocab = 64;
+        let pruner = LodestarPruner::new(grammar(vocab));
+        let short: Vec<f32> = (0..8).map(|t| (t as f32 + 1.0) / 100.0).collect();
+        let owned = vec![short; 4];
+        let m: Vec<&[f32]> = owned.iter().map(|v| v.as_slice()).collect();
+        let mut cfg = Config::draft();
+        cfg.tree_budget = 16;
+        let lode = LodestarConfig::default();
+        let fast = build_dd_tree_lodestar(&m, &cfg, &pruner, &lode);
+        let slow = build_dd_tree_lodestar(&m, &cfg, &ScanOnly(&pruner), &lode);
+        assert_eq!(fast.len(), slow.len());
+        for (a, b) in fast.iter().zip(slow.iter()) {
+            assert_eq!(a.token_idx, b.token_idx);
+            assert_eq!(a.score.to_bits(), b.score.to_bits());
         }
     }
 }

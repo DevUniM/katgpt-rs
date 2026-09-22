@@ -108,7 +108,9 @@ fn linear(input: &[f32], weight: &[f32], bias: &[f32], out_dim: usize, output: &
 /// - Output: `h_{t+1} = h_t + FC3(...)` (residual connection)
 ///
 /// For Config::micro (n_embd=16): ~1.5K params. For Config::bpe (n_embd=32): ~6K params.
-#[derive(Debug)]
+/// Clone (Issue 865 T2): the probe_artifact wire wraps the class and derives
+/// Clone; all fields are plain data so the derive is trivially safe.
+#[derive(Clone, Debug)]
 pub struct LatentDynamicsMLP {
     pub n_embd: usize,
     pub norm_weight: Vec<f32>, // [2 * n_embd]

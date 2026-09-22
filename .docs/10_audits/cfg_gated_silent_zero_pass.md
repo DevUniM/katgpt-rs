@@ -522,3 +522,154 @@ reader: whether a green zero is *cited as evidence* is decided by
 the name" are indistinguishable **from inside the report** — riir-game-sdk's
 31 read as churn and 11 were not. A vocabulary widening is a report-changing
 event even when every count it prints stays still.
+
+## The SECOND spelling — `#[cfg(feature)] mod` as the whole body (Issue 856, closed 2026-09-19, file removed)
+
+Everything above is about **one** spelling. A file whose entire body is
+
+```rust
+#[cfg(feature = "x")]
+mod tests { … }
+```
+
+produces a byte-identical outcome — empty binary, `ok. 0 passed`, exit 0 — and
+`cfg_gated_target_audit` could not see it. Its predicate was one regex,
+`INNER_CFG`, whose comment reads *"`#![cfg(...)]` only — `#![allow]`, `#![doc]`
+etc. are not gates"*. Read that carefully: it distinguishes `#![cfg]` from
+*other inner attributes*. It never decided anything about the
+outer-attribute-on-a-module form. **An UNSTATED blind spot, not a scoped
+exclusion** — which is the worse of the two, because a stated exclusion is
+re-readable and this one was invisible to every later reader, this document
+included.
+
+Found 2026-09-19 by the Issue 833 T2 per-target read:
+`cargo test --release --test test_122_toast_goat` printed `running 0 tests`,
+exit 0, in the middle of a run whose whole subject was reading the printed
+value next to the bar. The audit's own summary line for this repo said
+**`SILENT-NOW 0`** — the most reassuring cell in the table.
+
+**Fix commits:** `4e2f28f2d` (classifier + the 12 rows + AGENTS.md) ·
+`6399faf69` (the x86_64 floor check). Siblings: seal-remake `964e780`,
+seal-game-editor `fbb5a931`.
+
+### Measured, katgpt-rs
+
+| column | before | after |
+|---|---|---|
+| gated | 615 | **641** (+26) |
+| SILENT-NOW | **0** | **12** (7 load-bearing) |
+| latent (default-on) | 98 | 105 |
+| `any()` | 1 | 5 |
+| w/ req-f | 515 | 518 → 530 after the rows |
+
+The twelve armed rows hold **11+6+13+6+10+9+21+19+22+12+20+26 = 175
+assertions** that had been reporting `ok. 0 passed` to anyone who invoked the
+target by name. Seven of the twelve are `*_goat`/`goat_*`, i.e. the thing this
+repo promotes features on.
+
+### The predicate, and the three things it had to get right
+
+**"The gated items are the WHOLE body", never "a `#[cfg] mod` exists".** The
+second reads as the obvious widening and is the cries-wolf one — a file with
+live `#[test]` fns outside a gated helper module is not zeroed. That negative
+is not hypothetical: `tests/test_freeze_thaw.rs` carries four gated modules
+**and an ungated `#[test] fn frozen_struct_sizes_reasonable` at line 302**, so
+a plain `cargo test --test test_freeze_thaw` runs ONE test. It was inside the
+filing session's own list of opt-in targets; the classifier says 14 rather
+than 15, and the classifier is right.
+
+Two extensions past "one mod", both reached by MEASUREMENT — 6 of the 27
+candidates needed them:
+
+1. **A RUN of gated modules is gated by `any(...)`, never `all(...)`.** The
+   binary empties only when EVERY module is gated out. `all()` would have
+   produced a wrong `required-features` row, which this repo calls strictly
+   worse than a missing one. Four targets land in `any_of` — the class cargo's
+   AND-only `required-features` genuinely cannot express — and NOT in the
+   fixable list.
+2. **A top-level `use` never makes a target non-empty**, because it cannot
+   carry a `#[test]`. `tests/bench_dflare_modelless.rs` opens with nine
+   individually-gated `use` lines, and a mod-only predicate rejects it for an
+   item that can never be the reason a binary has tests.
+   ⚠ STATED cost, pinned as an arm: an ungated non-`use`, non-test item (a
+   helper `fn`, a `const`) still makes the file read NOT-zeroed. That
+   UNDER-reports and never cries wolf, which is the direction this report
+   chooses everywhere.
+
+⛔ **The first cut returned `None` for EVERY file and looked exactly like the
+defect it was repairing.** The module matcher was anchored `\A` and handed a
+non-zero `pos`; `pattern.match(s, pos)` anchors at `pos` already, and a `\A`
+in the pattern still means the start of the STRING. It was caught because the
+summary line **did not move** — gated still 615 — not because anything failed.
+The arm that pins it carries a `//!` preamble, since every real specimen opens
+with one and the zero-offset form matched fine.
+
+Every new rule is a canary, verified by perturbation rather than asserted:
+`any(`→`all(` reds the run arm; accepting a sibling item reds the
+ungated-`#[test]` negative; dropping the `use` skip reds the use-preamble arm;
+removing the fall-through reds the headline arm.
+
+### The same predicate was owed to a SECOND instrument
+
+`cfg_row_implication_audit` — the check for a row that EXISTS and is WRONG —
+carried its own private `#![cfg]` reader and would have checked **none** of
+the twelve new rows. Shipping the repair in one instrument and not the family
+is this workspace's most-repeated failure, so it shares `whole_body_cfg_mod`
+now (515 → 529 rows with a readable leading cfg), with `any(...)` deliberately
+excluded: a disjunction REQUIRES no single feature, so reading one there would
+invent a finding demanding features the row must not name.
+
+### Verification is BY THE COMPILER, in both directions
+
+Neither static gate can tell *"names a feature that exists"* from *"names the
+feature that gates the module"*. So each of the twelve was run:
+
+- WITH its feature it BUILDS and lists a non-zero test count (the 175 above).
+- WITHOUT it cargo **REFUSES by name** — `error: target … requires the
+  features` — instead of printing the green zero. That second half is the
+  whole purpose of the row and the half no static pass can see.
+
+### The floors moved exactly as predicted, and NEITHER was re-pinned
+
+`cfg_gated_floor_gate` went red on `max_silent_now` and `max_load_bearing`;
+the twelve rows took both back to 0 on the **original** pins.
+`scripts/cfg_gated_floors.txt` is unchanged.
+
+The binary-COUNTING consequence lands one instrument over and was **checked
+rather than assumed**: `scripts/x86_64_execution_matrix.sh`'s integration cell
+will report **220** targets instead of 232 (cargo skips a target whose
+features are unmet and stops printing its `Running` line), while
+`__root_tests_passed` is untouched because every one of the twelve was an
+empty binary contributing 0 assertions. `__root_tests_targets` is 139 and
+139 < 220 with room, so nothing reds and nothing is re-pinned — which is also
+the right answer on principle, since that gate refuses off x86_64 and a floor
+edited from a box that cannot run it is a floor nobody measured. The expected
+shift is recorded beside the rows in `scripts/x86_64_matrix_floors.txt`.
+
+### Cross-repo: read per repo, repaired where it breached, NAMED where it did not
+
+| repo | gated | SILENT-NOW | standing |
+|---|---|---|---|
+| mmorpg-editor (`seal-game-editor`) | 0 → 1 | 0 → **1** | breached its pin — repaired, `fbb5a931` |
+| mmorpg-remake (`seal-remake`) | 12 → 13 | 2 → **3** | breached its pin — repaired, `964e780` |
+| riir-ai | 619 → 624 | 1 → **4** | absorbed by a pre-existing ratchet of 76 — NAMED, not re-pinned |
+| riir-train | 316 → 318 | 1 → 1 | no new finding |
+| everyone else | unchanged | unchanged | — |
+
+⚠ The `seal-game-editor` repair landed on `feature/assigned-shader-preview`,
+the branch that repo was checked out on while two sibling sessions worked in
+it; switching branches under them would have been the worse disruption.
+
+riir-ai's three, named so the ratchet does not swallow them unread:
+`crates/riir-engine/tests/cgsp_rewind_recovery_poc.rs`
+(`cgsp_rewind_recovery`), `crates/riir-games/tests/bench_cold_tier.rs`
+(`turso_cold`), and `crates/riir-gpu/tests/bench_171_t27_profiling.rs` +
+`bench_171_t34_speculative.rs` (both `cubecl_runtime, gpu_decode_fusion` —
+worth checking for the `any_of` shape before a row is written). Owner call in
+that repo. No ceiling was raised anywhere.
+
+⛔ The filing session's cross-repo figure — 35 target files, 9 across 5
+siblings — was a **text census**; the classifier's answer over the same
+population is **8 newly-gated targets in 4 siblings, 5 of them SILENT-NOW**.
+That is the distinction the filing itself asked for (*"do not read 9 as 9
+defects"*), and measuring it confirmed the direction.

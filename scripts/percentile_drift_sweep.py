@@ -67,7 +67,9 @@ untrustworthy** — an unreliable instrument is not the same finding as drift.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -76,6 +78,9 @@ sys.path.insert(0, str(HERE))
 # the sweep, the per-push gate and the report can never disagree about what a
 # DEGENERATE site is.
 import percentile_index_audit as pia  # noqa: E402
+from sweep_population import open_repo, population_verdict, pin_row_exempt  # noqa: E402
+from worktree_state import (  # noqa: E402
+    deferral_line, head_delta, ordinal_keys, sweep_advisory)
 
 REPO_ROOT = HERE.parent
 WORKSPACE = REPO_ROOT.parent
@@ -87,6 +92,73 @@ LOCAL_PINS = HERE / "percentile_floors.txt"
 
 FIELDS = ("min_rs_files", "min_sites", "max_degenerate",
           "max_degenerate_asserted", "max_weak_asserted", "max_trunc_var")
+
+
+
+# The four GATED classes, in one place: the pin loop, the tally and the Issue
+# 822 split all iterate this rather than each restating it.
+GATED = ("degenerate", "degenerate_asserted", "weak_asserted", "trunc_var")
+
+
+def keyed(got: dict) -> list:
+    """`[(key, cls, row)]` over the four gated classes, keys LINE-FREE.
+
+    ⛔ The rows are `file:line`, and any edit above a site shifts the line — a
+    line-bearing key reports EVERY row in an edited file as UNCOMMITTED *and*
+    MASKED at once. So the address is `(file, class, kind, source text)`, with
+    an ORDINAL for the case that survives it: the same shape twice in one file.
+    The ordinal is scoped to the whole address, so a new site renumbers nothing.
+
+    ⚠ `degenerate_asserted` is a SUBSET of `degenerate`, so a row appears under
+    two classes by design. The class is part of the address for exactly that
+    reason — pooling them would make one row's ordinal depend on the other's
+    presence, and a row that stops being `asserted` would then look like it
+    moved.
+
+    The ordinal itself is `worktree_state.ordinal_keys`, shared with the rest
+    of the family; only the ADDRESS is this sweep's own. ⚠ `line_free` is
+    deliberately NOT called: these rows carry no `"<lineno>: "` prefix — the
+    address takes `r["text"]`, already the bare source line — so calling it
+    would be a no-op that reads as though a prefix were being stripped.
+    """
+    flat = [(cls, r) for cls in GATED for r in got[cls]]
+    return [(key, cls, r) for key, (cls, r) in ordinal_keys(
+        flat, lambda t: (t[1]["file"].replace(chr(92), "/"), t[0],
+                         t[1]["kind"], t[1]["text"]))]
+
+
+def head_sites(walk: set):
+    """`head_delta`'s per-file reclassifier for the four ceilings.
+
+    Per-file row independence holds: `audit_text` is a line scan over ONE
+    file's source, and `resolve_n` looks only inside that same text. `walk` is
+    the sweep's own population — `fnmatch`'s `*` crosses `/`, so the scope glob
+    admits paths `walk_rs` excludes, and a row invented there reads as MASKED,
+    a hard red nobody can repair.
+    """
+
+    def rescan(rel: str, src: str | None) -> list:
+        # None = absent from HEAD (staged but never committed): nothing
+        # committed to classify, so the worktree's row is UNCOMMITTED.
+        if src is None or rel not in walk:
+            return []
+        t = pia.tally(pia.audit_text(src, rel))
+        return keyed({cls: t[cls] for cls in GATED})
+
+    return rescan
+
+
+def adjudicate(repo: Path, got: dict, walk: set):
+    """The four classes' rows, split COMMITTED / UNCOMMITTED / MASKED.
+
+    A named seam rather than inline: this is the verdict arithmetic, and
+    `arm_reach_audit`'s standing finding here is that the classifier is well
+    armed and the verdict is not.
+    """
+    return head_delta(
+        repo, ("*.rs",), keyed(got),
+        lambda r: r[2]["file"], lambda r: r[0],
+        head_sites(walk))
 
 
 def parse_pins(path: Path) -> dict[str, dict[str, int]]:
@@ -120,11 +192,15 @@ def audit(repo: Path) -> dict:
     """One repo -> the four gated classes + BOTH populations that produced them."""
     n_rs = 0
     findings = []
+    walk = set()
     for f in pia.walk_rs(str(repo)):
         n_rs += 1
+        rel = os.path.relpath(f, repo).replace(chr(92), "/")
+        walk.add(rel)
         findings += pia.audit_file(f, os.path.relpath(f, repo))
     t = pia.tally(findings)
     return {
+        "walk": walk,
         "n_rs": n_rs,
         "n_sites": len(t["sites"]),
         "degenerate": t["degenerate"],
@@ -132,6 +208,181 @@ def audit(repo: Path) -> dict:
         "weak_asserted": t["weak_asserted"],
         "trunc_var": t["trunc_var"],
     }
+
+
+def adjudicate_arms() -> list[str]:
+    """`adjudicate`, two-sided, against a real git tree.
+
+    ⛔ These exist because a peer session asked the right question of the two
+    sweeps wired before this one: *if `head_delta` were stubbed to return
+    every row as committed, would any arm red?* For `console_encoding` the
+    answer was no — 14/14 canary arms passed against a stub, because they all
+    monkeypatch `adjudicate` and so never reach its body. Measured, not
+    reasoned. These arms red against that stub.
+    """
+    fails: list[str] = []
+
+    def check(cond, msg):
+        if not cond:
+            fails.append(msg)
+
+    def git(cwd, *args):
+        subprocess.run(["git", "-C", str(cwd), *args], check=True,
+                       capture_output=True)
+
+    # A DEGENERATE site: n=100 at p99 indexes 99 == n-1, the MAX. The
+    # VOCAB needs an IDENTIFIER for n (a literal `50` matches nothing),
+    # and `resolve_n` reads its value out of the enclosing scope — so
+    # this is the shape the sweep's own selftest plants, not a new one.
+    BAD = ("fn main() {\n"
+           "    let n = 100;\n"
+           "    let mut sorted = vec![0u64; n];\n"
+           "    let p99 = sorted[(n as f64 * 0.99) as usize];\n"
+           "    assert!(p99 < 5_000);\n"
+           "}\n")
+    OK = ("fn main() {\n"
+          "    let n = 100;\n"
+          "    let mut sorted = vec![0u64; n];\n"
+          "    let p99 = sorted[((n as f64 * 0.99).ceil() as usize) - 1];\n"
+          "    assert!(p99 < 5_000);\n"
+          "}\n")
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "r"
+        (repo / "src").mkdir(parents=True)
+        git(repo.parent, "init", "-q", "-b", "main", "r")
+        git(repo, "config", "user.email", "t@t")
+        git(repo, "config", "user.name", "t")
+        (repo / "src/a.rs").write_text(BAD, encoding="utf-8")
+        (repo / "src/b.rs").write_text(OK, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "base")
+
+        def now():
+            got = audit(repo)
+            return got, adjudicate(repo, got, got["walk"])
+
+        got, d = now()
+        check(len(got["degenerate"]) == 1,
+              f"fixture: degenerate={len(got['degenerate'])}, want 1")
+        check(not d.uncommitted and not d.masked,
+              f"a clean tree produced a split: {d}")
+
+        # ── UNCOMMITTED: the worktree INVENTS a degenerate site ─────────────
+        (repo / "src/b.rs").write_text(BAD, encoding="utf-8")
+        got, d = now()
+        check(len(d.uncommitted) >= 1
+              and all(r[2]["file"].endswith("b.rs") for r in d.uncommitted),
+              f"UNCOMMITTED direction: {[r[2]['file'] for r in d.uncommitted]}")
+        check(not d.masked, f"an invented row was also MASKED: {d.masked}")
+        check(all(r[2]["file"].endswith("a.rs") for r in d.head),
+              f"the pins' view is not HEAD's own set: "
+              f"{[r[2]['file'] for r in d.head]}")
+
+        # ── MASKED: the worktree HIDES a committed one ──────────────────────
+        git(repo, "checkout", "--", "src/b.rs")
+        (repo / "src/a.rs").write_text(OK, encoding="utf-8")
+        got, d = now()
+        check(not got["degenerate"],
+              f"the fixture did not hide the site: {got['degenerate']}")
+        check(len(d.masked) >= 1
+              and all(r[2]["file"].endswith("a.rs") for r in d.masked),
+              f"MASKED direction: {[r[2]['file'] for r in d.masked]}")
+        check(len(d.head) == len(d.masked),
+              f"a MASKED row is missing from the pins' view: {d.head}")
+
+        # ── the key is LINE-FREE ────────────────────────────────────────────
+        # Any insertion above a site shifts its line; a line-bearing key
+        # reports every row in an edited file as UNCOMMITTED *and* MASKED.
+        git(repo, "checkout", "--", "src/a.rs")
+        (repo / "src/a.rs").write_text("// pad\n// pad\n" + BAD,
+                                       encoding="utf-8")
+        got, d = now()
+        check(not d.uncommitted and not d.masked,
+              f"padding above a site reclassified it: "
+              f"uncommitted={len(d.uncommitted)} masked={len(d.masked)}")
+
+        # ── a STAGED-only file has no HEAD blob ─────────────────────────────
+        git(repo, "checkout", "--", "src/a.rs")
+        (repo / "src/new.rs").write_text(BAD, encoding="utf-8")
+        git(repo, "add", "src/new.rs")
+        got, d = now()
+        check(any(r[2]["file"].endswith("new.rs") for r in d.uncommitted),
+              f"a staged-only file's row was not UNCOMMITTED: "
+              f"{[r[2]['file'] for r in d.uncommitted]}")
+        check(all(not r[2]["file"].endswith("new.rs") for r in d.head),
+              f"a file in no commit entered the pins' view: {d.head}")
+
+        # ── the ORDINAL: two IDENTICAL sites in one file stay distinct ──────
+        # ⛔ Without it their keys collapse, HEAD dedupes to ONE row, and the
+        # ceiling is UNDERCOUNTED by the number of duplicates — a ratchet that
+        # silently tolerates the second copy of a defect. Measured: dropping
+        # the ordinal reds nothing until a fixture actually carries a repeat.
+        git(repo, "checkout", "--", ".")
+        (repo / "src/new.rs").unlink(missing_ok=True)
+        git(repo, "rm", "-q", "--cached", "src/new.rs")
+        twice = BAD.replace(
+            "    assert!(p99 < 5_000);" + chr(10),
+            "    let p99 = sorted[(n as f64 * 0.99) as usize];" + chr(10)
+            + "    assert!(p99 < 5_000);" + chr(10))
+        (repo / "src/a.rs").write_text(twice, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "twice")
+        got, d = now()
+        check(len(got["degenerate"]) == 2,
+              f"fixture: want 2 identical degenerate sites, got "
+              f"{len(got['degenerate'])}")
+        check(len({r[0] for r in d.committed}) == len(d.committed),
+              f"two identical sites collapsed to one key: "
+              f"{[r[0] for r in d.committed]}")
+        # ...and the pins' view counts BOTH.
+        check(len([r for r in d.head if r[1] == "degenerate"]) == 2,
+              f"the ceiling undercounts a repeated site: {len(d.head)}")
+
+        # ── the KEY must carry every field a CEILING reads ──────────────────
+        # ⛔ Four ceilings partitioned by CLASS, and `degenerate_asserted` is a
+        # SUBSET of `degenerate` that turns on one boolean. A site that stays
+        # degenerate but stops being load-bearing changes CLASS and nothing
+        # else; with class out of the key the worktree's row would absorb
+        # HEAD's and `max_degenerate_asserted` would count zero. A peer's
+        # toolchain_override shipped exactly that shape.
+        git(repo, "checkout", "--", ".")
+        (repo / "src/new.rs").unlink(missing_ok=True)
+        try:
+            git(repo, "rm", "-q", "--cached", "src/new.rs")
+        except Exception:
+            pass
+        (repo / "src/a.rs").write_text(BAD, encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", "asserted")
+        got, _d = now()
+        check(len(got["degenerate_asserted"]) == 1,
+              f"fixture: the committed site is not load-bearing: "
+              f"{len(got['degenerate_asserted'])}")
+        # Drop the assert! so the site stays DEGENERATE and stops being asserted.
+        (repo / "src/a.rs").write_text(
+            BAD.replace("    assert!(p99 < 5_000);" + chr(10), ""),
+            encoding="utf-8")
+        got, d = now()
+        check(len(got["degenerate"]) == 1 and not got["degenerate_asserted"],
+              f"fixture: want degenerate-but-not-asserted, got "
+              f"{len(got['degenerate'])}/{len(got['degenerate_asserted'])}")
+        # ⛔ Assert the KEY, not the tuple's class field. The first version of
+        # this arm read `r[1]` — which carries the class whether or not the KEY
+        # does — and passed with class removed from the address, because the
+        # ordinal happens to order `degenerate` before `degenerate_asserted`
+        # and the counts came out right by accident. An arm that reads the
+        # field the rule is about is the only one that tests the rule.
+        check(any("degenerate_asserted" in r[0] for r in d.masked),
+              f"class is not in the KEY — a committed degenerate_asserted row "
+              f"is absorbed by the worktree's degenerate row at the same "
+              f"address: {[r[0] for r in d.masked]}")
+
+        # ── the WALK guard ──────────────────────────────────────────────────
+        check(head_sites(set())("src/a.rs", BAD) == [],
+              "a path outside the sweep's own walk produced a row")
+
+    return fails
 
 
 def selftest() -> list[str]:
@@ -145,7 +396,7 @@ def selftest() -> list[str]:
         ws = Path(td)
         repo = ws / "fake-repo"
         (repo / "benches").mkdir(parents=True)
-        (repo / "BOUNDARY.md").write_text("x")
+        (repo / "BOUNDARY.md").write_text("x", encoding="utf-8")
         (repo / ".git").mkdir()
 
         # A planted DEGENERATE site: n=100 at p99 indexes 99 == n-1, the MAX.
@@ -156,7 +407,7 @@ def selftest() -> list[str]:
             "    sorted.sort();\n"
             "    let p99 = sorted[(n as f64 * 0.99) as usize];\n"
             "    assert!(p99 < 5_000);\n"
-            "}\n"
+            "}\n", encoding="utf-8"
         )
         got = audit(repo)
         if len(got["degenerate"]) != 1:
@@ -176,7 +427,7 @@ def selftest() -> list[str]:
             "    sorted.sort();\n"
             "    let p99 = sorted[((n as f64 * 0.99).ceil() as usize) - 1];\n"
             "    assert!(p99 < 5_000);\n"
-            "}\n"
+            "}\n", encoding="utf-8"
         )
         if audit(repo)["degenerate"]:
             fails.append("control: correct ceil()-1 nearest rank reported as DEGENERATE")
@@ -200,27 +451,32 @@ def selftest() -> list[str]:
         (ws / "no-boundary").mkdir()
         (ws / "no-boundary" / ".git").mkdir()
         (ws / "worktree-shaped").mkdir()
-        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x")
-        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere")
+        (ws / "worktree-shaped" / "BOUNDARY.md").write_text("x", encoding="utf-8")
+        (ws / "worktree-shaped" / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
         if pia.repos(str(ws)) != ["fake-repo"]:
             fails.append(f"population derivation wrong: {pia.repos(str(ws))}")
 
         # pin parser: arity ENFORCED, comments stripped
         pins = ws / "pins.txt"
-        pins.write_text("# c\nrepo-a 10 5 0 0 0 0  # trailing\n\n")
+        pins.write_text("# c\nrepo-a 10 5 0 0 0 0  # trailing\n\n", encoding="utf-8")
         if parse_pins(pins) != {"repo-a": {"min_rs_files": 10, "min_sites": 5,
                                            "max_degenerate": 0,
                                            "max_degenerate_asserted": 0,
                                            "max_weak_asserted": 0,
                                            "max_trunc_var": 0}}:
             fails.append("pin parse: 7-field row not read correctly")
-        pins.write_text("repo-a 1 2 3\n")
+        pins.write_text("repo-a 1 2 3\n", encoding="utf-8")
         try:
             parse_pins(pins)
             fails.append("pin parse: short row accepted")
         except ValueError:
             pass
-    return fails
+    # ⛔ Issue 822: `adjudicate`'s body is reached by nothing else.
+    # Measured on the sibling sweep wired before this one: 14/14 canary
+    # arms passed with `head_delta` STUBBED, because every arm that
+    # exercises the split monkeypatches `adjudicate` and so never enters
+    # it. These arms red against that stub.
+    return fails + adjudicate_arms()
 
 
 def main() -> int:
@@ -277,9 +533,24 @@ def main() -> int:
     bad = False
     tot = {"n_rs": 0, "n_sites": 0, "degenerate": 0,
            "degenerate_asserted": 0, "weak_asserted": 0, "trunc_var": 0}
+    n_uncommitted = n_masked = 0
 
     for name in names:
-        got = audit(WORKSPACE / name)
+        repo = open_repo(name, WORKSPACE)
+        got = audit(repo)
+
+        # ── Issue 822: the DISPLAY reads the worktree, the PINS read HEAD ───
+        # A ceiling is a claim about the repo, and a repo's state is its
+        # commits. Concurrent sessions share these worktrees, so a row here may
+        # sit on a line no commit contains — and re-pinning from such a run
+        # bakes another session's in-flight edit into a tracked file, where it
+        # reds on every other box.
+        delta = adjudicate(repo, got, got["walk"])
+        n_uncommitted += len(delta.uncommitted)
+        n_masked += len(delta.masked)
+        head_of = {cls: [r for r in delta.head if r[1] == cls]
+                   for cls in GATED}
+
         row = pins.get(name)
         tot["n_rs"] += got["n_rs"]
         tot["n_sites"] += got["n_sites"]
@@ -287,7 +558,12 @@ def main() -> int:
             tot[k] += len(got[k])
         flags = []
         if row is None:
-            flags.append("UNPINNED — add a row (or it can never red)")
+            # Issue 821: an acknowledged known-extra owes no pin row —
+            # the marker reached population_verdict's FINAL line and not
+            # this loop, so 8 of 9 sweeps red on repos they found
+            # nothing in, hiding two live ratchet breaches.
+            if not pin_row_exempt(name):
+                flags.append("UNPINNED — add a row (or it can never red)")
         else:
             if got["n_rs"] < row["min_rs_files"]:
                 flags.append(f"walk FLOOR breached: {got['n_rs']} .rs files "
@@ -297,10 +573,10 @@ def main() -> int:
                 flags.append(f"site FLOOR breached: {got['n_sites']} < "
                              f"{row['min_sites']} — a repair campaign, or the "
                              f"tokenizer stopped naming these shapes")
-            for cls in ("degenerate", "degenerate_asserted",
-                        "weak_asserted", "trunc_var"):
-                if len(got[cls]) > row[f"max_{cls}"]:
-                    flags.append(f"{cls} {len(got[cls])} > pinned {row[f'max_{cls}']}")
+            for cls in GATED:
+                if len(head_of[cls]) > row[f"max_{cls}"]:
+                    flags.append(f"{cls} {len(head_of[cls])} committed > "
+                                 f"pinned {row[f'max_{cls}']}")
         findings = (got["degenerate"] + got["weak_asserted"] + got["trunc_var"])
         status = "✗" if flags else ("·" if findings else "✓")
         print(f"{status} {name:22s} rs={got['n_rs']:<5d} sites={got['n_sites']:<4d} "
@@ -320,10 +596,34 @@ def main() -> int:
             bad = True
             print(f"      ✗ {f}")
 
-    for name in sorted(set(pins) - set(names)):
+    # The population axis, shared (Issue 793): UNREGISTERED reds in every
+    # posture, UNSEEN reds without the marker, and the same set DEFERS loudly
+    # with it. Never auto-detected — a genuine removal whose row update was
+    # forgotten is set-identical to a partial clone from the walk alone.
+    pop_lines, deferred, pop_fail = population_verdict(pins, names)
+
+    # Issue 797 — the worktree is not the repo. This run reads files that
+    # concurrent sessions are editing, so a finding may sit on a line no
+    # commit contains. ADVISORY, never a failure: a sweep that hard-reds on
+    # an ordinary dirty worktree is a sweep nobody runs. It rides the FINAL
+    # line in BOTH directions (the `deferred` precedent) and is SILENT
+    # unless the dirty set meets this sweep's own population — the percentile sites.
+    if n_uncommitted or n_masked:
+        # T3: the count stays honest in BOTH directions. A bare total invites
+        # the one action Issue 822 exists to prevent — typing it into the pin.
+        print(f"  ⚠ {n_uncommitted} row(s) UNCOMMITTED and {n_masked} MASKED "
+              f"across the run; the class counts above are what HEAD carries")
+    # ⚠ The advisory scope is WIDER than the split's: a dirty Cargo.toml
+    # can change what a sweep reads, but it produces no ROW here, so
+    # `adjudicate` scopes its HEAD reads to `*.rs` alone. Two scopes, one
+    # deliberate difference.
+    deferred.extend(sweep_advisory(
+        names, ("*.rs", "Cargo.toml"), root=WORKSPACE,
+        uncommitted_rows=n_uncommitted, masked_rows=n_masked))
+    for _line in pop_lines:
+        print(_line)
+    if pop_fail:
         bad = True
-        print(f"✗ {name}: pinned but ABSENT from the derived walk — it was "
-              f"retired (drop the row in that commit) or the walk went blind")
 
     print(f"\n{len(names)} contract repo(s) · {tot['n_rs']} .rs file(s) · "
           f"{tot['n_sites']} percentile site(s) · {tot['degenerate']} degenerate "
@@ -337,11 +637,16 @@ def main() -> int:
           "gates the four DECIDABLE classes only.")
     if bad:
         print("✗ percentile sweep FAILED — see the ✗ rows above")
+        for _d in deferred:
+            print(f"  {deferral_line(_d)}")
         print("    A 'p99' whose index is n-1 IS the max. Use nearest rank")
         print("    (ceil(p*n)-1) and report tail support, or drop the column")
         print("    when the sample count cannot support the quantile at all.")
         return 1
-    print("✓ percentile sweep PASSED — 0 in all four classes, both floors held")
+    _line = "✓ percentile sweep PASSED — 0 in all four classes, both floors held"
+    if deferred:
+        _line += "; DEFERRED: " + "; ".join(deferred)
+    print(_line)
     return 0
 
 

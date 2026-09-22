@@ -37,7 +37,11 @@
 //!   [`certified_iteration_count`] — T3 schedule construction.
 //! - [`bernoulli_unmask_with_grid`] — the paper's Bernoulli unmasking sampler
 //!   (Eq 11) with exact zero-cost init + completion; used by the G1-cert
-//!   coverage gate to measure real KL.
+//!   coverage gate to measure real KL. Optionally records the per-position
+//!   reveal step (Plan 602 T2.2's `steps_out`) for the anchor view below.
+//! - [`CertifiedSpineView`] — Plan 602 T2.2's certified-spine anchor view
+//!   (feature `decode_order_metrics`): the certified early reveals as the
+//!   paper's sparse anchor set A, the remainder as the conditional chain.
 //!
 //! # Honest caveats (binding, from Research 485 §3)
 //!
@@ -61,6 +65,11 @@
 //! with `f64` internal accumulators.
 
 use crate::types::Rng;
+
+// Plan 602 T2.2: the anchor view is Plan-602 instrumentation and rides that
+// feature (this module itself stays always-on — only the view is gated).
+#[cfg(feature = "decode_order_metrics")]
+use crate::dllm::UNMASKED_NEVER;
 
 /// Sentinel marking a masked (unrevealed) coordinate in observation vectors.
 pub const UGC_MASK: usize = usize::MAX;
@@ -86,14 +95,11 @@ pub fn log_reveal_odds(t: f32) -> f32 {
 }
 
 /// Inverse log-reveal-odds `r = σ(λ) = e^λ/(1+e^λ)` (numerically stable).
+/// Delegates to the Bench-844 substrate (Issue 861) — expression-identical
+/// body, bit-identical by construction.
 #[inline]
 pub fn inv_log_reveal_odds(lambda: f32) -> f32 {
-    if lambda >= 0.0 {
-        1.0 / (1.0 + (-lambda).exp())
-    } else {
-        let e = lambda.exp();
-        e / (1.0 + e)
-    }
+    crate::exact_sigmoid(lambda)
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +302,22 @@ fn trajectory_q(dz: &dyn UgcDenoiser, z: &[usize], u: &[f32], scratch: &mut UgcS
     q_total
 }
 
+/// Debug-observability gate for `estimate_interval` (Issue 861).
+///
+/// Reads `UGC_DEBUG` ONCE via `OnceLock` — the `tpr::kill_switch` pattern.
+/// The per-call `std::env::var` this replaces was debug-profile-only but
+/// heap-allocated on every `estimate_interval` call on Windows/MSVC (the
+/// env-var NAME is converted to a UTF-16 `Vec<u16>` for the W-series Win32
+/// API): exactly 1 allocation per call, invisible on Unix where `getenv`
+/// does not allocate — so the Issue-664 G4 PASS held on macOS/aarch64 while
+/// `ugc_alloc_check` failed 50/50 on this Windows box. Steady-state after
+/// the one-time read is a plain atomic load, zero-allocation everywhere.
+#[cfg(debug_assertions)]
+fn ugc_debug_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("UGC_DEBUG").is_ok())
+}
+
 /// T1 — the paper's tail-robust dyadic interval estimate (Prop 2, Eq 33/34).
 ///
 /// `eta` ∈ (0,1) is the failure probability. `m` ≥ 2 samples. Moment order
@@ -341,7 +363,7 @@ pub fn estimate_interval(
     let b_alpha = mean_q_r.sqrt().max(1e-9); // r = α/2 = 2
     let tau = (q - p) as f64 * b_alpha * (7.0 * log_term / moment_denom).sqrt();
     #[cfg(debug_assertions)]
-    if std::env::var("UGC_DEBUG").is_ok() {
+    if ugc_debug_enabled() {
         let raw_mean = scratch.q_stats.iter().sum::<f64>() / m as f64;
         let raw_max = scratch.q_stats.iter().cloned().fold(0.0f64, f64::max);
         eprintln!(
@@ -825,15 +847,29 @@ pub fn certified_iteration_count(chat: f32, eps: f32) -> usize {
 /// exactly zero (paper §3.1.3's zero-defect kernels).
 ///
 /// Writes the fully-revealed sample into `out[..d]`.
+///
+/// `steps_out` (Plan 602 T2.2, the T1.3 π posture) optionally records the
+/// commit step of each position: 0 for the init kernel, `j+1` for transition
+/// `j` (`grid[j] → grid[j+1]`), `grid.len()` for the completion fill — the
+/// same convention as `dllm::UNMASKED_NEVER` trajectories (never-committed
+/// stays `u32::MAX`; completion always fills here, so the sentinel only
+/// appears if the caller truncates the grid). Pass `None` when not
+/// measuring; the recording costs one branch per reveal.
 pub fn bernoulli_unmask_with_grid(
     dz: &dyn UgcDenoiser,
     grid: &[f32],
     rng: &mut Rng,
     scratch: &mut UgcScratch,
     out: &mut [usize],
+    mut steps_out: Option<&mut [u32]>,
 ) {
     let d = dz.dim();
     debug_assert!(grid.len() >= 2 && grid.windows(2).all(|w| w[0] < w[1]));
+    debug_assert!(steps_out.as_deref().is_none_or(|s| s.len() >= d));
+
+    if let Some(steps) = steps_out.as_deref_mut() {
+        steps[..d].fill(u32::MAX);
+    }
 
     // Init at t_0: reveal each coord w.p. t_0, fill revealed coords by
     // sequential exact conditionals (== the reveal-process law at t_0).
@@ -846,10 +882,13 @@ pub fn bernoulli_unmask_with_grid(
             dz.posterior_into(i, obs, post_cur);
             let chosen = sample_categorical(post_cur, rng);
             scratch.obs[i] = chosen;
+            if let Some(steps) = steps_out.as_deref_mut() {
+                steps[i] = 0;
+            }
         }
     }
 
-    for w in grid.windows(2) {
+    for (j, w) in grid.windows(2).enumerate() {
         let (tj, tj1) = (w[0], w[1]);
         let beta = ((tj1 - tj) / (1.0 - tj)) as f64;
         if beta <= 0.0 {
@@ -868,6 +907,9 @@ pub fn bernoulli_unmask_with_grid(
                 dz.posterior_into(i, obs, post_cur);
                 let chosen = sample_categorical(post_cur, rng);
                 scratch.obs[i] = chosen;
+                if let Some(steps) = steps_out.as_deref_mut() {
+                    steps[i] = j as u32 + 1;
+                }
             }
         }
         scratch.masked_buf = masked;
@@ -882,9 +924,101 @@ pub fn bernoulli_unmask_with_grid(
             dz.posterior_into(i, obs, post_cur);
             let chosen = sample_categorical(post_cur, rng);
             scratch.obs[i] = chosen;
+            if let Some(steps) = steps_out.as_deref_mut() {
+                steps[i] = grid.len() as u32;
+            }
         }
     }
     out[..d].copy_from_slice(&scratch.obs);
+}
+
+// ---------------------------------------------------------------------------
+// Plan 602 T2.2 — certified-spine anchor view (feature `decode_order_metrics`)
+// ---------------------------------------------------------------------------
+//
+// Research 575 §distilled-3 maps the dQwen3.5 paper's sparse anchor set A
+// onto this module's certified reveal process: positions the certified
+// kernels reveal EARLY are the high-confidence spine — they carry future
+// context for everything revealed after them, and the remainder decodes as
+// the conditional chain `q(x) = q(x_A) · Π_{i∉A} q(x_i | x_<i, x_A)`
+// (arXiv:2609.20751 §5). A VIEW, not new math: that identity is the chain
+// rule applied over this view's ordering (anchors as one joint block, then
+// the chain ascending), and its exactness is inherited from the sampler's
+// exact-conditional kernels — the GOAT arm pins it by enumeration on a
+// synthetic joint (see `certified_spine_factorization_identity`).
+
+/// Certified-spine anchor view over one reveal trajectory (Plan 602 T2.2).
+///
+/// `reveal_steps` is the per-position commit step recorded by
+/// [`bernoulli_unmask_with_grid`]'s `steps_out` (or any decode path using
+/// the same convention — the `dllm` π logs share it). Positions with step
+/// `< anchor_cutoff` form the anchor set A; the committed remainder is the
+/// conditional chain. [`CertifiedSpineView::init_spine`] is the canonical
+/// cutoff: the init kernel's reveals, the certified high-confidence masks.
+#[cfg(feature = "decode_order_metrics")]
+#[derive(Debug, Clone, Copy)]
+pub struct CertifiedSpineView<'a> {
+    reveal_steps: &'a [u32],
+    cutoff: u32,
+}
+
+#[cfg(feature = "decode_order_metrics")]
+impl<'a> CertifiedSpineView<'a> {
+    /// Split at `anchor_cutoff`: `π[i] < cutoff` ⇒ anchor.
+    pub fn new(reveal_steps: &'a [u32], anchor_cutoff: u32) -> Self {
+        Self {
+            reveal_steps,
+            cutoff: anchor_cutoff,
+        }
+    }
+
+    /// The canonical spine: anchors = positions the init kernel revealed
+    /// (step 0) — the certified high-confidence masks of Research 575 §3.
+    pub fn init_spine(reveal_steps: &'a [u32]) -> Self {
+        Self::new(reveal_steps, 1)
+    }
+
+    /// Anchor membership. Total: sentinel (never-committed) and
+    /// out-of-range positions are never anchors.
+    pub fn is_anchor(&self, i: usize) -> bool {
+        matches!(
+            self.reveal_steps.get(i),
+            Some(&s) if s != UNMASKED_NEVER && s < self.cutoff
+        )
+    }
+
+    /// The sparse anchor set A, ascending positions.
+    pub fn anchor_positions(&self) -> Vec<usize> {
+        (0..self.reveal_steps.len())
+            .filter(|&i| self.is_anchor(i))
+            .collect()
+    }
+
+    /// The conditional-chain remainder: committed positions that are not
+    /// anchors, ascending — the chain decodes left-to-right off A.
+    pub fn chain_positions(&self) -> Vec<usize> {
+        (0..self.reveal_steps.len())
+            .filter(|&i| {
+                matches!(self.reveal_steps.get(i), Some(&s) if s != UNMASKED_NEVER)
+                    && !self.is_anchor(i)
+            })
+            .collect()
+    }
+
+    /// Sparsity `|A| / committed`. NaN when nothing committed (the arness
+    /// degenerate-input contract: never a silent ratio).
+    pub fn anchor_density(&self) -> f32 {
+        let committed = self
+            .reveal_steps
+            .iter()
+            .filter(|&&s| s != UNMASKED_NEVER)
+            .count();
+        if committed == 0 {
+            f32::NAN
+        } else {
+            self.anchor_positions().len() as f32 / committed as f32
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1004,9 +1138,239 @@ mod tests {
         let mut s = UgcScratch::new(3, 2, 8, 64);
         let mut out = [0usize; 3];
         for _ in 0..32 {
-            bernoulli_unmask_with_grid(&Correlated, &[0.2, 0.5, 0.8], &mut rng, &mut s, &mut out);
+            bernoulli_unmask_with_grid(&Correlated, &[0.2, 0.5, 0.8], &mut rng, &mut s, &mut out, None);
             assert!(out[0] < 2 && out[1] < 2 && out[2] < 2);
             assert!(out[0] == out[1] && out[1] == out[2], "sampled {out:?}");
+        }
+    }
+}
+
+/// Plan 602 T2.2 anchor-view tests (feature-gated with the view).
+#[cfg(all(test, feature = "decode_order_metrics"))]
+mod anchor_view_tests {
+    use super::*;
+    use crate::dllm::UNMASKED_NEVER;
+
+    /// Uniform-posterior denoiser (local twin of tests::Independent).
+    struct Flat;
+    impl UgcDenoiser for Flat {
+        fn dim(&self) -> usize {
+            4
+        }
+        fn alphabet(&self) -> usize {
+            3
+        }
+        fn posterior_into(&self, _i: usize, _x: &[usize], out: &mut [f32]) {
+            out.fill(1.0 / 3.0);
+        }
+    }
+
+    #[test]
+    fn view_splits_on_cutoff() {
+        // steps: pos0 committed late (3), pos1 later (3), pos2 early (1),
+        // pos3 never, pos4 init (0), pos5 mid (2).
+        let steps = [3u32, 3, 1, UNMASKED_NEVER, 0, 2];
+        let v = CertifiedSpineView::new(&steps, 2);
+        assert_eq!(v.anchor_positions(), vec![2, 4]);
+        assert_eq!(v.chain_positions(), vec![0, 1, 5]);
+        assert!(!v.is_anchor(0));
+        assert!(v.is_anchor(2));
+        assert!(v.is_anchor(4));
+        assert!(!v.is_anchor(3)); // sentinel: never an anchor
+        // Density over committed (5 of 6 committed): 2/5.
+        assert!((v.anchor_density() - 2.0 / 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn init_spine_selects_step_zero() {
+        let steps = [0u32, 0, 5, 0, UNMASKED_NEVER];
+        let v = CertifiedSpineView::init_spine(&steps);
+        assert_eq!(v.anchor_positions(), vec![0, 1, 3]);
+        assert_eq!(v.chain_positions(), vec![2]);
+        assert!((v.anchor_density() - 3.0 / 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn all_sentinel_view_is_empty_and_nan() {
+        let steps = [UNMASKED_NEVER; 4];
+        let v = CertifiedSpineView::init_spine(&steps);
+        assert!(v.anchor_positions().is_empty());
+        assert!(v.chain_positions().is_empty());
+        assert!(v.anchor_density().is_nan());
+    }
+
+    #[test]
+    fn out_of_range_is_not_an_anchor() {
+        let steps = [0u32, 1];
+        let v = CertifiedSpineView::init_spine(&steps);
+        assert!(!v.is_anchor(99));
+        assert!(!v.is_anchor(2));
+    }
+
+    #[test]
+    fn steps_out_records_every_commit() {
+        let mut rng = Rng::new(5);
+        let mut s = UgcScratch::new(4, 3, 16, 64);
+        let mut out = [0usize; 4];
+        let mut steps = [u32::MAX; 4];
+        let grid = [0.5f32, 0.75];
+        bernoulli_unmask_with_grid(
+            &Flat,
+            &grid,
+            &mut rng,
+            &mut s,
+            &mut out,
+            Some(&mut steps),
+        );
+        // Everything commits (completion fills all): init=0, transition=1,
+        // completion=grid.len()=2.
+        assert!(steps.iter().all(|&st| st <= grid.len() as u32), "{steps:?}");
+        let n_init = steps.iter().filter(|&&st| st == 0).count();
+        // t_0 = 0.5 over d=4 with a fixed seed pins the init count; require
+        // a genuinely sparse split so the assertions below are non-vacuous.
+        assert!(n_init > 0 && n_init < 4, "seed produced |A|={n_init}: {steps:?}");
+        let view = CertifiedSpineView::init_spine(&steps);
+        assert_eq!(view.anchor_positions().len(), n_init);
+        assert_eq!(view.chain_positions().len(), 4 - n_init);
+        assert!((view.anchor_density() - n_init as f32 / 4.0).abs() < 1e-6);
+    }
+
+    // ── GOAT arm: the factorization identity on a synthetic joint ─────────
+
+    /// An explicit-table joint over d positions — a generic, fully-
+    /// correlated law (seeded strictly-positive table, no accidental
+    /// structure that could make the identity trivially hold).
+    struct TableJoint {
+        d: usize,
+        alpha: usize,
+        table: Vec<f32>, // alpha^d, row-major, digit i of idx left-to-right
+    }
+
+    impl TableJoint {
+        fn digits(&self, idx: usize) -> Vec<usize> {
+            (0..self.d)
+                .map(|i| (idx / self.alpha.pow((self.d - 1 - i) as u32)) % self.alpha)
+                .collect()
+        }
+
+        /// Σ table entries consistent with `fixed` (marginal / partial
+        /// conditioning — the test-side oracle, independent of the
+        /// denoiser impl).
+        fn mass_given(&self, fixed: &[(usize, usize)]) -> f32 {
+            let mut m = 0.0;
+            for (idx, &p) in self.table.iter().enumerate() {
+                let ds = self.digits(idx);
+                if fixed.iter().all(|&(pos, val)| ds[pos] == val) {
+                    m += p;
+                }
+            }
+            m
+        }
+    }
+
+    impl UgcDenoiser for TableJoint {
+        fn dim(&self) -> usize {
+            self.d
+        }
+        fn alphabet(&self) -> usize {
+            self.alpha
+        }
+        fn posterior_into(&self, i: usize, x: &[usize], out: &mut [f32]) {
+            // Exact single-site conditional of the table given revealed coords.
+            out.fill(0.0);
+            let mut z = 0.0;
+            for (idx, &p) in self.table.iter().enumerate() {
+                let ds = self.digits(idx);
+                let consistent = (0..self.d).all(|j| x[j] == UGC_MASK || x[j] == ds[j]);
+                if consistent {
+                    out[ds[i]] += p;
+                    z += p;
+                }
+            }
+            if z > 0.0 {
+                for v in out.iter_mut() {
+                    *v /= z;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn certified_spine_factorization_identity() {
+        // GOAT arm (Plan 602 T2.2): with A = the run's certified spine,
+        //   q(x) == q(x_A) · Π_{i∈chain} q(x_i | x_<i, x_A)
+        // holds EXACTLY for every x in the support — pinned by enumeration,
+        // no sampling noise. The sampler supplies A (via steps_out); the
+        // identity itself is the chain rule over the view's ordering.
+        let (d, alpha) = (4usize, 2usize);
+
+        // Seeded strictly-positive table (xorshift32 → 0.1 + u², normalized).
+        let mut state = 0x602_575u32;
+        let mut raw = vec![0.0f32; alpha.pow(d as u32)];
+        for r in raw.iter_mut() {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let u = state as f32 / u32::MAX as f32;
+            *r = 0.1 + u * u;
+        }
+        let z: f32 = raw.iter().sum();
+        let dz = TableJoint {
+            d,
+            alpha,
+            table: raw.iter().map(|&v| v / z).collect(),
+        };
+
+        // One certified run with step recording.
+        let grid = [0.35f32, 0.6, 0.85];
+        let mut rng = Rng::new(11);
+        let mut s = UgcScratch::new(d, alpha, 16, 64);
+        let mut out = vec![0usize; d];
+        let mut steps = vec![u32::MAX; d];
+        bernoulli_unmask_with_grid(
+            &dz,
+            &grid,
+            &mut rng,
+            &mut s,
+            &mut out,
+            Some(&mut steps),
+        );
+
+        let view = CertifiedSpineView::init_spine(&steps);
+        let anchors = view.anchor_positions();
+        let chain = view.chain_positions();
+        // Non-vacuous: a genuinely sparse spine, everything committed.
+        assert!(
+            !anchors.is_empty() && anchors.len() < d,
+            "seed must produce a sparse spine: steps {steps:?}"
+        );
+        assert_eq!(anchors.len() + chain.len(), d);
+
+        // Enumerate the whole support: the view's factorization must equal
+        // the table entry for EVERY x.
+        for idx in 0..alpha.pow(d as u32) {
+            let xs = dz.digits(idx);
+            // q(x_A) — the joint over the anchor block.
+            let fixed_a: Vec<(usize, usize)> =
+                anchors.iter().map(|&a| (a, xs[a])).collect();
+            let mut prod = dz.mass_given(&fixed_a);
+            // Π q(x_i | anchors + earlier chain), ascending chain order.
+            for &i in &chain {
+                let mut fixed = fixed_a.clone();
+                for j in chain.iter().copied().take_while(|&j| j < i) {
+                    fixed.push((j, xs[j]));
+                }
+                let mut fixed_i = fixed.clone();
+                fixed_i.push((i, xs[i]));
+                let denom = dz.mass_given(&fixed);
+                assert!(denom > 0.0, "zero-probability conditioning at x={xs:?}");
+                prod *= dz.mass_given(&fixed_i) / denom;
+            }
+            assert!(
+                (prod - dz.table[idx]).abs() < 1e-4,
+                "factorization broke at x={xs:?}: {prod} vs {}",
+                dz.table[idx]
+            );
         }
     }
 }

@@ -84,7 +84,6 @@ fn run_case(n: usize, d: usize) {
     // This isolates the sink-aware wrapper overhead from the parallax math.
     let cfg = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };

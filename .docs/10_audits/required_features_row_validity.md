@@ -75,7 +75,7 @@ entries count as dependencies for this purpose too.
 | riir-neuron-db | 51 | 37 | — | — | — | 0 | — | — |
 | riir-game-sdk | 32 | 18 | — | — | — | 0 | — | — |
 | riir-mmorpg-examples | 20 | 11 | — | — | — | 0 | — | — |
-| seal-remake | 7 | 4 | — | — | — | 0 | — | — |
+| mmorpg-remake | 7 | 4 | — | — | — | 0 | — | — |
 | **total** | **1,829** | **1,070** | 665 | 665 | 0 | **0** | 0 | |
 
 The `NO-FEAT` column is complete for every repo — that is the free pass. The
@@ -114,7 +114,7 @@ slice worth running first:
 | riir-neuron-db | 51 | 2 | 1 | **2/2 BUILDS** |
 | riir-ai | 512 | 10 | 5 | deferred — see below |
 | riir-game-sdk | 32 | 1 | 1 | deferred — see below |
-| riir-chain / riir-clippy / riir-mmorpg-examples / seal-remake | 180 | 0 | 0 | none to check |
+| riir-chain / riir-clippy / riir-mmorpg-examples / mmorpg-remake | 180 | 0 | 0 | none to check |
 | **total** | **1,829** | **28** | **20** | **17/17 checked clean** |
 
 **The prior found nothing, and that is the honest result to record.** Every

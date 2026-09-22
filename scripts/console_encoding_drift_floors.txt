@@ -1,0 +1,148 @@
+# Pins for scripts/console_encoding_drift_sweep.py — EVERY contract repo.
+# Issue 804, the cross-repo half.
+#
+# Format, 4 whitespace-separated fields:
+#
+#   <repo> <min_scripts> <min_population> <max_undefended>
+#
+# Re-pin DELIBERATELY, in the commit that changes the measured value, with the
+# reason in the commit message.
+#
+# ── max_undefended is a RATCHET everywhere but here ─────────────────────────
+# katgpt-rs's own undefended set is walled at 0 by MEMBERSHIP in
+# scripts/console_encoding_expected.txt — the per-push gate, over the repo that
+# owns the rows, with a pin file that is deliberately EMPTY.
+#
+# Workspace-wide the same predicate finds more in other repos — take the live
+# figure from the sweep's own summary line, never from here — and riir-train
+# dominates it at 53: that repo's scripts/ is almost entirely plan-scoped
+# one-offs (plan335_t7_decide.py, plan346_doc_pool.py), 61 of 61 unreachable
+# from its own AGENTS.md by instrument_reachability's measurement on this
+# identical walk. Retro-fitting a stream defence to a script whose whole life
+# was one plan task is churn.
+#
+# And the EXPOSURE is this box's property, not theirs: the defect needs a
+# non-UTF-8 console (cp874 here) and no other box in the workspace is known to
+# have one. That caveat survives the measurement — it is why the ceiling
+# constrains the DERIVATIVE rather than demanding 71 repairs in seven trees
+# this repo does not own. The commit that adds ANOTHER undefended instrument
+# reds; the action is one line.
+#
+# ⛑ riir-clippy re-pinned 5 → 0 on 2026-09-16 at riir-clippy `a7a0d03d`. It was
+# the one row known LIVE rather than latent — gen_dashboard.py reads
+# `git log --pretty=%s` across the siblings and every commit subject in this
+# workspace uses an em-dash — and a ratchet row only ever tightens on a repair.
+# The SHA is cited because a repair measured green in a worktree and never
+# committed is Issue 798's exact class: two tracked files here once recorded
+# sibling repairs as landed while both sweeps were red for six hours.
+#
+# ⛑ FOUR more repos re-pinned on 2026-09-16, under Issue 806's session, at
+# riir-dapps `dd5a027`, riir-mmorpg-examples `96029e5` and mmorpg-editor
+# `07ecbc4d` — 1 + 1 + 3 rows, all latent (none of the three is known to be run
+# on a non-UTF-8 console), closed because the action is one line and a ratchet
+# row only ever tightens on a repair.
+#
+# ⛔ mmorpg-remake's four were repaired too — upstream, at mmorpg-remake `d5ad55c`,
+# committed against `origin/develop` by plumbing because this box's checkout is
+# 29 behind and carries another session's dirty `Cargo.lock`. Its row STAYS AT
+# 4, and that is the rule working rather than an oversight: the pins read LOCAL
+# HEAD, this checkout's HEAD still carries all four undefended, and a row
+# lowered to 0 here would be a tracked file asserting a state no run on this box
+# can reproduce. Lower it in the commit that advances the checkout. riir-ai's
+# four are untouched — that repo is owner-gated (154 behind, sibling WIP).
+#
+# ⛑ riir-ai re-pinned 4 → 0 the same day, at riir-ai `089f08109`. Its WIP
+# landed mid-session and the checkout came into sync, which is what un-gated
+# it; the sync also raised its undefended count from 4 to 5 and REDDED this
+# file — `watch_coverage_gate.py` is exactly the commit a ratchet exists to
+# catch, and the action was one line, as the paragraph above claims.
+#
+# ⚠ Deliberately NOT the Issue 785 rule's target. That rule forbids ratcheting
+# a bucket meaning *unanswered* — a backlog with no owner. This bucket means
+# *undefended*: every row has an owner, and every row is one line from closed.
+#
+# ⛔ The counts are DERIVED and printed by the sweep's own summary line. Do not
+# restate one below a pin — the sibling sweep's header that did went stale the
+# day a repo's tooling changed, printing a figure that contradicted the
+# measured total one line above it.
+#
+# ── the three floors, and where none of them bites ──────────────────────────
+#   min_scripts      the WALK. A glob that matches nothing.
+#   min_population   the PREDICATE (`__main__` + a non-ASCII STRING literal).
+#                    Separate from the walk because they break separately: an
+#                    ast.parse regression takes the population to 0 over an
+#                    unchanged walk, and then every ceiling passes.
+#   max_undefended   the RATCHET.
+#
+# ⚠ HALF the repos here have an EMPTY population (riir-auth, riir-chain, riir-game-sdk,
+# riir-kat, riir-neuron-db, riir-shader, riir-viewbridge, mmorpg-remaster
+# — riir-chain and riir-shader do have scripts/*.py, they just print nothing
+# non-ASCII). Every ceiling is vacuous there and only min_scripts detects
+# anything, in the two that have scripts at all. Issue 783's population shape,
+# pinned as a measurement rather than assumed away.
+#
+# katgpt-rs's min_population is NOT free — it must equal
+# console_encoding_gate.MIN_POPULATION, and the sweep's selftest ASSERTS that
+# rather than trusting it. Its max_undefended must be 0, for the same reason:
+# a ratchet here would let a row land that the per-push gate refuses.
+#
+# Floors are ~60% of measured (the house slack convention); the ratchet is AT
+# the measurement.
+#
+# ⛔ EVERY row is measured at LOCAL HEAD, including the two whose repos this box
+# is behind on — riir-ai (152 behind) and mmorpg-remake (22 behind). An earlier
+# version of this file pinned those two from ORIGIN instead, reasoning that "the
+# pin describes the REPO, whose current state is origin". That is wrong, and
+# measuring it is what showed why: at origin riir-ai carries 5 undefended and
+# mmorpg-remake 6, against 4 and 4 here — so the margin is not a bookkeeping
+# artifact, it is THREE genuinely new undefended instruments that landed
+# upstream. Pinning from origin absorbs them into the baseline with nobody ever
+# adjudicating them, which destroys the only claim a ratchet makes: *the commit
+# that adds ANOTHER undefended instrument reds*. Those commits ARE that commit.
+#
+# Issue 797 states the rule in one line — the DISPLAY reads the worktree, the
+# PINS read HEAD — and HEAD means local HEAD. So this file reds on the sync, and
+# that red is a TRUE positive with an owner and a one-line action, not noise.
+# `instrument_reachability_floors.txt` is pinned the same way and reds the same
+# way on the same sync (riir-ai 7 → 8, mmorpg-remake 6 → 8, measured); that
+# agreement is the check that this convention is the house one.
+#
+# ⚠ What the STALE advisory IS for is the opposite direction: a red here that
+# upstream has already FIXED. Measured the same day — the pipefail and toolchain
+# sweeps are both RED on this box and both are staleness artifacts (riir-ai's
+# ci_feature_guard.sh scans 22 findings at local HEAD and 0 at origin/develop).
+# Confirm against origin before REPAIRING; never before PINNING.
+#
+#                       min_scripts  min_population  max_undefended
+katgpt-rs                       44              55               0
+katgpt-web                      0               0               0  # observed 2026-09-18: no scripts/*.py
+riir-ai                          4               3               0
+riir-auth                        0               0               0
+riir-chain                       1               0               0
+riir-clippy                      3               3               0
+riir-dao                         0               0               0  # observed 2026-09-18: no scripts/*.py
+riir-dapps                       0               0               0
+riir-deployer                    0               0               0  # observed 2026-09-18: no scripts/*.py
+riir-esp32                       0               0               0  # observed 2026-09-18: no scripts/*.py
+riir-game-sdk                    0               0               0
+riir-kat                         0               0               0
+riir-llm                         0               0               0  # observed 2026-09-18: joined the workspace 2026-09-18; no scripts/*.py
+riir-mmorpg-examples             0               0               0
+riir-neuron-db                   0               0               0
+riir-shader                      1               0               0
+riir-train                      34              31              53
+riir-viewbridge                  0               0               0
+mmorpg-editor                 1               1               0
+mmorpg-remaster             0               0               0
+mmorpg-remake                      3               2               4
+#
+# ⚠ FOUR rows are missing and this box cannot measure them: katgpt-web,
+# riir-dao, riir-deployer, riir-esp32 are not checked out here (16 of 20).
+# They report DEFERRED under DOCS_GATE_PARTIAL_CLONE=1 and will report
+# UNPINNED on the canonical full workstation — pin them from one full-checkout
+# run, alongside the same four rows owed by instrument_reachability_floors,
+# platform_dead_code_drift_floors, subprocess_encoding_drift_floors,
+# orphaned_attr_drift_floors, wasm32_surface_drift_floors and
+# len_derived_drift_floors.
+riir-reflex                       0               0               0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-infer                        0               0               0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired)

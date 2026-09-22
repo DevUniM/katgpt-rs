@@ -572,19 +572,13 @@ fn dot_fma<const D: usize>(a: &[f32; D], b: &[f32; D]) -> f32 {
 /// Both branches avoid the catastrophic cancellation that the naive form
 /// hits for large negative `x`.
 ///
-// TODO Plan 303 T1.8: hoist to `katgpt_core::simd::fast_sigmoid` when SIMD
-// dispatcher lands. The current `crate::simd` is a pure re-export of
-// `katgpt_core::simd::*`, which exposes no sigmoid symbol — hence the
-// private copy here.
+// Delegates to the Bench-844 substrate (Issue 861). The pre-substrate copy's
+// TODO named `fast_sigmoid` as the hoist target — wrong on two counts: that
+// is the approximation, and `exact_sigmoid` landed as the exact ungated
+// variant. Expression-identical body, so the delegation is bit-identical.
 #[inline(always)]
 fn sigmoid(x: f32) -> f32 {
-    if x >= 0.0 {
-        let z = (-x).exp();
-        1.0 / (1.0 + z)
-    } else {
-        let z = x.exp();
-        z / (1.0 + z)
-    }
+    crate::exact_sigmoid(x)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────

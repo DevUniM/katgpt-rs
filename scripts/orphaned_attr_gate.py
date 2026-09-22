@@ -40,11 +40,29 @@ orphaned**. The site count is the part worth keeping: a zero over 49,624 sites
 is evidence; a zero over a walk that has gone blind is not, which is why the
 PASS line prints the population it saw rather than the one it assumed.
 
-Do not read that as this gate's verdict. It audits **one** repo per
+⛔ **Those three figures were measured over a FILESYSTEM walk, and Issue 777
+retired that population the same day it landed** (`820bf8b6`). Re-measured
+2026-09-14 over the TRACKED walk, same 16 repos: **8,694 `.rs` files, 26,598
+outer-`#[cfg]` sites, 0 orphaned** — 22% and **46%** below the line above. The
+verdict never moved; 23,026 of the sites offered as its warrant were in trees
+no repo owns (mmorpg-remaster's gitignored `mmorpg/` nested repository,
+riir-ai's vendored `wgpu-hal` fork, riir-train's cargo `OUT_DIR` sources under
+`.runs/target-*`). Both figures are kept, dated, because a reader who cannot
+see that the population DEFINITION changed reads that drop as deleted code.
+
+Do not read either as this gate's verdict. It audits **one** repo per
 invocation, and until 2026-09-04 its PASS line printed "measured 0 across 19
 repos" on every run — a cross-repo claim no run had made, with a count that had
 gone stale two commits earlier, printed two lines below the repo-set gate
 saying 16. It now reports the repo it scanned and the population it saw.
+
+⛔ And removing the claim from the PASS line did not stop it going stale — it
+only stopped it being *printed* stale. The number went on being typed into this
+docstring by hand for eleven days, and nothing re-asserted it until Issue 784
+built the missing half: `scripts/orphaned_attr_drift_sweep.py`, workstation,
+every contract repo, floors in `scripts/orphaned_attr_drift_floors.txt` (which
+asserts `FLOOR_FILES` / `FLOOR_CFG_SITES` below against itself). **Take the
+cross-repo figure from that run, not from this paragraph.**
 
 The broader shape (**any** attribute + blank line + item) is 2,044 sites and is
 NOT gateable: it is dominated by whole-file INNER attributes (`#![cfg(...)]`),
@@ -61,11 +79,14 @@ call, like `.docs/10_audits/cfg_gated_silent_zero_pass.md` T3.
 
 from __future__ import annotations
 
-import os
 import re
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from tracked_walk import tracked_files  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -75,11 +96,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTER_CFG = re.compile(r"^\s*#\s*\[\s*cfg(?:_attr)?\s*\(")
 ANY_ATTR = re.compile(r"^\s*#!?\s*\[")
 
-# Pruned during the walk, never filtered afterwards. `rglob("*.rs")` followed by
-# a `"target" in parts` filter still DESCENDS into target/ (117 GB, ~1.3M
+# The population is the TRACKED `*.rs` set (`scripts/tracked_walk.py`, Issue
+# 777), not a filesystem walk behind a directory-NAME prune list. katgpt-rs'
+# tracked and filesystem counts happen to be EQUAL today (2415 both ways), so
+# this is not a repair of a live miscount here — it is the removal of the only
+# way this gate's floors could ever be satisfied by files the repo does not
+# own, which is exactly how the percentile sweep came to pin riir-train's walk
+# floor at 2500 against 1129 tracked files.
+#
+# The prune list it replaces was not wrong about its own hazard, and the
+# fallback branch of `tracked_files` keeps it: `rglob("*.rs")` followed by a
+# `"target" in parts` filter still DESCENDS into target/ (117 GB, ~1.3M
 # entries) — the same trap that made bench_doc_audit.py take 556s, and the
-# `find -not -path` trap one level over.
-PRUNE = {"target", ".git", "node_modules", ".venv", "__pycache__"}
+# `find -not -path` trap one level over. `git ls-files` does not walk at all.
 
 # `max_offenders = 0` is a CEILING, and a ceiling passes over an empty
 # population — a pruning bug, a moved source root or a read failure all print a
@@ -101,35 +130,83 @@ class Scan(NamedTuple):
     cfg_sites: int
 
 
+def scan_text(rel: str, text: str) -> tuple[list[tuple[str, int, str, str]], int]:
+    """One SOURCE TEXT's offenders, plus its `#[cfg]` site count.
+
+    The classifier proper, split out of `scan` for Issue 822: a caller holding
+    the bytes from somewhere other than the working tree — a HEAD blob, for the
+    worktree-vs-commit split — reaches the rules here without a second copy of
+    them. `markdown_fence_gate.scan_text` and `percentile_index_audit.
+    audit_text`, same shape, same reason.
+
+    `rel` only ADDRESSES the rows; no decision reads it.
+    """
+    out: list[tuple[str, int, str, str]] = []
+    lines = text.splitlines()
+    cfg_seen = sum(1 for line in lines if OUTER_CFG.match(line))
+    for i in range(len(lines) - 2):
+        if not OUTER_CFG.match(lines[i]) or lines[i + 1].strip():
+            continue
+        nxt = lines[i + 2]
+        # A following comment or another attribute is not the item, and
+        # a blank-line run means the attribute is dangling further
+        # down; both are reported only when a real item follows.
+        if not nxt.strip() or nxt.lstrip().startswith("//") or ANY_ATTR.match(nxt):
+            continue
+        out.append((rel, i + 1, lines[i].strip(), nxt.strip()[:60]))
+    return out, cfg_seen
+
+
 def scan(repo: Path) -> Scan:
+    """The walk around `scan_text` — the half that can go blind per-repo."""
     out: list[tuple[str, int, str, str]] = []
     files_seen = 0
     cfg_seen = 0
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if d not in PRUNE]
-        for fn in files:
-            if not fn.endswith(".rs"):
-                continue
-            p = Path(root) / fn
-            try:
-                lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-            except OSError:
-                continue
-            files_seen += 1
-            cfg_seen += sum(1 for line in lines if OUTER_CFG.match(line))
-            for i in range(len(lines) - 2):
-                if not OUTER_CFG.match(lines[i]) or lines[i + 1].strip():
-                    continue
-                nxt = lines[i + 2]
-                # A following comment or another attribute is not the item, and
-                # a blank-line run means the attribute is dangling further
-                # down; both are reported only when a real item follows.
-                if not nxt.strip() or nxt.lstrip().startswith("//") or ANY_ATTR.match(nxt):
-                    continue
-                out.append(
-                    (str(p.relative_to(repo)), i + 1, lines[i].strip(), nxt.strip()[:60])
-                )
+    for p in tracked_files(repo, "*.rs")[0]:
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        files_seen += 1
+        rows, n_cfg = scan_text(str(p.relative_to(repo)), text)
+        cfg_seen += n_cfg
+        out += rows
     return Scan(sorted(out), files_seen, cfg_seen)
+
+
+def unmeasured(repo: Path, files: int, own: bool) -> str | None:
+    """Why this walk is NOT a measurement, or `None` if it is.
+
+    Extracted rather than written inline, and that is the repair rather than a
+    tidy-up: `main` calls `selftest`, so a decision living in `main` cannot be
+    armed without recursing. Both branches below were inline first and neither
+    was reachable by any arm.
+
+    ⛔ The class (Issue 805). `tracked_files` answers an unreadable path with
+    an EMPTY SET — the same value a repo with no Rust produces — so a typo'd
+    or missing path walked to 0 files and printed
+    `✓ orphaned-attribute gate PASSED — pinned at 0, measured 0 over 0 .rs
+    file(s) in nonexistent-repo`. Exit 0. Every verdict here is a ceiling over
+    that walk, and a walk that returned nothing satisfies every ceiling.
+
+    ⚠ The sibling branch is NOT redundant with the floors, and the floors are
+    right to skip it: they are this repo's population and a sibling's belongs
+    to `orphaned_attr_drift_sweep.py`. The consequence is that sibling mode
+    has no blindness detector at ALL — `floors n/a` is printed on the pass
+    line — so this is the only thing standing between a misspelled sibling
+    path and a green.
+
+    ⚠ And it is UNSEEN, not FAILED. A contract repo with no Rust at all walks
+    to 0 legitimately, so condemning it would be wrong; refusing to call it a
+    pass is not. Never folded into the pass column — the house rule for every
+    bucket that means *unanswered*.
+    """
+    if not repo.is_dir():
+        return f"not a directory: {repo}"
+    if not own and files == 0:
+        return (f"{repo.name} walked to 0 .rs file(s) — legitimate for a repo "
+                f"with no Rust, indistinguishable here from a blind walk")
+    return None
 
 
 def selftest() -> None:
@@ -140,6 +217,23 @@ def selftest() -> None:
     clean state it is asserting.
     """
     import tempfile
+
+    # ── the UNSEEN predicate (Issue 805) ────────────────────────────────────
+    # Four arms over `unmeasured`. Each reds under perturbation of the line it
+    # is aimed at, measured one mutation at a time.
+    with tempfile.TemporaryDirectory() as _td:
+        _root = Path(_td)
+        _gone = _root / "no_such_dir"
+        assert unmeasured(_gone, 0, False) is not None,             "a path that does not exist read as a measurement"
+        assert "not a directory" in unmeasured(_gone, 0, False),             "a missing path was refused for the wrong reason"
+        # An OWN-repo walk of 0 is left to the floors, which say it better —
+        # this predicate must not double-report it.
+        assert unmeasured(_root, 0, True) is None,             "own repo at 0 files was claimed by the sibling branch, not the floors"
+        # A SIBLING at 0 has no floor behind it, so this is the only guard.
+        assert unmeasured(_root, 0, False) is not None,             "a sibling walking to 0 .rs files read as a measurement"
+        # A real population is a measurement in both scopes.
+        assert unmeasured(_root, 1, False) is None, "a non-empty sibling was refused"
+        assert unmeasured(_root, 1, True) is None, "a non-empty own repo was refused"
 
     positive = (
         "#[cfg(debug_assertions)]\n"
@@ -161,10 +255,29 @@ def selftest() -> None:
     }
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "pos.rs").write_text(positive)
+        (root / "pos.rs").write_text(positive, encoding="utf-8")
         got = scan(root)
         assert len(got.offenders) == 1, f"the real bug's shape was not detected: {got}"
         assert got.offenders[0][0] == "pos.rs"
+        # ⚑ The reported LINE, added by Issue 790 T3. `arm_reach_audit` found
+        # the `i + 1` 0-to-1-indexed conversion surviving an off-by-one flip:
+        # nothing asserted the address, only the count. A finding at the wrong
+        # line sends the reader to the wrong place, and the attribute is on
+        # line 1 of the fixture — the only offset where `i + 1` and `i - 1`
+        # differ visibly from each other AND from a plausible answer.
+        assert got.offenders[0][1] == 1, (
+            f"the orphaned attribute is on line 1 and was reported at "
+            f"{got.offenders[0][1]}")
+        assert got.offenders[0][2] == "#[cfg(debug_assertions)]", got.offenders[0][2]
+        assert got.offenders[0][3].startswith("use crate::absorb_compress"), (
+            f"the following ITEM was misreported: {got.offenders[0][3]!r}")
+
+        # …and the line must track the attribute's actual position, not be a
+        # constant that happens to be 1. Same shape, pushed down the file.
+        (root / "pos.rs").write_text("// a leading comment\n\n" + positive, encoding="utf-8")
+        got2 = scan(root)
+        assert len(got2.offenders) == 1 and got2.offenders[0][1] == 3, (
+            f"the reported line does not track the attribute: {got2.offenders}")
         # The population is a separate claim from the verdict and is pinned
         # separately: a walk that counts nothing must not be able to report a
         # clean zero. This is the in-miniature version of FLOOR_* below.
@@ -173,7 +286,7 @@ def selftest() -> None:
     for name, src in negatives.items():
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "n.rs").write_text(src)
+            (root / "n.rs").write_text(src, encoding="utf-8")
             got = scan(root)
             assert got.offenders == [], f"false positive on {name}: {got.offenders}"
             # A negative is a real scanned file, not an unread one — otherwise
@@ -184,7 +297,7 @@ def selftest() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "target").mkdir()
-        (root / "target" / "gen.rs").write_text(positive)
+        (root / "target" / "gen.rs").write_text(positive, encoding="utf-8")
         got = scan(root)
         assert got.offenders == [], "target/ was walked"
         assert got.files == 0, f"target/ was read: {got}"
@@ -193,7 +306,7 @@ def selftest() -> None:
     # is what a floor would otherwise be silently satisfied by (`.md` is plentiful).
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "n.md").write_text(positive)
+        (root / "n.md").write_text(positive, encoding="utf-8")
         assert scan(root) == Scan([], 0, 0), "a non-.rs file entered the population"
 
 
@@ -210,6 +323,15 @@ def main(argv: list[str]) -> int:
     selftest()
     repo = Path(argv[1]).resolve() if len(argv) > 1 else REPO_ROOT
     got = scan(repo)
+    why = unmeasured(repo, got.files, repo == REPO_ROOT)
+    if why:
+        print(f"⛔ orphaned-attribute gate UNSEEN — {why}")
+        print("  NOTHING was measured, so the 0 offenders below would not be a")
+        print("  finding count. Every verdict this gate prints is a ceiling over a")
+        print("  walk; a walk that returned nothing satisfies every ceiling there is.")
+        print("  The half that CAN tell an empty repo from a blind walk is")
+        print("  orphaned_attr_drift_sweep.py, which pins each repo's population.")
+        return 2
     found = got.offenders
     pop = f"{got.files} .rs file(s), {got.cfg_sites} outer-#[cfg] site(s)"
 

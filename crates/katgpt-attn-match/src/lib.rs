@@ -80,6 +80,13 @@ pub mod types;
 #[cfg(feature = "attn_match")]
 pub mod value_fitter;
 
+// The Issue 871 T4 lane — opt-in reassociated dot, orthogonal to
+// `attn_match` (std-only kernel, zero crate deps, zero consumers wired).
+// Strict stays the sole default path; see the module docs for the scoped
+// Bench 871 claims, the no-go zones, and the argmax retention precondition.
+#[cfg(feature = "algebraic_dot")]
+pub mod algebraic_dot;
+
 #[cfg(feature = "attn_match")]
 pub use beta_fitter::{BetaFitConfig, BetaFitResult, fit_beta_nnls};
 #[cfg(feature = "attn_match")]

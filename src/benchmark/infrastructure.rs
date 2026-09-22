@@ -810,9 +810,13 @@ pub fn bench_pflash_maxsim_block_scoring() -> BenchResult {
     let dim = 64;
     let iters = 10_000u64;
 
-    // Generate synthetic block embeddings: mostly noise, one "needle" per 20 blocks
+    // Generate synthetic block embeddings: mostly noise, one "needle" per 20 blocks.
+    // Seeded, not entropy: the fixture must be identical across runs, or every
+    // GOAT re-run measures a different synthetic corpus and the recorded
+    // numbers stop being comparable (Issue 809).
+    let mut rng = fastrand::Rng::with_seed(809);
     let mut block_queries: Vec<f32> = (0..block_size * dim)
-        .map(|_| fastrand::f32() * 0.1)
+        .map(|_| rng.f32() * 0.1)
         .collect();
     // Spike in last query block
     for v in block_queries.iter_mut().take(dim) {
@@ -822,7 +826,7 @@ pub fn bench_pflash_maxsim_block_scoring() -> BenchResult {
     let mut block_keys: Vec<Vec<f32>> = (0..num_blocks)
         .map(|_| {
             (0..block_size * dim)
-                .map(|_| fastrand::f32() * 0.1)
+                .map(|_| rng.f32() * 0.1)
                 .collect()
         })
         .collect();

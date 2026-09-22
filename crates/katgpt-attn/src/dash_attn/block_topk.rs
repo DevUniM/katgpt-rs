@@ -199,6 +199,17 @@ pub fn argtopk(scores: &[f32], k: usize, indices: &mut Vec<usize>) {
 /// - k=1: single-pass `simd_argmax_f32`
 /// - k≤16: register-based min-heap with SIMD-parallel comparison
 /// - k>16: falls back to selection sort
+///
+/// ⚠ The k ≤ 16 arm is **per-architecture**. NEON takes it whole; on x86_64 the
+/// AVX2 kernel is dispatched only up to `AVX2_ARGTOPK_K_MAX` and k above that
+/// takes [`argtopk_scalar_heap`], which is measurably faster there (Issue 808
+/// T1 / Bench 810). The *result* is identical on every path — this is a
+/// performance dispatch, and no caller can observe which kernel ran.
+///
+/// (`AVX2_ARGTOPK_K_MAX` is deliberately NOT an intra-doc link here: the const
+/// is `cfg(target_arch = "x86_64")` and this item is not, so a link would be a
+/// broken-intra-doc-link warning on aarch64 and wasm32 — two platforms whose
+/// lanes this repo runs and whose docs nobody would read the warning on.)
 pub fn argtopk_with_scratch(
     scores: &[f32],
     k: usize,
@@ -430,119 +441,148 @@ fn insert_sorted_simd_neon(
 // ---------------------------------------------------------------------------
 // AVX2 path (x86_64)
 
+/// Largest `k` for which the AVX2 kernel is dispatched on x86_64 (Issue 808 T1,
+/// option 2 — owner's call, 2026-09-17).
+///
+/// ⛔ This is **not** the kernel's correctness limit (it is correct to k = 16);
+/// it is the measured point past which it stops earning its keep. The arm is a
+/// scalar sorted-insert whose *insertion-point search* is vectorised, and the
+/// shift that follows is scalar either way — so the win shrinks as `k` grows
+/// rather than growing, and `argtopk_scalar_heap` is itself compiled under the
+/// same `+avx2` the kernel demands.
+///
+/// Measured ([Bench 810](../../../../.benchmarks/810_argtopk_distribution_crossover.md),
+/// i7-13700K, six deterministic block-score distributions × k ∈ {1,2,4,8,16} ×
+/// n ∈ {64..1024}): k ∈ {2, 4} win or tie on **every** distribution past
+/// n ≈ 64–128 (up to 3.9×), while k ∈ {8, 16} lose on every distribution but
+/// `early_peak` and deepen to 0.41–0.72× on `late_peak`, where **no** n-floor
+/// rescues them. That is why this is a flat `k` bound and not the per-`k`
+/// `N_MIN` of option 1 — Bench 810 measured `N_MIN` as distribution-sensitive
+/// (k = 8: 256 on `locality`, 768 on `iid_uniform`, > 1024 on `late_peak`), and
+/// the dispatch cannot observe the distribution.
+///
+/// ⚠ x86_64 ONLY. The NEON arm keeps the full k ≤ 16 dispatch: it is the
+/// algorithm witness this kernel was transcribed from, it is not measured as a
+/// loss, and narrowing it here would be a behaviour change on aarch64 that no
+/// measurement asked for.
+#[cfg(target_arch = "x86_64")]
+pub const AVX2_ARGTOPK_K_MAX: usize = 4;
+
 /// SIMD-accelerated top-k for k ≤ 16 on x86_64 AVX2.
 ///
 /// Strategy: same register-based sorted top-k as NEON path, but using
 /// 8-wide __m256 comparison via AVX2 intrinsics. Loads 8 scores per
 /// iteration, compares against threshold, and inserts qualifying lanes
 /// using AVX2-parallel search across the sorted register.
+///
+/// Dispatched only for `k <= AVX2_ARGTOPK_K_MAX`; larger `k` takes
+/// [`argtopk_scalar_heap`], which is measurably faster there (Issue 808).
+///
+/// ⚠ The kernel is a free function rather than a closure nested in the
+/// dispatcher **so that tests can still reach it above the dispatch bound**.
+/// Issue 808 T1 narrowed the bound to 4; the kernel stays correct to k = 16,
+/// and the two Issue-806 regression tests go through `argtopk_with_scratch`,
+/// so at k ∈ {8, 12, 16} they would silently start asserting the SCALAR path
+/// on x86_64 — a green zero over the exact arm those two defects were found
+/// in. `test_argtopk_avx2_kernel_matches_reference_above_dispatch_bound`
+/// calls this directly instead.
+///
+/// # Safety
+/// Caller must have verified AVX2 is available (`is_x86_feature_detected!`).
+/// `k` must be in `1..=16` and `scores` non-empty with `k <= scores.len()`.
 #[cfg(target_arch = "x86_64")]
-fn argtopk_simd(scores: &[f32], k: usize, indices: &mut Vec<usize>) {
-    #[target_feature(enable = "avx2")]
-    unsafe fn inner(scores: &[f32], k: usize, indices: &mut Vec<usize>) {
-        use core::arch::x86_64::{
-            _CMP_GT_OS, _mm256_cmp_ps, _mm256_loadu_ps, _mm256_movemask_ps, _mm256_set1_ps,
-        };
+#[target_feature(enable = "avx2")]
+unsafe fn argtopk_avx2_kernel(scores: &[f32], k: usize, indices: &mut Vec<usize>) {
+    use core::arch::x86_64::{
+        _CMP_GT_OS, _mm256_cmp_ps, _mm256_loadu_ps, _mm256_movemask_ps, _mm256_set1_ps,
+    };
 
-        let n = scores.len();
-        let mut heap_vals = [f32::NEG_INFINITY; 16];
-        let mut heap_idxs = [0usize; 16];
+    let n = scores.len();
+    let mut heap_vals = [f32::NEG_INFINITY; 16];
+    let mut heap_idxs = [0usize; 16];
 
-        let init = k.min(n);
-        for i in 0..init {
-            heap_vals[i] = *unsafe { scores.get_unchecked(i) };
-            heap_idxs[i] = i;
+    let init = k.min(n);
+    for i in 0..init {
+        heap_vals[i] = *unsafe { scores.get_unchecked(i) };
+        heap_idxs[i] = i;
+    }
+    // Sort initial k elements descending (insertion sort, k≤16)
+    for i in 1..init {
+        let val = heap_vals[i];
+        let idx = heap_idxs[i];
+        let mut j = i;
+        while j > 0 && heap_vals[j - 1] < val {
+            heap_vals[j] = heap_vals[j - 1];
+            heap_idxs[j] = heap_idxs[j - 1];
+            j -= 1;
         }
-        // Sort initial k elements descending (insertion sort, k≤16)
-        for i in 1..init {
-            let val = heap_vals[i];
-            let idx = heap_idxs[i];
-            let mut j = i;
-            while j > 0 && heap_vals[j - 1] < val {
-                heap_vals[j] = heap_vals[j - 1];
-                heap_idxs[j] = heap_idxs[j - 1];
-                j -= 1;
-            }
-            heap_vals[j] = val;
-            heap_idxs[j] = idx;
-        }
-
-        // Process remaining elements in AVX2 chunks of 8
-        let remaining = n - init;
-        let chunks8 = remaining / 8;
-        let mut pos = init;
-
-        for _ in 0..chunks8 {
-            let v = unsafe { _mm256_loadu_ps(scores.as_ptr().add(pos)) };
-            let thresh = _mm256_set1_ps(heap_vals[k - 1]);
-            // Compare: v > thresh (ordered, signaling)
-            let cmp = _mm256_cmp_ps(v, thresh, _CMP_GT_OS);
-            let mask_bits = _mm256_movemask_ps(cmp) as u32;
-
-            if mask_bits != 0 {
-                // Extract qualifying lanes
-                let vals_arr: [f32; 8] = unsafe { core::mem::transmute(v) };
-                for lane in 0..8 {
-                    if mask_bits & (1 << lane) != 0 {
-                        unsafe {
-                            insert_sorted_simd_avx2(
-                                &mut heap_vals,
-                                &mut heap_idxs,
-                                k,
-                                vals_arr[lane],
-                                pos + lane,
-                            );
-                        };
-                    }
-                }
-            }
-            pos += 8;
-        }
-
-        // Handle remaining elements that didn't fill a full 8-wide chunk
-        let remaining4 = (n - pos) / 4;
-        for _ in 0..remaining4 {
-            // Process 4 at a time using SSE-like approach via AVX2
-            let v = unsafe { _mm256_loadu_ps(scores.as_ptr().add(pos)) };
-            let thresh = _mm256_set1_ps(heap_vals[k - 1]);
-            let cmp = _mm256_cmp_ps(v, thresh, _CMP_GT_OS);
-            let mask_bits = (_mm256_movemask_ps(cmp) as u32) & 0x0F; // Only first 4 lanes
-
-            if mask_bits != 0 {
-                let vals_arr: [f32; 8] = unsafe { core::mem::transmute(v) };
-                for lane in 0..4 {
-                    if mask_bits & (1 << lane) != 0 {
-                        unsafe {
-                            insert_sorted_simd_avx2(
-                                &mut heap_vals,
-                                &mut heap_idxs,
-                                k,
-                                vals_arr[lane],
-                                pos + lane,
-                            );
-                        };
-                    }
-                }
-            }
-            pos += 4;
-        }
-
-        // Scalar tail
-        while pos < n {
-            let val = *unsafe { scores.get_unchecked(pos) };
-            if val > heap_vals[k - 1] {
-                unsafe { insert_sorted_simd_avx2(&mut heap_vals, &mut heap_idxs, k, val, pos) };
-            }
-            pos += 1;
-        }
-
-        indices.extend(heap_idxs[..k].iter());
+        heap_vals[j] = val;
+        heap_idxs[j] = idx;
     }
 
-    // Safety: we check for AVX2 at call time via cfg. The function is
-    // target_feature enabled so it's unsafe to call directly.
-    if is_x86_feature_detected!("avx2") {
-        unsafe { inner(scores, k, indices) };
+    // Process remaining elements in AVX2 chunks of 8
+    let remaining = n - init;
+    let chunks8 = remaining / 8;
+    let mut pos = init;
+
+    for _ in 0..chunks8 {
+        let v = unsafe { _mm256_loadu_ps(scores.as_ptr().add(pos)) };
+        let thresh = _mm256_set1_ps(heap_vals[k - 1]);
+        // Compare: v > thresh (ordered, signaling)
+        let cmp = _mm256_cmp_ps(v, thresh, _CMP_GT_OS);
+        let mask_bits = _mm256_movemask_ps(cmp) as u32;
+
+        if mask_bits != 0 {
+            // Extract qualifying lanes
+            let vals_arr: [f32; 8] = unsafe { core::mem::transmute(v) };
+            for lane in 0..8 {
+                if mask_bits & (1 << lane) != 0 {
+                    unsafe {
+                        insert_sorted_simd_avx2(
+                            &mut heap_vals,
+                            &mut heap_idxs,
+                            k,
+                            vals_arr[lane],
+                            pos + lane,
+                        );
+                    };
+                }
+            }
+        }
+        pos += 8;
+    }
+
+    // No partial-chunk SIMD step: the AVX2 port had one that loaded a FULL
+    // 8-wide vector from a position with fewer than 8 scores left (it ran
+    // only when `n - pos` was 4..7, so it over-read on every execution) and
+    // then masked lanes 4..7 away — UB for a result it discarded. The NEON
+    // sibling goes straight to the scalar tail; so does this now (Issue 806).
+
+    // Scalar tail
+    while pos < n {
+        let val = *unsafe { scores.get_unchecked(pos) };
+        if val > heap_vals[k - 1] {
+            unsafe { insert_sorted_simd_avx2(&mut heap_vals, &mut heap_idxs, k, val, pos) };
+        }
+        pos += 1;
+    }
+
+    indices.extend(heap_idxs[..k].iter());
+}
+
+/// x86_64 dispatch for `k ≤ 16`: the AVX2 kernel up to
+/// [`AVX2_ARGTOPK_K_MAX`], [`argtopk_scalar_heap`] above it and whenever AVX2
+/// is absent at runtime.
+#[cfg(target_arch = "x86_64")]
+fn argtopk_simd(scores: &[f32], k: usize, indices: &mut Vec<usize>) {
+    // Safety: the kernel is `#[target_feature(enable = "avx2")]`, so calling it
+    // is sound only once the runtime probe below has succeeded.
+    //
+    // The `k` bound is a PERFORMANCE gate, not a correctness one — see
+    // `AVX2_ARGTOPK_K_MAX` (Issue 808 T1). Both arms produce identical
+    // indices; `test_argtopk_simd_matches_scalar` spans the boundary.
+    if k <= AVX2_ARGTOPK_K_MAX && is_x86_feature_detected!("avx2") {
+        unsafe { argtopk_avx2_kernel(scores, k, indices) };
     } else {
         argtopk_scalar_heap(scores, k, indices);
     }
@@ -569,6 +609,11 @@ unsafe fn insert_sorted_simd_avx2(
     // SIMD-parallel search: compare val against up to 8 heap elements at a time
     let val_vec = _mm256_set1_ps(val);
     let mut lo = 0usize;
+    // The NEON sibling carries this flag and the AVX2 port replaced it with a
+    // `lo == 0` test — which cannot tell "no lane qualified" from "lane 0
+    // qualified", i.e. from `val` being a new MAXIMUM. That reset `lo` to `k`
+    // and returned, DISCARDING every new top-1 (Issue 806). Keep the flag.
+    let mut found_in_simd = false;
 
     // Process 8 elements at a time via AVX2
     let chunks8 = k / 8;
@@ -581,12 +626,14 @@ unsafe fn insert_sorted_simd_avx2(
         if mask_bits != 0 {
             // Find first set bit = first position where val > heap element
             lo = base + mask_bits.trailing_zeros() as usize;
+            found_in_simd = true;
             break;
         }
     }
 
-    // If not found in AVX2 chunks, scan the remainder
-    if lo == 0 && chunks8 > 0 {
+    // If not found in AVX2 chunks, scan the remainder (0 when chunks8 == 0,
+    // which is the k < 8 case the scalar walk below handles on its own).
+    if !found_in_simd {
         lo = chunks8 * 8;
     }
     while lo < k && heap_vals[lo] >= val {
@@ -1078,6 +1125,195 @@ mod tests {
                 simd_indices, ref_indices,
                 "k={k}: SIMD result {simd_indices:?} != reference {ref_indices:?}"
             );
+        }
+    }
+
+    /// Issue 806 regression — a candidate that is a NEW MAXIMUM must land at
+    /// position 0.
+    ///
+    /// The AVX2 insertion-point search used `lo == 0` as its "no lane
+    /// qualified" sentinel, which cannot be told apart from "lane 0 qualified".
+    /// Every new top-1 arriving after the first `k` elements was reset to `k`
+    /// and DISCARDED. The NEON sibling carries an explicit `found_in_simd`
+    /// flag and never had it.
+    ///
+    /// `test_argtopk_simd_matches_scalar` above cannot express this: its
+    /// fixture's maximum (4.2) sits at index 7, inside the first `k`, so no
+    /// later element is ever a new maximum and the branch is unreachable. A
+    /// strictly ascending ramp makes EVERY post-init element one.
+    #[test]
+    fn test_argtopk_new_maximum_after_init_is_kept() {
+        for n in [24usize, 32, 40, 64, 100] {
+            for k in [1usize, 4, 8, 12, 16] {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| i as f32).collect();
+                let mut indices = Vec::new();
+                let mut pairs = Vec::new();
+                argtopk_with_scratch(&scores, k, &mut indices, &mut pairs);
+                // Strictly ascending ⇒ the top-k is the LAST k indices, in
+                // reverse order, with no ties to arbitrate.
+                let expected: Vec<usize> = (n - k..n).rev().collect();
+                assert_eq!(indices, expected, "n={n} k={k}");
+            }
+        }
+    }
+
+    /// Issue 806 regression — the tail past the last full SIMD chunk.
+    ///
+    /// The AVX2 port had a "remaining 4" step that loaded a FULL 8-wide vector
+    /// from a position with 4..7 scores left and masked lanes 4..7 away: an
+    /// out-of-bounds read on every execution, for a result it discarded. These
+    /// lengths put 1..7 elements past the last full chunk for k = 8.
+    #[test]
+    fn test_argtopk_partial_tail_lengths_match_reference() {
+        for n in [17usize, 18, 19, 20, 21, 22, 23, 25, 31, 33] {
+            for k in [4usize, 8, 16] {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| ((i * 37 % 101) as f32) * 0.25).collect();
+                let mut indices = Vec::new();
+                let mut pairs = Vec::new();
+                argtopk_with_scratch(&scores, k, &mut indices, &mut pairs);
+
+                let mut ref_pairs: Vec<(usize, f32)> =
+                    scores.iter().copied().enumerate().collect();
+                ref_pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
+                let expected: Vec<usize> = ref_pairs[..k].iter().map(|(i, _)| *i).collect();
+                assert_eq!(indices, expected, "n={n} k={k}");
+            }
+        }
+    }
+
+    /// Issue 808 T1 — the AVX2 kernel ABOVE its own dispatch bound.
+    ///
+    /// Option 2 narrowed the x86_64 dispatch to `k ≤ AVX2_ARGTOPK_K_MAX` (= 4)
+    /// on Bench 810's evidence. The kernel is still compiled and still correct
+    /// to k = 16 — but the two Issue-806 regression tests reach it through
+    /// `argtopk_with_scratch`, so at k ∈ {8, 12, 16} they now assert the
+    /// SCALAR path on this platform and the AVX2 arm goes back to being
+    /// executed by nothing. That is the precondition both 806 defects grew in
+    /// (`full_gate` is macOS/aarch64; the one target that ran this kernel was
+    /// a `#![cfg]` green zero), and narrowing a dispatch must not recreate it.
+    ///
+    /// So this calls the kernel DIRECTLY, over both 806 fixtures, for every
+    /// `k` the dispatch no longer sends it: the ascending ramp that makes
+    /// every post-init element a new maximum (defect 1), and the lengths that
+    /// leave 1..7 elements past the last full 8-wide chunk (defect 2).
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_argtopk_avx2_kernel_matches_reference_above_dispatch_bound() {
+        if !is_x86_feature_detected!("avx2") {
+            // Not a skip that can hide a regression: the kernel is
+            // unreachable on this box in production too.
+            eprintln!("avx2 not detected — kernel unreachable here, nothing to assert");
+            return;
+        }
+
+        // Every k the dispatch stopped sending here, plus one inside the
+        // bound as a control that the direct call agrees with the dispatch.
+        let ks = [4usize, 5, 8, 12, 16];
+        assert!(
+            ks.iter().any(|&k| k > AVX2_ARGTOPK_K_MAX),
+            "fixture must span ABOVE the dispatch bound ({AVX2_ARGTOPK_K_MAX}), \
+             or this test asserts only what argtopk_with_scratch already does"
+        );
+
+        // Fixture A (806 defect 1): strictly ascending ⇒ every post-init
+        // element is a new maximum, so the insertion search's "new top-1"
+        // branch runs on every step.
+        for n in [24usize, 32, 40, 64, 100] {
+            for &k in &ks {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| i as f32).collect();
+                let mut indices = Vec::new();
+                unsafe { argtopk_avx2_kernel(&scores, k, &mut indices) };
+                let expected: Vec<usize> = (n - k..n).rev().collect();
+                assert_eq!(indices, expected, "ascending ramp: n={n} k={k}");
+            }
+        }
+
+        // Fixture B (806 defect 2): 1..7 elements past the last full chunk,
+        // where the deleted partial-chunk step used to over-read.
+        for n in [17usize, 18, 19, 20, 21, 22, 23, 25, 31, 33] {
+            for &k in &ks {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| ((i * 37 % 101) as f32) * 0.25).collect();
+                let mut indices = Vec::new();
+                unsafe { argtopk_avx2_kernel(&scores, k, &mut indices) };
+
+                let mut ref_pairs: Vec<(usize, f32)> =
+                    scores.iter().copied().enumerate().collect();
+                ref_pairs.sort_by(|a, b| b.1.total_cmp(&a.1));
+                let expected: Vec<usize> = ref_pairs[..k].iter().map(|(i, _)| *i).collect();
+                assert_eq!(indices, expected, "partial tail: n={n} k={k}");
+            }
+        }
+    }
+
+    /// Issue 808 T2 — the bound is PINNED, and widening it needs a measurement.
+    ///
+    /// This is the load-immune half of T2's "the next regression is a test
+    /// failure rather than a table nobody reads". The timing half lives in
+    /// `tests/bench_256_simd_topk.rs`; a timing bar alone cannot be trusted to
+    /// red, because this repo has measured perf bars producing four different
+    /// failing sets across four runs of one commit (Bench 806 T7). A constant
+    /// does not oscillate.
+    ///
+    /// 4 is not a round number chosen for tidiness — it is where Bench 810's
+    /// six distributions agree. k ∈ {2, 4} win or tie on ALL of them past
+    /// n ≈ 64–128; k ∈ {8, 16} lose on all but `early_peak` and reach
+    /// 0.41–0.72× on `late_peak`, where no n-floor rescues them.
+    ///
+    /// ⛔ Raising this is a behaviour change on every x86_64 deployment and
+    /// needs Issue 808 T2's bar first: `N_MIN` per k on **≥ 2**
+    /// microarchitectures (Raptor Lake is 1 of 2), across the distribution
+    /// axis, since Bench 810 measured `N_MIN` as distribution-sensitive.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_avx2_argtopk_dispatch_bound_is_pinned() {
+        assert_eq!(
+            AVX2_ARGTOPK_K_MAX, 4,
+            "the AVX2 argtopk dispatch bound moved. Bench 810 licensed k <= 4 \
+             on ONE microarchitecture; Issue 808 T2 requires >= 2 plus the \
+             distribution axis before this widens. Re-measure, then re-pin."
+        );
+    }
+
+    /// Issue 808 T1 — the dispatch bound is a PERFORMANCE gate, so both sides
+    /// of it must return identical indices. A bound that changed results would
+    /// be a behaviour change on every x86_64 deployment.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn test_argtopk_dispatch_bound_is_result_neutral() {
+        if !is_x86_feature_detected!("avx2") {
+            return;
+        }
+        for n in [20usize, 33, 64, 129] {
+            for k in 1..=16usize {
+                if k > n {
+                    continue;
+                }
+                let scores: Vec<f32> = (0..n).map(|i| ((i * 61 % 97) as f32) * 0.125).collect();
+
+                let mut via_kernel = Vec::new();
+                unsafe { argtopk_avx2_kernel(&scores, k, &mut via_kernel) };
+
+                let mut via_scalar = Vec::new();
+                argtopk_scalar_heap(&scores, k, &mut via_scalar);
+
+                assert_eq!(
+                    via_kernel, via_scalar,
+                    "kernel and scalar heap disagree at n={n} k={k} — the \
+                     AVX2_ARGTOPK_K_MAX bound is not result-neutral"
+                );
+            }
         }
     }
 

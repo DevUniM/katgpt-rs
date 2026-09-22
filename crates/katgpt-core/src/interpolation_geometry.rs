@@ -122,6 +122,18 @@ pub trait LatentSpace {
     /// battery is reproducible.
     fn noise(&self, seed: u64) -> Self::Point;
 
+    /// Deterministic Gaussian noise scaled to the **anchor's own L2 norm**
+    /// (Issue 776 / Research 555 — CVRR §2.1 row-norm-matched noise).
+    ///
+    /// `n = g · (‖anchor‖/‖g‖)` — magnitude preserved, structure destroyed.
+    /// Separates the "consumer reads the norm/energy" channel from the
+    /// "consumer reads the structure" channel; [`LatentSpace::noise`]
+    /// destroys both at once and cannot separate them. A zero-norm anchor
+    /// stays zero (magnitude trivially preserved).
+    ///
+    /// Same seed → same output (battery-reproducible).
+    fn norm_matched_noise(&self, anchor: &Self::Point, seed: u64) -> Self::Point;
+
     /// Latent-space distance for nearest-neighbor search. Typically L2.
     fn latent_distance(&self, a: &Self::Point, b: &Self::Point) -> f32;
 
@@ -201,7 +213,13 @@ pub struct InterventionReport {
     /// noise. Paper: similar to `zero`.
     pub noise: f32,
 
-    /// Number of donors used for the shuffled / mean statistics.
+    /// Behavior delta when the anchor's latent is replaced with noise scaled
+    /// to the anchor's own L2 norm (Issue 776 / CVRR §2.1). Diverging here +
+    /// diverging under `noise` = structure is read; diverging under `noise`
+    /// but ≈0 here = only the norm/energy is read.
+    pub norm_matched: f32,
+
+    /// Number of donors used for the `shuffled` / `mean` statistics.
     pub n_donors: u32,
 }
 
@@ -225,6 +243,7 @@ impl InterventionReport {
             && self.zero > ratio_threshold * baseline
             && self.mean > ratio_threshold * baseline
             && self.noise > ratio_threshold * baseline
+            && self.norm_matched > ratio_threshold * baseline
     }
 
     /// Returns `true` if `shuffled` is the dominant intervention divergence
@@ -239,7 +258,12 @@ impl InterventionReport {
     /// because it carries a DIFFERENT example's identity).
     #[inline]
     pub fn flips_to_donor(&self, dominance_ratio: f32) -> bool {
-        let other_max = self.zero.max(self.mean).max(self.noise).max(1e-6);
+        let other_max = self
+            .zero
+            .max(self.mean)
+            .max(self.noise)
+            .max(self.norm_matched)
+            .max(1e-6);
         self.shuffled > dominance_ratio * other_max
     }
 }
@@ -463,12 +487,19 @@ where
     let noise_behavior = space.decode(noise_scratch);
     let noise = space.behavior_distance(&noise_behavior, &matched_behavior);
 
+    // Norm-matched noise (Issue 776 / CVRR §2.1): same scratch reused after
+    // the noise arm's decode is complete — zero extra buffers, zero alloc.
+    *noise_scratch = space.norm_matched_noise(anchor, seed);
+    let norm_matched_behavior = space.decode(noise_scratch);
+    let norm_matched = space.behavior_distance(&norm_matched_behavior, &matched_behavior);
+
     InterventionReport {
         matched: 0.0, // By definition: decode(anchor) vs decode(anchor) = 0.
         shuffled,
         zero,
         mean,
         noise,
+        norm_matched,
         n_donors,
     }
 }
@@ -589,6 +620,11 @@ impl LatentSpace for GaussianMixtureSpace {
         let u2 = ((next() >> 11) as f32 / (1u64 << 53) as f32) * std::f32::consts::TAU;
         let r = (-2.0 * u1.ln()).sqrt();
         [r * u2.cos(), r * u2.sin()]
+    }
+
+    #[inline]
+    fn norm_matched_noise(&self, anchor: &[f32; 2], seed: u64) -> [f32; 2] {
+        norm_matched_noise_arr(anchor, seed)
     }
 
     #[inline]
@@ -713,6 +749,11 @@ impl<const N: usize> LatentSpace for EuclideanLatentSpace<N> {
     }
 
     #[inline]
+    fn norm_matched_noise(&self, anchor: &[f32; N], seed: u64) -> [f32; N] {
+        norm_matched_noise_arr(anchor, seed)
+    }
+
+    #[inline]
     fn latent_distance(&self, a: &[f32; N], b: &[f32; N]) -> f32 {
         let mut sum = 0.0f32;
         let mut i = 0;
@@ -736,6 +777,99 @@ impl<const N: usize> LatentSpace for EuclideanLatentSpace<N> {
     fn behavior_distance(&self, a: &[f32; N], b: &[f32; N]) -> f32 {
         self.latent_distance(a, b)
     }
+}
+
+// ─── Norm-matched noise helper (Issue 776 / Research 555 — CVRR §2.1) ──────
+
+/// Deterministic Gaussian noise scaled to `anchor`'s own L2 norm — core
+/// slice form (Issue 619 T1): writes into caller-supplied `out`
+/// (`out.len()` must equal `anchor.len()`), `n = g · (‖anchor‖/‖g‖)` —
+/// magnitude preserved, structure destroyed.
+///
+/// Same xorshift+Box-Muller stream shape as the in-crate `noise` impls so
+/// the whole battery stays seed-reproducible; `_arr` delegates here, so
+/// the fixed-size and slice forms are bit-identical at the same seed.
+/// Zero-norm anchors write the zero vector (magnitude trivially
+/// preserved). Zero allocation.
+#[inline]
+pub fn norm_matched_noise_slice_into(anchor: &[f32], seed: u64, out: &mut [f32]) {
+    debug_assert_eq!(anchor.len(), out.len(), "out must match anchor length");
+    let n = anchor.len();
+    let mut anchor_sq = 0.0f32;
+    for x in anchor.iter() {
+        anchor_sq += x * x;
+    }
+    let target = anchor_sq.sqrt();
+    if target < 1e-12 || n == 0 {
+        out.fill(0.0);
+        return;
+    }
+
+    let mut s = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut next = || {
+        s ^= s << 13;
+        s ^= s >> 7;
+        s ^= s << 17;
+        s
+    };
+    let mut g_sq = 0.0f32;
+    let mut i = 0;
+    while i + 2 <= n {
+        let u1 = ((next() >> 11) as f32 / (1u64 << 53) as f32).max(1e-10);
+        let u2 = ((next() >> 11) as f32 / (1u64 << 53) as f32) * std::f32::consts::TAU;
+        let r = (-2.0 * u1.ln()).sqrt();
+        out[i] = r * u2.cos();
+        out[i + 1] = r * u2.sin();
+        g_sq += out[i] * out[i] + out[i + 1] * out[i + 1];
+        i += 2;
+    }
+    if i < n {
+        let u = ((next() >> 11) as f32 / (1u64 << 53) as f32) * 2.0 - 1.0;
+        out[i] = u;
+        g_sq += u * u;
+    }
+
+    let g_norm = g_sq.sqrt();
+    if g_norm < 1e-12 {
+        // Astronomically unlikely; deterministic fallback — spread the target
+        // norm uniformly with alternating signs.
+        let m = target / (n as f32).sqrt();
+        for (j, x) in out.iter_mut().enumerate() {
+            *x = if j & 1 == 0 { m } else { -m };
+        }
+        return;
+    }
+
+    let scale = target / g_norm;
+    for x in out.iter_mut() {
+        *x *= scale;
+    }
+}
+
+/// Vec-convenience wrapper over [`norm_matched_noise_slice_into`] for
+/// variable-length points (e.g. `KarcWoutSpace`'s `Vec<f32>`). Allocates
+/// the output; bit-identical to [`norm_matched_noise_arr`] at the same
+/// seed + length.
+#[inline]
+pub fn norm_matched_noise_slice(anchor: &[f32], seed: u64) -> Vec<f32> {
+    let mut out = vec![0.0f32; anchor.len()];
+    norm_matched_noise_slice_into(anchor, seed, &mut out);
+    out
+}
+
+/// Deterministic Gaussian noise scaled to `anchor`'s own L2 norm, for
+/// `[f32; N]` points: `n = g · (‖anchor‖/‖g‖)` — magnitude preserved,
+/// structure destroyed.
+///
+/// Same xorshift+Box-Muller stream shape as the in-crate `noise` impls so
+/// the whole battery stays seed-reproducible. Zero-norm anchors return the
+/// zero vector (magnitude trivially preserved). Zero allocation (stack
+/// array; delegates to the slice core at [`norm_matched_noise_slice_into`]).
+#[inline]
+pub fn norm_matched_noise_arr<const N: usize>(anchor: &[f32; N], seed: u64) -> [f32; N] {
+    let mut out = [0.0f32; N];
+    norm_matched_noise_slice_into(anchor, seed, &mut out);
+    out
 }
 
 // ─── Deterministic xorshift RNG (fixture generation only) ──────────────────
@@ -791,9 +925,10 @@ mod tests {
 
     #[test]
     fn test_intervention_report_is_pod() {
-        // InterventionReport is 5 × f32 (matched/shuffled/zero/mean/noise)
-        // + 1 × u32 (n_donors) = 24 bytes, no padding (all 4-byte aligned).
-        assert_eq!(size_of::<InterventionReport>(), 24);
+        // InterventionReport is 6 × f32 (matched/shuffled/zero/mean/noise/
+        // norm_matched — Issue 776 sixth arm) + 1 × u32 (n_donors)
+        // = 28 bytes, no padding (all 4-byte aligned).
+        assert_eq!(size_of::<InterventionReport>(), 28);
     }
 
     #[test]
@@ -1132,6 +1267,7 @@ mod tests {
             zero: 3.0,
             mean: 3.0,
             noise: 3.0,
+            norm_matched: 3.0,
             n_donors: 10,
         };
         assert!(r.latent_is_causal(5.0));
@@ -1143,6 +1279,21 @@ mod tests {
             zero: 0.3, // only 3× matched
             mean: 3.0,
             noise: 3.0,
+            norm_matched: 3.0,
+            n_donors: 10,
+        };
+        assert!(!r.latent_is_causal(5.0));
+
+        // Norm-matched fails the ratio (Issue 776 arm): a latent whose
+        // structure is unread fails even when magnitude-driven divergence
+        // passes everywhere else.
+        let r = InterventionReport {
+            matched: 0.1,
+            shuffled: 5.0,
+            zero: 3.0,
+            mean: 3.0,
+            noise: 3.0,
+            norm_matched: 0.3,
             n_donors: 10,
         };
         assert!(!r.latent_is_causal(5.0));
@@ -1157,6 +1308,7 @@ mod tests {
             zero: 3.0,
             mean: 3.0,
             noise: 3.0,
+            norm_matched: 3.0,
             n_donors: 10,
         };
         assert!(r.flips_to_donor(2.0));
@@ -1168,12 +1320,129 @@ mod tests {
             zero: 3.0,
             mean: 3.0,
             noise: 3.0,
+            norm_matched: 3.0,
             n_donors: 10,
         };
         assert!(!r.flips_to_donor(2.0));
     }
 
     // ── Midpoint symmetry / idempotence (trait contract) ─────────────────
+
+    #[test]
+    fn test_norm_matched_noise_preserves_norm_and_is_deterministic() {
+        let anchor = [1.5_f32, -2.0, 3.0, -0.5, 4.0, 0.25, -1.0, 0.75];
+        let target: f32 = anchor.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+        let a = <EuclideanLatentSpace<8> as LatentSpace>::norm_matched_noise(
+            &EuclideanLatentSpace,
+            &anchor,
+            0xC0FFEE,
+        );
+        let b = <EuclideanLatentSpace<8> as LatentSpace>::norm_matched_noise(
+            &EuclideanLatentSpace,
+            &anchor,
+            0xC0FFEE,
+        );
+        assert_eq!(a, b, "same seed → identical output");
+
+        let got: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            ((got - target) / target).abs() < 1e-4,
+            "L2 norm preserved: got {got}, want {target}"
+        );
+        assert_ne!(a, anchor, "structure destroyed");
+
+        // Zero anchor stays zero.
+        let z = <EuclideanLatentSpace<8> as LatentSpace>::norm_matched_noise(
+            &EuclideanLatentSpace,
+            &[0.0_f32; 8],
+            7,
+        );
+        assert_eq!(z, [0.0_f32; 8]);
+    }
+
+    #[test]
+    fn test_norm_matched_noise_slice_is_bit_identical_to_arr() {
+        // Issue 619 T1: the slice core and the fixed-size form share one
+        // stream — same seed + length → bit-identical outputs (even + odd
+        // lengths, covering the tail-element path).
+        for (anchor, seed) in [
+            (&[1.5_f32, -2.0, 3.0, -0.5, 4.0, 0.25, -1.0, 0.75][..], 0xC0FFEE_u64),
+            (&[0.3_f32, -1.7, 2.2][..], 42_u64),
+            (&[9.9_f32][..], 1_u64),
+            (&[][..], 5_u64),
+        ] {
+            let via_slice = norm_matched_noise_slice(anchor, seed);
+            let via_into = {
+                let mut buf = vec![f32::NAN; anchor.len()]; // dirty buffer — _into must fully write
+                norm_matched_noise_slice_into(anchor, seed, &mut buf);
+                buf
+            };
+            assert_eq!(via_slice, via_into, "_slice and _slice_into agree");
+            // Compare against _arr at the same length via a fixed-size shim.
+            match anchor.len() {
+                8 => {
+                    let mut a8 = [0.0f32; 8];
+                    a8.copy_from_slice(anchor);
+                    let via_arr = norm_matched_noise_arr(&a8, seed);
+                    assert_eq!(via_slice, via_arr, "len 8: slice ≡ arr");
+                }
+                3 => {
+                    let mut a3 = [0.0f32; 3];
+                    a3.copy_from_slice(anchor);
+                    let via_arr = norm_matched_noise_arr(&a3, seed);
+                    assert_eq!(via_slice, via_arr, "len 3 (odd tail): slice ≡ arr");
+                }
+                1 => {
+                    let via_arr = norm_matched_noise_arr(&[anchor[0]], seed);
+                    assert_eq!(via_slice, via_arr, "len 1: slice ≡ arr");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn test_norm_matched_noise_slice_preserves_norm() {
+        let anchor = vec![0.5_f32, -1.25, 2.0, 0.75, -3.5, 1.0, 0.1, -0.6, 2.2, -0.15];
+        let target: f32 = anchor.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let n = norm_matched_noise_slice(&anchor, 0xBEEF);
+        let got: f32 = n.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            ((got - target) / target).abs() < 1e-4,
+            "L2 norm preserved: got {got}, want {target}"
+        );
+        // Zero-norm Vec stays zero.
+        assert_eq!(
+            norm_matched_noise_slice(&[0.0f32; 6], 9),
+            [0.0f32; 6]
+        );
+    }
+
+    #[test]
+    fn test_battery_carries_norm_matched_arm() {
+        // Issue 776: the battery's sixth arm is populated and separates —
+        // identity decode → norm_matched diverges (structure changed) while
+        // a norm-only read would see ≈0. Here we just assert the arm runs
+        // and is finite/non-negative on the synthetic substrate.
+        let space = GaussianMixtureSpace::good_along_manifold(4);
+        let anchors: Vec<[f32; 2]> = (0..8)
+            .map(|i| {
+                let theta = (i as f32) * std::f32::consts::TAU / 8.0;
+                [5.0 * theta.cos(), 5.0 * theta.sin()]
+            })
+            .collect();
+        let mut z = [0.0f32; 2];
+        let mut m = [0.0f32; 2];
+        let mut n = [0.0f32; 2];
+        let report = intervention_battery(&space, &anchors[0], &anchors[1..], 42, &mut z, &mut m, &mut n);
+        assert!(
+            report.norm_matched.is_finite() && report.norm_matched >= 0.0,
+            "norm-matched arm populated: {report:?}"
+        );
+        // Identity decode: structure destroyed → diverges from matched.
+        assert!(report.norm_matched > 0.0);
+    }
 
     #[test]
     fn test_midpoint_symmetric_and_idempotent() {

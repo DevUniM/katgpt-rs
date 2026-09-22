@@ -49,8 +49,6 @@ pub struct ShardConfig {
     pub decode_stream_bits: u8,
     /// Average bits per coordinate for K path.
     pub avg_bits_k: f32,
-    /// Average bits per coordinate for V path (prefill, used for VQ sizing).
-    pub avg_bits_v: f32,
 }
 
 impl Default for ShardConfig {
@@ -66,7 +64,6 @@ impl Default for ShardConfig {
             v_vq_group_size: 4,
             v_vq_codebook_size: 256,
             avg_bits_k: 4.0,
-            avg_bits_v: 2.0,
             min_tail_bits: 1,
             max_bits: 8,
             decode_stream_bits: 8,

@@ -1,11 +1,13 @@
 # Research 468: Beckmann Transport Models — Divergence Constraint for CCE MFG Dynamics
 
-> **Source:** Lee, Coeurdoux, Potaptchik, Du, Albergo, Vanden-Eijnden — *Beckmann Transport Models: From Autonomous Flows to One-Step Maps* [arXiv:2608.01692](https://arxiv.org/abs/2608.01692), May 2026
+> **Source:** Lee (Cheuk-Kit), Coeurdoux, Chen, Tang, Potaptchik, Du, Albergo, Vanden-Eijnden — *Beckmann Transport Models: From Autonomous Flows to One-Step Maps* [arXiv:2608.01692](https://arxiv.org/abs/2608.01692), May 2026 (author line corrected 2026-09-16 against the arXiv v3 listing — it previously omitted Chen + Tang)
 > **Date:** 2026-08-06
 > **Status:** Active — **Gain** (not Super-GOAT; PoC-gated for GOAT promotion)
 > **Related Research:** 296 (Stokes/DEC — codifferential IS the divergence operator), 271 (MIT 6.S184 flow-matching crosswalk), 219 (TNO → DEC parent), 274 (Optimal CCE in MFGs via LP), 371 (Mean-Field Regime Classifier — crowd-scale order parameters)
 > **Related Plans:** 295 (LP-CCE Moderator — the shipped primitive with the documented MFG gap), 314 (Stokes Calculus Wrappers — `belief_mass_divergence`), 325-riir-ai (Latent CCE Runtime — shipped COMPLETE without closing the MFG gap)
 > **Classification:** Public (katgpt-rs)
+> **Cross-ref (discrete sibling, 2026-09-16):** Tang & Wang [arXiv:2609.15903 "Discrete Beckmann Transport Models for One-Step Language Modeling and Reasoning"] — the DISCRETE/simplex instantiation of this paper (same group; Tang on both), applied to language. The divergence-constraint adjudication here STANDS (Issue 573 Beckmann FAIL on CCE / Issue 574 transition-kernel PASS → Plan 569). The discrete paper's new content — the t\* REM commitment law, the confidence-commit refinement rule, the distillation-free recipe — is distilled in [Research 563](563_DBTM_Discrete_Beckmann_One_Step_Language.md).
+> **v3 delta (2026-09-17, full-text re-read at v3):** v3 (2026-08-13) postdates the distillation above and adds one unmined modelless row — **Prop 2, the training-free Coulomb case** (`b = ∇φ, Δφ = μ₀ − μ₁`, closed form, exact transport for atomic targets, zero GD), which strengthens this note's §5 construction row that the Issues 573–575 *constraint* triage never consumed. Also new in v3, recorded not filed: the EqM endpoint-weight bias measured at **20×** (2D, 5 unequal atoms) — the FM-consistency lesson for any trained interpolant (regression target must be the interpolant velocity, never a rescaled `c_s(x₁−x₀)`; the discrete sibling's Plan 411 recipe inherits the corrected form already); the codim-1 counterexample caveat; Theorem 2's terminal-trace uniqueness caveat. Filed: `Issue 825` — Coulomb crowd redistribution via DEC Poisson solve (fusion idea, novelty TBD; class-level OT-crowd prior art pinned in the issue).
 
 ---
 

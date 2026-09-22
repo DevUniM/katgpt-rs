@@ -53,7 +53,7 @@ Plus tests in `crates/katgpt-core/src/engram/` (unit) and `tests/bench_299_engra
 - [x] **T1.5** Implement `multi_head_hash(suffix: &[CanonicalId], heads: &[HashHead; K_MAX]) -> [EngramHash; K_MAX]` in `hash.rs`. Multiplicative-XOR per head: `hash = (seed XOR suffix_fold) % modulus` where `suffix_fold = Σᵢ suffix[i] · MULTIPLIERS[i]`. SIMD-friendly (4 or 8 heads at once when suffix is fixed-size `[u64; 3]`).
 - [x] **T1.6** Unit tests: empty suffix → all-zero hashes; same suffix → same hash (determinism); different suffix → different hash (no trivial collisions); K heads independent (changing one head's seed changes only its hash).
 - [x] **T1.7** Property test: `proptest` over random `[CanonicalId; 3]` suffixes — verify determinism + uniform distribution modulo prime (chi-square test on 10K samples).
-  - Added `proptest = "1"` as a katgpt-core dev-dependency (already used in the project per `seal-online-remaster` workspace).
+  - Added `proptest = "1"` as a katgpt-core dev-dependency (already used in the project per `mmorpg-remaster` workspace).
   - 3 properties: `prop_hash_deterministic`, `prop_head_independence`, `prop_distinct_suffix_distinct_hash`.
   - 1 deterministic chi-square test: `chi_square_uniform_distribution_10k` — buckets `hash % 256` across 10K LCG-seeded trigrams for all 16 heads, threshold = 350 (≈ p=0.001 critical for 255 DoF + LCG margin). **PASS** for all 16 heads with current `make_heads(42)` configuration.
 

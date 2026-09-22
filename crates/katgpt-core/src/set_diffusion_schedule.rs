@@ -348,6 +348,40 @@ pub fn uniform_order(l: usize, rng: &mut fastrand::Rng) -> Vec<usize> {
     uniform_order_with(l, |n| rng.u32(0..n))
 }
 
+/// Confidence-descending ordering: positions revealed **most-confident
+/// first** (DBTM attractor law, arXiv:2609.15903 §10.1.2 — Issue 811 /
+/// Research 563).
+///
+/// The dominant token's attractor forms at t = 0 and **no non-dominant
+/// attractor forms before t = 1/2** — so high-confidence positions are the
+/// safe early reveals and low-confidence positions belong late in the
+/// schedule (after the DBTM `commit_time_star` boundary when one is
+/// available; same crate, `ignition_schedule` feature). Ties keep ascending
+/// index order (deterministic; no RNG), and NaN confidences sort last.
+///
+/// Pairs with [`order_to_gen_steps`] for the set-causal kernel.
+pub fn probability_order(confidence: &[f32]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..confidence.len()).collect();
+    order.sort_by(|&a, &b| {
+        // Descending confidence; total order even under NaN (NaN → last).
+        let (ca, cb) = (confidence[a], confidence[b]);
+        match (ca.partial_cmp(&cb), ca.is_nan(), cb.is_nan()) {
+            (Some(ord), false, false) => ord.reverse(),
+            _ => {
+                if ca.is_nan() && !cb.is_nan() {
+                    std::cmp::Ordering::Greater
+                } else if cb.is_nan() && !ca.is_nan() {
+                    std::cmp::Ordering::Less
+                } else {
+                    // Both NaN (or incomparable): fall back to index order.
+                    a.cmp(&b)
+                }
+            }
+        }
+    });
+    order
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Gen-step conversion (for the set-causal attention kernel)
 // ═══════════════════════════════════════════════════════════════════
@@ -390,7 +424,205 @@ pub fn mdlm_gen_steps(l: usize) -> Vec<u32> {
     vec![0u32; l]
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// Plan 602 T2.3 — optional decode-order schedule variants
+// (feature `decode_order_metrics`; promote-only-on-G3, demote silently
+// if the Phase-3 G3 GOAT fails — the plan's standing rule)
+// ═══════════════════════════════════════════════════════════════
+
+/// Confidence-threshold τ eligibility (Plan 602 T2.3, arXiv:2609.20751's
+/// parallel-decoding policy — the paper holds the quality–speed frontier
+/// under τ unmasking to ~8×): the positions whose current confidence is
+/// `≥ τ` are eligible to commit this pass.
+///
+/// The dynamic counterpart of [`probability_order`]'s static full sort
+/// (same DBTM attractor law, Issue 811 / Research 563: confident positions
+/// are the safe early reveals) — a decode loop calls this per pass with
+/// the current confidences instead of pre-committing to one ordering.
+/// Ascending indices; NaN confidences are never eligible (`NaN ≥ τ` is
+/// false under IEEE — incomparable confidences stay masked, never a
+/// false commit). The count the caller needs for NFE accounting is just
+/// the length of the returned slice.
+#[cfg(feature = "decode_order_metrics")]
+pub fn confidence_threshold_eligible(confidence: &[f32], tau: f32) -> Vec<usize> {
+    confidence
+        .iter()
+        .enumerate()
+        .filter(|&(_, &c)| c >= tau)
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// 1/λ_t-shaped unmask-slot allocation (Plan 602 T2.3): split `l` unmask
+/// slots across `steps` decode passes with per-pass counts shaped by the
+/// paper's time-reweighted objective `w_t = 1/λ_t` (equal weight per masked
+/// target, linear schedule `α_t = 1−t`) transferred to inference — λ_t is
+/// the remaining-masked count under the linear baseline, so early
+/// (heavily-masked, hard) passes commit FEW tokens each and the compute
+/// budget concentrates on the hard early region, while late passes take
+/// larger, confident batches.
+///
+/// Contract: counts are **non-decreasing over the active prefix** (the
+/// passes that carry work), every active pass commits ≥ 1 (surplus passes
+/// when `steps > l` idle with 0 at the END — the hard early region keeps
+/// its passes), and the total is exactly `l` (min-1 pre-assignment +
+/// largest-remainder distribution, ties to the later pass). `steps == 0`
+/// panics; `l == 0` returns all zeros.
+#[cfg(feature = "decode_order_metrics")]
+pub fn inverse_lambda_slot_counts(l: usize, steps: usize) -> Vec<usize> {
+    assert!(steps > 0, "steps must be positive");
+    let mut counts = vec![0usize; steps];
+    if l == 0 {
+        return counts;
+    }
+    // At most `l` passes carry work; surplus passes idle at the end.
+    let active = steps.min(l);
+    // Baseline remaining-masked at the START of active pass t (0-indexed):
+    // r_t = ceil(l · (active − t) / active), ≥ 1 for every t < active.
+    // Weight w_t = 1/r_t — increasing in t (later = fewer masked = larger
+    // per-pass share), the transferred shape of the training objective.
+    let weights: Vec<f64> = (0..active)
+        .map(|t| {
+            let r = (l * (active - t)).div_ceil(active);
+            1.0 / r as f64
+        })
+        .collect();
+    // Every active pass commits at least one token; distribute the
+    // remaining l − active by largest remainder of the exact quotas
+    // extra · w_t / Σw.
+    for c in counts[..active].iter_mut() {
+        *c = 1;
+    }
+    let extra = l - active;
+    if extra == 0 {
+        return counts;
+    }
+    let wsum: f64 = weights.iter().sum();
+    let quota = |t: usize| extra as f64 * weights[t] / wsum;
+    let mut floors: Vec<usize> = (0..active).map(|t| quota(t) as usize).collect();
+    let mut assigned: usize = floors.iter().sum();
+    // Largest fractional part first (descending); ties to the LATER pass
+    // (keeps the profile non-decreasing — a tie broken earlier could
+    // invert it).
+    let mut order: Vec<usize> = (0..active).collect();
+    order.sort_by(|&a, &b| {
+        let (fa, fb) = (quota(a) - floors[a] as f64, quota(b) - floors[b] as f64);
+        fa.partial_cmp(&fb)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .reverse()
+            .then(b.cmp(&a))
+    });
+    let mut idx = 0;
+    while assigned < extra {
+        floors[order[idx % active]] += 1;
+        assigned += 1;
+        idx += 1;
+    }
+    for (t, &f) in floors.iter().enumerate() {
+        counts[t] += f;
+    }
+    counts
+}
+
+// ── Plan 602 T3.2: the gap-predictor (Research 575 §distilled-2) ────────
+
+/// The calibrated (ALR, AGR) signature table over the w-sweep —
+/// `bench_ar_ness_w_sweep` (Plan 602 T3.1, micro set-causal fixture,
+/// L=8/V=8, trained at w=0.5, 16 seeded greedy decodes per w). The
+/// predictor inverts this table; re-calibrate by re-measuring and editing
+/// these constants IN ONE PLACE (the table is the calibration).
+#[cfg(feature = "decode_order_metrics")]
+pub const ORDER_STATS_TO_W_TABLE: [(f32, f64, f64); 6] = [
+    // (w, ALR, AGR) — measured 2026-09-20, this bench fixture.
+    (0.1, 1.000, 1.000),
+    (0.3, 0.804, 0.944),
+    (0.5, 0.589, 0.797),
+    (0.7, 0.580, 0.701),
+    (0.9, 0.536, 0.562),
+    (1.0, 0.518, 0.547),
+];
+
+/// The gap-predictor (Plan 602 T3.2, arXiv:2609.20751 §decode-order): from
+/// a probe decode's measured (ALR, AGR), recommend the schedule width `w`
+/// whose calibrated signature is nearest (L2) — the measured mechanism
+/// behind the Plans 379–384 w=0.5 win. Signature-matching semantics:
+/// decode with the schedule whose induced order statistics best match the
+/// regime the probe measured — a strictly-AR signature (ALR ≈ AGR ≈ 1)
+/// maps to the sequential end; a uniform-random signature (both ≈ 0.5) to
+/// the parallel end; an off-curve hybrid signature (mid ALR + high AGR —
+/// the paper's locally-out-of-order, globally-LTR band) maps to the
+/// mid table (the w=0.5 class). NOTE this is deliberately NOT a
+/// "high gap ⇒ crank parallelism" rule: in the w parameterization the
+/// high-AGR signatures live at LOW w, so the recommendation follows the
+/// measured regime, never a headroom extrapolation.
+///
+/// Nearest-row over [`ORDER_STATS_TO_W_TABLE`]; ties → the LOWER w (the
+/// conservative/sequential side — never recommend parallelism off a tie).
+/// Inputs are clamped into [0,1]; a NaN input returns the conservative
+/// 0.1 endpoint (an unmeasurable probe must not look parallel-safe).
+#[cfg(feature = "decode_order_metrics")]
+pub fn predict_w_from_order_stats(alr: f32, agr: f32) -> f32 {
+    if !alr.is_finite() || !agr.is_finite() {
+        return ORDER_STATS_TO_W_TABLE[0].0;
+    }
+    let (a, g) = (alr.clamp(0.0, 1.0) as f64, agr.clamp(0.0, 1.0) as f64);
+    let mut best_w = ORDER_STATS_TO_W_TABLE[0].0;
+    let mut best_d = f64::INFINITY;
+    for &(w, ca, cg) in ORDER_STATS_TO_W_TABLE.iter() {
+        let d = (a - ca) * (a - ca) + (g - cg) * (g - cg);
+        // Strict `<`: ties keep the earlier (lower-w) row.
+        if d < best_d {
+            best_d = d;
+            best_w = w;
+        }
+    }
+    best_w
+}
+
+/// The RESIDUAL gap-predictor (Plan 602 T3.2, the paper's actual measurement
+/// posture): probe the model under a KNOWN schedule (`probe_w`), measure
+/// the trajectory's (ALR, AGR), and shift the recommendation by the AR-DRAG
+/// — the deviation of the measured ALR from the schedule's own calibrated
+/// signature at `probe_w` (nearest row of [`ORDER_STATS_TO_W_TABLE`]):
+/// ΔALR > 0 means the model defers commits until left context lands (drags
+/// toward AR) → recommend a LOWER w; ΔALR ≤ 0 keeps `probe_w`.
+///
+/// Measured on the G3 fixture (real-text denoisers, probe w=0.5):
+/// AR-trained ΔALR = +0.144, uniform-trained ΔALR = +0.015 — the
+/// discrimination the mdlm-endpoint probe could not produce (a confident
+/// model commits everything at once → all-ties → no signal).
+///
+/// `SHIFT = 2`: ΔALR of +0.2 moves w by −0.4 (the calibrated span from
+/// w=0.5's 0.589 to w=0.1's 1.000 is ~0.4 ALR over ~0.4 w — unit slope,
+/// doubled for the conservative direction). Output clamped to
+/// [0.1, 1.0]; NaN measurements return `probe_w` clamped (no signal —
+/// keep the incumbent posture, never extrapolate).
+#[cfg(feature = "decode_order_metrics")]
+pub fn predict_w_residual(alr: f32, agr: f32, probe_w: f32) -> f32 {
+    const SHIFT: f32 = 2.0;
+    let probe_w = probe_w.clamp(ORDER_STATS_TO_W_TABLE[0].0, 1.0);
+    if !alr.is_finite() || !agr.is_finite() {
+        return probe_w;
+    }
+    // Nearest calibrated row to probe_w (the schedule's own signature).
+    let mut cal_alr = ORDER_STATS_TO_W_TABLE[0].1;
+    let mut best_d = f64::INFINITY;
+    for &(w, ca, _) in ORDER_STATS_TO_W_TABLE.iter() {
+        let d = (probe_w as f64 - w as f64) * (probe_w as f64 - w as f64);
+        if d < best_d {
+            best_d = d;
+            cal_alr = ca;
+        }
+    }
+    let delta = alr as f64 - cal_alr;
+    if delta <= 0.0 {
+        probe_w
+    } else {
+        (probe_w - SHIFT * delta as f32).clamp(ORDER_STATS_TO_W_TABLE[0].0, 1.0)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════════════════════════
 
@@ -786,6 +1018,40 @@ mod tests {
     }
 
     #[test]
+    fn test_probability_order_descending_and_permutation() {
+        let conf = [0.2f32, 0.9, 0.5, 0.9, 0.1];
+        let order = probability_order(&conf);
+        assert_permutation(&order, 5);
+        // Descending confidence: ties (positions 1, 3) keep ascending index.
+        assert_eq!(order, vec![1, 3, 2, 0, 4]);
+        // Gen-steps round-trip: most-confident position gets step 0.
+        let steps = order_to_gen_steps(&order);
+        assert_eq!(steps[1], 0);
+        assert_eq!(steps[4], 4);
+    }
+
+    #[test]
+    fn test_probability_order_deterministic_and_degenerate() {
+        // No RNG anywhere: two calls, one order.
+        let conf = [0.3f32, 0.8, 0.3];
+        assert_eq!(probability_order(&conf), probability_order(&conf));
+        // Equal confidences ⟹ ascending index order.
+        assert_eq!(probability_order(&[0.5f32; 4]), vec![0, 1, 2, 3]);
+        // Empty and singleton.
+        assert!(probability_order(&[]).is_empty());
+        assert_eq!(probability_order(&[0.7f32]), vec![0]);
+    }
+
+    #[test]
+    fn test_probability_order_nan_sorts_last() {
+        let conf = [f32::NAN, 0.6f32, f32::NAN, 0.2];
+        let order = probability_order(&conf);
+        assert_permutation(&order, 4);
+        assert_eq!(&order[..2], &[1, 3]); // finite first, descending
+        assert!(order[2..].contains(&0) && order[2..].contains(&2)); // NaN last
+    }
+
+    #[test]
     fn test_uniform_order_deterministic() {
         let l = 16;
         let o1 = uniform_order(l, &mut fastrand::Rng::with_seed(7));
@@ -918,5 +1184,155 @@ mod tests {
             }
         }
         count
+    }
+
+    /// Plan 602 T2.3 schedule-variant tests (feature-gated with the fns).
+    #[cfg(all(test, feature = "decode_order_metrics"))]
+    mod decode_order_variants {
+        use super::*;
+
+        // ── confidence_threshold_eligible ─────────────────────────────
+
+        #[test]
+        fn threshold_picks_confident_positions_ascending() {
+            let conf = [0.9f32, 0.2, 0.7, 0.95, 0.1];
+            assert_eq!(confidence_threshold_eligible(&conf, 0.7), vec![0, 2, 3]);
+            assert_eq!(confidence_threshold_eligible(&conf, 0.9), vec![0, 3]);
+        }
+
+        #[test]
+        fn threshold_boundary_is_inclusive() {
+            let conf = [0.5f32, 0.4999999, 0.5000001];
+            // τ exactly at a confidence includes it (≥, not >).
+            assert_eq!(confidence_threshold_eligible(&conf, 0.5), vec![0, 2]);
+            // τ above everything / below everything.
+            assert_eq!(confidence_threshold_eligible(&conf, 0.6), Vec::<usize>::new());
+            assert_eq!(confidence_threshold_eligible(&conf, 0.0), vec![0, 1, 2]);
+        }
+
+        #[test]
+        fn threshold_nan_never_eligible_and_empty_is_empty() {
+            let conf = [f32::NAN, 0.5, f32::NAN];
+            assert_eq!(confidence_threshold_eligible(&conf, 0.3), vec![1]);
+            assert_eq!(confidence_threshold_eligible(&conf, 0.0), vec![1]);
+            let empty: [f32; 0] = [];
+            assert!(confidence_threshold_eligible(&empty, 0.5).is_empty());
+        }
+
+        #[test]
+        fn threshold_agrees_with_probability_order_prefix() {
+            // With distinct confidences, the eligible set is exactly the
+            // top-|eligible| prefix of probability_order — the dynamic τ
+            // policy and the static confidence sort name the same tokens.
+            let conf: Vec<f32> = (0..24).map(|i| ((i * 37) % 97) as f32 / 97.0).collect();
+            for &tau in &[0.1f32, 0.3, 0.5, 0.7, 0.9] {
+                let eligible = confidence_threshold_eligible(&conf, tau);
+                let order = probability_order(&conf);
+                let top: std::collections::HashSet<usize> =
+                    order.iter().take(eligible.len()).copied().collect();
+                let got: std::collections::HashSet<usize> = eligible.iter().copied().collect();
+                assert_eq!(got, top, "tau={tau}");
+            }
+        }
+
+        // ── inverse_lambda_slot_counts ────────────────────────────────
+
+        #[test]
+        fn slot_counts_sum_exact_and_are_monotone() {
+            for &l in &[0usize, 1, 2, 3, 6, 10, 32, 100, 257] {
+                for &steps in &[1usize, 2, 3, 4, 7, 16, 64] {
+                    let c = inverse_lambda_slot_counts(l, steps);
+                    assert_eq!(c.len(), steps, "l={l} steps={steps}");
+                    assert_eq!(c.iter().sum::<usize>(), l, "l={l} steps={steps}: {c:?}");
+                    // Non-decreasing over the active prefix (trailing zeros
+                    // are idle surplus passes, not part of the profile).
+                    let active = steps.min(l);
+                    assert!(
+                        c[..active].windows(2).all(|w| w[0] <= w[1]),
+                        "non-monotone l={l} steps={steps}: {c:?}"
+                    );
+                    // Zeros only ever trail (surplus passes idle at the END).
+                    if let Some(first_zero) = c.iter().position(|&x| x == 0) {
+                        assert!(c[first_zero..].iter().all(|&x| x == 0), "interior zero l={l} steps={steps}: {c:?}");
+                    }
+                    // Active passes commit ≥ 1.
+                    assert!(c[..active].iter().all(|&x| x >= 1), "l={l} steps={steps}: {c:?}");
+                }
+            }
+        }
+
+        #[test]
+        fn slot_counts_hand_computed() {
+            // l=6, steps=3: active=3, min-1 base [1,1,1], extra=3.
+            // r_t = ceil(6·(3−t)/3) = [6, 4, 2] → w = [1/6, 1/4, 1/2],
+            // Σw = 11/12. quotas = 3·w/Σw = [6/11, 9/11, 18/11]
+            // → floors [0, 0, 1] (Σ=1), remainder 2 → fracs
+            // [6/11, 9/11, 7/11] → t1 then t2 get +1.
+            // Final: [1+0, 1+1, 1+1+1] = [1, 2, 3].
+            assert_eq!(inverse_lambda_slot_counts(6, 3), vec![1, 2, 3]);
+            // Degenerate shapes.
+            assert_eq!(inverse_lambda_slot_counts(5, 1), vec![5]);
+            assert_eq!(inverse_lambda_slot_counts(1, 4), vec![1, 0, 0, 0]);
+            assert_eq!(inverse_lambda_slot_counts(0, 3), vec![0, 0, 0]);
+            assert_eq!(inverse_lambda_slot_counts(4, 4), vec![1, 1, 1, 1]);
+        }
+
+        #[test]
+        fn slot_counts_backload_batch_size() {
+            // l=100, steps=10: quota_0 = 90·(1/100)/Σw ≈ 3.07 → the first
+            // (hardest) pass commits ~4 tokens while the last commits ~32 —
+            // the 1/λ_t shape concentrates per-pass batch size late, keeping
+            // the early region's careful small batches.
+            let c = inverse_lambda_slot_counts(100, 10);
+            assert_eq!(c.iter().sum::<usize>(), 100);
+            assert!(*c.last().unwrap() >= 4 * c[0], "profile must grow: {c:?}");
+        }
+
+        // ── predict_w_from_order_stats (T3.2 gap-predictor) ───────────
+
+        #[test]
+        fn predictor_recovers_calibrated_signatures() {
+            // Exact table signatures invert exactly (ties → lower w).
+            for &(w, ca, cg) in ORDER_STATS_TO_W_TABLE.iter() {
+                assert_eq!(
+                    predict_w_from_order_stats(ca as f32, cg as f32),
+                    w,
+                    "signature ({ca}, {cg})"
+                );
+            }
+        }
+
+        #[test]
+        fn predictor_endpoints_and_conservatism() {
+            // Strict-AR signature → the sequential endpoint.
+            assert_eq!(predict_w_from_order_stats(1.0, 1.0), 0.1);
+            // Uniform-random signature → the parallel endpoint (nearest
+            // row is w=1.0: (0.518, 0.547) at d≈0.0025 vs w=0.9 at d≈0.0051).
+            assert_eq!(predict_w_from_order_stats(0.5, 0.5), 1.0);
+            // NaN → conservative 0.1 (an unmeasurable probe is never
+            // parallel-safe).
+            assert_eq!(predict_w_from_order_stats(f32::NAN, 0.7), 0.1);
+            assert_eq!(predict_w_from_order_stats(0.6, f32::NAN), 0.1);
+            // The paper's hybrid band (ALR ~0.6, AGR ~0.9 — locally
+            // out-of-order, globally LTR) maps to the mid table, never the
+            // sequential or fully-parallel endpoints.
+            let w = predict_w_from_order_stats(0.60, 0.90);
+            assert!((0.3..=0.5).contains(&w), "hybrid-band signature mapped to w={w}");
+        }
+
+        #[test]
+        fn predictor_residual_shifts_against_ar_drag() {
+            // No drag (measured == calibrated, or below): keep probe_w.
+            assert_eq!(predict_w_residual(0.589, 0.797, 0.5), 0.5);
+            assert_eq!(predict_w_residual(0.40, 0.70, 0.5), 0.5);
+            // AR drag lowers w: Δ=+0.144 (the measured AR-trained fixture)
+            // → 0.5 − 2·0.144 = 0.212.
+            assert!((predict_w_residual(0.733, 0.9, 0.5) - 0.212).abs() < 1e-3);
+            // Clamped at the sequential endpoint for huge drag.
+            assert_eq!(predict_w_residual(1.0, 1.0, 0.5), 0.1);
+            // NaN measurements keep the incumbent posture.
+            assert_eq!(predict_w_residual(f32::NAN, 0.8, 0.7), 0.7);
+            assert_eq!(predict_w_residual(0.6, f32::NAN, 0.7), 0.7);
+        }
     }
 }

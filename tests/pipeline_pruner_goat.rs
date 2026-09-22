@@ -12,7 +12,6 @@ fn test_classify_simple_fast() {
     for _ in 0..10_000 {
         let features = QueryFeatures {
             entropy: 0.3,
-            expected_output_len: 32,
             input_len: 64,
             syntax_ratio: 0.0,
             ..Default::default()
@@ -59,7 +58,6 @@ fn test_classify_long_context_fast() {
     for _ in 0..10_000 {
         let features = QueryFeatures {
             entropy: 0.3,
-            expected_output_len: 2048,
             input_len: 4096,
             syntax_ratio: 0.0,
             ..Default::default()
@@ -81,7 +79,6 @@ fn test_classify_reasoning_fast() {
     for _ in 0..10_000 {
         let features = QueryFeatures {
             entropy: 0.9,
-            expected_output_len: 512,
             input_len: 256,
             syntax_ratio: 0.0,
             ..Default::default()
@@ -176,7 +173,6 @@ fn goat_g3_pipeline_pruner_simple_query_latency() {
         QueryFeatures {
             entropy: 0.2,
             input_len: 50,
-            expected_output_len: 32,
             syntax_ratio: 0.0,
             ..Default::default()
         };

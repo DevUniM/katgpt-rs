@@ -1,0 +1,47 @@
+# The EYES LIST for scripts/len_derived_drift_sweep.py — PERSISTENT-UPSTREAM
+# bind sites, pinned by MEMBERSHIP.
+#
+# Format, 5 whitespace-separated fields:
+#
+#   <repo> <file> <kernel> <handle> <rows_at_this_address>
+#
+# ── why membership and not a count ─────────────────────────────────────────
+# A count over the whole bucket goes green on the day one row is adjudicated
+# and another regresses. The set is the assertion; the cardinality falls out.
+# Reds in BOTH directions: a NEW address is a finding, and a pinned address
+# that stops being reported is a finding too (it was adjudicated — drop the row
+# in that commit — or the classifier stopped reaching it).
+#
+# ── why the key has no LINE number ─────────────────────────────────────────
+# A line moves when anything above it is edited, and a pin that reds on an
+# unrelated edit is a pin somebody deletes. `(repo, file, kernel, handle)` is
+# stable against that.
+#
+# ── why the key nevertheless carries a count ───────────────────────────────
+# That key is NOT unique in general — `attention_decode_q8kv`/`query_handle`
+# binds at two separate lines of one file in the GUARDED bucket. Within a
+# single address the substitution hazard that rules counts out ACROSS rows does
+# not apply, and without the count a SECOND bind site appearing at a pinned
+# address would be invisible. So: membership across addresses, count within one.
+#
+# Paths use `/` on purpose. The audit emits the host separator and the sweep
+# normalises before comparing, so this file is not Windows-shaped.
+#
+# ── what PERSISTENT-UPSTREAM means, and what it does NOT ───────────────────
+# Some workspace caller binds a struct-FIELD handle (`self.x`, `bufs.x`), so
+# the declared buffer size is whatever that field was created as. It is the
+# EYES LIST, not the finding list: whether any given row is a defect is a
+# judgement call for riir-ai's owner, and this repo is upstream of riir-ai.
+# What Issue 786 delivers is that the SET stops being unasserted.
+#
+# Read the field's creation before touching a row. The hazard is declared > live,
+# which derives the wrong shape silently; the undersized direction is the
+# caller's own loud bug and not this audit's class.
+#
+# Measured 2026-09-14 over 16 of 20 repos: 4 addresses, 1 row each, all riir-ai.
+#
+# <repo>  <file>                                            <kernel>                         <handle>                 <n>
+riir-ai crates/riir-gpu/src/gemv_geglu_f16_cubecl.rs gemv_geglu_plane_f16 weight_gate_handle 1
+riir-ai crates/riir-gpu/src/gemv_geglu_f16_cubecl.rs gemv_geglu_plane_f16 weight_up_handle 1
+riir-ai crates/riir-gpu/src/gemv_ternary_residual_cubecl.rs gemv_ternary_residual_rowtiled8 input_handle 1
+riir-ai crates/riir-gpu/src/gemv_ternary_residual_cubecl.rs gemv_ternary_residual_rowtiled8 residual_output_handle 1

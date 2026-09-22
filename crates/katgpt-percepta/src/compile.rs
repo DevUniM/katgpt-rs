@@ -1690,7 +1690,8 @@ mod tests {
 
     #[test]
     fn test_write_runtime_h() {
-        let temp_dir = std::env::temp_dir().join("microgpt-test-runtime");
+        let temp_dir = std::env::temp_dir()
+            .join(format!("microgpt-test-runtime_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);
         let path = write_runtime_h(&temp_dir).unwrap();
 

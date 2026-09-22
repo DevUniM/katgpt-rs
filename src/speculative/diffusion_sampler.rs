@@ -14,8 +14,8 @@
 //! exercise the train+infer interaction.
 
 pub use katgpt_forward::diffusion_sampler::{
-    DiffusionSampler, SamplerDecision, SamplerFeatures, SamplerTrajectory, SamplerVariant,
-    collect_trajectories,
+    DiffusionSampler, N_STABILITY_FEATURES, SamplerDecision, SamplerFeatures, SamplerTrajectory,
+    SamplerVariant, StabilityTracker, TOPK_DRIFT_K, collect_trajectories,
 };
 
 use crate::speculative::d2f::D2fDecodeConfig;

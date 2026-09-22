@@ -60,7 +60,6 @@ fn test_parallax_recovers_softmax_gate_zero() {
 
     let config = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: false,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
@@ -94,6 +93,8 @@ fn test_parallax_recovers_softmax_gate_zero() {
         ParallaxActivation::Softmax,
         None,
         #[cfg(feature = "ssmax_temperature")]
+        None,
+        #[cfg(feature = "prior_logit_lane")]
         None,
     );
 
@@ -123,7 +124,6 @@ fn test_parallax_recovers_softmax_zero_r() {
 
     let config = ParallaxConfig {
         gate_scale: 1.0,
-        zero_init: true,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
@@ -157,6 +157,8 @@ fn test_parallax_recovers_softmax_zero_r() {
         ParallaxActivation::Softmax,
         None,
         #[cfg(feature = "ssmax_temperature")]
+        None,
+        #[cfg(feature = "prior_logit_lane")]
         None,
     );
 
@@ -229,7 +231,6 @@ fn test_parallax_sigmoid_recovers_base() {
 
     let config = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: false,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };
@@ -263,6 +264,8 @@ fn test_parallax_sigmoid_recovers_base() {
         None,
         #[cfg(feature = "ssmax_temperature")]
         None,
+        #[cfg(feature = "prior_logit_lane")]
+        None,
     );
 
     for (i, (&a, &b)) in output_parallax.iter().zip(output_ref.iter()).enumerate() {
@@ -289,7 +292,6 @@ fn test_sigmoid_weights_normalized() {
     let x = vec![0.0f32; d];
     let config = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };
@@ -322,13 +324,11 @@ fn test_sigmoid_differs_from_softmax() {
 
     let config_sm = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
     let config_sig = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };
@@ -386,13 +386,11 @@ fn test_sigmoid_parallax_correction_applied() {
 
     let config_no_corr = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: false,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };
     let config_with_corr = ParallaxConfig {
         gate_scale: 1.0,
-        zero_init: false,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };
@@ -492,6 +490,10 @@ fn reference_attn_matrix(
 /// Result: column `sink_pos` receives mean strength ≈ 0.94 across rows,
 /// dominating all other columns. The AV update is rank-1 (output rows
 /// proportional to v[sink]) when v[sink] is non-zero.
+// Consumers are the sink-aware + 3-way ssmax/sink modules below — without
+// this gate the parallax_attn-only combo (a documented single-feature lane)
+// carries dead_code under -D warnings.
+#[cfg(feature = "sink_aware_attn")]
 fn build_sink_case(
     n: usize,
     d: usize,
@@ -539,7 +541,6 @@ fn plan289_retained_attn_matches_per_row_sigmoid() {
 
     let cfg = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Sigmoid,
         ..Default::default()
     };
@@ -592,7 +593,6 @@ fn plan289_retained_attn_matches_per_row_softmax() {
 
     let cfg = ParallaxConfig {
         gate_scale: 0.0,
-        zero_init: true,
         activation: ParallaxActivation::Softmax,
         ..Default::default()
     };
@@ -641,7 +641,6 @@ mod sink_aware_tests {
     fn parallax_zero_cfg(act: ParallaxActivation) -> ParallaxConfig {
         ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: act,
             ..Default::default()
         }
@@ -1030,16 +1029,16 @@ mod ssmax_composition_tests {
 
         let cfg_base = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
         // Same config but explicitly setting ssmax = None.
         let cfg_none = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ssmax: None,
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
 
         let mut out_base = vec![0.0f32; n * d];
@@ -1095,15 +1094,15 @@ mod ssmax_composition_tests {
 
         let cfg_base = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
         let cfg_ssmax = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ssmax: Some(SsmaxMode::Fixed { s_l: 1.0 }),
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
 
         let mut out_base = vec![0.0f32; d];
@@ -1161,15 +1160,15 @@ mod ssmax_composition_tests {
 
         let cfg_base = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
         let cfg_ssmax = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ssmax: Some(SsmaxMode::Fixed { s_l: 1.0 }),
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
 
         let mut out_base = vec![0.0f32; n * d];
@@ -1233,13 +1232,13 @@ mod ssmax_composition_tests {
 
         let cfg_ssmax = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ssmax: Some(mode),
+            #[cfg(feature = "prior_logit_lane")]
+            prior_logits: None,
         };
         let cfg_folded = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
@@ -1309,7 +1308,6 @@ mod ssmax_sink_aware_tests {
         let (q, k, v) = super::build_sink_case(n, d, 0, true);
         let cfg = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
@@ -1375,7 +1373,6 @@ mod ssmax_sink_aware_tests {
         let (q, k, v) = super::build_sink_case(n, d, 0, true);
         let cfg_base = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };
@@ -1448,7 +1445,6 @@ mod ssmax_sink_aware_tests {
         let (q, k, v) = super::build_sink_case(n, d, 0, true);
         let cfg = ParallaxConfig {
             gate_scale: 0.0,
-            zero_init: true,
             activation: ParallaxActivation::Sigmoid,
             ..Default::default()
         };

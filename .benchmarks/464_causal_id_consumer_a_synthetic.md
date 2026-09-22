@@ -87,7 +87,7 @@ Signature sizes range 1–49 nodes (mean 28.6). The 49-node maximum brushes agai
 
 This is a synthetic 100-node KG with hand-crafted structure. It is NOT a substitute for:
 - **Consumer B (T4.6)** — real sleep-cycle traces. The synthetic KG doesn't model the latent-embedding cosine-similarity scoring of Plan 457 Phase 3 source (b) (system-detected confounders); it uses source (c) (designer-authored cliques) exclusively.
-- **Real game traces from seal-online-remaster** — those would test the primitive on actual KG structure, not the idealized faction-mood topology encoded here.
+- **Real game traces from mmorpg-remaster** — those would test the primitive on actual KG structure, not the idealized faction-mood topology encoded here.
 
 The synthetic topology is designed to be **favorable to the primitive**: the confounder structure is known, dense, and aligned with the query classes. Real game KGs may be sparser or noisier, which could lower the actionable rate.
 
@@ -143,7 +143,7 @@ This is the kind of counterfactual reasoning a GM needs to answer "if I interven
 **Re-evaluation triggers (per Plan 457 §"Deferral / demotion paths"):**
 - If Consumer B (T4.6) later lands on real sleep-cycle traces and shows <30% non-trivial Ok rate: do NOT demote. The OR criterion was already satisfied by Consumer A. Document Consumer B's finding as a known limitation.
 - If a soundness bug is found in `identify()`: revert promotion, fix, re-run Plan 457 Phase 2 GOAT gate.
-- If a real game trace from seal-online-remaster shows <10% non-trivial Ok rate across 100+ queries: reopen the promotion decision at the next quarter hygiene gate.
+- If a real game trace from mmorpg-remaster shows <10% non-trivial Ok rate across 100+ queries: reopen the promotion decision at the next quarter hygiene gate.
 
 ## Methodology
 

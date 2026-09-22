@@ -184,7 +184,6 @@ fn test_bc_config_values() {
     assert!((bc.policy_coef - 0.1).abs() < 1e-6);
     assert!((bc.value_coef - 0.0).abs() < 1e-6);
     assert_eq!(bc.target, BcTarget::Argmax);
-    assert!(bc.anneal);
 }
 
 // -- T4: AutocurriculumSampler --

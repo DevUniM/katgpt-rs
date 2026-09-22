@@ -59,6 +59,8 @@ pub mod birth_death;
 #[cfg(feature = "heat_kernel_trajectory")]
 pub mod bom_heat_kernel;
 pub mod cache;
+#[cfg(feature = "coulomb_flow")]
+pub mod coulomb;
 pub mod flow;
 #[cfg(feature = "heat_kernel_trajectory")]
 pub mod heat_kernel;
@@ -84,15 +86,32 @@ pub mod simd;
 pub mod stokes_calculus;
 pub mod types;
 
+// DEC wave kernel — the ballistic (hyperbolic) twin of the heat-kernel
+// family (Issue 775, Research 554 — PC-ALM arXiv:2605.31022): the 1:1-
+// interleaved primal-dual step on CochainField pairs, damped-wave
+// dispersion, group velocity √(αη), α=0 bit-identical to the diffusion
+// step. Plus the Hodge triage helper for residual flows. Opt-in.
+#[cfg(feature = "dual_wave")]
+pub mod wave_kernel;
+#[cfg(feature = "dual_wave")]
+pub use wave_kernel::{
+    HodgeTriage, ResidualClass, TriageVerdict, WaveParams, WaveScratch, hodge_triage,
+    wave_step_into,
+};
+
 pub use backend::{DecBackend, select_backend};
 pub use cache::{DecCache, DirtyRegion, affected_vertices, hodge_decompose_cached};
 pub use flow::{DecFlowField, coexact_flow, exact_flow, harmonic_flow};
 pub use hodge::{
-    HodgeComponents, betti_numbers, dec_relevance_score, harmonic_projector, hodge_decompose,
-    hodge_energy, hodge_residual, hodge_spectrum,
+    HodgeComponents, PoissonScratch, PoissonStats, betti_numbers, dec_relevance_score,
+    harmonic_projector, hodge_decompose, hodge_energy, hodge_residual, hodge_spectrum,
+    poisson_solve, poisson_solve_into,
 };
+#[cfg(feature = "coulomb_flow")]
+pub use coulomb::{CoulombFlowField, CrowdRouter, RouterStep};
 pub use operators::{
-    codifferential, exterior_derivative, graph_laplacian, hodge_laplacian, hodge_star,
+    codifferential, codifferential_into, exterior_derivative, exterior_derivative_into,
+    graph_laplacian, graph_laplacian_into, hodge_laplacian, hodge_laplacian_into, hodge_star,
 };
 pub use stokes_calculus::{
     belief_mass_divergence, boundary_flux_mass, boundary_flux_mass_indexed,

@@ -44,17 +44,36 @@
 #                            defaults to OFF), so both arms run. Derived
 #                            package list; the sites no `-p … --lib` reaches
 #                            are pinned by membership.
+#   2c. x86_64 lint       → the INVERSE of what x86_64_execution_matrix.sh
+#                            closed: that instrument EXECUTES the x86_64 arms
+#                            and does not lint them, and every lane that lints
+#                            compiles them to nothing (2/3/6 are aarch64, 2b is
+#                            wasm32, test_gate does not lint). `avx2` is a
+#                            SECOND gate on top of `target_arch`, so both arms
+#                            run; measured 30-and-0 (Issue 819). Derived
+#                            package list, four named non-src targets, the
+#                            residue outside both pinned by membership. The
+#                            TRIPLE is disclosed on the verdict line.
 #   3. the gate itself     → clippy, workspace, all targets, all features
 #   4. zero errors         → any `error` line or unbuildable target is a finding
 #   6. profile axis        → the same tree with debug_assertions OFF; the four
 #                            axes below all run in the DEV profile (.docs/10_audits/debug_release_profile_axis.md)
+#   6b. profile×default     → Layer 6 runs --all-features, which SUPPLIES
+#                            `alloc_tracking` — the (release × default-features)
+#                            cell was asserted by nothing until Issue 758 fell
+#                            through it (slice_tca/tests.rs E0432). Same three-
+#                            package population as test_gate.sh.
 #   5. doc/script parity   → AGENTS.md must quote the same command this script
 #                            runs; a gate whose spec has drifted from its
 #                            implementation is a gate nobody is running
 #
 # Usage:
 #   scripts/full_gate.sh                          # strict
-#   scripts/full_gate.sh --allow-partial-platform # off-macOS: warn, don't fail
+#   scripts/full_gate.sh --allow-partial-platform # off-macOS / no wasm32 target:
+#                                                 #   run every layer anyway and
+#                                                 #   report ⚠ PARTIAL, naming on
+#                                                 #   the FINAL line what was not
+#                                                 #   measured. NEVER a full pass.
 #   scripts/full_gate.sh --wasm32-only            # Layer 2b ONLY (Issue 737 T4):
 #                                                 #   the wasm32 + simd128 lane,
 #                                                 #   which makes no macOS claim,
@@ -71,6 +90,22 @@ set -euo pipefail
 
 ALLOW_PARTIAL=0
 WASM32_ONLY=0
+
+# ── Issue 803: what this run could NOT measure, carried to the FINAL line ────
+# `--allow-partial-platform` has existed since the platform layer did, and it
+# printed `✓ full gate PASSED — 0 errors …` — byte-identical to a real macOS
+# run — with the partial-ness announced only by a Layer-2 `⚠` roughly six
+# hundred lines of build output earlier. That is this repo's own most-repeated
+# rule broken by the one instrument that is not a sweep: a deferral rides the
+# FINAL line, in BOTH directions, because a deferral printed where it scrolls
+# away is one nobody reads on the run that passes. Measured consequence: 24
+# `error[E0560]` and 4 `-D`-listed lint errors sat on develop for ten hours
+# while every lane that CAN run here (test_gate, wasm32_gate) was green.
+#
+# Newline-separated; one line per unmeasured axis.
+PARTIAL_NOTES=""
+note_partial() { PARTIAL_NOTES="${PARTIAL_NOTES:+$PARTIAL_NOTES
+}$1"; }
 for arg in "$@"; do
     case "$arg" in
         --allow-partial-platform) ALLOW_PARTIAL=1 ;;
@@ -217,6 +252,7 @@ if [ "$(uname -s)" != "Darwin" ]; then
         echo "✗ refusing to report a partial run as a pass (--allow-partial-platform to override)"
         exit 1
     fi
+    note_partial "macOS device backends NOT compiled — $APPLE_GATED target_os=\"macos\" file(s), on $(uname -s)"
 else
     echo "✓ macOS — the $APPLE_GATED target_os-gated file(s) are in scope"
 fi
@@ -238,7 +274,29 @@ fi   # end the full-mode-only part of Layer 2; Layer 2b below runs in BOTH modes
 # `katgpt-moka-wasm` alone, of which ELEVEN were `unsafe_op_in_unsafe_fn`
 # (edition-2024 `warning[E0133]`, on its way to a hard error) — in a crate
 # whose whole reason to exist is to be shipped to a browser.
-WASM_FILES=$(git grep -l 'target_arch = "wasm32"' -- '*.rs' 2>/dev/null || true)
+# Positive-surface derivation — the wasm32_surface_audit.py vocabulary: a
+# file counts as surface only when it carries a COMPILE-TIME, non-negated
+# wasm32 cfg. Two classes are deliberately NOT surface:
+#   `#![cfg(not(target_arch = "wasm32"))]` — a native-only guard; the file
+#       compiles to NOTHING on wasm32 and cannot break it. Counting it made
+#       every new native-only test/bench demand a residue pin (the class
+#       Issue 738 T3 fixed for the python audit; this is the fourth
+#       instrument to meet it).
+#   `cfg!(target_arch = "wasm32")` — a RUNTIME branch; both arms compile on
+#       every target, so the native --all-targets lane already compiles the
+#       wasm32 arm. Nothing wasm32-specific is left uncovered.
+# Line-based, with one measured limit: a multi-line `not( ... )` wrapper
+# re-includes its inner lines — over-inclusion, the safe direction (the
+# file lands in the residue pin below and demands a human read instead of
+# silently vanishing from the accounting).
+WASM_FILES=$(git grep -lE 'target_arch[[:space:]]*=[[:space:]]*"wasm32"' -- '*.rs' 2>/dev/null | while IFS= read -r f; do
+    if git grep -hE 'target_arch[[:space:]]*=[[:space:]]*"wasm32"' -- "$f" 2>/dev/null \
+        | grep -v 'cfg!' \
+        | grep -vE 'not[[:space:]]*\([[:space:]]*target_arch' \
+        | grep -q .; then
+        printf '%s\n' "$f"
+    fi
+done || true)
 WASM_SIMD_FILES=$(git grep -l 'target_feature = "simd128"' -- '*.rs' 2>/dev/null || true)
 WASM_N=$(printf '%s\n' "$WASM_FILES" | grep -c . || true)
 WASM_SIMD_N=$(printf '%s\n' "$WASM_SIMD_FILES" | grep -c . || true)
@@ -272,19 +330,27 @@ if printf '%s\n' "$WASM_FILES" | grep -q '^src/'; then
     WASM_PKGS=$(printf '%s\n%s\n' "$WASM_PKGS" "$ROOT_PKG" | sort -u)
 fi
 
-# Sites no `--lib` lane reaches. Two of the four ARE built, as named targets
-# (WASM_EXTRA_TARGETS); the other two are NOT, for a measured reason:
+# Sites no `--lib` lane reaches: the POSITIVE compile-time surface outside
+# crates/*/src/ and src/. Empty today by construction — every non-src wasm32
+# mention in the tree is either a runtime `cfg!` branch (the two GOAT
+# targets: both arms compile on every target, the native --all-targets lane
+# compiles the wasm32 arm, and the targets stay built FOR wasm32 as named
+# GOAT evidence in WASM_EXTRA_TARGETS below — the lane is their pin) or a
+# `#![cfg(not(target_arch = "wasm32"))]` native-only guard on
+# tests/benches/examples (the plan598 bench, the 779 real-bank affinity
+# test, the 598 tokenizer-bridge test, the two bomber arenas) — each
+# compiles to nothing on wasm32 by its own declaration.
 #
-#   examples/bomber_*.rs — `requires the features: bomber`, and with that
-#   feature on they fail at `cargo check` with `unresolved import
-#   sys::position` / `cannot find function enable_raw_mode in module sys`:
-#   crossterm has no wasm32 backend. A TUI arena cannot target a browser;
-#   this is a fact about the dependency, not a gap to close.
-WASM_RESIDUE=$(printf '%s\n' "$WASM_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' | sort)
-WASM_RESIDUE_EXPECTED='crates/katgpt-core/benches/bench_432_simd_lut_dequant_goat.rs
-crates/katgpt-core/examples/simd_wasm32_goat.rs
-examples/bomber_21_sonlt_arena.rs
-examples/bomber_tjs_arena.rs'
+# When this pin reds: a NEW compile-time positive wasm32 cfg has appeared
+# outside a src/ dir. Add the target to WASM_EXTRA_TARGETS (if it compiles
+# for wasm32) or pin it here with the measured reason it cannot. Do NOT
+# just re-pin the list.
+# `|| true` at the tail: under `set -euo pipefail`, grep -v exits 1 when it
+# outputs NOTHING (every site filtered), which would kill the gate on exactly
+# the changed-set case the comparison below exists to report. The residue
+# variable then reads empty and the != comparison prints its own verdict.
+WASM_RESIDUE=$(printf '%s\n' "$WASM_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' | sort || true)
+WASM_RESIDUE_EXPECTED=''
 if [ "$WASM_RESIDUE" != "$WASM_RESIDUE_EXPECTED" ]; then
     echo "✗ the set of wasm32 sites NOT covered by a --lib lane has changed."
     echo "  Either add the new one to WASM_EXTRA_TARGETS (if it compiles for"
@@ -308,6 +374,7 @@ if ! rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown
         echo "✗ refusing to report a partial run as a pass (--allow-partial-platform to override)"
         exit 1
     fi
+    note_partial "wasm32 lane SKIPPED — $WASM_N wasm32 + $WASM_SIMD_N simd128 file(s) NOT compiled (rustup target add wasm32-unknown-unknown)"
 else
     WASM_P_ARGS=$(printf -- '-p %s ' $WASM_PKGS)
     for arm in on off; do
@@ -342,6 +409,178 @@ fi
 # Layers 3-6 are the whole-surface claim — FULL mode only (Issue 737 T4).
 if [ "$WASM32_ONLY" -eq 0 ]; then   # full-mode body — closes just before the final summary
 
+
+# ── Layer 2c: x86_64 + avx2 LINT coverage (Issue 819) ───────────────────────
+# Layer 2b closed a platform axis by COMPILING a triple nothing else compiled.
+# This closes the same shape one arch over, and the hole it fills is the
+# INVERSE of the one `scripts/x86_64_execution_matrix.sh` closed on
+# 2026-09-16: that instrument EXECUTES the x86_64 arms and does not lint them,
+# and every lane that lints — Layers 2/3/6 here (macOS/aarch64), Layer 2b and
+# `wasm32_gate.yml` (a third triple), `test_gate.sh` (does not lint, and runs
+# at default target-features) — compiles the x86_64 arms to NOTHING.
+#
+# Measured on the workstation that found it (Issue 819 T1): 30 findings, every
+# one `unsafe_op_in_unsafe_fn` on edition 2024, every one in
+# `dash_attn/channel_aware.rs`, against 0 on the avx2-off arm. That file
+# carries two transcriptions of one kernel and only the aarch64 one had the
+# `unsafe { }` block — repaired on the arm a lane compiles, not on its twin.
+# It is Issue 737's 0-and-14 wasm32 measurement reproduced one platform over,
+# and it is the argument for running BOTH arms here: `target_feature = "avx2"`
+# is a SECOND gate on top of `target_arch`, so a lane that selects an x86_64
+# triple and forgets the RUSTFLAGS compiles the hot half to nothing and
+# reports a green ZERO wearing a triple.
+#
+# ⚠ Unlike 2b this lane is `--all-features`. Two reasons, neither taste:
+# (1) it makes the layer exactly Layer 3's feature coverage re-run on the
+# x86_64 arch, which is the claim being RESTORED rather than a new one;
+# (2) the four non-`src/` targets below each carry a `required-features` row,
+# and a hand-typed feature list beside them is this repo's own most-repeated
+# drift shape. `--all-features` is not a supported TEST configuration here
+# (fixture RNG streams and GOAT calibrations are per-feature) — this layer
+# does not RUN anything.
+#
+# ⚠ `--all-features` is not optional HERE in a way it is not elsewhere:
+# `katgpt-attn` has `default = []`, so at default features `dash_attn` — and
+# with it both files the 30 findings live in — compiles to NOTHING. A
+# default-features version of this lane is the green ZERO it exists to catch.
+# The cost it buys is a native one: `--all-features` turns on
+# `katgpt-tokenizer`'s optional `good_lp`, hence `highs-sys`, hence cmake and
+# a C++ toolchain. NOT capped here, deliberately — Layer 3 has the identical
+# exposure and capping one and not the other is this repo's most-repeated
+# drift shape — but the failure is loud and self-identifying, and the remedy
+# is one line: a 24-way `cmake --parallel` on a loaded box dies with
+# `cl : command line error D8040` (measured 2026-09-17, with a g200 training
+# run and three agent sessions resident); `CMAKE_BUILD_PARALLEL_LEVEL=4`
+# builds the same package clean. That is the BOX, not this lane.
+X86_FILES=$(git grep -lE 'target_arch[[:space:]]*=[[:space:]]*"x86_64"' -- '*.rs' 2>/dev/null | while IFS= read -r f; do
+    if git grep -hE 'target_arch[[:space:]]*=[[:space:]]*"x86_64"' -- "$f" 2>/dev/null \
+        | grep -v 'cfg!' \
+        | grep -vE 'not[[:space:]]*\([[:space:]]*target_arch' \
+        | grep -q .; then
+        printf '%s\n' "$f"
+    fi
+done || true)
+X86_AVX2_FILES=$(git grep -l 'target_feature = "avx2"' -- '*.rs' 2>/dev/null || true)
+X86_N=$(printf '%s\n' "$X86_FILES" | grep -c . || true)
+X86_AVX2_N=$(printf '%s\n' "$X86_AVX2_FILES" | grep -c . || true)
+
+# Same instrument floor as Layers 2 and 2b, same reasoning: a zero reads
+# exactly like a working grep over a surface that no longer exists, and both
+# readings need a human.
+if [ "$X86_N" -eq 0 ] || [ "$X86_AVX2_N" -eq 0 ]; then
+    echo "✗ x86_64 layer found NO x86_64 ($X86_N) or NO avx2 ($X86_AVX2_N) files"
+    echo "  Either the grep drifted from the tree, or the x86_64 surface is gone."
+    echo "  If it really is gone, delete this layer and"
+    echo "  scripts/x86_64_execution_matrix.sh together."
+    exit 1
+fi
+
+# Derived, for Layer 2b's reason: a new x86_64-bearing crate joins the lane by
+# EXISTING. Selecting the root package when it has x86_64 source is what makes
+# such a lane wide — clippy lints every workspace PATH dependency it pulls in.
+X86_PKGS=$(printf '%s\n' "$X86_FILES" | sed -n 's|^crates/\([^/]*\)/src/.*|\1|p' | sort -u)
+if printf '%s\n' "$X86_FILES" | grep -q '^src/'; then
+    X86_PKGS=$(printf '%s\n%s\n' "$X86_PKGS" "$ROOT_PKG" | sort -u)
+fi
+
+# pkg|selector|name|path — the non-`src/` x86_64 surface, named. Unlike 2b's
+# residue (empty by construction) this one is FIVE real test targets, and
+# `--all-targets` is not the way to reach them: it would pull every other
+# target in the workspace into a per-arch lane whose subject is 28 files.
+# The `path` field is what makes the pin below non-redundant with this table.
+X86_EXTRA_TARGETS="$ROOT_PKG|--test|bench_256_simd_topk|tests/bench_256_simd_topk.rs
+$ROOT_PKG|--test|issue_698_t5_kv_mean|tests/issue_698_t5_kv_mean.rs
+$ROOT_PKG|--test|latent_steering_t3_simd_vs_scalar|tests/latent_steering_t3_simd_vs_scalar.rs
+katgpt-types|--test|bench_578_avx2_goat|crates/katgpt-types/tests/bench_578_avx2_goat.rs
+katgpt-core|--test|bench_847_avx2_arm_reachability|crates/katgpt-core/tests/bench_847_avx2_arm_reachability.rs"
+
+# The pin is the residue MINUS whatever a named row above covers, and it is
+# expected EMPTY — pinning the four paths themselves would just restate the
+# table one line down, and a pin that restates its own input cannot fail.
+# When this reds, a NEW compile-time positive x86_64 cfg has appeared outside
+# a `src/` dir: add a row to X86_EXTRA_TARGETS, or pin it here with the
+# measured reason it cannot be reached. Do NOT just re-pin the list.
+# `|| true` at the tail for Layer 2b's reason: under `set -euo pipefail` a
+# `grep -v` that filters everything exits 1, which would kill the gate on
+# exactly the all-covered case this comparison exists to report.
+# The OTHER direction — a row here whose file is gone — is caught by cargo
+# itself (`--test <name>` on a target that no longer exists is an error), so
+# the table cannot only ever loosen either.
+X86_COVERED=$(printf '%s\n' "$X86_EXTRA_TARGETS" | cut -d'|' -f4 | sort)
+X86_RESIDUE=$(printf '%s\n' "$X86_FILES" | grep -v '^crates/[^/]*/src/' | grep -v '^src/' \
+    | sort | grep -vxF "$X86_COVERED" || true)
+X86_RESIDUE_EXPECTED=''
+if [ "$X86_RESIDUE" != "$X86_RESIDUE_EXPECTED" ]; then
+    echo "✗ the set of x86_64 sites reached by NO --lib lane and NO named row"
+    echo "  has changed. Add a row to X86_EXTRA_TARGETS (if it compiles) or to"
+    echo "  X86_RESIDUE_EXPECTED with the measured reason it cannot. Do NOT"
+    echo "  just re-pin the list."
+    echo "  --- expected ---"; printf '%s\n' "$X86_RESIDUE_EXPECTED"
+    echo "  --- measured ---"; printf '%s\n' "$X86_RESIDUE"
+    exit 1
+fi
+
+# ⛔ The TRIPLE is the one real design decision in this layer, and the lane
+# DISCLOSES it on its own verdict line. Layer 2b can name
+# `wasm32-unknown-unknown` literally because there is exactly one; x86_64 has
+# three in play here and they differ in `target_os`, which gates OTHER code in
+# this repo (Layer 2's whole subject). So: the HOST triple when the host is
+# already x86_64 — the configuration the Issue 819 measurement was taken in,
+# and the only one needing no extra `rustup target add` — and a named cross
+# triple otherwise. A green whose triple is not printed means something
+# different on every box.
+X86_HOST=$(rustc -vV | sed -n 's/^host: //p')
+case "$X86_HOST" in
+    x86_64-*) X86_TRIPLE="$X86_HOST" ;;
+    *) case "$(uname -s)" in
+           Darwin) X86_TRIPLE=x86_64-apple-darwin ;;
+           *)      X86_TRIPLE=x86_64-unknown-linux-gnu ;;
+       esac ;;
+esac
+
+# `grep -qx`, not `grep -q`: `x86_64-apple-darwin` is a SUBSTRING of nothing
+# here today, but `rustup target list --installed` is a line-oriented answer
+# and a substring match on triples is a class of wrong answer waiting for the
+# next triple to be added.
+if ! rustup target list --installed 2>/dev/null | grep -qx "$X86_TRIPLE"; then
+    echo "⚠ $X86_TRIPLE not installed — $X86_N x86_64 file(s) and"
+    echo "  $X86_AVX2_N avx2 file(s) will NOT be linted in this run."
+    echo "  This run is a PARTIAL gate (rustup target add $X86_TRIPLE)."
+    if [ "$ALLOW_PARTIAL" -eq 0 ]; then
+        echo "✗ refusing to report a partial run as a pass (--allow-partial-platform to override)"
+        exit 1
+    fi
+    note_partial "x86_64 lint lane SKIPPED — $X86_N x86_64 + $X86_AVX2_N avx2 file(s) NOT linted (rustup target add $X86_TRIPLE)"
+else
+    X86_P_ARGS=$(printf -- '-p %s ' $X86_PKGS)
+    for x86arm in on off; do
+        if [ "$x86arm" = on ]; then
+            X86_RUSTFLAGS='-C target-feature=+avx2'
+        else
+            X86_RUSTFLAGS=''
+        fi
+        # `--keep-going` for Layer 3's reason: without it the run stops at the
+        # first failing crate and under-reports the rest.
+        # shellcheck disable=SC2086  # word splitting is the point: one -p per crate
+        if ! RUSTFLAGS="$X86_RUSTFLAGS" cargo clippy $X86_P_ARGS --lib --all-features \
+                --target "$X86_TRIPLE" --keep-going --quiet -- -D warnings; then
+            echo "✗ x86_64 --lib lane failed (avx2 $x86arm, $X86_TRIPLE)" >&2
+            exit 1
+        fi
+        while IFS='|' read -r xpkg xsel xname _xpath; do
+            [ -n "$xpkg" ] || continue
+            if ! RUSTFLAGS="$X86_RUSTFLAGS" cargo clippy -p "$xpkg" "$xsel" "$xname" \
+                    --all-features --target "$X86_TRIPLE" --quiet -- -D warnings; then
+                echo "✗ x86_64 target lane failed (avx2 $x86arm, $X86_TRIPLE): $xpkg $xsel $xname" >&2
+                exit 1
+            fi
+        done <<X86EOF
+$X86_EXTRA_TARGETS
+X86EOF
+        echo "✓ x86_64 clean (avx2 $x86arm, $X86_TRIPLE): $(printf '%s' "$X86_PKGS" | tr '\n' ' ')+ 5 named targets"
+    done
+fi
+
 # ── Layer 3: the gate ───────────────────────────────────────────────────────
 # `--keep-going` is not optional: without it cargo stops at the first failing
 # target. The run that found the five breaks reported only two without it.
@@ -350,7 +589,11 @@ if [ "$WASM32_ONLY" -eq 0 ]; then   # full-mode body — closes just before the 
 # when the job ends, so a path printed into a dead runner's filesystem is
 # unreachable — the weekly run would be left with only the summary, which is
 # the situation the retention exists to fix.
-LOG="${FULL_GATE_LOG:-$(mktemp -t full_gate)}"
+# Portable mktemp (Issue 758): `mktemp -t <prefix>` is BSD-only — GNU mktemp
+# (Linux workstations, Git Bash) rejects a template with no X's ("too few X's
+# in template"). The full-path-with-X's form works on both; the BSD forms
+# were latent breaks everywhere the gate had never run but macOS.
+LOG="${FULL_GATE_LOG:-$(mktemp "${TMPDIR:-/tmp}/full_gate.XXXXXX")}"
 mkdir -p "$(dirname "$LOG")"
 
 # Retain the log when the gate fails. The summary below prints error CLASSES and
@@ -422,7 +665,37 @@ BROKEN_N=$({ printf '%s' "$BROKEN" | grep -c . || true; })
 # can act on.
 WARN_LINES=$({ grep -cE '^warning' "$LOG" || true; })
 WARN_TALLIES=$({ grep -cE '^warning: .* generated [0-9]+ warning' "$LOG" || true; })
-WARNINGS=$((WARN_LINES - WARN_TALLIES))
+# ⛔ A third `^warning:` class, and it is not a code finding at all: cargo's
+# own ENVIRONMENT warnings. On a volume with no hard links — this workspace's
+# E: is exFAT — every compilation session emits
+#   warning: hard linking files in the incremental compilation cache failed
+# once per session dir. Measured 2026-09-16 on the Windows workstation over
+# Layer 5's own log: 2098 `^warning` lines = 1049 per-target tallies + 1049 of
+# THESE + **zero** code warnings, reported as "1049 warning finding(s) across
+# 1049 target(s)". That number is unactionable and a reader will take it for a
+# thousand lints; the same run under a warmer cache said 64, which is worse,
+# because a plausible small number does not invite a second look.
+#
+# Counted and SUBTRACTED, never silently dropped, and printed when non-zero:
+# a count that vanishes is a count nobody can check, and the day cargo changes
+# this message the tally goes back into WARNINGS rather than disappearing.
+# The pattern is anchored on cargo's wording, not on "hard link", so an
+# unrelated future warning containing that phrase still counts as a finding.
+#
+# ⚠ WARN_TALLIES is NOT adjusted, and the phrase says so: cargo's per-unit
+# "generated N warnings" line counts its OWN warnings too, so on such a volume
+# a target with zero lints still gets a tally. Measured on the verification
+# run: 0 findings, 1049 tallies. "0 findings across 1049 targets" reads as a
+# contradiction; "over 1049 target(s) that emitted any warning" is what the
+# number actually is, and attributing tallies to causes is not decidable from
+# the text.
+WARN_ENV=$({ grep -cE '^warning: hard linking files in the incremental compilation cache' "$LOG" || true; })
+WARNINGS=$((WARN_LINES - WARN_TALLIES - WARN_ENV))
+if [ "$WARN_ENV" -gt 0 ]; then
+    WARN_ENV_NOTE="; $WARN_ENV cargo env warning(s) excluded (no-hard-link volume)"
+else
+    WARN_ENV_NOTE=""
+fi
 
 # ── Layer 3b: liveness — did this run examine anything at all? ───────────────
 # The gate reported "✓ full gate PASSED — 0 errors, 0 unbuildable targets
@@ -512,7 +785,7 @@ fi
 REL_ARGS=(cargo check --workspace --all-targets --all-features --keep-going --release
     --message-format=json)
 echo "▸ Layer 6: profile axis — ${REL_ARGS[*]}"
-REL_LOG="$(mktemp -t full_gate_release)"
+REL_LOG="$(mktemp "${TMPDIR:-/tmp}/full_gate_release.XXXXXX")"
 "${REL_ARGS[@]}" > "$REL_LOG" 2>&1 || true
 REL_UNITS=$({ grep -c '"reason":"compiler-artifact"' "$REL_LOG" || true; })
 REL_ERRS=$({ grep -c '"level":"error"' "$REL_LOG" || true; })
@@ -536,6 +809,80 @@ fi
 rm -f "$REL_LOG"
 echo "  ✓ release profile clean ($REL_UNITS compiler-artifact record(s))"
 
+# ── Layer 6b: profile axis × DEFAULT features (Issue 758, 2026-09-12) ────────
+# Layer 6 runs --all-features, which SUPPLIES `alloc_tracking` — so one cell
+# of the profile×feature matrix was asserted by NOTHING:
+#
+#   (dev, default)       test_gate.sh   EXECUTED, floored
+#   (dev, all)           Layer 3        clippy compile + lint
+#   (release, all)       Layer 6        check compile
+#   (release, default)   Layer 6b (this) check compile
+#
+# The hole was real and recent: slice_tca/tests.rs imported `crate::alloc`
+# unconditionally at MODULE level (Phase 31, 2026-09-12) — E0432 under
+# `cargo test --release -p katgpt-core --lib` at default features — and Layer 6
+# was GREEN the whole time because --all-features turned the feature on
+# (Issue 758). Every other alloc-importing test survived this cell only by
+# carrying its own `#[cfg(any(debug_assertions, feature = "alloc_tracking"))]`.
+#
+# Scope — the test_gate.sh population (katgpt-rs, katgpt-core, katgpt-dec at
+# its pca_global row), NOT --workspace: a workspace run inherits the PLATFORM
+# axis (katgpt-backend's metal examples are unresolvable off macOS at ANY
+# feature set — measured 2026-09-12: E0433 ×10+ in
+# examples/bench_mtp_metal_batch_floor.rs on Windows), which Layer 2 owns and
+# refuses on. These three packages are the platform-invariant core
+# (test_gate.sh's platform-invariance analysis). If you add a row to
+# test_gate.sh's ROWS, add its package here too — same population, different
+# axis. `--tests`, not --all-targets: the class lives in cfg(test) code;
+# targets skipped by unmet required-features at default features are exactly
+# what `cargo test` at defaults would skip — the lane asserts the cell over
+# what default features SELECT.
+#
+# Canary (two-sided, 2026-09-12): the Issue-758 import reintroduced → the
+# katgpt-core row fails `could not compile (lib test)`; restored → clean.
+# Cost on this lane's first run (16-core workstation): root 40 s cold-ish,
+# core + dec ≈ 2 s (warm from Layer 6's neighbours); expect minutes on a
+# 4-core CI runner — the default-features units are disjoint from Layer 6's
+# all-features units (feature fingerprint), so 6b pays its own compile.
+RELD_ROWS="katgpt-rs:
+katgpt-core:
+katgpt-dec:pca_global"
+for relrow in $RELD_ROWS; do
+    relpkg=${relrow%%:*}
+    relfeats=""
+    case "$relrow" in
+        *:*) relfeats=${relrow#*:} ;;
+    esac
+    relfeat_args=""
+    [ -n "$relfeats" ] && relfeat_args="--features $relfeats"
+    # shellcheck disable=SC2086 — relfeat_args is deliberately word-split
+    RELD_ARGS=(cargo check -p "$relpkg" --tests --release --keep-going
+        --message-format=json $relfeat_args)
+    echo "▸ Layer 6b: profile×default-features — ${RELD_ARGS[*]}"
+    RELD_LOG="$(mktemp "${TMPDIR:-/tmp}/full_gate_release_default.XXXXXX")"
+    "${RELD_ARGS[@]}" > "$RELD_LOG" 2>&1 || true
+    RELD_UNITS=$({ grep -c '"reason":"compiler-artifact"' "$RELD_LOG" || true; })
+    RELD_ERRS=$({ grep -c '"level":"error"' "$RELD_LOG" || true; })
+    if [ "$RELD_UNITS" -eq 0 ]; then
+        echo "✗ full gate INCONCLUSIVE — the release/default-features pass for"
+        echo "  $relpkg produced 0 compiler-artifact records, so it verified"
+        echo "  NOTHING. Cargo did not run (or the -p name drifted)."
+        echo "  log: $RELD_LOG"
+        exit 1
+    fi
+    if [ "$RELD_ERRS" -ne 0 ]; then
+        echo "✗ full gate FAILED — $RELD_ERRS error diagnostic(s) for $relpkg in the"
+        echo "  RELEASE profile at DEFAULT features (Layer 6's --all-features pass"
+        echo "  cannot see this cell: it supplies the very features whose absence"
+        echo "  breaks here — Issue 758's exact hole)."
+        { grep -o '"rendered":"error[^"]*' "$RELD_LOG" | sort -u | head -10 | sed 's/^/    /'; } || true
+        echo "  log: $RELD_LOG"
+        exit 1
+    fi
+    rm -f "$RELD_LOG"
+    echo "  ✓ $relpkg release/default-features clean ($RELD_UNITS compiler-artifact record(s))"
+done
+
 # UNITS is printed on every pass, not just when it is interesting: the number
 # that would have exposed the vacuous CI green was never on screen.
 fi   # ── end full-mode body (opened before Layer 3, Issue 737 T4) ──
@@ -548,6 +895,17 @@ if [ "$WASM32_ONLY" -eq 1 ]; then
     fi
     echo "✓ wasm32 gate PASSED — Layer 2b only, both simd128 arms (full gate NOT run)"
 else
-    echo "✓ full gate PASSED — 0 errors, 0 unbuildable targets ($WARNINGS warning finding(s) across $WARN_TALLIES target(s), not gated; $UNITS unit(s) compiled)"
+    if [ -n "$PARTIAL_NOTES" ]; then
+        # NOT "PASSED". Every layer that ran is clean and that is worth saying,
+        # but the run did not see the whole repo and the last line a reader sees
+        # has to say so — the `DEFERRED` / `STALE` / `CPU SUPPRESSED` idiom the
+        # eighteen drift sweeps already use. Exit 0: this is a real, useful
+        # verdict over a named subset, not a failure.
+        echo "⚠ full gate PARTIAL — every layer that RAN is clean (0 errors, 0 unbuildable targets, $WARNINGS warning finding(s) over $WARN_TALLIES target(s) that emitted any warning, not gated$WARN_ENV_NOTE; $UNITS unit(s) compiled), but this run did NOT measure:"
+        printf '%s\n' "$PARTIAL_NOTES" | sed 's/^/    ⚠ /'
+        echo "  A whole-repo claim needs a macOS run with every target installed; this is a SUBSET verdict."
+    else
+        echo "✓ full gate PASSED — 0 errors, 0 unbuildable targets ($WARNINGS warning finding(s) over $WARN_TALLIES target(s) that emitted any warning, not gated$WARN_ENV_NOTE; $UNITS unit(s) compiled)"
+    fi
 fi
 FULL_GATE_COMPLETED=1  # the last line — see full_gate_cleanup above

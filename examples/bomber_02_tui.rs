@@ -282,8 +282,8 @@ fn capture_snapshot(world: &mut bevy_ecs::world::World, events: &[GameEvent]) ->
 }
 
 fn drain_events(world: &mut bevy_ecs::world::World, out: &mut Vec<GameEvent>) {
-    use bevy_ecs::event::Events;
-    let mut ev = world.resource_mut::<Events<GameEvent>>();
+    use bevy_ecs::message::Messages;
+    let mut ev = world.resource_mut::<Messages<GameEvent>>();
     out.extend(ev.drain().collect::<Vec<GameEvent>>());
 }
 

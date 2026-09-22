@@ -1,3 +1,4 @@
+#![cfg(feature = "region_subspace_steering")]
 //! Plan 416 GOAT Gate — Region-Conditioned Subspace Field.
 //!
 //! Runs the G1–G5 GOAT gate for the `region_subspace_steering` feature.
@@ -27,6 +28,12 @@ use katgpt_core::region_subspace::{
     RegionDecomposition, RegionSubspaceField, compute_field_commitment, reconstruct,
 };
 use katgpt_core::subspace_steering::SubspaceSteeringField;
+
+// Issue 855: the load-invariant timing treatment. `best_of_us` panics on an
+// all-zero reading instead of letting a ceiling be satisfied by a loop the
+// optimiser deleted.
+#[path = "../../../tests/common/ab_timing.rs"]
+mod ab_timing;
 
 /// Build an R×D identity-ish loadings block: axis r has a 1.0 at index r.
 fn identity_loadings<const D: usize, const R: usize>() -> [[f32; D]; R] {
@@ -241,13 +248,33 @@ fn g4_latency_smoke_and_struct_size() {
     // 100k calls of steer_local + steer_centroid + membership_gates.
     let mut state = [0f32; D];
     let offset = [0.5f32; R];
-    let start = std::time::Instant::now();
-    for _ in 0..100_000 {
-        field.steer_local(&mut state, 0, &offset);
-        field.steer_centroid(&mut state, 0, 0.1);
-        let _gates = field.membership_gates(&state, 0.0);
-    }
-    let elapsed = start.elapsed();
+    // Issue 855: the previous loop ran this body 100 000 times with
+    // `let _gates = …` discarding the only returned value and `state` dead
+    // after the loop — so rustc deleted the whole timed region and this
+    // printed `elapsed: 0ns`, `per-call: 0ns`, satisfying the < 1s budget with
+    // maximum margin on work that never ran. `best_of_us` FAILS loudly on an
+    // all-zero reading; the gates are summed into a sink and both the sink and
+    // the steered state are consumed through `black_box`. The bar below is
+    // unchanged, and the total timed iteration count is still 100 000.
+    const ROUNDS: usize = 10;
+    const ITERS: usize = 10_000;
+
+    let best_us = ab_timing::best_of_us(2, ROUNDS, || {
+        let mut sink = 0f32;
+        let t0 = std::time::Instant::now();
+        for _ in 0..ITERS {
+            field.steer_local(&mut state, 0, &offset);
+            field.steer_centroid(&mut state, 0, 0.1);
+            sink += field.membership_gates(&state, 0.0)[0];
+        }
+        let e = t0.elapsed();
+        std::hint::black_box(sink);
+        std::hint::black_box(state);
+        e
+    });
+    // Scale the best ROUND back to the 100 000-call budget the bar is written
+    // against, so `elapsed` means exactly what it meant before.
+    let elapsed = std::time::Duration::from_secs_f64(best_us * 1e-6 * (100_000.0 / ITERS as f64));
     println!("── G4b: 100k steer_local + steer_centroid + membership_gates ──");
     println!("   elapsed:     {elapsed:?}");
     println!("   per-call:    {:?}", elapsed / 100_000);

@@ -915,3 +915,30 @@ damping 1.0 diverges for λ≳5 regardless of iteration count).
 the riir-ai crowd-targeting plan, Guide 344 — deliberately NOT filed while
 this stays closed); approximate kernel features for the G2 threshold;
 N≲300 populations are already sub-µs per particle.
+
+## 42. AVX2 Single-Pass Argmax Port — NET LOSS, KERNEL DELETED (Issue 817)
+
+The NEON single-pass argmax structure (8-lane `(max, index)` blend on strict-gt,
+one pass, no early exit) was ported to AVX2 and verified CORRECT (known-answer +
+tie + tail-boundary sweeps incl. max-in-last-tail + NaN no-panic pin), then
+measured against the incumbent two-pass kernel across max-position shapes × both
+profile arms ([Bench 812](../../.benchmarks/812_argmax_avx2_single_pass_goat.md)):
+
+| Shape (n ≥ 256) | Two-pass vs single-pass |
+|---|---|
+| iid | 2.8–3.5× for two-pass |
+| early max | 3–4.7× for two-pass |
+| late max / n=64 | single-pass wins 1.5–1.9× (fixed overhead) |
+
+**Why it loses:** ILP — the two-pass's `max_ps` reduce + vectorized early-exiting
+position search beat the latency-bound compare/blend chain everywhere except
+where the max sits at the end. No size/shape predicate can route around it (an
+argmax caller cannot know where its max is without scanning — that IS the
+problem). The recorded k=8/16 argtopk loss shape (Bench 810) is the same physics.
+
+**Disposition:** demote-on-loss applied same day — kernel deleted, the two-pass
+doc carries the numbers + the reopen trigger, and
+`tests/bench_817_argmax_dispatch_ab.rs` is kept as the reopen instrument (reads
+~1.00 control now). NaN input documented out-of-contract (already
+platform-inconsistent in the incumbent: scalar sticky, `avx2_max` heals via
+maxps-SRC2, NEON heals).

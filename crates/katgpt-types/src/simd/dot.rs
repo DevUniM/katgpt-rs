@@ -1550,16 +1550,38 @@ mod ordered_dot_tests {
     }
 
     /// The anti-dedup pin: on this input the SIMD kernel's reassociated sum
-    /// differs from the ordered fold. Every simd_dot_f32 backend
-    /// reassociates (NEON/AVX2/wasm-simd128 lanes, or the 4-accumulator +
-    /// mul_add scalar fallback), so the inequality holds on every target —
-    /// if a future backend makes this red, the two kernels have converged
-    /// and this module's reason to exist must be re-adjudicated.
+    /// differs from the ordered fold. Crafted at len = 16 — the smallest length
+    /// that engages a grouped path on EVERY backend (NEON 16-wide unroll,
+    /// AVX2 8-wide remainder loop, wasm-simd128 16-wide unroll, and the scalar
+    /// fallback's 4-accumulator chunks). Hand-computed, b = all ones:
+    /// ordered = 1e8 +1 +1 +1 (each +1 lost, ulp 8 at 1e8) −1e8 → 0, +1+1+1
+    /// = 3.0; every reassociating backend pairs the cancellation inside one
+    /// lane/accumulator group and keeps the three +1s → 6.0.
+    ///
+    /// ⚠ Length is load-bearing: below one full vector the SIMD kernels
+    /// legitimately converge with the ordered fold BY CONSTRUCTION (the AVX2
+    /// tail at len < 8 IS a sequential `sum +=` loop; NEON/wasm at len < 4
+    /// same; the scalar fallback at len ≤ 4 puts one element per accumulator
+    /// and folds them in lane order). len = 4 was the original craft and red
+    /// on x86_64 from the day it landed (caught by the x86_64 execution
+    /// matrix, 2026-09-21) while passing on aarch64, where 4 IS the full
+    /// vector width. If a future backend makes this red at len = 16, the two
+    /// kernels have converged and this module's reason to exist must be
+    /// re-adjudicated.
     #[test]
     fn ordered_dot_differs_from_simd_dot() {
-        let a = [1e8f32, 1.0, -1e8, 1.0];
-        let b = [1.0f32; 4];
-        let simd = simd_dot_f32(&a, &b, 4);
+        let mut a = [0.0f32; 16];
+        a[0] = 1e8;
+        a[1] = 1.0;
+        a[2] = 1.0;
+        a[3] = 1.0;
+        a[4] = -1e8;
+        a[5] = 1.0;
+        a[6] = 1.0;
+        a[7] = 1.0;
+        let b = [1.0f32; 16];
+        assert_eq!(dot_f32_ordered(&a, &b), 3.0, "pin the reference fold");
+        let simd = simd_dot_f32(&a, &b, 16);
         assert_ne!(dot_f32_ordered(&a, &b), simd, "ordered == simd on the crafted pin input");
     }
 

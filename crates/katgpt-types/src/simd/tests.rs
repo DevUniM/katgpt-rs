@@ -46,6 +46,64 @@ fn argmax_empty_slice() {
     assert_eq!(simd_argmax_f32(&[]), (0, f32::NEG_INFINITY));
 }
 
+/// Issue 817: the AVX2 single-pass kernel must match the two-pass reference
+/// at its OWN tail boundaries (len % 8) and at cross-lane-tie scale — the
+/// inherited sweep stops at 130, which exercises every NEON width but only
+/// the first 16 AVX2 chunk boundaries.
+#[test]
+fn argmax_matches_two_pass_at_simd8_tail_boundaries() {
+    fn naive(x: &[f32]) -> (usize, f32) {
+        let m = simd_max_f32(x);
+        (x.iter().position(|&v| v == m).unwrap_or(0), m)
+    }
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut rng = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    // Every AVX2 boundary ± 1, the 8-lane tie zone, and one large length.
+    for len in [7, 8, 9, 15, 16, 17, 63, 64, 65, 255, 256, 257, 511, 512, 1023, 4095, 4096]
+    {
+        // mod 5 values: frequent duplicates → cross-lane ties are common.
+        let v: Vec<f32> = (0..len).map(|_| (rng() % 5) as f32).collect();
+        assert_eq!(simd_argmax_f32(&v), naive(&v), "len={len}");
+    }
+    // Max in the scalar tail of an 8-wide body (len % 8 in 1..7, max last).
+    for tail in 1..8usize {
+        let len = 40 + tail;
+        let mut v = vec![1.0f32; len];
+        v[len - 1] = 9.0; // strictly last element is the max
+        assert_eq!(simd_argmax_f32(&v), (len - 1, 9.0), "tail={tail}");
+    }
+}
+
+/// Issue 817: NaN inputs are OUT OF CONTRACT for this primitive — attention
+/// scores are sigmoid outputs (finite by construction), and the INCUMBENT is
+/// already platform-inconsistent on NaN: the scalar fold is sticky-poison
+/// (`v > NaN` is false forever after), `avx2_max_f32`'s `_mm256_max_ps` HEALS
+/// (SRC2 replacement), NEON's `vmaxq_f32` heals, and the new kernel is
+/// lane-sticky. Asserting any semantic here would pin an accident. This test
+/// pins only what every platform must guarantee: no panic, no UB, and a
+/// valid in-range index.
+#[test]
+fn argmax_nan_input_stays_defined_and_in_range() {
+    let nan = f32::NAN;
+    let cases: Vec<Vec<f32>> = vec![
+        vec![nan, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, nan, 9.0],
+        vec![1.0, nan, 3.0, nan, 9.0, nan, 7.0, 8.0, 2.0, 5.0],
+        vec![nan, nan, nan, nan, nan, nan, nan, nan, nan, nan],
+        vec![nan],
+        vec![1.0, nan],
+    ];
+    for c in &cases {
+        let (idx, _val) = simd_argmax_f32(c);
+        assert!(idx < c.len(), "index {idx} out of range for {c:?}");
+    }
+}
+
 #[test]
 fn simd_level_matches_platform() {
     let level = simd_level();
@@ -2444,6 +2502,104 @@ fn simd_exp_sum_matches_f32_exp_truth_referenced() {
             sum_rel < 5e-4,
             "len={len} sum mismatch: got {got_sum}, exp {expected_sum}, rel={sum_rel:.3e}"
         );
+    }
+}
+
+// ── simd_exp_sum_inplace extreme-range tests (riir-train Issue 549) ────────
+
+#[test]
+fn simd_exp_sum_extreme_inputs_underflow_not_wrap() {
+    // Regression guard: the AVX2 fused exp+sum kernel was the ONE sibling
+    // missing the n-clamp before the (n + 127) << 23 bit trick. For
+    // x < -87.3 (n + 127 <= 0) the unclamped shift wrapped the exponent
+    // field and produced ~1e33-magnitude garbage instead of ~0 — a softmax
+    // whose input spread exceeds 87 nats then NaNs/garbles the loss on
+    // AVX2 machines only (NEON/wasm/scalar siblings all clamp, so aarch64
+    // never trips it). Surfaced as riir-train Issue 549: seed-1000 full
+    // training collapsed on the 4090, healthy on M3.
+    //
+    // Low side is the bug's axis (softmax inputs are max-shifted to <= 0);
+    // the high side is asserted as finite saturation (~2^127 * q), matching
+    // the clamped-sibling semantics rather than libm's inf.
+    let cases: &[&[f32]] = &[
+        &[-100.0, 0.0, -1.0],
+        &[-200.0, -100.0, 0.0, 1.0],
+        &[-88.0, -87.0, 0.0],
+        // Extremes crossing the 32-wide main loop, the 8-wide remainder
+        // loop, AND the scalar tail (three code paths, one contract).
+        &[
+            -300.0, -150.0, -90.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, -95.0, 8.0, 9.0,
+            10.0, 11.0, 12.0, -120.0, 13.0,
+        ],
+        // High side: finite saturation, not exponent-wrap NaN/garbage.
+        &[100.0, 0.0],
+    ];
+    for case in cases {
+        let mut fused = case.to_vec();
+        let mut sep = case.to_vec();
+        let fused_sum = simd_exp_sum_inplace(&mut fused);
+        simd_exp_inplace(&mut sep);
+
+        // High-side designed semantics differ by path: vector lanes clamp
+        // n to 127 → finite ~2^127 * q; the scalar tail early-exits to +inf
+        // (cephes_exp_scalar) for n > 127. Both are correct saturation —
+        // the BUG signature is wrong sign/magnitude (pre-fix AVX2 vector
+        // lanes returned NEGATIVE ~1e-33 for x=+100 via exponent wrap).
+        for (i, (&xi, (&a, &b))) in case.iter().zip(fused.iter().zip(sep.iter())).enumerate() {
+            if xi <= -88.0 {
+                // Low side (the bug's axis — softmax inputs are max-shifted
+                // to <= 0): must be finite ~0, never wrapped garbage.
+                assert!(
+                    a.is_finite() && a.abs() < 1e-30,
+                    "fused exp({xi}) = {a} at {i} — unclamped 2^n wrap (should underflow to ~0)"
+                );
+                assert!(
+                    b.is_finite() && b.abs() < 1e-30,
+                    "separate exp({xi}) = {b} at {i} — unclamped 2^n wrap"
+                );
+            } else if xi >= 89.0 {
+                assert!(
+                    a > 1e37,
+                    "fused exp({xi}) = {a} at {i} — exponent wrap (should saturate positive huge/inf)"
+                );
+                assert!(
+                    b > 1e37,
+                    "separate exp({xi}) = {b} at {i} — exponent wrap"
+                );
+            } else {
+                // In-range: truth-referenced against libm (the Issue 027
+                // contract, ~5e-4 covers range-reduction cancellation).
+                let expected = xi.exp();
+                let rel_err = (a - expected).abs() / expected.abs().max(1e-30);
+                assert!(
+                    rel_err < 5e-4,
+                    "exp({xi}) = {a} vs libm {expected}, rel_err={rel_err:.3e}"
+                );
+                // Fused and unfused kernels are the same polynomial + the
+                // same clamp contract — in-range they must agree tightly
+                // (pre-fix on AVX2 they disagreed by ~1e38 on extremes).
+                assert!(
+                    (a - b).abs() < 1e-6,
+                    "fused/unfused disagree at {i}: x={xi}, fused={a}, separate={b}"
+                );
+            }
+        }
+
+        // The softmax invariant that actually broke: the denominator stays
+        // strictly positive (a ~1e33 garbage term made it huge-negative
+        // pre-fix → every weight garbage → NaN loss downstream). Overflow
+        // cases may saturate the sum to +inf — positive by construction.
+        assert!(
+            fused_sum > 0.0 && !fused_sum.is_nan(),
+            "sum must be positive (finite or +inf), got {fused_sum} for {case:?}"
+        );
+        let has_overflow = case.iter().any(|&v| v >= 89.0);
+        if !has_overflow {
+            assert!(
+                fused_sum.is_finite(),
+                "sum must be finite with no overflow inputs, got {fused_sum} for {case:?}"
+            );
+        }
     }
 }
 

@@ -92,11 +92,8 @@ fn t1_speculative_acceptance_rate() {
 
     let mut trd = TrajectoryRefinedDraft::new(
         TrdConfig {
-            max_refinement_steps: 2,
             entropy_threshold: 0.5,
             rank_temperature: 1.0,
-            elf_noise_scale: 0.1,
-            refine_correct_branches: false,
             latency_budget_us: 0,
             enable_prefold: true,
         },
@@ -264,31 +261,21 @@ fn t3_latency_p99() {
     let iters = 1_000;
     let mut rng = Rng::new(42);
 
-    // Baseline: single speculative step (1-step refinement)
+    // Baseline: single speculative step (bandit-chosen depth)
     let mut times_baseline: Vec<u64> = Vec::with_capacity(iters);
     for _ in 0..iters {
-        let mut trd = TrajectoryRefinedDraft::new(
-            TrdConfig {
-                max_refinement_steps: 1,
-                ..TrdConfig::default()
-            },
-            &pruner,
-        );
+        let mut trd =
+            TrajectoryRefinedDraft::new(TrdConfig::default(), &pruner);
         let start = Instant::now();
         let _ = trd.refine_branch(&raw, &failure, &marginal_slices, &mut rng);
         times_baseline.push(start.elapsed().as_nanos() as u64);
     }
 
-    // Worst-case: 2-step refinement
+    // Worst-case: 2-step refinement (bandit may pick the 2-step arm)
     let mut times_worst: Vec<u64> = Vec::with_capacity(iters);
     for _ in 0..iters {
-        let mut trd = TrajectoryRefinedDraft::new(
-            TrdConfig {
-                max_refinement_steps: 2,
-                ..TrdConfig::default()
-            },
-            &pruner,
-        );
+        let mut trd =
+            TrajectoryRefinedDraft::new(TrdConfig::default(), &pruner);
         let start = Instant::now();
         let _ = trd.refine_branch(&raw, &failure, &marginal_slices, &mut rng);
         times_worst.push(start.elapsed().as_nanos() as u64);
@@ -329,14 +316,7 @@ fn t4_pass_to_fail_leakage() {
     let marginals = easy_marginals(vocab);
     let marginal_slices: Vec<&[f32]> = marginals.iter().map(|m| m.as_slice()).collect();
 
-    let mut trd = TrajectoryRefinedDraft::new(
-        TrdConfig {
-            max_refinement_steps: 2,
-            refine_correct_branches: true, // Enable refinement on correct branches
-            ..TrdConfig::default()
-        },
-        &pruner,
-    );
+    let mut trd = TrajectoryRefinedDraft::new(TrdConfig::default(), &pruner);
 
     let mut rng = Rng::new(42);
     let n_branches = 500;
@@ -395,7 +375,6 @@ fn t5_trajectory_length() {
 
     let mut trd = TrajectoryRefinedDraft::new(
         TrdConfig {
-            max_refinement_steps: 2,
             enable_prefold: true,
             ..TrdConfig::default()
         },
@@ -404,7 +383,6 @@ fn t5_trajectory_length() {
 
     let mut trd_no_prefold = TrajectoryRefinedDraft::new(
         TrdConfig {
-            max_refinement_steps: 2,
             enable_prefold: false,
             ..TrdConfig::default()
         },
@@ -485,7 +463,6 @@ fn t6_bandit_learning_curve() {
 
     let mut trd = TrajectoryRefinedDraft::new(
         TrdConfig {
-            max_refinement_steps: 2,
             entropy_threshold: 0.5,
             ..TrdConfig::default()
         },

@@ -47,6 +47,19 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from tracked_walk import tracked_files  # noqa: E402
+import repo_alias  # noqa: E402 — the machine-local name codec (see its docstring)
+
+# Issue 804: this instrument is documented as directly invokable, and its
+# verdict glyphs (✓ ✗ ⛔ ⚠) kill it on a non-UTF-8 console — no verdict at
+# all, findings unread. docs_gate.sh's PYTHONIOENCODING only covers runs
+# that go through the wrapper.
+import console_safe  # noqa: E402
+
+console_safe.apply()
+
 MIN_SUPPORT = 10  # samples at/above the rank before a tail can decide a verdict
 
 # ── The vocabulary (DATA — extend here, then extend selftest) ─────────────
@@ -439,10 +452,23 @@ ASSIGN_RE = re.compile(r"let\s+(\w+)\s*(?::[^=]*)?=")
 
 
 def audit_file(path, rel):
+    """One file's findings, read from disk.
+
+    A thin wrapper since Issue 822: the classifier proper is `audit_text`, so a
+    caller that has the bytes from somewhere other than the working tree — a
+    HEAD blob, for the worktree-vs-commit split — can reach it without a second
+    copy of the rules. `subprocess_encoding_gate`'s `scan_text` / `scan` pair,
+    same shape, same reason.
+    """
     try:
         text = open(path, encoding="utf-8", errors="replace").read()
     except OSError:
         return []
+    return audit_text(text, rel)
+
+
+def audit_text(text, rel):
+    """One SOURCE TEXT's findings. `rel` only addresses the rows."""
     lines = text.splitlines()
     out = []
     for i, line in enumerate(lines):
@@ -513,20 +539,37 @@ def tally(findings):
 
 
 def repos(root):
-    return sorted(
+    # Names pass through the machine-local alias codec (`repo_alias.py`) so
+    # every cross-repo instrument audits the same CONTRACT-name set.
+    return repo_alias.apply(
         d for d in os.listdir(root)
         if os.path.isfile(os.path.join(root, d, "BOUNDARY.md"))
         and os.path.isdir(os.path.join(root, d, ".git"))
     )
 
 
+def list_rs_files(repo_root):
+    """(files, vendored_excluded) — the TRACKED `*.rs` population.
+
+    Issue 777. The previous form was an `os.walk` behind
+    `skip = {"target", ".git", "node_modules", ".venv"}`, and a
+    directory-name list cannot express "not ours": it credited
+    mmorpg-remaster with the 1404 `.rs` files of `mmorpg/` — gitignored,
+    and its own git repository — and reported this audit's only TRUNC-VAR
+    finding at an address where the repair cannot be made. It also swept in
+    cargo OUT_DIR sources under riir-train's `.runs/target-release/` etc.,
+    which is how `percentile_drift_floors.txt` came to pin that repo's walk
+    floor at 2500 against 1129 tracked files. The rule and its self-test live
+    in `scripts/tracked_walk.py`, once.
+    """
+    return tracked_files(repo_root, "*.rs")
+
+
 def walk_rs(repo_root):
-    skip = {"target", ".git", "node_modules", ".venv"}
-    for dp, dns, fns in os.walk(repo_root):
-        dns[:] = [d for d in dns if d not in skip]
-        for f in fns:
-            if f.endswith(".rs"):
-                yield os.path.join(dp, f)
+    """Paths only, for callers that count their own population. The vendored
+    count is dropped here deliberately — anything that PRINTS a population
+    line takes both halves from `list_rs_files`."""
+    return list_rs_files(repo_root)[0]
 
 
 def selftest():
@@ -817,22 +860,34 @@ def selftest():
 
 def main():
     selftest()
-    root = "/Users/katopz/git"
+    # Derived from this file's own location, never typed. Issue 777: the
+    # literal `/Users/katopz/git` that used to sit here made the no-argument
+    # invocation — the one AGENTS.md documents as "all contract repos
+    # (derived)" — a FileNotFoundError traceback on every box but one. The
+    # sweep half never noticed: it imports this module and never calls main().
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if len(sys.argv) > 1:
-        targets = [os.path.abspath(sys.argv[1])]
-        root = os.path.dirname(targets[0])
+        _t = os.path.abspath(sys.argv[1])
+        targets = [(os.path.basename(_t), _t)]
+        root = os.path.dirname(_t)
     else:
-        targets = [os.path.join(root, r) for r in repos(root)]
+        # Issue 842: `repos(root)` returns CONTRACT names; the directory is
+        # the on-disk spelling. Keep the contract name for the report, open
+        # the resolved directory.
+        targets = [(r, os.path.join(root, repo_alias.disk(r)))
+                   for r in repos(root)]
 
     print(f"percentile-index audit — MIN_SUPPORT={MIN_SUPPORT}, "
           f"{len(targets)} repo(s) (derived: BOUNDARY.md + .git)\n")
     grand = {}
+    pop = {}
     all_findings = []
-    for t in targets:
-        name = os.path.basename(t)
+    for name, t in targets:
         found = []
-        for f in walk_rs(t):
-            found += audit_file(f, os.path.relpath(f, t))
+        files, vendored = list_rs_files(t)
+        pop[name] = (len(files), vendored)
+        for f in files:
+            found += audit_file(str(f), os.path.relpath(f, t))
         if not found:
             continue
         tally = {}
@@ -878,6 +933,21 @@ def main():
             tot[h] += t.get(h, 0)
     print(f"  {'ALL':<24}" + "".join(f"{tot[h]:>12}" for h in hdr)
           + f"{sum(tot.values()):>8}")
+    # The population that produced the tally, per repo. A verdict count with no
+    # walk size next to it is a ceiling nobody can tell from a blind instrument
+    # — and the vendored column is the exclusion made visible, because an
+    # exclusion nobody can see is a population change nobody can audit.
+    print("\n── population (TRACKED *.rs; see scripts/tracked_walk.py) " + "─" * 8)
+    tot_f = tot_v = 0
+    for name in sorted(pop):
+        n_files, vendored = pop[name]
+        tot_f += n_files
+        tot_v += vendored
+        extra = f"   ({vendored} vendored excluded)" if vendored else ""
+        print(f"  {name:<24}{n_files:>8} file(s){extra}")
+    print(f"  {'ALL':<24}{tot_f:>8} file(s)"
+          + (f"   ({tot_v} vendored excluded)" if tot_v else ""))
+
     print(f"\n  UNRESOLVED is not 'clean' — it is a sample count no static pass could\n"
           f"  reach (a runtime length, a fn parameter). Those need a per-site read.\n"
           f"  Report only; exit 0 always.")

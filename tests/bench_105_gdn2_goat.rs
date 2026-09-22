@@ -11,6 +11,9 @@
 //!
 //! Run: `cargo test --features "gdn2_attention,hla_attention" --test bench_105_gdn2_goat -- --nocapture`
 
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -20,8 +23,18 @@ use katgpt_rs::transformer::{ForwardContext, MultiLayerKVCache, TransformerWeigh
 use katgpt_rs::types::{Config, Rng, kv_dim};
 
 const WARMUP: usize = 50;
-const ITERS: usize = 500;
+const ITERS: usize = 5000;
 const POSITIONS: usize = 8;
+/// Interleaved rounds for GOAT 2 (Issue 833). ITERS splits across these.
+///
+/// Raised 500 -> 5000 on the measurement, not on taste: at the original 500 the
+/// per-round chunk was ~153 us and the printed per-round RANGE came back
+/// 0.73 .. 2.99 -- a 4x swing around a 1.0028 median. The median was already
+/// doing its job, but a bar read off rounds that noisy is one preemption away
+/// from being interesting, and the whole target costs 0.01 s. At 200 iters per
+/// round each chunk is ~1.5 ms and the range closes. The RANGE is the quantity
+/// that told us this; a median alone would have looked finished.
+const ROUNDS: usize = 25;
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -46,81 +59,78 @@ fn goat_2_gdn2_within_10pct_of_ahla_throughput() {
     let mut rng = Rng::new(42);
     let weights = TransformerWeights::new(&config, &mut rng);
 
-    // Warmup GDN2
-    {
-        let mut ctx = ForwardContext::new(&config);
-        let mut cache = MultiLayerGdn2Cache::new(&config);
-        for _ in 0..WARMUP {
-            cache.reset();
-            for pos in 0..POSITIONS {
-                black_box(forward_gdn2(
-                    &mut ctx, &weights, &mut cache, 0, pos, &config,
-                ));
-            }
-        }
-    }
-
-    // Warmup AHLA
-    {
-        let mut ctx = ForwardContext::new(&config);
-        let mut cache = MultiLayerAhlaCache::new(&config);
-        for _ in 0..WARMUP {
-            cache.reset();
-            for pos in 0..POSITIONS {
-                black_box(forward_ahla(
-                    &mut ctx, &weights, &mut cache, 0, pos, &config,
-                ));
-            }
-        }
-    }
-
-    // Benchmark GDN2
-    let mut ctx_gdn2 = ForwardContext::new(&config);
-    let mut cache_gdn2 = MultiLayerGdn2Cache::new(&config);
-    let start_gdn2 = Instant::now();
-    for _ in 0..ITERS {
-        cache_gdn2.reset();
-        for pos in 0..POSITIONS {
-            black_box(forward_gdn2(
-                &mut ctx_gdn2,
-                &weights,
-                &mut cache_gdn2,
-                0,
-                pos,
-                &config,
-            ));
-        }
-    }
-    let elapsed_gdn2 = start_gdn2.elapsed();
-
-    // Benchmark AHLA
+    // ⛔ This criterion used to time GDN2 to completion, then AHLA to
+    // completion, and assert on the single resulting ratio. That is Issue 723
+    // **Class A** — a gate whose verdict the BOX decides rather than the code —
+    // and it is exactly how the 4090's `scripts/x86_64_execution_matrix.sh`
+    // caught it on 2026-09-18: FAILED in cell 8, then PASSED 3/3 when re-run
+    // alone. Two sequential arms of the same work measured +5.2% and +21.7%
+    // thirty seconds apart on a loaded box (Issue 723 T5), and a 10% bar cannot
+    // survive that.
+    //
+    // `common/ab_timing.rs` is the treatment AGENTS.md already prescribes, and
+    // this target was simply missed by the Issue-723 census (Issue 833):
+    // interleaved `(a-chunk, b-chunk)` pairs, so a load drift moves BOTH arms
+    // and cancels in the ratio instead of landing entirely on whichever arm ran
+    // second, and the MEDIAN across pairs, so one preemption spike is discarded.
+    //
+    // ⚠ `a` is AHLA — the baseline this criterion is *stated against* — and `b`
+    // is GDN2, so `ab.median` is a **time** ratio gdn2/ahla and the criterion's
+    // **throughput** ratio is its reciprocal. Getting that backwards inverts the
+    // gate silently, which is the defect riir-ai Issue 977 was filed for one
+    // instrument over.
     let mut ctx_ahla = ForwardContext::new(&config);
     let mut cache_ahla = MultiLayerAhlaCache::new(&config);
-    let start_ahla = Instant::now();
-    for _ in 0..ITERS {
-        cache_ahla.reset();
-        for pos in 0..POSITIONS {
-            black_box(forward_ahla(
-                &mut ctx_ahla,
-                &weights,
-                &mut cache_ahla,
-                0,
-                pos,
-                &config,
-            ));
-        }
-    }
-    let elapsed_ahla = start_ahla.elapsed();
+    let mut ctx_gdn2 = ForwardContext::new(&config);
+    let mut cache_gdn2 = MultiLayerGdn2Cache::new(&config);
 
-    let steps = ITERS as f64 * POSITIONS as f64;
-    let gdn2_tps = steps / elapsed_gdn2.as_secs_f64();
-    let ahla_tps = steps / elapsed_ahla.as_secs_f64();
-    let gdn2_us = elapsed_gdn2.as_micros() as f64 / steps;
-    let ahla_us = elapsed_ahla.as_micros() as f64 / steps;
-    let ratio = gdn2_tps / ahla_tps;
+    let iters_per_round = ITERS / ROUNDS;
+
+    let ab = ab_timing::ab_median_ratio(
+        ROUNDS,
+        iters_per_round,
+        WARMUP,
+        // a = BASELINE: AHLA, one cache pass over POSITIONS.
+        |_i| {
+            cache_ahla.reset();
+            for pos in 0..POSITIONS {
+                black_box(forward_ahla(
+                    &mut ctx_ahla,
+                    &weights,
+                    &mut cache_ahla,
+                    0,
+                    pos,
+                    &config,
+                ));
+            }
+        },
+        // b = CANDIDATE: GDN2, the same shape.
+        |_i| {
+            cache_gdn2.reset();
+            for pos in 0..POSITIONS {
+                black_box(forward_gdn2(
+                    &mut ctx_gdn2,
+                    &weights,
+                    &mut cache_gdn2,
+                    0,
+                    pos,
+                    &config,
+                ));
+            }
+        },
+    );
+
+    // ns-per-ITER covers POSITIONS steps, so per-step is that over POSITIONS.
+    let ahla_us = ab.a_ns_per_iter() / POSITIONS as f64 / 1000.0;
+    let gdn2_us = ab.b_ns_per_iter() / POSITIONS as f64 / 1000.0;
+    let ahla_tps = 1e6 / ahla_us;
+    let gdn2_tps = 1e6 / gdn2_us;
+    let ratio = 1.0 / ab.median;
 
     println!();
-    println!("┌── GOAT 2: GDN2 vs AHLA Throughput (micro, {ITERS}×{POSITIONS} pos) ──┐");
+    println!(
+        "┌── GOAT 2: GDN2 vs AHLA Throughput (micro, {ROUNDS}×{iters_per_round}×{POSITIONS} pos, interleaved) ──┐"
+    );
     println!("│ {:<18} {:>10} {:>12} │", "Method", "tok/s", "µs/step");
     println!("│ {} │", "-".repeat(42));
     println!("│ {:<18} {:>10.1} {:>12.2} │", "GDN2", gdn2_tps, gdn2_us);
@@ -132,10 +142,17 @@ fn goat_2_gdn2_within_10pct_of_ahla_throughput() {
         ""
     );
     println!("└{}┘", "─".repeat(45));
+    // The per-round RANGE, not just the median: a median inside 0.98..1.02 and
+    // a median inside 0.6..1.7 are not the same claim at the same number.
+    ab.report("GOAT 2 ahla(a)-vs-gdn2(b), time ratio");
 
     assert!(
         ratio >= 0.90,
-        "GDN2 throughput ({gdn2_tps:.1} tok/s) must be within 10% of AHLA ({ahla_tps:.1} tok/s), got {ratio:.3}"
+        "GDN2 throughput ({gdn2_tps:.1} tok/s) must be within 10% of AHLA ({ahla_tps:.1} tok/s), \
+         got {ratio:.3} (median of {} interleaved rounds, per-round time ratio {:.4} .. {:.4})",
+        ab.ratios.len(),
+        ab.min(),
+        ab.max(),
     );
     println!("  ✅ GOAT 2 PASSED: GDN2/AHLA = {ratio:.3} (≥ 0.90)");
 }
@@ -332,7 +349,16 @@ fn goat_6_context_scaling_flat_o1() {
     let positions: [usize; 4] = [1, 8, 64, 128];
 
     // ── GDN2 scaling (should be flat O(1) per step) ──
-    let mut gdn2_us_per_step: Vec<f64> = Vec::new();
+    // Issue 833's class, found by execution (x86_64 matrix cell 8, 2026-09-20:
+    // spread 0.306 against the 0.30 bar in-cell, 3/3 alone) — the original
+    // loop measured each position in ONE sequential window, so load drift
+    // between windows landed on single positions. Treatment: the ab_timing
+    // defenses composed for N arms — round-robin interleave (adjacent samples
+    // share a load window) + the per-arm minimum (contention only ever adds
+    // time). The GOAT 2 repair in this file, one arm-count over.
+    const SPREAD_ROUNDS: usize = 5;
+
+    let mut gdn2_states: Vec<(ForwardContext, MultiLayerGdn2Cache)> = Vec::new();
     for &target_pos in &positions {
         // Prefill once to reach target_pos
         let mut ctx = ForwardContext::new(&config);
@@ -349,18 +375,28 @@ fn goat_6_context_scaling_flat_o1() {
                 &mut ctx, &weights, &mut cache, 0, target_pos, &config,
             ));
         }
-
-        // Measure ONLY the single step at target_pos (cache already has state)
-        let start = Instant::now();
-        for _ in 0..single_step_iters {
-            black_box(forward_gdn2(
-                &mut ctx, &weights, &mut cache, 0, target_pos, &config,
-            ));
-        }
-        let elapsed = start.elapsed();
-        let us_per_step = elapsed.as_micros() as f64 / single_step_iters as f64;
-        gdn2_us_per_step.push(us_per_step);
+        gdn2_states.push((ctx, cache));
     }
+
+    // Measure ONLY the single step at target_pos (each state keeps its
+    // position's recurrent state resident across rounds — the per-call
+    // semantics are unchanged, only the sampling order interleaves).
+    let gdn2_us_per_step: Vec<f64> = ab_timing::best_of_arms(
+        positions.len(),
+        1,
+        SPREAD_ROUNDS,
+        |arm| {
+            let (ctx, cache) = &mut gdn2_states[arm];
+            let target_pos = positions[arm];
+            let start = Instant::now();
+            for _ in 0..single_step_iters {
+                black_box(forward_gdn2(
+                    ctx, &weights, cache, 0, target_pos, &config,
+                ));
+            }
+            start.elapsed()
+        },
+    );
 
     // ── Flat KV scaling (should grow linearly with position) ──
     let mut flat_us_per_step: Vec<f64> = Vec::new();

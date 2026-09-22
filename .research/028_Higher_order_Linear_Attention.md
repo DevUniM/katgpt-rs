@@ -577,3 +577,5 @@ For game AI steering (`bomber_arena`, `monopoly_fsm`), this is the pragmatic cho
 - Related: GLA (Yang et al., 2023) — gated linear attention with chunk parallelism
 - Related: Delta Networks (Schlag et al., 2021) — fast weight programmer equivalence
 - Related: Mamba2 (Dao & Gu, 2024) — SSM with data-dependent dynamics
+
+> **PASS-Redirects (synthesis):** Yifan Zhang [techreport "Recurrent Looped Transformer" (github.com/yifanzhang-pro/recurrent-looped-tranformer, Sept 2026)] — same author's architecture techreport: encoder-KV memory + recurrent decoder final-state feedback across tokens. PASS for HLA coverage (across-token recurrent state already ships here/riir-engine `hla/`; RLT adds the gated temporal carry + serving-split invariance proposition, no measured results). Its RL-replay cache-staleness + sampling-distribution contract distilled to riir-train `.research/453` (Issues 543/938) — the trainer/generator-parity theme this note's Issue 420/Plan 327 line already carries, extended to the weight-epoch axis.

@@ -5,7 +5,7 @@
 //!
 //! Per AGENTS.md hot-loop rules:
 //! - Caller pre-allocates the output buffer; we write in-place.
-//! - 8-wide chunked inner loop enables SIMD auto-vectorization on AVX2/NEON.
+//! - Strict ordered-reduction inner loop (scalar on x86_64 — Issue 871).
 //! - No allocation inside the hot loop.
 
 #![allow(clippy::needless_range_loop)]
@@ -36,8 +36,9 @@ pub fn compute_score_matrix(
 
     let inv_sqrt_d = 1.0f32 / (d as f32).sqrt();
 
-    // Reuse the shared `dot_8wide` kernel (8-wide chunked FMA, auto-vectorizes
-    // on AVX2/NEON) instead of a duplicated manual unroll. Keeps the scalar and
+    // Reuse the shared `dot_8wide` kernel (strict ordered reduction — scalar on
+    // x86_64, packed-mul + ordered scalar adds on aarch64; Issue 871) instead
+    // of a duplicated manual unroll. Keeps the scalar and
     // SIMD paths in `score_matrix_simd` bit-identical by construction (DRY).
     use crate::score_matrix_simd::dot_8wide;
     for i in 0..n {

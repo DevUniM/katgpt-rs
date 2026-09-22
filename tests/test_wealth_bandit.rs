@@ -11,6 +11,12 @@ use katgpt_rs::pruners::{
 use katgpt_rs::speculative::types::{NoScreeningPruner, ScreeningPruner};
 use katgpt_rs::types::Rng;
 
+// Issue 855: the load-invariant timing treatment. `ab_median_ratio` interleaves
+// the two arms and FAILS loudly when either reads all-zero, instead of letting
+// a deleted arm satisfy a ratio bar.
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 // ── Basic Operation Tests ─────────────────────────────────────────
 
 #[test]
@@ -179,10 +185,7 @@ fn test_wealth_pruner_vs_ucb1_convergence() {
 /// G1: WealthPruner has ≤1% overhead on relevance() vs BanditPruner (hot path).
 #[test]
 fn test_goat_g1_relevance_overhead() {
-    use std::time::Instant;
-
     let num_arms = 1000;
-    let iterations = 100_000;
 
     // Setup WealthPruner with some history
     let config = WealthPrunerConfig::default();
@@ -198,30 +201,35 @@ fn test_goat_g1_relevance_overhead() {
         bp.update(i, 0.5);
     }
 
-    // Warm up
-    for _ in 0..1000 {
-        let _ = ScreeningPruner::relevance(&wp, 0, 0, &[]);
-        let _ = ScreeningPruner::relevance(&bp, 0, 0, &[]);
-    }
+    // Issue 855: the previous two SEQUENTIAL `let _ = relevance(..)` loops had
+    // the WealthPruner arm measure **42 ns for 100_000 iterations** — deleted,
+    // not fast — so `overhead` read **0.00x** and the < 3x bar passed with
+    // maximum margin on an arm that never ran. `ab_median_ratio` interleaves
+    // the two arms, takes the median across rounds, and FAILS by name when any
+    // arm reads all-zero. `a` is the BanditPruner denominator and `b` the
+    // WealthPruner numerator, so `median` IS the same wp/bp overhead the bar
+    // has always read; the bar below is byte-identical.
+    const ROUNDS: usize = 11;
+    const ITERS: usize = 10_000;
 
-    // Benchmark WealthPruner
-    let start_wp = Instant::now();
-    for i in 0..iterations {
-        let arm = i % num_arms;
-        let _ = ScreeningPruner::relevance(&wp, 0, arm, &[]);
-    }
-    let dur_wp = start_wp.elapsed();
+    let mut sink_bp = 0.0f32;
+    let mut sink_wp = 0.0f32;
+    let ab = ab_timing::ab_median_ratio(
+        ROUNDS,
+        ITERS,
+        1000,
+        |i| sink_bp += ScreeningPruner::relevance(&bp, 0, i % num_arms, &[]),
+        |i| sink_wp += ScreeningPruner::relevance(&wp, 0, i % num_arms, &[]),
+    );
+    std::hint::black_box((sink_bp, sink_wp));
 
-    // Benchmark BanditPruner
-    let start_bp = Instant::now();
-    for i in 0..iterations {
-        let arm = i % num_arms;
-        let _ = ScreeningPruner::relevance(&bp, 0, arm, &[]);
-    }
-    let dur_bp = start_bp.elapsed();
-
-    let overhead = dur_wp.as_nanos() as f64 / dur_bp.as_nanos() as f64;
-    println!("G1: WealthPruner {dur_wp:?} vs BanditPruner {dur_bp:?} → overhead = {overhead:.2}x");
+    let overhead = ab.median;
+    ab.report("G1 relevance (a=BanditPruner, b=WealthPruner)");
+    println!(
+        "G1: WealthPruner {:.1} ns/call vs BanditPruner {:.1} ns/call → overhead = {overhead:.2}x",
+        ab.b_ns_per_iter(),
+        ab.a_ns_per_iter(),
+    );
 
     // WealthPruner should be within 2x of BanditPruner (BanditPruner does more work with UCB1)
     // The plan says ≤1% overhead, but BanditPruner's relevance is already complex (soft_route, etc.)

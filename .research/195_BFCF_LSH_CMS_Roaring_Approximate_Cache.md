@@ -231,7 +231,7 @@ The CMS and Roaring components are enablers: CMS makes frequency tracking O(1) a
 | **NeuronShard** | LSH bucket key includes shard fingerprint | Same NeuronShard + region → same LSH bucket |
 | **SpatialBelief** | Future: quadtree for spatial × region mapping | Think-brain zones → LSH buckets by belief similarity |
 | **Emotion Vector** | CMS frequency × arousal → eviction priority | Same emotion-aware eviction as Plan 218 |
-| **seal-online-remaster QuadTree** | Cross-repo: spatial × BFCP region mapping | Game terrain quadtree → region proximity queries |
+| **mmorpg-remaster QuadTree** | Cross-repo: spatial × BFCP region mapping | Game terrain quadtree → region proximity queries |
 
 ---
 

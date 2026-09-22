@@ -10,6 +10,9 @@
 //! - G7: Cache hit rate on repetitive sequences
 //! - G8: Cached vs uncached MLP forward timing
 
+#[path = "common/ab_timing.rs"]
+mod ab_timing;
+
 use std::time::Instant;
 
 use katgpt_core::ScreeningPruner;
@@ -119,6 +122,7 @@ fn g2_variable_length_control() {
     }
     let elapsed_tight = start_tight.elapsed();
 
+    println!("G2 loose {elapsed_loose:?} / tight {elapsed_tight:?} over {iterations} iters each");
     let avg_loose = total_loose_tokens as f64 / iterations as f64;
     let avg_tight = total_tight_tokens as f64 / iterations as f64;
 
@@ -182,6 +186,15 @@ fn g3_cache_empty_overhead_near_zero() {
         let _ = cache.get(&h_i, &emb_i);
     }
     let elapsed = start.elapsed();
+    // ⚠ PRINTED, not only asserted (Issue 855 T5/T6). A quantity that lives only
+    // inside an `assert!` message is visible ONLY on failure, so the method that
+    // found every deleted-loop instance — read the printed value next to the bar —
+    // cannot see it. That slice measured 4x the population's VANISHED rate, and
+    // two of this repo's own arms were dead when first made to print.
+    println!(
+        "G3 cache miss: {:.2} ns/call over {iterations} iters (total {elapsed:?})",
+        elapsed.as_nanos() as f64 / iterations as f64
+    );
 
     // Debug builds are ~10-50x slower than release; 10_000 blake3 hashes
     // in debug mode typically take 10-50ms. The gate verifies the overhead
@@ -406,44 +419,100 @@ fn g8_cached_faster_than_uncached() {
     let mlp = LatentDynamicsMLP::random_init(n_embd);
     let cache = LatentTransitionCache::new(256);
 
-    let iterations = 1000usize;
-
-    // Pre-generate inputs
-    let inputs: Vec<(Vec<f32>, Vec<f32>)> = (0..iterations)
+    // 64 distinct (h, emb) pairs — the cache holds 256, so every `get` below is
+    // a HIT. That is the claim's premise and it is worth stating: a miss rate
+    // would make this a measurement of blake3 rather than of the cache.
+    let inputs: Vec<(Vec<f32>, Vec<f32>)> = (0..64)
         .map(|i| {
-            let h = make_h(n_embd, (i % 64) as f32);
-            let emb = make_emb(n_embd, (i % 64) as f32 + 1.0);
+            let h = make_h(n_embd, i as f32);
+            let emb = make_emb(n_embd, i as f32 + 1.0);
             (h, emb)
         })
         .collect();
-
-    // G8a: Time uncached MLP forward
-    let start_uncached = Instant::now();
-    for (h, emb) in &inputs {
-        let _ = mlp.forward(h, emb);
-    }
-    let elapsed_uncached = start_uncached.elapsed();
-
-    // Pre-populate cache with same inputs
     for (h, emb) in &inputs {
         let val = mlp.forward(h, emb);
         cache.insert(h, emb, val);
     }
 
-    // G8b: Time cached lookups
-    let start_cached = Instant::now();
-    for (h, emb) in &inputs {
-        let _ = cache.get(h, emb);
-    }
-    let elapsed_cached = start_cached.elapsed();
+    // ⛔ This gate used to time 1000 MLP forwards to completion, then 1000 cache
+    // lookups to completion, and assert on the single resulting ratio against a
+    // 2x bar. It carried BOTH defects Issue 833 is about:
+    //
+    //   1. Sequential arms (Issue 723 Class A). The two arms occupy different
+    //      load windows, so anything that moves the box between them lands
+    //      entirely on whichever ran second. 723 T5 measured two sequential arms
+    //      of the SAME work at +5.2% and +21.7% thirty seconds apart. This row
+    //      is how it showed: PASSED-ALONE in the second x86_64 matrix run
+    //      (2026-09-18, cell 8) — failed in the cell, passed 3/3 alone — on a
+    //      commit range that touched none of this code.
+    //   2. `let _ = f(...)` on BOTH arms (Issue 723 Class A2). rustc 1.98.1 +
+    //      fat LTO deletes an inlined callee whose outer result is dead, and
+    //      cell 8 is the release + `+avx2` configuration where that bites. A
+    //      deleted arm does not read as a failure; it reads as a very fast one.
+    //      This defect is ORTHOGONAL to interleaving and survives it, which is
+    //      why both repairs are here and not just the first.
+    //
+    // `a` is the MLP forward — the baseline the claim is *stated against* — and
+    // `b` is the cache lookup, so `ab.median` is `t_cached / t_uncached` and the
+    // "at least 2x faster" claim is `median < 0.5`.
+    const ROUNDS: usize = 25;
+    const ITERS_PER_ROUND: usize = 1000;
 
-    // G8: Cache lookup should be at least 2× faster than MLP forward
-    let uncached_us = elapsed_uncached.as_micros() as f64;
-    let cached_us = elapsed_cached.as_micros() as f64;
+    let ab = ab_timing::ab_median_ratio(
+        ROUNDS,
+        ITERS_PER_ROUND,
+        200,
+        // a = BASELINE: uncached MLP forward.
+        |i| {
+            let (h, emb) = &inputs[i % inputs.len()];
+            std::hint::black_box(mlp.forward(std::hint::black_box(h), std::hint::black_box(emb)));
+        },
+        // b = CANDIDATE: cache lookup, every one a hit.
+        |i| {
+            let (h, emb) = &inputs[i % inputs.len()];
+            std::hint::black_box(cache.get(std::hint::black_box(h), std::hint::black_box(emb)));
+        },
+    );
+
+    ab.report("G8 mlp(a)-vs-cache(b), time ratio");
+
+    // Arch-conditional bar (Issue 858 T2, 2026-09-19; the t698-T6 / Bench 806
+    // Addendum II dual-pin precedent). Plan 217's "at least 2x faster" claim
+    // was calibrated where an executing lane could run it — x86_64 release
+    // (`dd8dadbba`: 0.3975–0.4086, 8 runs, execution-matrix cell 8). Re-measured
+    // at HEAD on x86_64 (i7-13700K, 2026-09-19, sibling build load), BOTH
+    // configurations: plain build 0.3896–0.3973 (5/5 PASS — reproduces the
+    // calibration band, a≈348–370/b≈137–145 ns), +avx2 0.4523–0.4697 (6/6
+    // PASS, a≈325–346/b≈149–155 ns — the flag's codegen shifts the arms'
+    // absolute costs and the ratio ~0.06 upward; both configs hold, so the
+    // claim HOLDS on the arch it was stated for and keeps its bar. aarch64
+    // (M3 Max, 5 runs, loadavg 4–5, 2026-09-19): medians 0.6844–0.7111,
+    // 5/5 FAIL, per-round min 0.5975 — the ISA moves the arms' relative cost
+    // (NEON makes the 16-dim MLP forward relatively cheaper while the BLAKE3
+    // keyed lookup holds its cost class), a change in the ratio of real work,
+    // not in the instrument: same interleaved harness, same 25×1000 shape on
+    // both. aarch64 bar 0.75 = the M3's worst median (0.7111) + ~5% headroom,
+    // mirroring the x86_64 bar's own headroom over 0.4697. Any OTHER arch
+    // keeps the strict 0.5 claim — an unmeasured arch must meet the stated
+    // claim or red loudly (that red is information, exactly how 858 was
+    // found), never silently inherit the relaxed bar.
+    #[cfg(target_arch = "aarch64")]
+    const G8_BAR: f64 = 0.75;
+    #[cfg(not(target_arch = "aarch64"))]
+    const G8_BAR: f64 = 0.5;
 
     assert!(
-        cached_us < uncached_us / 2.0,
-        "G8: cache ({cached_us:.0}µs) should be at least 2× faster than MLP ({uncached_us:.0}µs)"
+        ab.median < G8_BAR,
+        "G8: cache lookup ({:.1} ns/iter) vs MLP forward ({:.1} ns/iter) — median time \
+         ratio {:.4} over {} interleaved rounds (per-round {:.4} .. {:.4}) must stay under \
+         the arch bar {G8_BAR} (Issue 858 dual pin: x86_64 claim 0.5, measured 0.39–0.47 \
+         across plain/+avx2 configs; aarch64 0.75, measured 0.6844–0.7111)",
+        ab.b_ns_per_iter(),
+        ab.a_ns_per_iter(),
+        ab.median,
+        ab.ratios.len(),
+        ab.min(),
+        ab.max(),
     );
 }
 
