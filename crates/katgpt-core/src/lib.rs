@@ -308,6 +308,17 @@ pub mod incidence;
 // inversion channel discriminates, entropy is composition-coupled telemetry.
 #[cfg(feature = "evidence_tripwire")]
 pub mod evidence_tripwire;
+// state_option_scoring — per-option centroid-cosine scoring over a fixed
+// option table + the pinned lowest-index argmax (Plan 607 T1). Upstreams
+// riir-reflex Issue 004 T7's route_terms shape (sigmoid(dot(state, centroid)
+// · scale) per option; the compression drafter stays OUT of the hot loop —
+// reflex measured drafter deltas cannot rank short options). Generic by law
+// (R4): (state vector, option matrix) in, decision out — nothing
+// arena-specific. Consumes exact_sigmoid + cmp_for_max + distance_abstain's
+// unit normalize (feature implication, not a fork of a bit-parity-critical
+// helper). Opt-in pending the Plan 607 GOAT (bench_876).
+#[cfg(feature = "state_option_scoring")]
+pub mod state_option_scoring;
 #[cfg(feature = "conformal_predictive_intervals")]
 pub use conformal::metrics::{
     crps, crps_interval, empirical_coverage, mean_crps_interval, mean_winkler, winkler_score,

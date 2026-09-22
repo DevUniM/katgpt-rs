@@ -1,12 +1,17 @@
 # Plan 607 — Modelless game-decision lane (the laya game arenas)
 
 **Status:** IN PROGRESS — owner-accepted 2026-09-22 ("607 accepted").
-T0a + T4a + T0b LANDED (same day): substrate gate clean, the state
-enumerator + `laya-tetris-v2` grammar pinned, and the G1-oracle fixture
-committed with airtight provenance (generator committed to riir-reflex
-FIRST, run re-verified byte-identical from the committed code). Next:
-T1 + T4 co-developed (the `state_option_scoring` primitive + the arena
-over the fixture), then the first GOAT reading gates {T2, T3}.
+T0a + T4a + T0b + T1 + T4 LANDED (same day): substrate gate clean, the
+state enumerator + `laya-tetris-v2` grammar pinned, the G1-oracle fixture
+committed with airtight provenance, the `state_option_scoring` primitive
+shipped (GOAT: G1a/G1b/G2/G4/determinism ALL PASS — Bench 876), and the
+Tetris arena replayed the fixture. **First GOAT reading: G1 (agreement)
+DOES NOT HOLD** — raw 10.8% ties the constant-pick baseline; the reading
+gates {T2, T3} OPEN (both now evidence-directed). Next: T5 (Flappy/lanes,
+the default-on precondition) and/or the {T2, T3} levers; T2 build stays
+deferred behind Gate A's lapse condition (the reading must show decode
+buys agreement or a second consumer — for T3 the analogous reading is
+whether plain corpus scoring fell short, which it did).
 - Lane priority: **co-developed ordering** (T0a → T4a → T0b → T1+T4 →
   first GOAT reading → T5 → {T2,T3} evidence-gated → T6 → T7).
 - T2 Gate A: **approved in principle, build deferred, lapses on the first
@@ -166,7 +171,7 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   not gated): p_clean spans 0.027–0.850; Spearman(p_clean, Dellacherie)
   mean +0.365, positive 94/120 — laya reads the sentences and prefers
   clean placements.
-- [ ] **T1 — the option-scoring primitive, minimal + generic** (katgpt-core,
+- [x] **T1 — the option-scoring primitive, minimal + generic** (katgpt-core,
   opt-in feature `state_option_scoring` — named for the CAPABILITY, never
   "game"): v1 signature takes `(state vector, option feature matrix)` with
   the option count bounded/const-generic and **nothing Tetris-specific in
@@ -176,6 +181,19 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   the compression drafter is OUT of the per-decision loop** (drafter deltas,
   if used at all, are a precomputed axis); decided HERE, never a number
   relaxed at T6.
+  **Record (2026-09-22):** LANDED — `crates/katgpt-core/src/
+  state_option_scoring.rs`, feature `state_option_scoring =
+  ["distance_abstain"]` (the implication is the DRY form: T1 consumes
+  distance_abstain's `unit` normalize — now `pub(crate)` — instead of
+  forking a bit-parity-critical helper). Surface: `CentroidTable<D, K>`
+  (`new`/`len`/`is_empty`/`row`/`rows`/`score_into`/`pick`) — const-generic
+  K (`pick_domain`'s shape), `exact_sigmoid` (Issue 870), `cmp_for_max`
+  argmax with the pinned lowest-index tie-break, zero-alloc, deterministic
+  folds. GOAT (Bench 876): G1a planted 200/200 · G1b distinct 34 · G2 p99
+  1.1–4.1 µs per decision SET with option counts printed (≤1 ms bar) · G4
+  0 allocs (separate alloc-check binary) · determinism bit-identical (table
+  blake3 `f2e231b2…`, decisions `8f5d9f91…`). Test-gate rows:
+  `katgpt-core:2079:state_option_scoring` + the alloc-check PERF_ROW.
   **GOAT gate:** G1 = decision agreement vs the T0b triples AND vs a
   **constant-pick baseline** AND vs chance — never vs laya alone (R2:
   reflex T7 measured 4-of-5 families constant-picking — a short option
@@ -191,12 +209,36 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   bit-identical scoring state — at T1 that is the corpus CENTROID TABLE
   (the fitted head is T3 and deferred; this row must not read as asserting
   something T1 does not build) — two runs, two boxes.
-- [ ] **T4 — the Tetris arena** (`examples/` + `.benchmarks/`, bomber
+- [x] **T4 — the Tetris arena** (`examples/` + `.benchmarks/`, bomber
   precedent): code computes the features (holes, bumpiness, stack height,
   line clears — Dellacherie-class, solved engineering); T1 scores every
   landing spot; the piece goes to argmax. **First GOAT reading** = replay
   the T0b fixture + bench latency + lines-cleared against their published
   numbers. The reading gates {T2, T3}.
+  **Record (2026-09-22):** LANDED — `examples/tetris_02_option_arena.rs` +
+  `examples/common/hash_embed.rs`. Drift check: all 120 states / 2,660
+  options recompute byte-identically (placements, features, both sentence
+  layers) BEFORE any scoring. Embedder substrate note (recorded): no
+  in-tree generic TEXT embedder exists (engram hashes CanonicalId token
+  ids, not text; reflex/clippy span embedders stay in their repos) —
+  minimal arena-side trigram hashbag glue, std-only integer ops, and
+  UNTUNED by plan (the first reading must measure the honest scorer; the
+  argmax is scale-invariant for scale > 0 anyway — the reflex ROUTE_SCALE=8
+  shape is carried but never moves a decision here). **First GOAT reading
+  (Bench 876): G1 DOES NOT HOLD** — raw agreement 13/120 (10.8%) TIES the
+  constant-pick baseline (13/120, oracle-majority index 16) and beats only
+  chance (5.5%); the scorer discriminates (21 distinct picks — NOT the
+  reflex constant-pick failure) but is not yet accurate; Dellacherie
+  agreement 7/120 (context); lines-cleared 195.6 vs 3.4 mean (context);
+  the 33/120 oracle same-sentence ties re-derived from option-level
+  p_clean match the fixture README's pin exactly. **The reading gates {T2,
+  T3} OPEN** — T2's losslessness arm (structured vs sentence agreement
+  delta) and T3's corpus-fitted head are the evidence-directed levers.
+  Live-game option widths are unbounded in practice (blocked columns), so
+  the arena pads every decision to the widest table — zero rows can never
+  win the argmax (non-negative embeddings → cosine ≥ 0; ties at the floor
+  break to the lowest index, which is always a real row), proven by the
+  two-pass digest `1921b19a…` being byte-identical before/after the change.
 - [ ] **T5 — Flappy + three-lanes micro-arenas**: same shape, STATE
   question form (where is it, never what to do — laya's own lesson).
   **T5 is a PRECONDITION for even considering default-on promotion of the
@@ -271,6 +313,16 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   drafter stays OUT of the per-decision loop (R3 — reflex measured
   drafter deltas cannot rank short options). No existing primitive
   covers per-option sigmoid scoring over a corpus centroid table.
+- **T4 embedder note (recorded at landing):** no in-tree generic TEXT
+  embedding primitive exists to consume — katgpt-core's engram trigram
+  hashing operates on `CanonicalId` token ids, not text, and the
+  span-embedding hashbags in riir-reflex / riir-clippy are those repos'
+  own code (the lane split keeps them there). The arena ships minimal
+  arena-side glue (`examples/common/hash_embed.rs`: byte-trigram
+  hashbag, splitmix64-finaled FNV mix, std-only integer ops) — NOT
+  promoted to katgpt-core, NOT shared, and NOT tuned against the oracle
+  (anti-goal recorded at Bench 876: the first reading must measure the
+  untuned scorer).
 - Architectural rules checked: semantic domain (latent dot + sigmoid) ✓;
   no sync boundary crossed (offline arena) ✓; sigmoid-never-softmax on
   OUR primitives ✓ (the laya port keeps the reference's softmax by its

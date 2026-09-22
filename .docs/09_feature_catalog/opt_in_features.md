@@ -4454,3 +4454,32 @@ regime-change arm).
 📖 Research: [581](../../.research/581_Mini_AGI_Governed_Pool_Modelless.md) ·
 Issue: 873 · Bench: [875](../../.benchmarks/875_rate_control_goat.md) —
 G1/G2/G4 ALL PASS · test-gate row `katgpt-core:2076:rate_control`.
+
+## 122. state_option_scoring — per-option centroid-cosine option scoring (Plan 607 T1)
+
+The game-decision lane's scoring primitive, upstreamed from riir-reflex
+Issue 004 T7's `route_terms` shape: each decision option carries a corpus
+centroid; the state vector dots against every row; per-option
+`exact_sigmoid(scale · cosine)` ranks the options and the argmax (ties →
+lowest index, the pinned oracle tie-break) decides. `CentroidTable<D, K>`
+unit-normalizes once at build — the table IS the determinism-committed
+scoring state (BLAKE3-stable across runs/boxes; the GOAT prints the
+digests). Const-generic `K` (`pick_domain`'s shape) keeps the whole hot
+path stack-local; zero-alloc G4 in the separate alloc-check binary.
+Generic by law (R4): `(state vector, option matrix)` in, decision out —
+the consumer owns embedding and vocabulary. The compression drafter stays
+OUT of the per-decision loop (Plan 607 R3 — reflex measured drafter
+deltas cannot rank short options: constant pick). Consumes `exact_sigmoid`
+(Issue 870) + `cmp_for_max` + `distance_abstain`'s unit normalize (feature
+implication, not a fork).
+
+🔧 Feature flag: `state_option_scoring = ["distance_abstain"]`
+(katgpt-core) — opt-in; root forward for the `tetris_02_option_arena`
+fixture-replay arena. T5 (second arena family) is the precondition for
+any default-on consideration.
+
+📖 Plan: [607](../../.plans/607_modelless_game_lane.md) ·
+Bench: [876](../../.benchmarks/876_state_option_scoring_goat.md) —
+G1a planted 200/200 · G1b distinct 34 · G2 p99 1.1–4.1 µs (≤1 ms bar,
+option count printed) · G4 0 allocs · determinism bit-identical ·
+test-gate row `katgpt-core:2079:state_option_scoring`.

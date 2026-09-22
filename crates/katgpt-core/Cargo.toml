@@ -848,6 +848,19 @@ sigmoid_calibration = []
 # is the Proposal 014 Phase-1 engine's abstain arm (owner-gated).
 distance_abstain = []
 
+# state_option_scoring (Plan 607 T1, 2026-09-22): per-option centroid-cosine
+# scoring over a fixed option table + the pinned lowest-index argmax — the
+# game-decision lane's scoring primitive, upstreamed from riir-reflex Issue
+# 004 T7's route_terms shape (sigmoid(dot(state, centroid) · scale) per
+# option). The compression drafter stays OUT of the hot loop by plan (R3 —
+# reflex measured drafter deltas cannot rank short options; constant pick).
+# Generic by law (R4): (state vector, option matrix) in, decision out — the
+# arena's vocabulary lives in the consumer. Consumes exact_sigmoid (Issue
+# 870) + cmp_for_max + distance_abstain's unit normalize — the implication
+# below is the DRY form (one bit-parity-critical helper, one implementation);
+# zero-cost-unless-invoked, zero deps. Implies distance_abstain.
+state_option_scoring = ["distance_abstain"]
+
 # decision_wire (Plan 603 T1.2): the Jev/laya-compatible decision wire
 # contract — DecisionRequest/DecisionResponse over the choice/score/noul
 # vocabulary (Research 562/574/576), with abstention as a first-class
@@ -3673,3 +3686,23 @@ required-features = ["compression_drafter"]
 name = "bench_875_rate_control_goat"
 harness = false
 required-features = ["rate_control"]
+
+# Plan 607 T1 — state_option_scoring GOAT gate (G1 planted-correctness + the
+# reflex discrimination/constant-pick floors, G2 p99-per-decision-SET with
+# the OPTION COUNT printed beside it — the sibling's shipped bar form, G4
+# pointer, determinism digest over the table bytes). The G4 alloc gate is
+# the separate state_option_scoring_alloc_check binary (the *_alloc_check
+# convention); the fixture-replay arena lives in the ROOT package
+# (examples/tetris_02_option_arena.rs — game vocabulary stays out of this
+# crate).
+[[bench]]
+name = "bench_876_state_option_scoring_goat"
+harness = false
+required-features = ["state_option_scoring"]
+
+# Plan 607 T1 G4 — zero-alloc steady state for CentroidTable::new + pick +
+# score_into. Separate single-fn binary (the bench-655 convention: parallel
+# tests share the global counting allocator).
+[[test]]
+name = "state_option_scoring_alloc_check"
+required-features = ["state_option_scoring"]

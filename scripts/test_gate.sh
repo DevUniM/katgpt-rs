@@ -152,6 +152,7 @@ katgpt-core:2074:compression_drafter
 katgpt-core:2076:rate_control
 katgpt-core:2079:pool_admission
 katgpt-core:2097:dying
+katgpt-core:2079:state_option_scoring
 katgpt-dec:249:pca_global
 katgpt-types:139
 "
@@ -160,6 +161,7 @@ katgpt-types:139
 PERF_ROWS="
 katgpt-rs:12:belief_drafter_goat
 katgpt-core:1:compression_drafter_alloc_gate:compression_drafter
+katgpt-core:1:state_option_scoring_alloc_check:state_option_scoring
 "
 
 canary=0

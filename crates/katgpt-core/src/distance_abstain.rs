@@ -29,7 +29,11 @@
 
 /// Unit-normalize `v` in place-on-stack; a zero vector passes through
 /// (its dots are 0 — "no direction" reads as mid-corpus distance, never NaN).
-fn unit<const D: usize>(v: [f32; D]) -> [f32; D] {
+///
+/// `pub(crate)` since Plan 607 T1: `state_option_scoring` consumes THIS
+/// implementation (feature implication, not a fork) so the two normalize
+/// bit-identically — a duplicated numeric helper is a drift seam.
+pub(crate) fn unit<const D: usize>(v: [f32; D]) -> [f32; D] {
     let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if n > 0.0 {
         let inv = 1.0 / n;
