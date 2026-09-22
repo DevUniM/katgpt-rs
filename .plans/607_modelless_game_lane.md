@@ -10,11 +10,17 @@ constant-pick baseline; {T2, T3} gated OPEN). **T3 LANDED 2026-09-23 and
 G1 NOW HOLDS** — the corpus-fitted head (closed-form ridge LS over the
 frozen features, consuming `linalg::ridge_solve`'s f64 path) reads
 **in-corpus 30.0% / LOO 29.2% vs constant-pick 10.8%** (Bench 878; the
-in-corpus ≈ LOO gap is 0.8 pp — the fit generalizes at n=120). Next: T5
-(Flappy/lanes, the default-on precondition) and T2 (Gate A intact: the
-876 reading never measured decode, so the approval did NOT lapse — the
-build deferral is simply over; the losslessness arm measures the
-sentence-vs-structured agreement delta the 876 left unknown).
+in-corpus ≈ LOO gap is 0.8 pp — the fit generalizes at n=120). **T5
+LANDED 2026-09-23 (Bench 880) and G1 HOLDS ON BOTH MICRO-ARENAS** —
+Flappy v2 96/100 (LOO 96, constant-pick 77, chance 50) + three-lanes
+84/100 (LOO 84, constant-pick 41, chance 33.3), zero primitive widening
+(the T1/T3 surface transferred as-is); the flappy v1 grammar's motion
+clause was a measured wording confound (85/100 oracle flap-bias pinning
+every scorer at constant-pick) and is recorded with its structural v2 fix.
+Next: T2 (Gate A intact: the 876 reading never measured decode, so the
+approval did NOT lapse — the build deferral is simply over; the
+losslessness arm measures the sentence-vs-structured agreement delta the
+876 left unknown), then T6/T7 at plan close.
 - Lane priority: **co-developed ordering** (T0a → T4a → T0b → T1+T4 →
   first GOAT reading → T5 → {T2,T3} evidence-gated → T6 → T7).
 - T2 Gate A: **approved in principle, build deferred, lapses on the first
@@ -242,10 +248,47 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   win the argmax (non-negative embeddings → cosine ≥ 0; ties at the floor
   break to the lowest index, which is always a real row), proven by the
   two-pass digest `1921b19a…` being byte-identical before/after the change.
-- [ ] **T5 — Flappy + three-lanes micro-arenas**: same shape, STATE
+- [x] **T5 — Flappy + three-lanes micro-arenas**: same shape, STATE
   question form (where is it, never what to do — laya's own lesson).
   **T5 is a PRECONDITION for even considering default-on promotion of the
   T1 flag** (R4 — one arena cannot promote a flag).
+  **Record (2026-09-23):** LANDED — Bench 880, **G1 HOLDS on both arenas
+  with the T3 fitted head, ZERO primitive widening** (`CentroidTable<D, K>`
+  at K=4 padded; `HeadFitter<D>` at D=9 — the T4-era surface transferred
+  as-is, so the "widened only when T5 lands" clause closes with no
+  widening needed). Flappy: 96/100 in-corpus = 96/100 LOO vs
+  constant-pick 77 and chance 50 (K=2); three-lanes: 84/100 = 84/100 LOO
+  vs constant-pick 41 and chance 33.3 (K=3); discrimination floor PASS
+  both (2 and 3 distinct picks); G2 p99 42 ns/decision-set at both option
+  counts; determinism anchors recorded (heads `4ac0a13c…`/`7d3f1d8e…`,
+  decisions `cc89ff49…`/`8d2f9c75…`). Fixtures:
+  `tests/fixtures/flappy_oracle_laya_en_v2.jsonl` (grammar
+  `laya-flappy-v2`) + `lanes_oracle_laya_en_v1.jsonl` (grammar
+  `laya-lanes-v1`), provenance in `tests/fixtures/micro_oracle_README.md`.
+  **Two measured findings recorded en route:** (a) **the flappy v1
+  grammar's motion clause was OUR OWN wording confound** — laya's read
+  keyed on ", rising."/", falling fast." and ignored the position clause,
+  so the v1 oracle went 85/100 to flap and pinned every scorer at the
+  constant-pick ceiling; v2 renders the position band alone + the
+  enumerator excludes both degenerate classes (v = +2 same-cell;
+  same-band identical sentences), and the same scorer that tied
+  constant-pick under v1 reads 96% under v2 (the traps section of the
+  plan's thesis, reproduced in our own grammar and fixed structurally,
+  not by tuning); (b) **on lanes, the head beats the code-arithmetic
+  policy at imitating laya** (84% vs clearest-lane 74%) — laya's
+  lane-safety read carries noun-dependent weights the head absorbs from
+  the corpus, exactly the lane's thesis (match the model's read at
+  ~10⁶× lower cost, never out-fly arithmetic). T1 cosine failed on both
+  (39% / 9% — 0-for-3 across game shapes with Tetris): the fitted head is
+  the lane's scorer, recorded not relaxed. Arena machinery shared in
+  `examples/common/micro_dump.rs` (serde-only, keeps the 01 enumerators
+  ungated) + `micro_fit.rs` (the tetris_03 recipe made reusable);
+  enumerators `flappy_01_state_enum` / `lanes_01_state_enum` (dump +
+  manifest + `--join` self-join mode); arenas `flappy_02_arena` /
+  `lanes_02_arena`. 32 sim/arena unit tests green; bench-number collision
+  with the sibling's `879_renoise_surprise_goat` (landed mid-flight on
+  origin) resolved by renumbering MINE to 880 — theirs is committed and
+  keeps the number, dual_allocation_gate green post-move.
 - [ ] **T2 — bounded template decode** (katgpt-core, feature-gated).
   **OWNER GATE A — APPROVED IN PRINCIPLE (verdict round 2), build DEFERRED
   until after T4's first GOAT reading; the approval LAPSES if that reading

@@ -3589,3 +3589,20 @@ required-features = ["state_option_scoring"]
 [[example]]
 name = "tetris_03_head_fit"
 required-features = ["state_option_scoring"]
+
+# T5's micro-arenas (Plan 607): the 01 enumerators are ungated (pure std +
+# serde deps, tetris_01's shape); the 02 arenas consume the same opt-in
+# primitive, same required-features shape.
+[[example]]
+name = "flappy_01_state_enum"
+
+[[example]]
+name = "lanes_01_state_enum"
+
+[[example]]
+name = "flappy_02_arena"
+required-features = ["state_option_scoring"]
+
+[[example]]
+name = "lanes_02_arena"
+required-features = ["state_option_scoring"]
