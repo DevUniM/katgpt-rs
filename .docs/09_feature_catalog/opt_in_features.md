@@ -4410,3 +4410,19 @@ postcard, golden byte-pins + round-trips for both. Gate-covered by the
 `katgpt-core:2074:decision_wire` test-gate row (11 module tests invisible at
 default features). Opt-in per the no-default-consumer rule; promotion rides
 the GOAT gate.
+
+**Phase-1 consumer COMPLETE (2026-09-22, riir-reflex Plan 603 T1.8 closure):**
+the engine half landed end-to-end — `riir-reflex` ships the modelless lane
+(embed → `pick_domain` routing → `Lz4FlexDrafter::score_into` corpus scoring →
+sigmoid-L1 → `SigmoidGateCalibrator` → fused score+`CorpusDistanceGate`
+abstain) behind this exact wire, the laya lane under the G5 parity gate
+(88/88 forwards, drift ≤ 3.1e-6), and the Phase-1 harness (9 suites × 2
+lanes, byte-identical questions; tables CI-regenerated at
+`riir-reflex/.benchmarks/001_phase1_tables/`, record
+`riir-reflex/.benchmarks/001_phase1_harness.md`). This wire is now a
+CONSUMED contract, not a spec — the golden byte-pins gate the serving
+binary, and the harness reads it for every published number. The
+`structured_reads` promotion line is deliberately NOT pulled: the engine
+consumes the drafter/routing/calibration substrate, never `structured_read`
+(its recorded re-arm trigger — "one line when a consumer appears" — stays
+armed).
