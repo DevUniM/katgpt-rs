@@ -86,6 +86,8 @@ fn run_deep(
         None, // Issue 731: residual-exit probe — None = bit-identical baseline
     #[cfg(feature = "loop_guidance")]
         None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+        #[cfg(feature = "loop_guidance")]
+        None,
         );
     let logits = logits.to_vec();
     // Final carried state: `ctx.x` post-loop (mirrored into

@@ -224,6 +224,17 @@ pub fn forward_looped<'a>(
     // UNGUIDED per-iteration readouts and composes with this.
     #[cfg(feature = "loop_guidance")]
     guidance: Option<&mut super::loop_guidance::LoopGuidance>,
+    // Plan 617 T2.1/T2.2 — decision-level settle exit + loop-budget
+    // accounting. `None` = bit-identical to pre-T2.1 behavior (the
+    // `cadence_gate` precedent: the slot exists only when `loop_guidance`
+    // is on). `Some(s)` = count every iteration into the budget record;
+    // when `s.config.enabled`, additionally read out the UNGUIDED state per
+    // evaluated iteration (per `s.config.readout`) and break early once
+    // `argmax(z_τ)` has been stable for `settle_patience` evaluated
+    // iterations after `d_min`. Evaluates LAST among the per-iteration
+    // exits — cheap representation-space exits win same-iteration ties.
+    #[cfg(feature = "loop_guidance")]
+    settle_exit: Option<&mut super::loop_guidance::SettleExit>,
 ) -> &'a mut [f32] {
     use crate::types::HybridPattern;
 
@@ -342,6 +353,15 @@ pub fn forward_looped<'a>(
     #[cfg(feature = "loop_guidance")]
     if let Some(g) = guidance.as_deref_mut() {
         g.begin_step();
+    }
+
+    // Plan 617 T2.1 — the settle exit is reborrowed per use and self-resets
+    // per call (the guidance precedent above).
+    #[cfg(feature = "loop_guidance")]
+    let mut settle_exit = settle_exit;
+    #[cfg(feature = "loop_guidance")]
+    if let Some(s) = settle_exit.as_deref_mut() {
+        s.begin_step();
     }
 
     // 2. Outer loop: T passes over all layers
@@ -770,6 +790,24 @@ pub fn forward_looped<'a>(
             }
         }
 
+        // Plan 617 T2.1 — decision-level settle exit (argmax stability),
+        // evaluated LAST among the per-iteration exits (see the param doc:
+        // cheap representation-space exits win same-iteration ties). The
+        // loop counter runs EVERY iteration (the T2.2 budget covers the
+        // pre-`d_min` window); the readout runs only when enabled AND
+        // past `d_min`. Readouts are UNGUIDED — the guidance at the readout
+        // site below transforms whichever prediction is finally decoded.
+        #[cfg(feature = "loop_guidance")]
+        if let Some(s) = settle_exit.as_deref_mut() {
+            s.record_iteration();
+            if s.config.enabled
+                && tau + 1 >= s.config.d_min
+                && s.observe(&ctx.x[..n], &weights.lm_head)
+            {
+                break;
+            }
+        }
+
         // ── Issue 717 T4 — tangential/radial update rescale ─────────────
         // Decomposes THIS iteration's full update (post residual-gate
         // injection) against the pre-pass state `prev_h` and rescales the
@@ -864,6 +902,14 @@ pub fn forward_looped<'a>(
                 }
             }
         }
+    }
+
+    // Plan 617 T2.2 — settle the budget record whichever way the loop
+    // ended (Settled / Exhausted / Superseded — derivation in `finish`).
+    // Tail use: moving the Option is fine (no later access).
+    #[cfg(feature = "loop_guidance")]
+    if let Some(s) = settle_exit {
+        s.finish(loop_count);
     }
 
     // Snapshot hidden state

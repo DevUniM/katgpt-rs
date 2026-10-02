@@ -69,7 +69,7 @@ fn run_once_with(
     #[cfg(feature = "weight_shared_advantage_gate")]
     let gate: Option<&mut katgpt_rs::pruners::self_advantage::AdvantageMarginGate> = None;
     #[cfg(not(feature = "weight_shared_advantage_gate"))]
-    let gate = ();
+    let _gate = ();
     let logits = forward_looped(
         &mut ctx,
         weights,
@@ -92,6 +92,8 @@ fn run_once_with(
         None,
         #[cfg(feature = "loop_guidance")]
         guidance,
+        #[cfg(feature = "loop_guidance")]
+        None,
     );
     logits.to_vec()
 }

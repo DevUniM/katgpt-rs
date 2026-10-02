@@ -1467,6 +1467,33 @@ name = "t2_2_weight_shared_gate"
 path = "tests/t2_2_weight_shared_gate.rs"
 required-features = ["weight_shared_advantage_gate"]
 
+# Plan 617 T3.1 — LoopCD fixture non-degeneracy gate (the frozen-fixture
+# law): the hand-constructed looped fixture's depth→accuracy slope, close-
+# decision stratum, and disagreement floor are committed BEFORE any guided
+# arm runs. Unguided only (the fixture proves the lane, not the guidance).
+[[test]]
+name = "loopcd_fixture_gate"
+path = "tests/loopcd_fixture_gate.rs"
+required-features = ["lt2_looped"]
+
+# Plan 617 T2.1-T2.3 — settle-exit + loop-budget gates (fixture-backed:
+# exit semantics, budget classes, the quality-parity pin, the honest
+# stable-wrong cost pin, CandidateSet agreement, Superseded derivation).
+[[test]]
+name = "loop_guidance_settle_gates"
+path = "tests/loop_guidance_settle_gates.rs"
+required-features = ["loop_guidance", "lt2_looped"]
+
+# Plan 617 T3.2-T3.4 — the LoopCD GOAT: the adjudication ladder on the
+# frozen non-saturated fixture (guided vs unguided vs three incumbents +
+# the cheap-weak control, greedy argmax; interleaved A/B overhead; net-FLOP
+# + settle-exit budget accounting). weight_shared_advantage_gate supplies
+# the exit-only incumbent arm (product_policy_log + AdvantageMarginGate).
+[[test]]
+name = "loop_guidance_goat"
+path = "tests/loop_guidance_goat.rs"
+required-features = ["loop_guidance", "lt2_looped", "weight_shared_advantage_gate"]
+
 # Plan 428 Phase 2 — Loop Stability Fix GOAT gate.
 # Verifies inter-loop RMSNorm in forward_looped: byte-identical when None,
 # logits finite with InterLoopNorm, latency overhead, norm control.

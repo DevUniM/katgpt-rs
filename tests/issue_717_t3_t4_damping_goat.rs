@@ -131,6 +131,8 @@ fn run_deep(
         None, // Issue 731: residual-exit probe — None = bit-identical baseline
     #[cfg(feature = "loop_guidance")]
         None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+        #[cfg(feature = "loop_guidance")]
+        None,
         );
     let logits = logits.to_vec();
     let final_norm = robust_norm(&ctx.x[..config.n_embd]);
@@ -485,6 +487,8 @@ fn g4_alloc_free_stabilization_hot_loop() {
         None, // Issue 731: residual-exit probe — None = bit-identical baseline
     #[cfg(feature = "loop_guidance")]
         None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+        #[cfg(feature = "loop_guidance")]
+        None,
         );
 
     reset_alloc_stats();
@@ -512,6 +516,8 @@ fn g4_alloc_free_stabilization_hot_loop() {
             None, // Issue 731: residual-exit probe — None = bit-identical baseline
         #[cfg(feature = "loop_guidance")]
             None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+            #[cfg(feature = "loop_guidance")]
+            None,
             );
     }
     let (count, bytes) = get_alloc_stats();

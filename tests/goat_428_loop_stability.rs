@@ -67,6 +67,8 @@ fn run_forward_looped(
         None, // Issue 731: residual-exit probe — None = bit-identical baseline
     #[cfg(feature = "loop_guidance")]
         None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+        #[cfg(feature = "loop_guidance")]
+        None,
         );
     let elapsed = t0.elapsed().as_micros() as u64;
 

@@ -332,6 +332,8 @@ fn bench_lt2_ahla_loop() {
                 None, // Issue 731: residual-exit probe — None = bit-identical baseline
             #[cfg(feature = "loop_guidance")]
                 None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+                #[cfg(feature = "loop_guidance")]
+                None,
                 );
         }
     }
@@ -365,6 +367,8 @@ fn bench_lt2_ahla_loop() {
                 None, // Issue 731: residual-exit probe — None = bit-identical baseline
             #[cfg(feature = "loop_guidance")]
                 None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+                #[cfg(feature = "loop_guidance")]
+                None,
                 ));
         }
     }
@@ -441,6 +445,8 @@ fn bench_lt2_hybrid() {
                 None, // Issue 731: residual-exit probe — None = bit-identical baseline
             #[cfg(feature = "loop_guidance")]
                 None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+                #[cfg(feature = "loop_guidance")]
+                None,
                 );
         }
     }
@@ -474,6 +480,8 @@ fn bench_lt2_hybrid() {
                 None, // Issue 731: residual-exit probe — None = bit-identical baseline
             #[cfg(feature = "loop_guidance")]
                 None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+                #[cfg(feature = "loop_guidance")]
+                None,
                 ));
         }
     }
@@ -593,6 +601,8 @@ fn proof_lt2_hybrid_throughput() {
                 None, // Issue 731: residual-exit probe — None = bit-identical baseline
             #[cfg(feature = "loop_guidance")]
                 None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+                #[cfg(feature = "loop_guidance")]
+                None,
                 );
         }
     }
@@ -626,6 +636,8 @@ fn proof_lt2_hybrid_throughput() {
                 None, // Issue 731: residual-exit probe — None = bit-identical baseline
             #[cfg(feature = "loop_guidance")]
                 None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+                #[cfg(feature = "loop_guidance")]
+                None,
                 ));
         }
     }
