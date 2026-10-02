@@ -134,7 +134,10 @@ pub trait TernaryFfnHook: Send + Sync {
 /// Output slices MUST NOT alias each other or `x`. The forward path ensures
 /// this by writing into pre-allocated scratch buffers.
 #[cfg(feature = "ternary_group_scale")]
-#[allow(clippy::too_many_arguments, reason = "Fused GPU dispatch interface: 4 weight matrices + 1 input + 4 outputs is inherent to the DeltaNet input projection block")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Fused GPU dispatch interface: 4 weight matrices + 1 input + 4 outputs is inherent to the DeltaNet input projection block"
+)]
 pub trait TernaryInputProjHook: Send + Sync {
     /// Fused DeltaNet input projections — all 4 sharing input `x`.
     ///
@@ -160,8 +163,6 @@ pub trait TernaryInputProjHook: Send + Sync {
         b_out: &mut [f32],
     );
 }
-
-
 
 #[cfg(feature = "ternary_group_scale")]
 impl TernaryGroupWeights {
@@ -311,7 +312,36 @@ impl TernaryGroupWeights {
         cols: usize,
         snap_scales_to_pow2: bool,
     ) -> Self {
-        assert_eq!(weights.len(), rows * cols, "weights slice must be rows*cols");
+        Self::quantize_with_group_scale(weights, rows, cols, |_g_start, group| {
+            let mut scale = mean_abs_scale(group);
+            if snap_scales_to_pow2 {
+                scale = snap_f32_to_pow2(scale);
+            }
+            scale
+        })
+    }
+
+    /// The one quantization pipeline every scale rule shares (Issue 886 P1
+    /// refactor — the baseline, `pot_scales` and `act_aware_fit` arms differ
+    /// ONLY in the closure). `group_scale(g_start, group)` returns the
+    /// pre-f16 scale for the group starting at column `g_start`; the f16
+    /// store, the threshold `0.5·scale` and the carry loop are identical for
+    /// every rule, so a rule that returns the mean-abs value produces the
+    /// legacy payload bit-for-bit (the G3 anchor).
+    pub(crate) fn quantize_with_group_scale<F>(
+        weights: &[f32],
+        rows: usize,
+        cols: usize,
+        mut group_scale: F,
+    ) -> Self
+    where
+        F: FnMut(usize, &[f32]) -> f32,
+    {
+        assert_eq!(
+            weights.len(),
+            rows * cols,
+            "weights slice must be rows*cols"
+        );
         let mut out = Self::new(rows, cols);
 
         for r in 0..rows {
@@ -324,13 +354,7 @@ impl TernaryGroupWeights {
                 let g_end = (g_start + GROUP_SIZE).min(cols);
                 let group = &row[g_start..g_end];
 
-                // scale = mean(|group|); guard the all-zero group so the
-                // threshold stays finite and quantization yields all zeros.
-                let abs_sum: f32 = group.iter().map(|v| v.abs()).sum();
-                let mut scale = if abs_sum > 0.0 { abs_sum / group.len() as f32 } else { 1.0 };
-                if snap_scales_to_pow2 {
-                    scale = snap_f32_to_pow2(scale);
-                }
+                let scale = group_scale(g_start, group);
                 out.group_scale[group_base + g] = f16::from_f32(scale);
                 // Quantize against the f16-rounded scale the kernel will
                 // actually apply, not the f32 ideal — otherwise the carry
@@ -442,6 +466,21 @@ impl TernaryGroupWeights {
         }
         blocks.shrink_to_fit();
         blocks
+    }
+}
+
+/// The activation-blind baseline group scale: `mean(|group|)`, with the
+/// all-zero group guarded to 1.0 so the threshold stays finite and
+/// quantization yields all zeros. The exact expression the legacy pipeline
+/// used (same iterator sum, same divisor) — the Issue 886 G3 anchor.
+#[cfg(feature = "ternary_group_scale")]
+#[inline]
+pub(crate) fn mean_abs_scale(group: &[f32]) -> f32 {
+    let abs_sum: f32 = group.iter().map(|v| v.abs()).sum();
+    if abs_sum > 0.0 {
+        abs_sum / group.len() as f32
+    } else {
+        1.0
     }
 }
 
@@ -569,11 +608,7 @@ pub struct TernaryBlockContiguousWeights {
 #[cfg(feature = "ternary_group_scale")]
 impl TernaryBlockContiguousWeights {
     /// Construct from a `Vec<TernaryBlockAoS>` + shape metadata.
-    pub fn from_blocks(
-        blocks: Vec<TernaryBlockAoS>,
-        rows: usize,
-        cols: usize,
-    ) -> Self {
+    pub fn from_blocks(blocks: Vec<TernaryBlockAoS>, rows: usize, cols: usize) -> Self {
         let groups_per_row = cols.div_ceil(GROUP_SIZE);
         assert_eq!(
             blocks.len(),
@@ -660,21 +695,18 @@ mod tests {
     fn block_contiguous_matvec_matches_soa() {
         // Test multiple shapes including Bonsai-relevant dimensions.
         let shapes: &[(usize, usize)] = &[
-            (1, 128),      // single group
-            (3, 256),      // multi-group
-            (48, 512),     // ssm_alpha/beta shape
-            (1024, 512),   // attn_k/v shape
-            (128, 4096),   // small Bonsai projection
-            (512, 17408),  // ffn_gate shape (large, multi-group)
+            (1, 128),     // single group
+            (3, 256),     // multi-group
+            (48, 512),    // ssm_alpha/beta shape
+            (1024, 512),  // attn_k/v shape
+            (128, 4096),  // small Bonsai projection
+            (512, 17408), // ffn_gate shape (large, multi-group)
         ];
 
         for &(rows, cols) in shapes {
             let w = filled(rows, cols, 42 + rows as u64);
-            let w_bc = TernaryBlockContiguousWeights::from_blocks(
-                w.to_block_contiguous(),
-                rows,
-                cols,
-            );
+            let w_bc =
+                TernaryBlockContiguousWeights::from_blocks(w.to_block_contiguous(), rows, cols);
 
             // Random input vector.
             let mut seed = 100 + rows as u64;
@@ -909,7 +941,10 @@ mod pot_tests {
 
         // Uniform [-1, 1).
         let mut s = 0x1111_u64;
-        cases.push(("uniform", (0..rows * cols).map(|_| pseudo(&mut s)).collect()));
+        cases.push((
+            "uniform",
+            (0..rows * cols).map(|_| pseudo(&mut s)).collect(),
+        ));
 
         // Gaussian-ish (sum of three uniforms → bell-shaped).
         let mut s = 0x2222_u64;
@@ -926,7 +961,13 @@ mod pot_tests {
         cases.push((
             "sparse70",
             (0..rows * cols)
-                .map(|_| if pseudo(&mut s) > -0.7 { 0.0 } else { pseudo(&mut s) })
+                .map(|_| {
+                    if pseudo(&mut s) > -0.7 {
+                        0.0
+                    } else {
+                        pseudo(&mut s)
+                    }
+                })
                 .collect(),
         ));
 

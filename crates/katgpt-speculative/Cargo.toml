@@ -2,6 +2,7 @@
 name = "katgpt-speculative"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT"
 description = "Speculative decoding + DDTree substrate shared by katgpt-rs and riir-engine (Issue 013)"
 repository = "https://github.com/katopz/katgpt-rs"

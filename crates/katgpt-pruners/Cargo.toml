@@ -2,6 +2,7 @@
 name = "katgpt-pruners"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT"
 description = "Domain-specific constraint pruners for the DDTree search engine (Plan 005 extraction from katgpt-rs/src/pruners/)."
 repository = "https://github.com/katopz/katgpt-rs"

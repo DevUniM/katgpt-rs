@@ -324,6 +324,51 @@ pub fn q_sample_refine(
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Issue 875 T3 (Research 582): time-annealed renoise ranges for the
+// q-sample refinement lane. Gated on `horizon_weights` (the law's module);
+// `dllm_solver` itself is unconditional, so the seam rides the combined
+// posture like `renoise_ce_score_horizon` does.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The VE noise-scale (σ) renoise range for decode iteration `iter` of
+/// `total`, per the time-anneal schedule: `σ ∈ σ_max · [floor, ceiling]`
+/// ([`crate::horizon_weights::TimeAnnealRange::range_at`]).
+///
+/// The consumer seam for [`q_sample_step`] / [`q_sample_refine`] callers
+/// that pick their renoise level per decode iteration: draw the level
+/// inside this range (e.g. via
+/// [`crate::horizon_weights::remaining_horizon_t_sample`], the law's own
+/// sampler) instead of a fixed schedule point. VP-form callers bridge
+/// `ᾱ(σ) = 1/(1 + σ²)` (`sqrt(ᾱ)·x + sqrt(1−ᾱ)·ε` ↔ `x + σ·ε`).
+///
+/// Orthogonal to the entropy-triggered switching above: that decides WHICH
+/// steps renoise (state-indexed), this bounds WHERE the renoise level
+/// lives (iteration-indexed). Deterministic, zero-allocation.
+#[cfg(feature = "horizon_weights")]
+pub fn annealed_renoise_range(
+    anneal: &crate::horizon_weights::TimeAnnealRange,
+    iter: usize,
+    total: usize,
+    sigma_max: f32,
+) -> (f32, f32) {
+    let (floor, ceiling) = anneal.range_at(iter, total);
+    (floor * sigma_max, ceiling * sigma_max)
+}
+
+/// The truncation predicate's operational form: is renoising to absolute
+/// horizon-units level `t` skippable at tolerance `eps` (the (T−t) mass at
+/// or above `t` is within `eps` of the `[t_min, T]` total)?
+///
+/// Near-terminal levels carry ≈ no law weight — first-order lossless to
+/// skip: the q-sample re-resolve there buys ~no signal at full cost
+/// ([`crate::horizon_weights::truncated_w_mass_fraction`], Bench 883
+/// measures the plain-truncation cost on the C9 toy).
+#[cfg(feature = "horizon_weights")]
+pub fn renoise_level_skippable(t: f32, eps: f32, t_min: f32, horizon: f32) -> bool {
+    crate::horizon_weights::truncated_w_mass_fraction(t, t_min, horizon) <= eps
+}
+
 /// Sigmoid activation: σ(x) = 1 / (1 + exp(-x)).
 /// Used instead of softmax for independent per-token probability gating.
 /// Delegates to [`crate::simd::fast_sigmoid`] (Cephes polynomial).
@@ -1894,5 +1939,48 @@ mod tests {
         assert!((out[1] - 20.0).abs() < 1e-6, "pos 0 star");
         assert!((out[2] - 0.0).abs() < 1e-6, "pos 1 pre");
         assert!((out[3] - 0.0).abs() < 1e-6, "pos 1 pre");
+    }
+
+    // ---- Issue 875 T3: annealed renoise ranges (horizon_weights) ----
+
+    #[cfg(feature = "horizon_weights")]
+    #[test]
+    fn annealed_renoise_range_scales_with_schedule() {
+        use crate::horizon_weights::TimeAnnealRange;
+        let sch = TimeAnnealRange::DEFAULT;
+        let sigma_max = 4.0f32;
+        // Pre-anneal: the paper's flat range scaled by sigma_max.
+        let (lo, hi) = annealed_renoise_range(&sch, 0, 100, sigma_max);
+        assert!((lo - 0.02 * sigma_max).abs() < 1e-6);
+        assert!((hi - 0.98 * sigma_max).abs() < 1e-6);
+        // Terminal: the annealed end.
+        let (lo, hi) = annealed_renoise_range(&sch, 99, 100, sigma_max);
+        assert!((lo - 0.02 * sigma_max).abs() < 1e-6);
+        assert!((hi - 0.70 * sigma_max).abs() < 1e-6);
+        // VE -> VP bridge documented on the seam: alpha(sigma_max) tiny,
+        // alpha(floor*sigma_max) ~ 1/(1 + (0.08)^2) ~ 0.9937.
+        let (_, hi) = annealed_renoise_range(&sch, 99, 100, sigma_max);
+        let alpha = 1.0 / (1.0 + hi * hi);
+        assert!((alpha - 1.0 / (1.0 + (0.70 * sigma_max).powi(2))).abs() < 1e-6);
+        // Determinism.
+        let a = annealed_renoise_range(&sch, 42, 100, sigma_max);
+        let b = annealed_renoise_range(&sch, 42, 100, sigma_max);
+        assert_eq!(a.0.to_bits(), b.0.to_bits());
+        assert_eq!(a.1.to_bits(), b.1.to_bits());
+    }
+
+    #[cfg(feature = "horizon_weights")]
+    #[test]
+    fn renoise_level_skippable_wraps_the_ceiling() {
+        // At eps = ((1-0.70)/(1-0.02))^2, levels at/above 0.70 are
+        // skippable and levels below are not.
+        let eps = (0.30f32 / 0.98).powi(2);
+        assert!(renoise_level_skippable(0.70, eps, 0.02, 1.0));
+        assert!(renoise_level_skippable(0.98, eps, 0.02, 1.0));
+        assert!(!renoise_level_skippable(0.69, eps, 0.02, 1.0));
+        assert!(!renoise_level_skippable(0.02, eps, 0.02, 1.0));
+        // eps=0: only exactly-T (mass 0) is skippable.
+        assert!(!renoise_level_skippable(0.98, 0.0, 0.02, 1.0));
+        assert!(renoise_level_skippable(1.0, 0.0, 0.02, 1.0));
     }
 }

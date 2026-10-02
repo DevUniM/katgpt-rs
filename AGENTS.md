@@ -65,14 +65,14 @@ a green result says nothing about what it compiled to nothing:
 
 | Axis | Blind spot |
 |---|---|
-| `check` vs `clippy` | two `cargo heal` escape classes are rejected by clippy's typeck and accepted by `check` (E0689 ambiguous-integer, E0631 deref-coercion in `redundant_closure`) |
+| `check` vs `clippy` | two `cargo refine` escape classes are rejected by clippy's typeck and accepted by `check` (E0689 ambiguous-integer, E0631 deref-coercion in `redundant_closure`) |
 | default vs `--all-features` | non-default gated code compiles to **nothing** |
 | `-p <crate>` vs `--workspace` | a crate's own non-default feature can be switched on by the ROOT crate's defaults once the root is in the selected set — and per-crate runs silently *shrink* coverage |
 | no `--all-targets` | skips every test / bench / example — which is where gated code lives |
 | dev vs `--release` | `debug_assertions` is always **ON** in dev, so every item behind `#[cfg(debug_assertions)]` — and everything that depends on one — only ever compiles in the configuration where it works. **Neither profile is the safe default — the profile is part of the claim.** |
 | `--all-targets` vs **doc-tests** | `--all-targets` does **not** include doc-tests — only `cargo test --doc` reaches them (`.issues/723` Class F) |
 | host triple vs **`wasm32`** | a `--target` you never pass is a platform you never compile. Worse than the macOS axis because it is gated **twice**: the hot kernels are `all(target_arch = "wasm32", target_feature = "simd128")` and the triple defaults to simd128 **OFF**, so even a wasm32 lane without `RUSTFLAGS='-C target-feature=+simd128'` compiles the SIMD half to nothing. Measured (Issue 737): the simd128-**off** arm was clean and the **on** arm had 14 findings, 11 of them `unsafe_op_in_unsafe_fn` on edition 2024. `full_gate.sh` layer 2b runs both arms |
-| **compile vs EXECUTE** | every axis above is about *compilation*. The scoped core (katgpt-rs + katgpt-core `--lib` at default features, count floors) was EXECUTED weekly (`test.yml` + `scripts/test_gate.sh` — SCHEDULE SUSPENDED 2026-09-09, Actions spending limit; run `scripts/test_gate.sh` locally). ⛔ **katgpt-types joined that population on 2026-09-15 and the reason is this axis one PLATFORM over** (riir-train Issue 549): the `avx2_exp_sum_inplace` n-clamp regression test landed and was executed by NOTHING — full_gate is macOS/aarch64, where the NEON sibling always clamped and the class is invisible, and is compile+lint rather than execute; wasm32_gate builds a different kernel; and this lane, the only executing one and the only x86_64 one, did not select the crate; the other 477 integration-test and 176 bench targets are executed by nothing automatic (ONE exception since Issue 858, 2026-09-21: `belief_drafter_goat` is a test_gate `PERF_ROWS` row — `--release`, `--test-threads=1`, floor 12 — so the arch-conditional g8 dual pin has an executing lane on every arch the gate runs on, aarch64 included), and `--all-features` is not a supported TEST configuration (fixture RNG streams and GOAT calibrations are per-feature). An uninvoked assertion is *unknown*, not passing |
+| **compile vs EXECUTE** | every axis above is about *compilation*. The scoped core (katgpt-rs + katgpt-core `--lib` at default features, count floors) was EXECUTED weekly (`test.yml` + `scripts/test_gate.sh` — schedule RE-ARMED 2026-09-23: the repo is public, Actions minutes free, the 09-09 spending premise gone here; `scripts/test_gate.sh` remains the local develop-work form). ⛔ **katgpt-types joined that population on 2026-09-15 and the reason is this axis one PLATFORM over** (riir-train Issue 549): the `avx2_exp_sum_inplace` n-clamp regression test landed and was executed by NOTHING — full_gate is macOS/aarch64, where the NEON sibling always clamped and the class is invisible, and is compile+lint rather than execute; wasm32_gate builds a different kernel; and this lane, the only executing one and the only x86_64 one, did not select the crate; the other 477 integration-test and 176 bench targets are executed by nothing automatic (ONE exception since Issue 858, 2026-09-21: `belief_drafter_goat` is a test_gate `PERF_ROWS` row — `--release`, `--test-threads=1`, floor 12 — so the arch-conditional g8 dual pin has an executing lane on every arch the gate runs on, aarch64 included), and `--all-features` is not a supported TEST configuration (fixture RNG streams and GOAT calibrations are per-feature). An uninvoked assertion is *unknown*, not passing |
 
 So before claiming a repo-wide green, run:
 
@@ -187,15 +187,18 @@ Issue-741 predicate, so they RUN under `--release --features alloc_tracking`
 (the configuration alloc gates are meant to be read in) and compile away at
 release-default instead of breaking the harness.
 
-Trigger health: CI is MAIN-ONLY + dispatch-only since 2026-09-09 (owner call:
-Actions spending limit + no CI on `develop` pushes) — every `push` trigger is
-`branches: [main]` and every `schedule:` block is suspended in-file (commented,
-riir-train 507 precedent). `scripts/ci_gate_coverage.py` reports which declared
-triggers can actually fire, per workflow, per repo. Layer 2b also has its own
-push lane: `.github/workflows/wasm32_gate.yml` runs `full_gate.sh
---wasm32-only` on ubuntu-latest (Issue 737 T4), now MAIN-ONLY too — the lane is
-host-independent and `--lib`-only; dispatch it manually after a run of develop
-work, since no automatic lane covers develop pushes anymore.
+Trigger health: PUSH triggers are MAIN-ONLY + dispatch-only since 2026-09-09
+(owner call: no CI on `develop` pushes) — every `push` trigger is
+`branches: [main]`. The weekly `schedule:` blocks were suspended the same day
+under the Actions spending limit (commented, riir-train 507 precedent) and were
+RE-ARMED 2026-09-23 for THIS repo alone — it is public, Actions minutes are
+free, so that premise is gone here; every private sibling's schedules stay
+suspended under the same spend call. `scripts/ci_gate_coverage.py` reports
+which declared triggers can actually fire, per workflow, per repo. Layer 2b
+also has its own push lane: `.github/workflows/wasm32_gate.yml` runs
+`full_gate.sh --wasm32-only` on ubuntu-latest (Issue 737 T4), MAIN-ONLY — the
+lane is host-independent and `--lib`-only; dispatch it manually after a run of
+develop work, since no push lane covers develop pushes.
 
 ### The x86_64 half of the EXECUTE row — `scripts/x86_64_execution_matrix.sh`
 
@@ -782,14 +785,19 @@ one, and not over-capture either (riir-ai's `go_bonsai_cache_test.bin` and
 `test_egl_roundtrip.bin` are `#[test]` bodies writing a fixed filename, the
 shape that produced this repo's own five-at-once *"File too small for header"*
 failures). Ceiling a **RATCHET at measured**, `instrument_reachability`'s
-answer for its reason: a wall would demand 98 repairs in ten trees this session
-does not own, and a cross-repo repair is not landed until it is COMMITTED in
-the sibling with a cited SHA (Issue 798). ⛔ It carries **no `min_rs_files`
-column** — the third sweep to delegate that identical `tracked_files(repo,
-"*.rs")` walk — and the delegation is ASSERTED, not assumed: a pinned repo that
-loses its non-zero row in `orphaned_attr_drift_floors.txt` reds, and a
-delegated file it cannot PARSE is refused rather than read as an empty dict,
-which would turn the assertion into the no-op it exists to prevent. katgpt-rs's
+answer for its reason: a wall would demand 98 repairs in ten trees this
+session does not own, and a cross-repo repair is not landed until it is
+COMMITTED in the sibling with a cited SHA (Issue 798). ⛔ It carries **no
+`min_rs_files` column** — the third sweep to delegate that identical
+`tracked_files(repo, "*.rs")` walk — and the delegation is ASSERTED, not
+assumed: a pinned repo that loses its non-zero row in
+`orphaned_attr_drift_floors.txt` reds, and a delegated file it cannot PARSE is
+refused rather than read as an empty dict, which would turn the assertion into
+the no-op it exists to prevent. ⛔ One MEASURED exception (Issue 902): a zero
+row is accepted while `sweep_population.zero_walk_floor_accepted` measures ZERO
+tracked `.rs` in that repo — md-only by construction, re-measured every run,
+the acceptance printed, never a standing amnesty; the first `.rs` to land reds
+exactly as a zeroed row on a code repo does. katgpt-rs's
 row asserts the GATE'S VERDICT rather than restating a count this sweep derives
 from the same `scan()`, so a stale membership row reds here too. Repair half:
 `scripts/shared_temp_path_fix.py` (the `locale_io_fix.py` pattern — idempotent,
@@ -2494,7 +2502,14 @@ scripts/len_derived_drift_sweep.py --canary         # the 12 adversary arms
   `tracked_files(repo, "*.rs")` call over the identical population, and they
   already disagree with each other about the number. The delegation is
   **asserted** — the sweep reds if any repo it pins loses its non-zero row
-  there.
+  there — with ONE measured exception (Issue 902): a repo born md-only has a
+  TRUTHFUL zero row, so the assertion accepts it only while
+  `sweep_population.zero_walk_floor_accepted` measures ZERO tracked `.rs` in
+  that repo (the ONE walk, re-measured every run, the acceptance printed); the
+  first `.rs` to land reds exactly as a zeroed row on a code repo does. The
+  measurement also catches the stale premise in the other direction:
+  riir-reflexer was registered md-only 2026-09-25 and had 16 tracked `.rs` by
+  the time the exception shipped — the row was re-pinned in the same commit.
 
 ## An item can be dead on a platform NO lane compiles — `scripts/platform_dead_code_audit.py`
 
@@ -3108,31 +3123,41 @@ invalidate should **refuse**, not warn — detect concurrent cargo by working
 directory, not command line; a lock-based check cannot work (cargo releases
 `target/<profile>/.cargo-lock` *before* running the test binaries).
 
-## Lint healing — `cargo heal` before manual fixes (adopted 2026-08-24)
+## Lint healing — `cargo refine` before manual fixes (adopted 2026-08-24)
 
-Mechanical clippy findings (format-arg inlining, `match_bool`, `map_or`,
-capacity, `needless_return`, …) are fixed by the riir-clippy healer FIRST,
+Mechanical clippy findings (`needless_return`, `unnecessary_map_or`,
+capacity, `collapsible_if`, …) are fixed by the riir-clippy healer FIRST,
 manual second:
 
 ```bash
-cargo heal <paths>                                        # DRY RUN (the bare default — zero edits)
-cargo heal --fix <paths>                                  # REAL fix: writes + compile-gates (fix_verify builds)
-cargo heal --fix --write --verify <paths>                 # compile-gated apply
-cargo heal --fix --write --verify --verify-args "--features <set>" <paths>  # gated code
+cargo refine <paths>                                        # DRY RUN (the bare default — zero edits)
+cargo refine --fix <paths>                                  # REAL fix: writes + compile-gates (fix_verify builds)
+cargo refine --fix --write --verify <paths>                 # compile-gated apply
+cargo refine --fix --write --verify --verify-args "--features <set>" <paths>  # gated code
 ```
 
-- Global binary `cargo heal` = `~/.cargo/bin/cargo-heal` → the sibling
-  `riir-clippy/target/release/cargo-heal` (built `--features
+- Global binary `cargo refine` = `~/.cargo/bin/cargo-refine` → the sibling
+  `riir-refine/target/release/cargo-refine` (built `--features
   fix_verify,clippy_verify`; rebuild after healer source changes). Missing
   sibling → fall back to manual fixes + `cargo clippy --fix`.
 - `--verify` compiles baseline → applies → re-checks → auto-REVERTS breaking
   edits. Feature-gated code needs `--verify-args "--features <set>"` (a
   default-features check compiles gated files empty — a green check proves
   nothing about them).
+- **The healer fixes only what THIS repo's clippy reports** (riir-clippy
+  Issue 135). Pedantic/nursery lints (`match_bool`, `map_unwrap_or`,
+  `uninlined_format_args`, `doc_markdown`, …) are healed only where the
+  target crate enables the lint or its group (`[lints.clippy]`, inherited
+  `[workspace.lints.clippy]`, crate-root/file `#![warn(clippy::…)]`), and
+  are otherwise skipped with a `lint-level: skipped …` line. katgpt-rs
+  enables none of them (checked 2026-09-26: no manifest, crate root, script,
+  workflow or full-gate `-D` flag). Its clippy never reports them, so a skip
+  here is correct, not lost coverage. `--groups pedantic` exists for a
+  deliberate style pass; it is not part of the routine heal.
 - The healer is deliberately SILENT on documented divergence classes
   (comment-guarded matches, array-literal defaults, named-arg renames,
-  nested macro args) — those stay manual; see the `cargo-heal` skill
-  (`~/.agents/skills/cargo-heal/`) for the full table + discipline.
+  nested macro args) — those stay manual; see the `cargo-refine` skill
+  (`~/.agents/skills/cargo-refine/`) for the full table + discipline.
 - `cargo clippy --fix` remains fine for one-off trivial fixes; the healer
   wins on batches (span-preserving, comment guards, compile gate,
   self-evolve memory) and was validated across the full katgpt-rs sweep
@@ -3172,6 +3197,18 @@ else happening to be watching the process table.
   same rule §Docs gate states for CPU seconds; it is restated here because
   *written-down beats remembered only if the write-up is in the path you
   actually walk*, and that one lives in a section about docs-gate timing.
+- ⛔ **On a laptop, POWER SOURCE and POWER MODE belong in that list, and they
+  were the axis nothing recorded** (riir-reflex Issue 021, 2026-09-24). An
+  entire paired A/B session on the M3 ran unplugged (100% → 45%) while its
+  baselines were AC, and no instrument noticed. Apple Silicon sheds sustained
+  GPU clock off AC; `pmset powermode` is a **three**-state enum (0 Automatic,
+  1 Low Power, 2 High Power — this box's AC profile is 2), so "not 0" is not
+  "Low Power". There is no sudo-free throttle readout here (`pmset -g therm`,
+  `kern.thermalpressure`, `powermetrics` all measured unusable), so the
+  detector is a fixed-kernel canary. Reference gate:
+  `riir-reflex/scripts/bench_preflight.sh` — refuses on battery, Low Power,
+  < `SETTLE_MIN` since plug-in, or over a load ceiling, and prints a
+  `PROVENANCE:` line to quote beside the number.
 - ↔ **This bullet is the GENERAL rule; §Docs gate's "load-invariant has a
   measured LIMIT" paragraph is the INSTANCE** — it owns the docs-gate CPU
   figures and their quiet-box scoping, this owns any perf number plus the
@@ -3274,12 +3311,12 @@ distillation, novelty + GOAT gates, modelless-unblock protocol §3.5):
 > **Repo count:** the **product/distillation set is 7** — `katgpt-rs` (public) +
 > `riir-ai`, `riir-chain`, `riir-neuron-db`, `riir-train`, `riir-game-sdk`,
 > `riir-dapps` (private). That is NOT the repo total: the
-> workspace is **23 repos**, all of which carry a root `BOUNDARY.md`
-> (add `riir-mmorpg-examples`, `riir-clippy`, `riir-viewbridge`,
+> workspace is **26 repos**, all of which carry a root `BOUNDARY.md`
+> (add `riir-mmorpg-examples`, `riir-refine`, `riir-viewbridge`,
 > `riir-auth`, `katgpt-web`, `riir-dao`, `riir-deployer`,
 > `riir-esp32`, `riir-llm`, `mmorpg-editor`, `mmorpg-remake`,
 > `mmorpg-remaster`, `riir-kat`, `riir-shader`, `riir-reflex`,
-> `riir-infer`).
+> `riir-infer`, `riir-reflexer`, `reflex-site`, `riir-instinct`).
 >
 > Read a count in prose as a claim, not a fact — and read a count that
 > MATCHES as a claim too: a count is not a checksum over a set. Drift
@@ -3329,6 +3366,20 @@ a deletion at its old number and the tool resurrects a collision somebody
 already resolved). Issue 791 recorded **three** collisions; the same scan with
 the recovery says **70**, over 1374 numbers, 9 of them at or above 700 and all 9
 from one 57-commit divergence.
+- ⛔ **`-M` is necessary and not sufficient, in BOTH directions** (Issue 881
+  T2.4). It pairs a rename only above 50% content similarity, and a document
+  RETITLED as its thesis changes is rewritten far past that (riir-shader
+  `_queue` → `_port`, 0.03–0.10), so each read as a second holder.
+  `numbering_gate.collapse_renames` treats a removed stem as a rename only if it
+  was deleted in the same commit as the new stem's add, or by the same author
+  within 1 h, **and** the two stems share a topic (stem-token Jaccard ≥ 0.25),
+  **and** the old stem predates the new one. Line similarity cannot make this
+  call: the real recycle katgpt-rs `.plans/236` measured 0.065, inside the
+  renames' range. The rule costs false reds, never false greens: retitles that
+  share no stem token stay collisions. Separately, a pathspec'd `git log`
+  SIMPLIFIES history and dropped deletions made on merged feature branches, so
+  the recovery passes `--full-history`. Measured: 195 → 180 workspace-wide, 15
+  collapsed, 2 surfaced.
 
 ⚠ **Take the SCOPE from `scripts/numbering_floors.txt`, never from a walk of
 the tree.** A first pass over every numbered directory found 122, and 52 of

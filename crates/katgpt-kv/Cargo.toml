@@ -2,6 +2,7 @@
 name = "katgpt-kv"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT"
 description = "KV-cache namespace — KV-cache compression, compaction, projection-sharing, and quantization backends. Spun out of katgpt-rs/src/{kv_share,osc_kv,cs_kv_probe,shard_kv,sp_kv,still_kv,kvarn,targeted_precision} (Issue 015 Phase 3)."
 repository = "https://github.com/katopz/katgpt-rs"
@@ -68,6 +69,17 @@ still_kv = []
 # Requires spectral substrate transitively via targeted_precision.
 kvarn = []
 
+# Measurement-only quantize/dequant mode override (`KVarNKVCache::set_quant_mode`)
+# for benches that attribute quantizer behavior to the machinery vs the width
+# (katgpt-rs Issue 907's crossed-config arms). Never a production knob —
+# production postures always derive from `with_config`.
+quant_mode_override = ["kvarn"]
+
+# Issue 883 P1 (Research 587): forwards katgpt-core's fitted_value_tables so
+# the token-mean-removed V-quant decorator can be gated against the REAL
+# KVarN backend (Bench 895 G1/G2/G3/G4 — tests/bench_895_mean_removed_v_quant_goat.rs).
+fitted_value_tables = ["katgpt-core/fitted_value_tables"]
+
 # Targeted Precision Budget — per-head bit allocation (Plan 227 Phase 2).
 # Used only by kvarn; promoted to top-level module here for visibility.
 targeted_precision = []
@@ -97,6 +109,14 @@ drift_segment = []
 # this from the `ssc_spec_draft` feature; the example
 # `segment_checkpoint_demo` requires it for the ssc branch.
 ssc_spec_draft = ["segment_checkpoint"]
+
+# Memory-Soup DDTree branch merging — opt-in sub-module of segment_checkpoint
+# (Plan 223b / Plan 226). Gates `pub mod memory_soup;` in
+# segment_checkpoint/mod.rs. Root forwards this from its `memory_soup_dtree`
+# feature. Issue 897 T2: the flag was never declared here after the Proposal
+# 003 Phase 5 move (70d418b8e), so the module compiled nowhere — surfaced by
+# removing the crate-wide `#![allow(unexpected_cfgs)]`.
+memory_soup_dtree = ["segment_checkpoint"]
 
 # Async Q/DQ Overlap — double-buffered KV dequantize for GPU pipeline
 # (Plan 227 Phase 6). The `inference_router` dep stays in the ROOT feature
@@ -129,6 +149,34 @@ required-features = ["mi_probe"]
 [[test]]
 name = "radix_prefix_cache_tests"
 required-features = ["radix_prefix_cache"]
+
+# Issue 883 P1 — token-mean-removed V quant over the KVarN backend GOAT:
+# G1 dashboard-predicted vs measured quant-MSE drop (+ absmax caveat + sink
+# arms), G2 fused dequant+restore paired A/B, G3 miss / E=0 bit-identical,
+# G4 0 extra allocs.
+[[test]]
+name = "bench_895_mean_removed_v_quant_goat"
+harness = false
+required-features = ["kvarn", "fitted_value_tables"]
+
+# Issue 894 — KVarN dequant kernels as bounds-check-free zips: G3 old-vs-new
+# bitwise (the pre-894 loops kept verbatim in tests/common/kvarn_dequant_oracle.rs),
+# G4 0 allocs, G2 paired interleaved new/old on the plain dequant+axpy pass.
+[[test]]
+name = "bench_894_kvarn_dequant_zip_goat"
+harness = false
+required-features = ["kvarn"]
+
+# katgpt-rs Issue 907 — the KVarN V-row bit-ladder attribution bench on REAL
+# captured rows (Bench 903): the plain b2/b3/b4 ladder + the CROSSED
+# machinery arms via `set_quant_mode` (feature `quant_mode_override`) —
+# attributes the measured bit-ladder inversion to machinery vs width. The
+# fixture (.raw/vrow/gemma2_vrows.bin) is gitignored; the bench SKIPS LOUD
+# without it (never a green zero) and pins its BLAKE3.
+[[test]]
+name = "bench_903_kvarn_vrow_real_ladder"
+harness = false
+required-features = ["kvarn", "quant_mode_override"]
 
 # Issue 800 Arm B1 — lock-free slot-flip PoC bench. harness = false: the PoC
 # prints its own results table + the B2 decision-gate verdict (it is not a

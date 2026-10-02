@@ -211,14 +211,23 @@ pub fn forward_looped<'a>(
     // instead of a Config field: no constructor ripple). Feature-gated so the
     // no-probe build carries no parameter at all (the `gain_cost_halt`
     // precedent).
-    #[cfg(feature = "cadence_gate")]
-    residual_exit: Option<
+    #[cfg(feature = "cadence_gate")] residual_exit: Option<
         &mut katgpt_core::convergence_cadence::LoopResidualExit,
     >,
+    // Plan 617 T1.3 — LoopCD recurrent-depth contrast guidance. `None` =
+    // bit-identical to pre-Plan-617 behavior (the `cadence_gate` precedent:
+    // the parameter slot exists only when the feature is on, so callers
+    // compiled without `loop_guidance` don't pass it). `Some(g)` = capture
+    // h_k at the completed `g.config.ref_loop` iteration and apply the
+    // strong−weak contrast to whichever prediction is FINALLY decoded
+    // (exit-iteration or loop-R) — the exit family above operates on
+    // UNGUIDED per-iteration readouts and composes with this.
+    #[cfg(feature = "loop_guidance")]
+    guidance: Option<&mut super::loop_guidance::LoopGuidance>,
 ) -> &'a mut [f32] {
     use crate::types::HybridPattern;
 
-cache.advance_pos(pos);
+    cache.advance_pos(pos);
 
     let n = config.n_embd;
     let hd = config.head_dim;
@@ -267,18 +276,29 @@ cache.advance_pos(pos);
     //
     // `prev_step_buf` holds the previous loop's update direction
     // `h^(tau-1) - h^(tau-2)` so the next iteration can compute cos θ against
-    // it via `angular_change`. Allocated ONCE per `forward_looped` call (not
-    // per iteration) — honors the hot-loop rule. Matches the existing
-    // `_gate_scratch_logits` pattern: declared even in the no-halter path but
-    // never grown unless the halter fires.
+    // it via `angular_change`. Sized ONCE per `forward_looped` call (not
+    // per iteration) — honors the hot-loop rule — and ONLY when a halter was
+    // actually passed AND can run (`halter_active`, T2.2): `None` (the
+    // default probe posture of every gate) must stay zero-allocation at any
+    // feature combo (Issue 900 — the unconditional `with_capacity` here made
+    // the G4 alloc-free gate fail at wider combos with 2 dead allocs/call).
+    // Same lazy shape as `_gate_scratch_logits` above.
     #[cfg(feature = "gain_cost_halt")]
     let mut halter = halter;
     #[cfg(feature = "gain_cost_halt")]
     let halter_active = elastic_loop_override.is_none();
     #[cfg(feature = "gain_cost_halt")]
-    let mut prev_step_buf: Vec<f32> = Vec::with_capacity(n);
+    let mut prev_step_buf: Vec<f32> = if halter_active && halter.is_some() {
+        Vec::with_capacity(n)
+    } else {
+        Vec::new()
+    };
     #[cfg(feature = "gain_cost_halt")]
-    let mut curr_step_buf: Vec<f32> = Vec::with_capacity(n);
+    let mut curr_step_buf: Vec<f32> = if halter_active && halter.is_some() {
+        Vec::with_capacity(n)
+    } else {
+        Vec::new()
+    };
     // `cost_floor` is cached on the first halter evaluation (tau == 1) as
     // `0.01 × first_step_size`, mirroring LoopCoder-v2's flat Ω(r) tax. See
     // the plan's Open Question 1 resolution (Phase 2 ships the fixed-tax
@@ -306,6 +326,23 @@ cache.advance_pos(pos);
     // Issue 731 T1 — the residual-exit probe is reborrowed per use.
     #[cfg(feature = "cadence_gate")]
     let mut residual_exit = residual_exit;
+
+    // Plan 617 T1.3 — guidance is reborrowed per use and self-resets per
+    // call (the capture flag clears here, so a LoopGuidance reused across
+    // decode steps needs no caller bookkeeping). `guidance_active` is the
+    // hoisted hot-loop predicate: `false` in the unarmed/None posture, so
+    // the per-iteration capture branch is predicted-not-taken and the
+    // no-guidance path stays bit-identical to pre-Plan-617.
+    #[cfg(feature = "loop_guidance")]
+    let mut guidance = guidance;
+    #[cfg(feature = "loop_guidance")]
+    let guidance_armed = guidance.as_ref().is_some_and(|g| g.config.is_armed());
+    #[cfg(feature = "loop_guidance")]
+    let guidance_ref_loop = guidance.as_ref().map_or(0, |g| g.config.ref_loop);
+    #[cfg(feature = "loop_guidance")]
+    if let Some(g) = guidance.as_deref_mut() {
+        g.begin_step();
+    }
 
     // 2. Outer loop: T passes over all layers
     for tau in 0..loop_count {
@@ -570,6 +607,22 @@ cache.advance_pos(pos);
             ctx.loop_anchor[..n].copy_from_slice(&ctx.x[..n]);
         }
 
+        // Plan 617 T1.1 — reference capture at the completed `ref_loop`
+        // iteration. Placed BEFORE every exit family (margin gate / halter /
+        // cadence) so a step that exits AT the capture iteration still gets
+        // its reference — the apply site at the readout needs h_k whenever
+        // the loop reached `ref_loop`, regardless of where it stopped after.
+        // Logit mode pays the ONE extra scratch head pass here; hidden mode
+        // is one copy. Skipped entirely when no guidance is passed or the
+        // config is the ω=0 structural no-op (`guidance_armed == false`).
+        #[cfg(feature = "loop_guidance")]
+        if guidance_armed
+            && tau + 1 == guidance_ref_loop
+            && let Some(g) = guidance.as_deref_mut()
+        {
+            g.capture_reference(&ctx.x[..n], &weights.lm_head, config.vocab_size, n);
+        }
+
         // Plan 283 T2.2 — AdvantageMarginGate dead-compute check.
         // Only active when `weight_shared_advantage_gate` is enabled AND the
         // caller passed `Some(gate)`. When `None`, this block is compiled out
@@ -603,9 +656,8 @@ cache.advance_pos(pos);
                     let candidate = _gate_scratch_logits
                         .iter()
                         .enumerate()
-                        .max_by(|(_, a), (_, b)| {
-                            katgpt_core::float_order::cmp_for_max(**a, **b)
-                        }).map_or(0, |(i, _)| i);
+                        .max_by(|(_, a), (_, b)| katgpt_core::float_order::cmp_for_max(**a, **b))
+                        .map_or(0, |(i, _)| i);
                     if !gate.should_recurse(&_gate_prev_logits, &_gate_scratch_logits, candidate) {
                         // Dead compute detected: this iteration did not
                         // improve the candidate's prediction, so further
@@ -787,11 +839,11 @@ cache.advance_pos(pos);
                 run.stats.state_non_finite_at = Some(run.stats.snapshots_taken - 1);
             }
             if run.capture_states {
-                run.stats.state_snapshots.push(x.to_vec());
+                run.stats.push_state(x);
             }
-            if run.check_logits {
-                // Logit-finite tripwire: one extra `lm_head` matmul per
-                // snapshot, opt-in (`check_logits`). Scratch grown once,
+            if run.check_logits || run.capture_logits {
+                // Logit-finite tripwire / Issue 898 logit lens: one extra
+                // `lm_head` matmul per snapshot, opt-in. Scratch grown once,
                 // reused thereafter.
                 run.logit_scratch.resize(config.vocab_size, 0.0);
                 standard_lm_head(
@@ -801,16 +853,36 @@ cache.advance_pos(pos);
                     config.vocab_size,
                     n,
                 );
-                if run.stats.logits_non_finite_at.is_none()
+                if run.check_logits
+                    && run.stats.logits_non_finite_at.is_none()
                     && run.logit_scratch.iter().any(|l| !l.is_finite())
                 {
                     run.stats.logits_non_finite_at = Some(run.stats.snapshots_taken - 1);
+                }
+                if run.capture_logits {
+                    run.stats.push_logits(&run.logit_scratch);
                 }
             }
         }
     }
 
     // Snapshot hidden state
+    // Plan 617 T1.2 — hidden mode: the contrast is blended INTO the carried
+    // state BEFORE the snapshot + head, so `hidden_state` records h′ (the
+    // state that produced the decode) and the head pass count stays ONE.
+    // Logit mode leaves ctx.x untouched (its contrast operates on ctx.logits
+    // below, after the head).
+    #[cfg(feature = "loop_guidance")]
+    {
+        if let Some(g) = guidance.as_deref_mut() {
+            let hidden = if g.config.mode == super::loop_guidance::GuidanceMode::Hidden {
+                Some(&mut ctx.x[..n])
+            } else {
+                None
+            };
+            g.apply_at_readout(hidden, &mut []);
+        }
+    }
     ctx.hidden_state[..n].copy_from_slice(&ctx.x[..n]);
 
     // LM Head
@@ -821,6 +893,22 @@ cache.advance_pos(pos);
         config.vocab_size,
         n,
     );
+
+    // Plan 617 T1.2 — logit mode: z′ = z_R + ω·(z_R − z_k) on the final
+    // readout (the in-step Eq-4 margin reads these pre-guidance logits).
+    // Hidden mode: record this step's output margin for the next step's
+    // adaptive gate (the one-head-pass law means h_R is never read out).
+    #[cfg(feature = "loop_guidance")]
+    {
+        // Tail use: moving the Option is fine here (no later access).
+        if let Some(g) = guidance {
+            if g.config.mode == super::loop_guidance::GuidanceMode::Logits {
+                g.apply_at_readout(None, &mut ctx.logits);
+            } else {
+                g.record_output_margin(&ctx.logits);
+            }
+        }
+    }
 
     // ── Sleep consolidation hook (Plan 154: eviction boundary) ─────
     // After the forward pass, if the KV cache is full, consolidate
@@ -869,11 +957,7 @@ fn add_blake3_state_noise(x: &mut [f32], pos: usize, tau: usize, scale: f32) {
         let bits = u32::from_le_bytes(bytes) & 0x00FF_FFFF;
         let u = (bits as f32) * (1.0 / 16777216.0);
         // Box–Muller takes ln(u1): clamp the measure-zero 0.0.
-        if u == 0.0 {
-            f32::EPSILON
-        } else {
-            u
-        }
+        if u == 0.0 { f32::EPSILON } else { u }
     };
 
     let n2 = n & !1; // largest even ≤ n — full Box–Muller pairs

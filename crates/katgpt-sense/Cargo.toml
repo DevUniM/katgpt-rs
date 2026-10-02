@@ -2,6 +2,7 @@
 name = "katgpt-sense"
 version = "0.2.1"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT"
 description = "KG Latent Octree Sense substrate — octree construction, reconstruction, BAKE precision-gated update, LOD routing, serialization. Spun out of katgpt-core::sense (Issue 007 Phase E Tier 2 #7). Depends only on katgpt-types (the leaf)."
 readme = "README.md"

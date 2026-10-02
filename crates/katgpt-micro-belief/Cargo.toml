@@ -2,6 +2,7 @@
 name = "katgpt-micro-belief"
 version = "0.2.1"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT"
 description = "Micro-recurrent belief-state kernel — implicit per-entity state tracking. Single-paper distillation (arXiv:2604.17121). Depends only on katgpt-types (SIMD kernels) + blake3 + fastrand."
 readme = "README.md"

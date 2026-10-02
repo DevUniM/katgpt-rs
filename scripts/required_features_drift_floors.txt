@@ -52,7 +52,7 @@ katgpt-web                        3     0        0
 riir-ai                          26   485        0
 riir-auth                         1     0        0
 riir-chain                        9   103        0
-riir-clippy                       1    41        0
+riir-refine                       1    41        0
 riir-dao                          2     0        0
 riir-dapps                        1     0        0
 riir-deployer                     3     0        0
@@ -69,4 +69,7 @@ mmorpg-editor                 30     0        0
 mmorpg-remaster           13     2        0  # observed 2026-09-12: 24 manifests / 3 rows
 mmorpg-remake                       3     6        0
 riir-reflex                         1     2        0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth); rows re-pinned 6->2 same session from the sweep's own population — parse_rows counts [[test]]/[[bench]]/[[example]] rows carrying required-features, NOT [[bin]] (2 = engine_gates + decision_set_goat)
+riir-reflexer 0 0 0  # observed 2026-09-25: born public today (Research 457 P1 registration); md-only, no code yet; no Cargo.toml
+reflex-site 1 0 0  # observed 2026-09-26: joined the contract set today (BOUNDARY.md at reflex-site 89fa39c; findings repaired at 5eb0ae9/466e331/afdacd6 before pinning); 1 manifest (wasm-head, own workspace), no rows
+riir-instinct 0 0 0  # observed 2026-09-26: born private today (riir-ai Proposal 047 P1 registration); md-only, no code yet; no Cargo.toml
 riir-infer                          1     2        0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired)

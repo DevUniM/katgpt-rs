@@ -91,7 +91,10 @@ pub use position::{GridMap, GridPos, Position, soft_cost};
 pub use warm_start::{WarmStartCache, WarmStartScheme};
 
 #[cfg(feature = "lacam_escalation")]
-pub use lacam::{EscalationBudget, lacam_escalation_step};
+pub use lacam::{
+    CensusDepthRow, CensusLimits, CensusReport, EscalationBudget, lacam_constraint_tree_census,
+    lacam_escalation_step,
+};
 
 // ─────────────────────────────────────────────────────────────────────
 // CostFn trait — pluggable seam #1 (Plan 440 T1.2)
@@ -390,10 +393,12 @@ impl<P: Position> LifelongLaCam<P> {
         //
         // When the flow field is not set, use NoFlow (paper-faithful, zero-cost).
         let no_flow;
-        let flow: &dyn FlowField<P> = if let Some(f) = &self.flow_field { f.as_ref() } else {
-                no_flow = NoFlow;
-                &no_flow
-            };
+        let flow: &dyn FlowField<P> = if let Some(f) = &self.flow_field {
+            f.as_ref()
+        } else {
+            no_flow = NoFlow;
+            &no_flow
+        };
 
         let action = pibt_step_with_budget(
             config,

@@ -1,4 +1,5 @@
 # Plan 095: GRAM Width-vs-Depth GOAT Proof
+**Status:** GOAT COMPLETE 3/3 (2026-09-26) — G2 PASS (prior); **G1 PASS via [Bench 898](../.benchmarks/898_guided_width_rollouts_goat.md)** (Issue 895 T7: width 8×16 vs depth 1×128 at equal compute, +14.1 pp selected on the multi-solution colouring family) **and replicated on the game runtime via riir-ai [Bench 955](../riir-ai/.benchmarks/955_issue1008_multi_hypothesis_goat.md)** (Issue 1008 T5, `bench_1008_multi_hypothesis_goat`: deterministic depth collapses to ONE interpretation at both K and N·K on the bimodal sense-belief fixture while width covers {0, 3} — the mode-collapse premise PRESENT on our substrate); **G3 MEASURED on the game domain and the loss REPLICATED** (riir-ai Bench 955 family B: width 62/64 vs depth 64/64 on the uniform fixture — consistent with this plan's own "width loses at 8×16" finding; the asymmetry is the RESULT, not a gap: width wins multi-solution, loses single-solution). Verdict per Research 058 §8.3: the width arm stays opt-in per domain; no default-on claim (the riir-ai lane's T7 recorded the same posture — thin second-reading rate at σ_max 0.25, owner gameplay call on promotion).
 
 > **Parent**: Research 58 (GRAM Generative Recursive Reasoning)
 > **Depends**: Plan 079 (elf_sde ✅), Plan 030 (bandit ✅), Plan 080 (bt_rank ✅)
@@ -11,7 +12,7 @@
 - [x] T2: Run width sweep K=[1,5,10,20] with fixed depth T=4 on draft config ✅ (infrastructure-complete; needs real game arenas for full GOAT proof)
 - [x] T3: Run depth sweep T=[1,4,8,16] with fixed width K=1 on draft config ✅ (infrastructure-complete; needs real game arenas for full GOAT proof)
 - [x] T4: Run width×depth matrix on draft config ✅ (infrastructure-complete; needs Bomber arena for game-domain proof)
-- [x] T5: GOAT verdict: infrastructure validated ✅ (GOAT PENDING 1/3 — G2 passed, G1/G3 need stochastic game domains)
+- [x] T5: GOAT verdict: infrastructure validated ✅ (GOAT PENDING 1/3 — G2 passed, G1/G3 need stochastic game domains) → **2/3 on 2026-09-25**: G1 PASS via Bench 898 (Issue 895), G3 not proven (see Status)
 - [x] T6: Update Research 58 with GOAT results, README.md benchmark section
 
 ## Objective

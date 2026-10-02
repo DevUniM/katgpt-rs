@@ -59,8 +59,7 @@ use katgpt_rs::transformer::{
     ForwardContext, MultiLayerKVCache, TransformerWeights, forward_looped,
 };
 use katgpt_rs::types::{
-    Config, HlaMode, HybridPattern, LoopMode, LoopStabilityMode, ResidualGate, Rng,
-    SdpaOutputGate,
+    Config, HlaMode, HybridPattern, LoopMode, LoopStabilityMode, ResidualGate, Rng, SdpaOutputGate,
 };
 
 // ── Constants ────────────────────────────────────────────────────
@@ -197,7 +196,9 @@ fn run_once(
         None, // Issue 717: deep_run — None = bit-identical baseline
         #[cfg(feature = "cadence_gate")]
         None, // Issue 731: residual-exit probe — None = bit-identical baseline
-    );
+    #[cfg(feature = "loop_guidance")]
+        None, // Plan 617: LoopCD guidance - None = bit-identical baseline
+        );
     logits.to_vec()
 }
 
@@ -401,7 +402,9 @@ fn t698_t1_gain_spectrum_modelless() {
     let f8 = frac_by(8);
 
     println!("\n═══ Issue 698 T1 — gain spectrum (mean KL to loop fixed point) ═══");
-    println!("  fixture blake3[16] = {hash}  ·  seed {SEED}  ·  R_REF {R_REF}  ·  prompts {N_PROMPTS}");
+    println!(
+        "  fixture blake3[16] = {hash}  ·  seed {SEED}  ·  R_REF {R_REF}  ·  prompts {N_PROMPTS}"
+    );
     println!("   r   loss(r)      bits      gain(r→r+1)");
     for i in 0..R_STEPS {
         let gain = if i + 1 < R_STEPS {
@@ -417,11 +420,21 @@ fn t698_t1_gain_spectrum_modelless() {
             gain
         );
     }
-    println!("  ref drift KL({R_REF},{R_REF_PROBE}) = {:.3e}  (vs loss(1) {:.3e} → ratio {:.2e})",
-        a.ref_drift, a.table[0], a.ref_drift / a.table[0]);
-    println!("  loss(1) vs alt ref {R_REF_PROBE} = {:.3e}", a.loss1_alt_ref);
+    println!(
+        "  ref drift KL({R_REF},{R_REF_PROBE}) = {:.3e}  (vs loss(1) {:.3e} → ratio {:.2e})",
+        a.ref_drift,
+        a.table[0],
+        a.ref_drift / a.table[0]
+    );
+    println!(
+        "  loss(1) vs alt ref {R_REF_PROBE} = {:.3e}",
+        a.loss1_alt_ref
+    );
     println!();
-    println!("  convergence fraction by loop 2: {:.1}%   (paper: 77%)", f2 * 100.0);
+    println!(
+        "  convergence fraction by loop 2: {:.1}%   (paper: 77%)",
+        f2 * 100.0
+    );
     println!("  convergence fraction by loop 4: {:.1}%", f4 * 100.0);
     println!("  convergence fraction by loop 8: {:.1}%", f8 * 100.0);
     println!("  concave per-step gain (recorded): {concave}");

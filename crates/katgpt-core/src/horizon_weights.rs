@@ -38,6 +38,14 @@
 //! - [`remaining_horizon_t_sample`]: the SAMPLING realization of the same
 //!   law — the exact inverse CDF of the density `∝ (T−t)` on a sub-range
 //!   (Issue 875 T2's draw schedule; one `sqrt`, zero alloc).
+//! - [`TimeAnnealRange`] + [`terminal_truncation_ceiling`] /
+//!   [`truncated_w_mass_fraction`]: the Issue 875 T3 schedule layer —
+//!   iteration-indexed annealing of a SAMPLING RANGE toward low noise
+//!   (the paper's `[0.02T, 0.98T] → [0.02T, 0.70T]` late-iteration shape;
+//!   state-indexed switching composes with it), plus the zero-terminal-
+//!   weight truncation predicate in closed form (`t_cut = T − (T−t_min)·√ε`
+//!   — skipping the top of the range discards a known, squared-root-small
+//!   fraction of the law's mass).
 //! - [`pfd_horizon_weight_at`] / [`pfd_horizon_weights`]: the exact closed
 //!   form over a discrete uniform grid (cumulative trapezoid of `a`, one
 //!   `exp` per grid point — the offline computation).
@@ -130,10 +138,17 @@ pub fn remaining_horizon_weights(out: &mut [f32]) {
 /// not a sync-boundary value.
 #[inline]
 pub fn remaining_horizon_t_sample(u: f32, t_min: f32, t_max: f32, horizon: f32) -> f32 {
-    let u = if u.is_finite() { u.clamp(0.0, 1.0) } else { 0.0 };
+    let u = if u.is_finite() {
+        u.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     // Fallback (uniform lerp) on any degenerate/incomparable input — the
     // partial_cmp form keeps the function total under NaN (None → fallback).
-    let range_ok = matches!(t_max.partial_cmp(&t_min), Some(core::cmp::Ordering::Greater));
+    let range_ok = matches!(
+        t_max.partial_cmp(&t_min),
+        Some(core::cmp::Ordering::Greater)
+    );
     let horizon_ok = matches!(
         horizon.partial_cmp(&t_max),
         Some(core::cmp::Ordering::Greater) | Some(core::cmp::Ordering::Equal)
@@ -146,6 +161,176 @@ pub fn remaining_horizon_t_sample(u: f32, t_min: f32, t_max: f32, horizon: f32) 
     let t = horizon - ((1.0 - u) * lo * lo + u * hi * hi).sqrt();
     // Rounding at the endpoints can land 1 ulp outside; clamp home.
     t.clamp(t_min, t_max)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Issue 875 T3: time-annealed sampling ranges + terminal truncation
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Zero-terminal-weight truncation predicate, MASS form: the fraction of
+/// the (T−t) law's mass on `[t_min, T]` that lives at or above `t_cut`.
+///
+/// The law integrates to `(T−t)²/2` over any suffix, so the ratio is the
+/// SQUARE of the remaining-horizon ratio:
+///
+/// ```text
+/// ε(t_cut) = ((T − t_cut) / (T − t_min))²
+/// ```
+///
+/// `t_cut = T` → exactly `0.0` (the corollary's anchor, `w(T) = 0`);
+/// `t_cut ≤ t_min` → `1.0` (nothing above the floor is excluded). A
+/// degenerate horizon (`T ≤ t_min`) or non-finite `t_cut` reads as `1.0` —
+/// the conservative answer, "no truncation certifiable" (the
+/// [`remaining_horizon_t_sample`] NaN policy).
+#[inline]
+pub fn truncated_w_mass_fraction(t_cut: f32, t_min: f32, horizon: f32) -> f32 {
+    let denom = horizon - t_min;
+    if !denom.is_finite() || denom <= 0.0 {
+        return 1.0;
+    }
+    let above = horizon - t_cut;
+    if !above.is_finite() {
+        return 1.0;
+    }
+    let frac = (above / denom).clamp(0.0, 1.0);
+    frac * frac
+}
+
+/// Zero-terminal-weight truncation ceiling: the largest `t_cut` whose
+/// at-or-above mass on `[t_min, T]` is at most `eps_mass` — the closed-form
+/// inverse of [`truncated_w_mass_fraction`]:
+///
+/// ```text
+/// t_cut = T − (T − t_min)·√ε
+/// ```
+///
+/// The paper's late-iteration target `[0.02T, 0.70T]` is this predicate at
+/// `ε = ((1−0.70)/(1−0.02))² ≈ 0.0937` on the plain law: skipping the top
+/// 30% of the range discards ≤ 9.4% of the (T−t) mass, and that mass sits
+/// where the law is weakest — first-order lossless in a time-averaged
+/// estimator. `eps_mass ≤ 0` or non-finite → `T` (skip nothing); `≥ 1` →
+/// `t_min` (everything above the floor); the result is additionally
+/// clamped into `[t_min, T]` against rounding.
+#[inline]
+pub fn terminal_truncation_ceiling(eps_mass: f32, t_min: f32, horizon: f32) -> f32 {
+    let denom = horizon - t_min;
+    if !eps_mass.is_finite() || !denom.is_finite() || denom <= 0.0 || eps_mass <= 0.0 {
+        return horizon;
+    }
+    let eps = eps_mass.min(1.0);
+    (horizon - denom * eps.sqrt()).clamp(t_min, horizon)
+}
+
+/// Iteration-indexed time-anneal schedule for SOLVER SAMPLING RANGES
+/// (Issue 875 T3 / Research 582): the paper's `[0.02T, 0.98T] →
+/// [0.02T, 0.70T]` late-iteration shape, generalized.
+///
+/// The range ceiling holds at `ceil_start_frac` for the first
+/// `(1 − anneal_frac)` of iterations, then eases LINEARLY down to
+/// `ceil_end_frac` over the last `anneal_frac`. The floor never moves —
+/// low-noise observations carry the law's maximum weight
+/// ([`remaining_horizon_weight`]) and are never traded away. Orthogonal to
+/// `dllm_solver`'s entropy-triggered switching: that one is STATE-indexed
+/// (which step is critical), this one is TIME-indexed (how far into the
+/// run) — the two compose.
+///
+/// All fields are fractions of the horizon T (dimensionless). Invalid
+/// fields fall back to their `DEFAULT` value at use, and the final tuple
+/// is clamped into order (the `RenoiseCeHorizon` pattern) — the schedule
+/// is total, never NaN, deterministic.
+///
+/// `range_at(iter, total)` pins its endpoints exactly: pre-anneal
+/// iterations return exactly `ceil_start_frac`, the final iteration
+/// exactly `ceil_end_frac` (the eased sum `a + (b−a)` is NOT relied on —
+/// it does not round back to `b` in f32).
+///
+/// # Recommended consumption
+///
+/// Keep the estimator's total weight FIXED while concentrating placement:
+/// renormalize over the truncated range by the closed-form mass ratio
+/// ([`truncated_w_mass_fraction`] of the ceiling, exact — no quadrature).
+/// The plain truncated integral is the corollary's own cost (≈ ε of the
+/// mass, a slightly smaller effective step) — the caller's trade to make;
+/// the cross-repo quality gate (Bench 883) measures both postures.
+#[derive(Clone, Copy, Debug)]
+pub struct TimeAnnealRange {
+    /// Range floor as a fraction of T — FIXED through the schedule.
+    pub floor_frac: f32,
+    /// Pre-anneal ceiling as a fraction of T.
+    pub ceil_start_frac: f32,
+    /// Fully-annealed ceiling as a fraction of T (the late-iteration end).
+    pub ceil_end_frac: f32,
+    /// The fraction of the FINAL iterations over which the ceiling eases
+    /// from `ceil_start_frac` down to `ceil_end_frac`.
+    pub anneal_frac: f32,
+}
+
+impl TimeAnnealRange {
+    /// The paper's schedule: `[0.02, 0.98] → [0.02, 0.70]` over the last
+    /// 30% of iterations.
+    pub const DEFAULT: Self = Self {
+        floor_frac: 0.02,
+        ceil_start_frac: 0.98,
+        ceil_end_frac: 0.70,
+        anneal_frac: 0.30,
+    };
+
+    /// The `(t_min, t_max)` sampling range (fractions of T) at iteration
+    /// `iter` of `total` (0-indexed, `total ≥ 1`).
+    ///
+    /// `iter ≥ total` returns the terminal posture `(floor, ceil_end)` — a
+    /// safe monotone extension for callers that overrun. A `total` too
+    /// small to contain a gradual anneal window (`(total−1) ≤
+    /// (1−anneal_frac)·total`) never anneals: no integer iteration falls
+    /// inside the window, so the ceiling stays at `ceil_start` — there is
+    /// no schedule to traverse (documented, deterministic).
+    pub fn range_at(&self, iter: usize, total: usize) -> (f32, f32) {
+        assert!(
+            total >= 1,
+            "TimeAnnealRange::range_at needs total >= 1, got {total}"
+        );
+        let def = Self::DEFAULT;
+        let floor = match self.floor_frac {
+            v if v.is_finite() && v > 0.0 && v < 1.0 => v,
+            _ => def.floor_frac,
+        };
+        let ceil_start = match self.ceil_start_frac {
+            v if v.is_finite() && v > floor && v <= 1.0 => v,
+            _ => def.ceil_start_frac,
+        };
+        let ceil_end = match self.ceil_end_frac {
+            v if v.is_finite() && v >= floor && v <= ceil_start => v,
+            _ => def.ceil_end_frac,
+        };
+        let anneal_frac = match self.anneal_frac {
+            v if v.is_finite() && v > 0.0 && v < 1.0 => v,
+            _ => def.anneal_frac,
+        };
+        // Ordered by construction (each fallback is validated against the
+        // effective floor/ceil_start; the min() closes the mixed-default
+        // corner that cannot arise but is pinned anyway).
+        let ceil_end = ceil_end.min(ceil_start);
+
+        let total_f = total as f32;
+        let anneal_start = total_f * (1.0 - anneal_frac);
+        let denom = (total_f - 1.0) - anneal_start;
+        let p = if denom > 0.0 {
+            ((iter as f32 - anneal_start) / denom).clamp(0.0, 1.0)
+        } else if iter as f32 >= anneal_start && anneal_start < total_f {
+            1.0
+        } else {
+            0.0
+        };
+        // Endpoint pins (f32 a+(b−a) does not round to b).
+        let ceiling = if p >= 1.0 {
+            ceil_end
+        } else if p <= 0.0 {
+            ceil_start
+        } else {
+            ceil_start + p * (ceil_end - ceil_start)
+        };
+        (floor, ceiling)
+    }
 }
 
 /// The PFD closed form at a single point, given the caller-held cumulative
@@ -242,7 +427,8 @@ impl HorizonWeightTable {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&self.inv_horizon.to_bits().to_le_bytes());
         hasher.update(bytemuck::cast_slice(&self.w));
-        self.commitment.copy_from_slice(hasher.finalize().as_bytes());
+        self.commitment
+            .copy_from_slice(hasher.finalize().as_bytes());
     }
 
     /// Verify the stored commitment against the stored weights.
@@ -313,7 +499,11 @@ mod tests {
         let mut w = [0.0f32; 16];
         remaining_horizon_weights(&mut w);
         assert_eq!(w[0], 1.0);
-        assert_eq!(w[15].to_bits(), 0.0f32.to_bits(), "terminal weight is exact +0.0");
+        assert_eq!(
+            w[15].to_bits(),
+            0.0f32.to_bits(),
+            "terminal weight is exact +0.0"
+        );
         for i in 1..16 {
             assert!(
                 w[i] <= w[i - 1],
@@ -509,8 +699,14 @@ mod tests {
     fn t_sample_endpoints_and_monotone() {
         let lo = remaining_horizon_t_sample(0.0, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
         let hi = remaining_horizon_t_sample(1.0, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
-        assert!((lo - T_SAMPLE_MIN).abs() < 1e-4 * T, "u=0 -> t_min, got {lo}");
-        assert!((hi - T_SAMPLE_MAX).abs() < 1e-4 * T, "u=1 -> t_max, got {hi}");
+        assert!(
+            (lo - T_SAMPLE_MIN).abs() < 1e-4 * T,
+            "u=0 -> t_min, got {lo}"
+        );
+        assert!(
+            (hi - T_SAMPLE_MAX).abs() < 1e-4 * T,
+            "u=1 -> t_max, got {hi}"
+        );
         // Monotone in u across a dense sweep (non-decreasing).
         let mut prev = f32::NEG_INFINITY;
         for i in 0..=256 {
@@ -523,7 +719,10 @@ mod tests {
         for i in 0..=64 {
             let u = i as f32 / 64.0;
             let t = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T);
-            assert!((T_SAMPLE_MIN..=T_SAMPLE_MAX).contains(&t), "out of range: {t}");
+            assert!(
+                (T_SAMPLE_MIN..=T_SAMPLE_MAX).contains(&t),
+                "out of range: {t}"
+            );
         }
     }
 
@@ -549,7 +748,11 @@ mod tests {
         let expected = n / buckets;
         for (b, &c) in counts.iter().enumerate() {
             let dev = (c as isize - expected as isize).abs() as f32 / expected as f32;
-            assert!(dev < 0.20, "bucket {b}: {c} vs expected {expected} (dev {:.3})", dev);
+            assert!(
+                dev < 0.20,
+                "bucket {b}: {c} vs expected {expected} (dev {:.3})",
+                dev
+            );
         }
         // And the law's shape: the bottom decile of the RANGE (low noise)
         // must hold more mass than the top decile.
@@ -599,6 +802,199 @@ mod tests {
         assert!((t - 0.8).abs() < 1e-6);
     }
 
+    // ---- Issue 875 T3: truncation predicate + time-anneal schedule ----
+
+    #[test]
+    fn truncation_round_trip_and_endpoints() {
+        for &eps in &[0.01f32, 0.05, 0.0936829, 0.25, 0.5, 0.9] {
+            for &t_min in &[0.0f32, 0.02 * T, 0.1 * T] {
+                let cut = terminal_truncation_ceiling(eps, t_min, T);
+                let back = truncated_w_mass_fraction(cut, t_min, T);
+                let rel = ((back - eps) / eps).abs();
+                assert!(rel < 1e-5, "eps={eps} t_min={t_min}: back={back} rel={rel}");
+            }
+        }
+        // Endpoints: eps=0 -> skip nothing (exactly T; x - 0.0 == x).
+        assert_eq!(
+            terminal_truncation_ceiling(0.0, 0.02 * T, T).to_bits(),
+            T.to_bits()
+        );
+        // eps=1 -> t_min (subtraction rounding; tolerance, not bits).
+        let cut_min = terminal_truncation_ceiling(1.0, 0.02 * T, T);
+        assert!((cut_min - 0.02 * T).abs() < 1e-4);
+        // Monotone: larger eps -> lower (or equal) ceiling.
+        let mut prev = T;
+        for i in 0..=64 {
+            let eps = i as f32 / 64.0;
+            let cut = terminal_truncation_ceiling(eps, 0.02 * T, T);
+            assert!(
+                cut <= prev,
+                "ceiling must be non-increasing in eps: {cut} > {prev}"
+            );
+            prev = cut;
+        }
+        // Mass form endpoints + NaN/degenerate policy (conservative 1.0).
+        assert_eq!(
+            truncated_w_mass_fraction(T, 0.02 * T, T).to_bits(),
+            0.0f32.to_bits(),
+            "w(T)=0 anchor"
+        );
+        assert_eq!(truncated_w_mass_fraction(0.0, 0.02 * T, T), 1.0);
+        assert_eq!(truncated_w_mass_fraction(f32::NAN, 0.02 * T, T), 1.0);
+        assert_eq!(
+            truncated_w_mass_fraction(0.5 * T, T, T),
+            1.0,
+            "T <= t_min degenerate"
+        );
+        assert_eq!(terminal_truncation_ceiling(f32::NAN, 0.02 * T, T), T);
+        assert_eq!(terminal_truncation_ceiling(-1.0, 0.02 * T, T), T);
+    }
+
+    #[test]
+    fn truncation_paper_alignment() {
+        // The paper's [0.02T, 0.98T] -> [0.02T, 0.70T] is this predicate:
+        // eps = ((1-0.70)/(1-0.02))^2 ~= 0.093683.
+        let t_min = 0.02f32;
+        let eps = truncated_w_mass_fraction(0.70, t_min, 1.0);
+        let expect = (0.30f32 / 0.98).powi(2);
+        assert!((eps - expect).abs() < 1e-6, "{eps} vs {expect}");
+        assert!((eps - 0.0937).abs() < 5e-4, "{eps}");
+        let cut = terminal_truncation_ceiling(expect, t_min, 1.0);
+        assert!((cut - 0.70).abs() < 1e-6, "{cut}");
+    }
+
+    #[test]
+    fn anneal_shape_law() {
+        let sch = TimeAnnealRange::DEFAULT;
+        let total = 200usize;
+        // Pre-anneal: EXACTLY the flat posture (endpoint pin).
+        for &iter in &[0usize, 1, 50, 100, 139] {
+            let (lo, hi) = sch.range_at(iter, total);
+            assert_eq!(lo.to_bits(), 0.02f32.to_bits());
+            assert_eq!(hi.to_bits(), 0.98f32.to_bits(), "iter={iter}");
+        }
+        // Final iteration: EXACTLY the annealed end.
+        let (lo, hi) = sch.range_at(total - 1, total);
+        assert_eq!(lo.to_bits(), 0.02f32.to_bits());
+        assert_eq!(hi.to_bits(), 0.70f32.to_bits());
+        // Fixed floor, ordered range, non-increasing ceiling throughout.
+        let mut prev_hi = f32::INFINITY;
+        for iter in 0..total {
+            let (lo, hi) = sch.range_at(iter, total);
+            assert_eq!(
+                lo.to_bits(),
+                0.02f32.to_bits(),
+                "floor moves at iter={iter}"
+            );
+            assert!(
+                hi <= prev_hi,
+                "ceiling rises at iter={iter}: {hi} > {prev_hi}"
+            );
+            assert!(hi >= lo, "range inverts at iter={iter}");
+            prev_hi = hi;
+        }
+        // Linear ease: the midpoint of the anneal window sits at the
+        // midpoint of the eased ceilings (f32 rounding only).
+        let a = 0.7f32 * total as f32;
+        let mid_iter = (a + ((total - 1) as f32 - a) / 2.0) as usize;
+        let (_, hi) = sch.range_at(mid_iter, total);
+        let want = 0.98 + ((mid_iter as f32 - a) / ((total - 1) as f32 - a)) * (0.70 - 0.98);
+        assert!((hi - want).abs() < 1e-6, "mid-anneal {hi} vs {want}");
+        // Determinism: repeated calls bit-equal.
+        for &iter in &[0usize, 150, total - 1] {
+            let x = sch.range_at(iter, total);
+            let y = sch.range_at(iter, total);
+            assert_eq!(x.0.to_bits(), y.0.to_bits());
+            assert_eq!(x.1.to_bits(), y.1.to_bits());
+        }
+    }
+
+    #[test]
+    fn anneal_degenerate_and_fallbacks() {
+        let sch = TimeAnnealRange::DEFAULT;
+        // total = 1: the anneal window holds no iteration — flat posture.
+        let (lo, hi) = sch.range_at(0, 1);
+        assert_eq!((lo, hi), (0.02, 0.98));
+        // total = 2: window [1.4, 2) holds no integer iteration either.
+        let (_, hi2) = sch.range_at(1, 2);
+        assert_eq!(hi2, 0.98);
+        // Overrun: terminal posture (monotone extension).
+        let (lo, hi) = sch.range_at(999, 100);
+        assert_eq!((lo, hi), (0.02, 0.70));
+        // Invalid fields fall back per-field to DEFAULT, validated against
+        // the EFFECTIVE (post-fallback) fields.
+        let bad = TimeAnnealRange {
+            floor_frac: f32::NAN,
+            ceil_start_frac: 2.0,
+            ceil_end_frac: 0.95,
+            anneal_frac: 0.0,
+        };
+        // floor NaN -> 0.02; ceil_start 2.0 (>1) -> 0.98; ceil_end 0.95 is
+        // within [floor, 0.98] -> stays; anneal_frac 0 -> 0.30.
+        let (_, hi_end) = bad.range_at(9, 10);
+        assert!((hi_end - 0.95).abs() < 1e-6, "{hi_end}");
+        let (_, hi_start) = bad.range_at(0, 10);
+        assert_eq!(hi_start, 0.98);
+        // ceil_end above a VALID ceil_start never takes effect: it falls
+        // back to DEFAULT (0.70) and the ordering min() respects the
+        // caller's ceiling — the terminal posture is the caller's 0.5,
+        // never the invalid 0.9.
+        let bad2 = TimeAnnealRange {
+            ceil_start_frac: 0.5,
+            ceil_end_frac: 0.9,
+            ..TimeAnnealRange::DEFAULT
+        };
+        let (_, hi0) = bad2.range_at(0, 10);
+        assert_eq!(hi0, 0.5, "pre-anneal uses the valid caller ceiling");
+        let (_, hi2) = bad2.range_at(9, 10);
+        assert_eq!(hi2, 0.5, "ceil_end must not exceed ceil_start: {hi2}");
+        // total = 0 asserts (caller bug).
+        let boomed = std::panic::catch_unwind(|| sch.range_at(0, 0));
+        assert!(boomed.is_err(), "total=0 must assert");
+    }
+
+    #[test]
+    fn anneal_f64_oracle() {
+        let sch = TimeAnnealRange::DEFAULT;
+        let total = 101usize;
+        for iter in 0..total {
+            let (_, hi) = sch.range_at(iter, total);
+            let a = 0.7 * total as f64;
+            let denom = (total as f64 - 1.0) - a;
+            let p = ((iter as f64 - a) / denom).clamp(0.0, 1.0);
+            let want = 0.98 + p * (0.70 - 0.98);
+            assert!(
+                (f64::from(hi) - want).abs() < 1e-6,
+                "iter={iter}: {hi} vs {want}"
+            );
+        }
+    }
+
+    #[cfg(all(test, any(debug_assertions, feature = "alloc_tracking")))]
+    #[test]
+    fn anneal_and_truncation_are_alloc_free() {
+        use std::hint::black_box;
+        let sch = TimeAnnealRange::DEFAULT;
+        crate::alloc::reset_alloc_stats();
+        let mut sink = 0.0f32;
+        for i in 0..1024usize {
+            let (lo, hi) = sch.range_at(black_box(i), black_box(1024));
+            sink += black_box(lo) + black_box(hi);
+            sink += black_box(terminal_truncation_ceiling(
+                black_box(i as f32) * 0.001,
+                0.02,
+                1.0,
+            ));
+            sink += black_box(truncated_w_mass_fraction(black_box(hi), 0.02, 1.0));
+        }
+        let (count, _bytes) = crate::alloc::get_alloc_stats();
+        assert_eq!(
+            count, 0,
+            "G4: 3x1024 schedule calls allocated {count} times"
+        );
+        assert!(sink.is_finite(), "sink must be consumed: {sink}");
+    }
+
     #[test]
     fn t_sample_f64_oracle() {
         // Independent f64 recomputation of the inverse CDF, u sweep.
@@ -607,9 +1003,11 @@ mod tests {
             let got = remaining_horizon_t_sample(u, T_SAMPLE_MIN, T_SAMPLE_MAX, T) as f64;
             let lo = (T as f64) - T_SAMPLE_MIN as f64;
             let hi = (T as f64) - T_SAMPLE_MAX as f64;
-            let want = (T as f64)
-                - ((1.0 - u as f64) * lo * lo + u as f64 * hi * hi).sqrt();
-            assert!((got - want).abs() < 1e-5 * T as f64, "u={u}: {got} vs {want}");
+            let want = (T as f64) - ((1.0 - u as f64) * lo * lo + u as f64 * hi * hi).sqrt();
+            assert!(
+                (got - want).abs() < 1e-5 * T as f64,
+                "u={u}: {got} vs {want}"
+            );
         }
     }
 }

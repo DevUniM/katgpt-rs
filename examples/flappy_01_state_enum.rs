@@ -1,6 +1,6 @@
 //! Flappy state enumerator + laya-format dump — katgpt-rs Plan 607 T5
 //! (the tetris_01 shape): enumerates decision states, renders the
-//! closed-grammar sentences (`laya-flappy-v1`, see `common/flappy_sim.rs`),
+//! closed-grammar sentences (`laya-flappy-v3`, see `common/flappy_sim.rs`),
 //! and writes the structured dump + the oracle manifest for riir-reflex's
 //! generic batch oracle.
 //!
@@ -11,8 +11,8 @@
 //!
 //!   cargo run --release --example flappy_01_state_enum -- --seed 607
 //!   cargo run --release --example flappy_01_state_enum -- \
-//!       --join /tmp/607/flappy_oracle.jsonl \
-//!       --fixture-out tests/fixtures/flappy_oracle_laya_en_v1.jsonl \
+//!       --join /tmp/607/flappy_v3_oracle.jsonl \
+//!       --fixture-out tests/fixtures/flappy_oracle_laya_en_v3.jsonl \
 //!       --oracle-blake3 <hex from the oracle run>
 
 #[path = "common/flappy_sim.rs"]
@@ -28,7 +28,7 @@ fn main() {
     let mut seed = 607u64;
     let mut n = 100usize;
     let mut join: Option<PathBuf> = None;
-    let mut fixture_out = micro_dump::default_fixture("flappy", "v2");
+    let mut fixture_out = micro_dump::default_fixture("flappy", "v3");
     let mut generator = String::from("riir-reflex examples/laya_oracle_batch");
     let mut oracle_blake3 = String::new();
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -117,7 +117,8 @@ fn main() {
             "--join needs --oracle-blake3 (the hex the oracle run printed)"
         );
         let meta = JoinMeta {
-            protocol: "katgpt-rs Plan 607 T5 \u{2014} laya Flappy oracle fixture v2".to_string(),
+            protocol: "katgpt-rs Issue 876 \u{2014} laya Flappy oracle fixture v3 (render widening)"
+                .to_string(),
             grammar: flappy_sim::GRAMMAR_ID.to_string(),
             question: flappy_sim::QUESTION.to_string(),
             checkpoint: "english".to_string(),
@@ -132,14 +133,20 @@ fn main() {
                 fixture_out.display()
             ),
             notes:
-                "grammar v2: option sentences carry the position band ALONE \u{2014} v1's motion \
-                    clause (\"rising\"/\"falling\") was a measured confound (the v1 oracle went \
-                    85/100 to flap regardless of geometry, pinning every scorer at the \
-                    constant-pick ceiling; Bench 880); the degenerate classes (v = +2 lands both \
-                    actions on one cell; same-band results render identical sentences) are \
-                    excluded at the enumerator; options pinned [flap, coast] (index 0 = flap, the \
-                    lowest-index tie-break's referent); states sampled decision-interesting (bird \
-                    within \u{00b1}4 cells of the gap center), deduped, seed-607"
+                "grammar v3 (Issue 876): option sentences carry the position band + a quantized \
+                    offset clause (fine post_rel relative to the gap center, clamped \u{00b1}2) + a \
+                    NEUTRAL post-motion clause (kinematic \"drifting\"/\"holding\" wording \u{2014} v1's \
+                    \"rising\"/\"falling\" was a measured confound, Bench 880; v2's band alone \
+                    collapsed the decoded arm to constant-flap, Bench 881). Known structural \
+                    caveat: post_v is action-determined here (flap \u{21d2} +2), so the motion clause \
+                    inherently names the action \u{2014} the neutral wording + the offset anchor are the \
+                    measured defense. The state SET is IDENTICAL to the v2 corpus (same seed, \
+                    same exclusions \u{2014} the same-band enumerator exclusion is retained for corpus \
+                    comparability even though v3 would separate same-band options), so the \
+                    v2\u{2192}v3 delta isolates the render. Options pinned [flap, coast] (index 0 = \
+                    flap, the lowest-index tie-break's referent); states sampled \
+                    decision-interesting (bird within \u{00b1}4 cells of the gap center), deduped, \
+                    seed-607"
                     .to_string(),
         };
         let digest = micro_dump::join_oracle(&out.dump_path, &oracle_path, &fixture_out, &meta)

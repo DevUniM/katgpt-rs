@@ -1,4 +1,3 @@
-
 use super::*;
 
 // ── KS test (marginal uniformity) ──────────────────────────────────────
@@ -951,17 +950,11 @@ fn test_fill_by_method_all_methods_produce_valid_queries() {
         fill_noise_queries_gaussian_qmc_by_method(method, 42, k, dim, sigma, &mut queries);
         // All values finite.
         for &q in &queries {
-            assert!(
-                q.is_finite(),
-                "{method:?} produced non-finite query {q}"
-            );
+            assert!(q.is_finite(), "{method:?} produced non-finite query {q}");
         }
         // Empirical mean ≈ 0 (Gaussian, σ=0.1 → mean in [-0.05, 0.05] for k*dim=32 samples).
         let mean = queries.iter().sum::<f32>() / queries.len() as f32;
-        assert!(
-            mean.abs() < 0.1,
-            "{method:?} mean {mean} too far from 0"
-        );
+        assert!(mean.abs() < 0.1, "{method:?} mean {mean} too far from 0");
         // Empirical stddev ≈ σ (in [0.05, 0.2] for 32 samples from N(0,0.1²)).
         let var = queries.iter().map(|q| (q - mean).powi(2)).sum::<f32>() / queries.len() as f32;
         let std = var.sqrt();
@@ -1417,4 +1410,26 @@ fn test_wilson_ci_zero_failures_one_sample() {
     let (lo, hi) = est.wilson_ci_95();
     assert!(lo > 0.0 && lo < 0.5, "lo = {lo}");
     assert!((hi - 1.0).abs() < 1e-12, "hi = {hi}");
+}
+
+/// Issue 895: `reseed` is `new_multi` without the (allocating) polynomial
+/// search — bit-identical streams.
+#[test]
+fn sobol_reseed_matches_new_multi_bit_identically() {
+    for dim in [1usize, 5, 30, SOBOL_MAX_DIM] {
+        let mut cached = SobolQmc::new_multi(0, dim);
+        for seed in [1u64, 42, 0xDEAD_BEEF, u64::MAX] {
+            let mut fresh = SobolQmc::new_multi(seed, dim);
+            cached.reseed(seed);
+            let mut a = vec![0.0f32; 7 * dim];
+            let mut b = vec![0.0f32; 7 * dim];
+            fresh.draw_nd(7, &mut a);
+            cached.draw_nd(7, &mut b);
+            let (a, b): (Vec<u32>, Vec<u32>) = (
+                a.iter().map(|x| x.to_bits()).collect(),
+                b.iter().map(|x| x.to_bits()).collect(),
+            );
+            assert_eq!(a, b, "dim {dim} seed {seed}");
+        }
+    }
 }

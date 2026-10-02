@@ -384,10 +384,7 @@ pub fn attention_forward_safe_into(
         // Accumulation order over `t` is unchanged (ascending), so the float sum is
         // bit-identical to the indexed version.
         let out_head = &mut attn_out[q_off..q_off + head_dim];
-        for (&s, v_row) in scores[..seq_len]
-            .iter()
-            .zip(v_rows.chunks_exact(kv_dim))
-        {
+        for (&s, v_row) in scores[..seq_len].iter().zip(v_rows.chunks_exact(kv_dim)) {
             simd::simd_fused_scale_acc(out_head, &v_row[kv_off..kv_off + head_dim], s, head_dim);
         }
     }
@@ -445,12 +442,7 @@ pub fn forward_block_causal_with(
     // is unconditionally overwritten before anyone can read it. Committed positions
     // keep their previous logits, exactly as before.
 
-    for (l, layer) in weights
-        .layers
-        .iter()
-        .take(ctx.decode_n_layer)
-        .enumerate()
-    {
+    for (l, layer) in weights.layers.iter().take(ctx.decode_n_layer).enumerate() {
         let kv_base = l * kv_plane;
         let last = l + 1 == ctx.decode_n_layer;
 
@@ -493,10 +485,8 @@ pub fn forward_block_causal_with(
             // K, V projections (layer l's plane)
             matmul(&mut ctx.k_buf, &layer.attn_wk, &ctx.x_buf, kvd, n);
             matmul(&mut ctx.v_buf, &layer.attn_wv, &ctx.x_buf, kvd, n);
-            ctx.k_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd]
-                .copy_from_slice(&ctx.k_buf);
-            ctx.v_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd]
-                .copy_from_slice(&ctx.v_buf);
+            ctx.k_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&ctx.k_buf);
+            ctx.v_cache[kv_base + p * kvd..kv_base + (p + 1) * kvd].copy_from_slice(&ctx.v_buf);
         }
 
         // Phase B: Block-causal attention + MLP for UNCOMMITTED positions only
@@ -792,20 +782,14 @@ pub(crate) fn apply_probe_guidance(
     }
     dctx.weak_probe = Some(probe);
 
+    // Plan 617 T1.2: the arithmetic lives in katgpt-core's contrast_combine
+    // (ONE home for the strong−weak affine family — the LoopCD lane consumes
+    // the same kernel at λ = 1+ω). Bit-identical to the pre-extraction
+    // in-place loop: same op order, (1−λ) hoisted once, 8-wide chunk + tail.
     let lambda = dctx.guidance_lambda;
-    let w_probe = 1.0 - lambda;
-    let logits = &mut dctx.logits_flat[range.clone()];
-    let probe_logits = &dctx.probe_logits_flat[range];
-    let n = logits.len();
-    let mut i = 0;
-    while i + 8 <= n {
-        for j in 0..8 {
-            logits[i + j] = lambda * logits[i + j] + w_probe * probe_logits[i + j];
-        }
-        i += 8;
-    }
-    while i < n {
-        logits[i] = lambda * logits[i] + w_probe * probe_logits[i];
-        i += 1;
-    }
+    katgpt_core::contrast_combine::affine_combine(
+        &mut dctx.logits_flat[range.clone()],
+        &dctx.probe_logits_flat[range],
+        lambda,
+    );
 }

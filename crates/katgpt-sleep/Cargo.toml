@@ -2,6 +2,7 @@
 name = "katgpt-sleep"
 version = "0.1.3"
 edition = "2024"
+rust-version.workspace = true
 license = "MIT"
 description = "Sleep-Time Query Anticipator — offline query anticipation substrate (arXiv:2504.13171 Lin et al.). SleepTimeAnticipator orchestrates per-direction sleep-time compute, emits reusable AnticipatedQuerySet (c' artifact, BLAKE3-committed); wake-time consume() does cheap dot-product + sigmoid-gated lookup. Pure substrate, sigmoid (never softmax), modelless."
 repository = "https://github.com/katopz/katgpt-rs"

@@ -1961,6 +1961,7 @@ A consolidated section for standalone opt-in features with their own plans but n
 |---|---|---|
 | `dirichlet_energy` | 149 | Dirichlet Energy structural alignment diagnostic |
 | `gain_cost_halt` | 304 | Gain/Cost Loop Halting Primitive — per-loop halting kernel. GOAT G1-G5 ALL PASS. Stays opt-in at katgpt-core leaf; production wiring is riir-ai civ-side. |
+| `loop_guidance` | 617 | LoopCD recurrent-depth contrast guidance — the probe_guidance combine with its weak side re-sourced to a completed loop iteration k (arXiv:2610.02185); adaptive margin gate Eq 4; hidden mode one-head-pass. Shares the `contrast_combine` kernel with 865 (T1.2 one-home extraction). **ADJUDICATION PENDING** — the GOAT bench (non-saturated looped fixture, non-degeneracy asserts committed first) decides; the class is 0-for-2 (Benches 847+850). Promotion blocked pending a production looped consumer. |
 | `smear_classifier` | 298 | SmearClassifier — ternary latent-mass distribution classifier. GOAT G1/G2/G3 ALL PASS. Stays opt-in (G2 evidence synthetic). |
 | `self_advantage_gate` | 283 | Self-advantage recursion gate for HLA reconstruction |
 | `recursion_logits` | 283 | RecursionLogits opt-in trait — pre/post recursion logits exposure |
@@ -2306,6 +2307,7 @@ These are additional standalone features with their own plans that were not cove
 | `adaptive_cot_compaction` | 271 | Entropy-thresholded bandit-tuned online compaction |
 | `data_gate` | 111 | Task-level data gating for self-play training stability (Research 075) |
 | `vortex_flow` | — | VortexFlow attention substrate (parent of MSA family) |
+| `pyramid_topk` | 612 | PISA pyramid Top-K + LSE block selection — coarse-to-fine key pyramid, root-seeded bounded expansion, exact-LSE leaf scoring (arXiv:2609.31093); implies `dash_attn`. Opt-in — **G2 iso-quality NEGATIVE** (Bench 612: −0.133 Recall@8 vs the single-level exact-LSE scan at 32K+; latency slope CONFIRMED 1.07 vs 1.99) |
 
 ### Remaining smaller primitives (cross-reference)
 
@@ -4027,6 +4029,16 @@ Platt-smoothed targets, bit-identical under replay.
 - **G4**: observe+apply zero-alloc (1000-call loop, 0 allocations; runs in
   dev AND `--release --features alloc_tracking` per the Issue-741
   predicate).
+- **Solver repairs (Issues 909/910/911, 2026-09-30 — the reflex
+  Issue-056 root cause)**: real narrow windows hit Platt's undamped
+  identity-init Newton stall (10.8×/23× above the achievable loss) and
+  f32 tie-collapse on saturated fits (1–3 distinct values of 200–500) —
+  the solve is now the Lin–Lin–Weng 2007 form (base-rate start + Armijo
+  backtracking) with a three-candidate loss-argmin fallback, a
+  resolution-aware `w` floor, and a zero-tolerance AUC guard (ties
+  stopped at their source; distinct scores stay distinct in f32). Real
+  cal windows are committed replay fixtures — replay reproduces the
+  measured reflex fits exactly.
 
 Consumers (riir-ai Issue 964, in order): **CLR verifier — LANDED as
 `clr_calibration` (§114, Bench 807)**; **ActionBridge — LANDED as
@@ -4536,7 +4548,7 @@ no-default-consumer rule); re-gate trigger = a default-path
 `renoise_ce` caller.
 
 📖 Bench: [877](../../.benchmarks/877_renoise_horizon_goat.md) ·
-Issue: [875](../../.issues/875_pfd_horizon_weighting_target_anchored_probe.md).
+Issue: `875`.
 
 ## 124. renoise_ce_surprise — target-anchored renoise-CE probe: distributional surprise vs self-consistency (Issue 875 T4 / Research 582)
 
@@ -4570,7 +4582,38 @@ call site; re-gate trigger = the riir-neuron-db consolidation-admission
 consumer wiring up.
 
 📖 Bench: [879](../../.benchmarks/879_renoise_surprise_goat.md) ·
-Issue: [875](../../.issues/875_pfd_horizon_weighting_target_anchored_probe.md).
+Issue: `875`.
+
+## 126. horizon_weights (T3 layer) — time-annealed sampling ranges + the closed-form truncation predicate (Issue 875 T3 / Research 582)
+
+The schedule layer of the T1 substrate: `TimeAnnealRange` — the paper's
+iteration-indexed sampling-range anneal `[0.02T, 0.98T] → [0.02T, 0.70T]`
+over the last 30% of iterations (ceiling eases linearly, floor FIXED:
+low-noise observations carry the law's max weight and are never traded
+away; orthogonal to `dllm_solver`'s state-indexed entropy switching) —
+plus the zero-terminal-weight truncation predicate IN CLOSED FORM:
+`ε = ((T−t_cut)/(T−t_min))²`, inverse `t_cut = T − (T−t_min)·√ε`. The
+paper's own [0.02, 0.70] IS the predicate at ε ≈ 0.0937 — a caller can
+now PRICE any range truncation exactly BEFORE skipping. Consumer seam in
+`dllm_solver` (`annealed_renoise_range` + `renoise_level_skippable`)
+behind the combined gate `critical_interval_gate` + `horizon_weights`.
+
+Cross-repo quality gate (release, 3 arms, gate_full): flat 0.4084 (=
+C9's recorded number — behavior-preserving) / AnnealRenorm 0.4263 (+4.4%,
+within the not-worse bar) / AnnealPlain 0.4451 (**+9.0% W1 for 9.37% mass
+dropped — the corollary's cost law measured: first-order cost ∝ mass
+dropped**). Regime boundary: safe-not-a-win on the two-ring toy (no fine
+detail to exploit); the fine-detail claim routes to riir-train 569 C5,
+mechanically unblocked by this landing. Latency 3.76 ns/op
+(once-per-iteration class).
+
+🔧 Feature flag: rides `horizon_weights` (katgpt-core) — the T3 layer is
+the law's own schedule realization; the seam adds the combined gate. Opt-in
+per the no-default-consumer rule; the C9 toy's `pfd_anneal` forwarding
+feature (riir-train) consumes it.
+
+📖 Bench: [883](../../.benchmarks/883_time_anneal_t3_goat.md) ·
+Issue: `875` (CLOSED).
 
 ## 125. template_decode — bounded template decode over closed sentence grammars (Plan 607 T2)
 
@@ -4606,10 +4649,622 @@ distinct pick — the v2 band-only render dropped the exact post_rel and
 post_v the structured head reads; the render is the bottleneck, recorded
 as the render-side finding the plan asked for).
 
+Follow-up (Issue 876, Bench 882 — the flappy render widened to v3):
+option sentences gained a quantized OFFSET clause (fine post_rel, clamped
+±2) + a NEUTRAL post-motion clause (kinematic wording — the v1
+"rising"-style value-loaded motion was the measured Bench 880 confound;
+the structural caveat stands: post_v is action-determined here, so the
+clause inherently names the action — the neutral wording + the offset
+anchor are the measured defense, and the new oracle did NOT degenerate:
+48/52 flap/coast split, zero ties). Over the IDENTICAL 100-state set, the
+decoded arm (fills reconstructed into the structured units — exact
+post_rel for |rel| ≤ h, tails at ±(h+1), post_v exact, pre_rel band-clamped)
+went **77 → 96/100, Δ0 vs the structured arm (96/96, 4/100 flips)** —
+G1 HOLDS with the discrimination floor PASS: the decode is lossless
+ENOUGH for the decision on flappy. Measured on the way: the same v3
+corpus through raw fill ORDINALS reads 51/100 (below the constant-pick
+52) — the ordinal encoding cannot represent the band×offset joint; the
+structured-units reconstruction is the landed design.
+
 🔧 Feature flag: `template_decode = []` (katgpt-core) — opt-in,
 independent of `state_option_scoring` (a decode consumer need not
 score); root forward for the `decode_01_losslessness` example (both
 features). Test-gate row `katgpt-core:2074:template_decode`.
 
 📖 Plan: [607](../../.plans/607_modelless_game_lane.md) ·
-Bench: [881](../../.benchmarks/881_template_decode_losslessness.md).
+Bench: [881](../../.benchmarks/881_template_decode_losslessness.md) ·
+Follow-up: [882](../../.benchmarks/882_flappy_v3_render_widening.md)
+(Issue 876).
+
+## 127. exact_mass_admit — calibrated-mass "sigmoid top-k" + the log-frontier budget tracker (Issue 879 / Research 584)
+
+**What.** The MAttr (arXiv:2609.25518 "Matryoshka attribution") budget-
+primitive family, two modules behind one flag:
+
+- `katgpt_core::exact_mass_admit` — `exact_mass_admit_into(scores, k, T,
+  out) -> τ`: bisect τ over `[min−10T, max+10T]` (≤50 iters, branch-free
+  interval select, early-exit at 1e-9·n mass tolerance) until
+  `Σσ((s−τ)/T) = k`; emit the soft admission mask `mᵢ = σ((sᵢ−τ)/T)`.
+  Sigmoid substrate: `simd::exact_sigmoid_f64` (the bit-stable libm
+  variant — calibration wants exactness). The workspace shipped NO
+  exact-cardinality soft selection before: `entropic_tilt` is a KL budget
+  on softmax advantages, `set_admission` greedy DPP, `argtopk` /
+  `block_topk` / katgpt-spectral's `gate_sigmoid_topk` hard cuts with
+  UNCALIBRATED sigmoid mass. The naming split vs `gate_sigmoid_topk` is
+  load-bearing (one token apart, opposite mass semantics).
+- `katgpt_core::log_frontier` — `LogFrontier::new(total, target, lr,
+  probe_frac, floor)`: the modelless extraction of upstream
+  `schedules.py::AdaptiveLogK` (not in the paper text). One log-space
+  budget ceiling moved by ±lr sign steps against a SCALAR accuracy target,
+  with a probe cadence (probe_frac=0.25 → every 4th draw samples exactly
+  k_max and arms the controller). Consumes only `acc: f32` — the
+  k-supervision dial for KV `DensityBudget` ladders, `thermal_lod`
+  attention_k elbows, and the riir-clippy Issue 133 rule_embed lane.
+
+**Measured** (Bench 884, 4090RTX box, release, best-of-arms): calibration
+pins `|Σm−k|` to ~1e-8 RELATIVE at every N ∈ {1e3, 1e5, 1e7} while both
+hard-cut baselines drift −6.4% (uncalibrated sigmoid mass ≈ 0.936·k);
+at the router's designed N=1e3 the calibrated operator is CHEAPER than
+the shipped `gate_sigmoid_topk_into` (69.8 vs 77.1 µs — the ~32-50
+bisection passes cost less than its O(k·N) selection sort at k=100);
+against the generic `select_nth` hard cut the cost is real, ~45× at
+1e5/1e7 (1.10 s vs 25 ms @1e7) — the offline/calibration-tier posture.
+G1 14/14 (sum-to-k grid, power-of-two shift BIT-invariance, nestedness-
+in-k, extremes, degenerate scores, tiny-T, LogFrontier protocol);
+G4 0 allocs (500× N=4096 operator + 100k tracker ops); G3 default build
+unchanged + wasm32-clean; G2 gross ceiling 2.5 s @1e7.
+
+🔧 Feature flag: `exact_mass_admit = []` (katgpt-core; root forward for
+`tests/bench_884_exact_mass_admit_goat.rs`). **OPT-IN** — no consumer
+wired, no gain assumed (the Issue-879 T4 posture). Consumer postures
+recorded in Bench 884: gate_sigmoid_topk calibrated-mass upgrade,
+block_topk gate mass, cs_kv_probe exact-k sweep, riir-ai memory_soup SSC
+top-k.
+
+📖 Research: [584](../../.research/584_Matryoshka_Attribution_Sigmoid_Topk_Budget_Primitives.md) ·
+Bench: [884](../../.benchmarks/884_exact_mass_admit_goat.md) ·
+Resolution: HISTORY.md §Issue 879 (issue file removed per the noise-reduction
+rule; 2026-09-24).
+Follow-up: Issue 880 (CLOSED 2026-09-24, HISTORY.md §Issue 880) —
+consumer lane (a) shipped as the separate opt-in flag `calibrated_mass_gate`
+(below). ⚠ Bench 884's "cheaper than the shipped gate at N=1e3" compared the
+two as ALTERNATIVES; the upgrade COMPOSES them and measures 1.75× at that N
+and 11× at the hot N=64 (Bench 885). The promotion question for this flag
+still needs a consumer, not this entry.
+
+### `calibrated_mass_gate` — calibrated-mass sigmoid top-k router gate (Issue 880)
+
+`katgpt_spectral::manifold_power_iter_router::gate_sigmoid_topk_mass_into`:
+the incumbent `gate_sigmoid_topk_into`'s logits `z = β·x·R'ᵀ` and exact-k
+selection (same indices, same order), with weights `σ((z − τ)/T)` whose τ is
+solved by `exact_mass_admit_into` so that `Σm = k`. Zero-alloc (caller-owned
+logits, mass and index buffers). NOT a drop-in replacement: the weights are
+coupled through τ (the inverse of the incumbent's t06 independence, pinned as
+t17).
+
+**Measured** (Bench 885, M3, release, interleaved A/B, 3 runs): |Σm − k| ≤
+9e-7 in every regime against the incumbent's ≈ N/2 total weight; cost
+**11.0× / 6.6× / 1.75×** the incumbent at N=64 k=4 / N=256 k=8 / N=1000 k=100.
+G1 t15–t19 PASS, G3 t14 bit-identical incumbent, G4 0 allocs. G2's ≤ 1.05×
+bar is unreachable by construction (calibration adds several sigmoid passes
+over N; one pass ≈ the incumbent's whole cost).
+
+🔧 Feature flag: `calibrated_mass_gate` (katgpt-spectral, implies
+`manifold_power_iter_router` + `katgpt-core/exact_mass_admit`; root
+passthrough). **OPT-IN**, with no consumer.
+
+📖 Bench: [885](../../.benchmarks/885_calibrated_mass_gate_goat.md) ·
+Resolution: HISTORY.md §Issue 880.
+
+## 128. differential_anchor — the subtract arm on the score axis (Issue 882 P0 / Research 586)
+
+Diff Transformer (arXiv:2410.05258 §3) cancels common-mode noise by
+subtracting a correlated reference; the score-axis integration is
+`score(q, d) = sim(q, d) − λ·sim(ā, d) = (q − λ·ā)·d` — one axpy produces
+the corrected query `q̂ = q − λā` and the existing KNN/rerank pass runs
+unchanged. Hub candidates (similar to everything) lose their generic mass;
+query-specific candidates keep theirs. Prior art honestly named: CSLS
+(per-candidate neighborhood hubness — the single-shared-anchor form is the
+O(d)-per-query simplification) and contrastive decoding (the subtract
+principle at logits level). Ours is the integration on the score surfaces
+we own, not a new principle.
+
+Pieces: `correct_query`/`correct_query_into` (λ=0 bit-identical kill
+switch), `differential_score` (fused two-dot form), `AnchorBuilder` over
+two A/B'd sources (`MeanQuery` / `MeanCorpus` — hubness ≠ illegitimacy,
+never assumed), the frozen per-layer prior `λinit(l) = 0.8 −
+0.6·exp(−0.3(l−1))` as a const table pinned to its closed form
+(override-able, never a law — trap 5), `reparam_lambda` (neutral-at-zero
+`λ = e^u − e^v + λinit`), `pick_lambda_by_eval` (grid + argmax on oracle
+fixtures, deterministic smallest-λ tie-break — never GD), and
+`hubness_skewness` (the G1 statistic).
+
+Gates (P0, `bench_886`): G1 synthetic hub world (hubs win at λ=0, true
+matches recover at λ*, hubness skewness strictly ↓); G2 axpy ≤ 1 µs at
+d=512 + corrected-vs-plain pass ≤ 2% via the `ab_median_ratio` paired
+protocol; G3 λ=0 bit-identical; G4 zero steady-state allocs (counting
+allocator).
+
+### `fitted_anchor_tables` — the shared streaming per-key mean table
+
+The one-substrate-two-consumers DRY implication: a streaming per-key
+mean/ANOVA table (`StreamingMeanTable`) fitting anchors from observed
+vectors — reverse-grepped clean at filing (no prior streaming per-key mean
+table in-tree; the Welford hits are regime gates, karc/chiaroscuro).
+Consumes: (a) Issue 882 P0's Q-side anchors (this section), (b) Issue 883
+P0's V-side calibration (`E_l[s] = mean(V−K|s)` per layer/token for the
+fitted K=V+ retrofit). Observe alloc-free by construction; offline report
+methods allocate.
+
+🔧 Feature flags: `differential_anchor` (katgpt-core, implies
+`fitted_anchor_tables`) · `fitted_anchor_tables` (katgpt-core). **OPT-IN**,
+with no live consumer yet — promotion rides the healer rerank lane's GOAT
+(the 882 P0 rider).
+
+## 129. habituation_filter — the subtract arm on the time axis (riir-ai Issue 1006 T1 / Research 586)
+
+The perception-side isomorphism of §128: **habituation** — respond to
+*changes*, not constants. Per channel: `b_t = (1−β)·b_{t−1} + β·s_t` (EMA
+baseline, update first), `n_t = s_t − λ·b_t` (novelty), `fire iff
+σ(κ·n_t) > θ` (per-channel scalar gate — the house fast sigmoid, never
+softmax). Transfer function: first-order high-pass with **DC gain exactly
+`(1−λ)`** — the paper's own headwise `(1−λinit)` multiplier isomorphism on
+the time axis. Constant input settles to `(1−λ)·s`: attenuated,
+deliberately NOT zeroed (contrast `temporal_deriv`'s DC-nulling derivative
+— different transfer function and gate granularity, the complement not a
+duplicate; `modality_additive` is the cross-modality axis, not temporal;
+`riir-stealth` wear-off is post-trigger decay, not pre-trigger
+high-pass).
+
+Pieces: `HabituationFilter<P>` (fixed `[f32; P]` Pod-resident state, zero
+alloc by construction; `observe` + the per-channel-λ `observe_with`),
+`novelty_gate` (strict `>`, so σ(0)=0.5 never fires θ ≥ 0.5),
+`settling_ticks` (closed form `t_ε = ln(1/ε)/ln(1/(1−β))` — the issue's
+`ln(1/ε)/ln(1/β)` spelling is the retention convention; they agree at
+β=0.5 only), and the channel-class priors `THREAT_LAMBDA = 0.2` (keep
+signal) / `AMBIENT_LAMBDA = 0.8` (cancel hard) — the §128 λinit endpoints
+as override-able classes on the time axis. EMA state is per-NPC latent,
+never synced (the domain rules).
+
+T1 gates (closed-form unit tests, in-module): DC-gain sweep across λ ∈
+{0, 0.2, 0.5, 0.8, 1}, λ=1 nulls constants, λ=0 bit-identical (G3 kill
+switch), EMA recursion pinned at exact ticks, step fires on tick 1,
+settling law vs measured decay, gate threshold semantics. **T2** (the
+consumer GOAT: `evolve_belief` front-end, ≤ 2 ns/NPC/tick against the
+11–12 ns envelope, `ab_timing.rs` paired protocol, λ=0 bit-identical
+default path) rides riir-ai Issue 1006.
+
+🔧 Feature flag: `habituation_filter` (katgpt-core). **OPT-IN**, with no
+consumer yet — promotion rides T2's GOAT + owner call.
+
+## 130. attention_snr — streaming attention-SNR accumulators (Issue 882 P1 / Research 586)
+
+The measurement arm of the attention-noise-control family: exact softmax
+**entropy** and **participation ratio** maintained inside the online-softmax
+loop from two extra registers, `T = Σe^{x−m}(x−m)` and `R₂ = Σe^{2(x−m)}`,
+so `H = ln l − T/l` and `PR = l²/R₂ = 1/Σp²`. A max move `m → m'`
+(`Δ = m − m'`, `c = e^Δ`) rescales both in closed form: `T ← c(T + Δ·l_old)`,
+`R₂ ← c²R₂`. Two multiply-adds per element on top of the `exp` the loop
+already pays; nothing materialized.
+
+Pieces: `SoftmaxSnr` (standalone streaming state: `observe` with masked
+`−∞` keys skipped branch-free, `merge` for split-K, `entropy` /
+`normalized_entropy` / `participation_ratio` / `collision_mass`), the fused
+kernel arm `attention::tiled_attention_forward_snr` (a monomorphized
+`TileStats` sink — the plain forward's `NoStats` instantiation compiles
+every hook to nothing, so its output is bit-identical at N ≥ 128), per-head
+measured sharpening `fit_tau` (log-space bisection of
+`H(softmax(τx))/ln N = h*`, saturation reported rather than hidden) onto the
+shipped SSMax socket as `SsmaxMode::Fixed { s_l: τ/ln N }` (no new enum
+variant — downstream exhaustive matches stay intact), and `TauEma`
+(log-space smoothing across steps; latent state, no weights move).
+
+**Trap 2, pinned as a measured negative:** entropy is concentration, not
+relevance — a planted distractor yields `Hn = 0.001` (as sharp as a hit) at
+gold mass `4.8e-7`. Any policy on these statistics needs the P4 `m_Y`
+falsifier.
+
+Gates (`bench_887`, M3 Max, 3 runs): G1a kernel vs f64 reference
+`|ΔH| ≤ 5.8e-6` nats incl. a rising-max-every-tile fixture; G1b
+retrieval-proxy Spearman −1.000 (single planted key — near-monotone by
+construction, a sanity proxy, not the m_Y gate); G1c fit → socket → kernel
+`|Hn − target| ≤ 4.8e-7`; G2 stats arm vs plain forward median **+0.9–1.1%**
+(N=1024, D=64) / **+0.4–0.6%** (N=512, D=128), paired `ab_median_ratio`, bar
+≤ 2%; G3 bit-identical N ∈ {128, 1024}; G4 0 allocs.
+
+🔧 Feature flag: `attention_snr` (katgpt-core, implies `ssmax_temperature`
++ `tiled_attention`). **OPT-IN**, with no consumer yet — promotion waits on
+a consumer GOAT and the P4 `m_Y` correlation.
+
+## 131. row_logit_floor — row-relative sink-exempt logit floor + b-bit codec (Issue 882 P2 / Research 586)
+
+The bounding arm of the attention-noise-control family: `l̃ = max(l, m_r − w)`
+over non-sink, unmasked keys (`m_r` = the non-sink row max, so this is a
+**floor** that raises the far tail, not a cap). The row is then bounded to
+`[m_r − w, m_r]`, which makes it codable in `b` bits (`LogitCodec`, symmetric,
+step `w/(2^b − 2)`, both endpoints exact, masked keys → `MASKED`), and its
+softmax becomes a `2^b`-entry exp lookup table (`exp_lut_into` +
+`softmax_coded_into`, sinks exact).
+
+- **Envelope:** floor TV ≤ `A/(1+A)` with `A = n_floored·e^{−w}`; the code
+  term is `|p̃/p − 1| ≤ e^{2h} − 1` per entry.
+- **Width:** `min_width_for_tv(n, ε) = ln(n/ε)` is the row-independent width
+  that guarantees a floor budget on any row. `RangeEma` is the issue's `w_h`:
+  narrower, but without the guarantee.
+- **Exemptions:** sinks (trap 3) and `−∞` (the unmask trap) are exempt by
+  construction, and both are pinned as measured negatives.
+
+Gates (`bench_888`, M3 Max, 3 runs):
+
+- **G1a:** measured TV ≤ envelope in all 144 cells (n up to 65536, 8/6/4-bit,
+  both width policies).
+- **G1b:** dropping the sink exemption adds 8.3pp of context TV, 2.8× the
+  6-bit code error. The pre-registered 10×-joint bar failed at 5.7× and is
+  recorded as such.
+- **G1c:** masked mass is exactly 0.
+- **G2:** the decode head is latency-neutral-to-positive: −1.1% at D=64 and
+  ±0.2% at D=128, against a bar of ≤ +1%. The LUT softmax alone is **−14.8%**.
+- **G3:** width = +∞ is bit-identical.
+- **G4:** 0 allocations.
+
+What 8-bit costs: ~0.75% context-conditional TV, and ~3% at 6-bit.
+
+🔧 Feature flag: `row_logit_floor` (katgpt-core, no deps). **OPT-IN**. The
+ppl and needle@64K quality gate is riir-infer Issue 011 (the consumer), and
+promotion waits on it.
+
+## 132. chance_puct — chance-node PUCT for single-player stochastic games (Issue 892 T3)
+
+The moka trick (Bench 205: 74% → 98% vs greedy Moka) transplanted from
+two-player Go to games with draws: a policy PRIOR pruned to `top_k`, a VALUE
+at the leaf, no rollouts, most-visited root. Prior = `σ((s_i − mean)/T)`
+normalised over the kept set (sigmoid, never softmax; `T` auto = std of the
+kept scores). Value = `σ((v − root.value())/scale)`, terminal loss = 0,
+**no sign flip** (single player — the negamax flip is the Q-sign bug class
+this must not inherit), `Q` = mean backup. Chance nodes are **sampled ∝ p**
+per simulation from a caller-seeded `fastrand::Rng` (the mean backup
+converges to the expectation without paying the chance branching factor
+per simulation); a chance node expands for free, so each simulation costs
+one decision expansion. `katgpt-core::mcts` (UCB1 + rollouts, the variant
+Bench 205 measured at ≈0%) is untouched.
+
+Pieces: `ChanceGame` (decision `actions`/`apply`, chance
+`outcomes`/`resolve`, `value`, `is_terminal`), `ChancePuctConfig`
+(`budget` 400, `c_puct` 1.5, `top_k` 8, `prior_temp`/`value_scale` auto),
+`ChancePuct::search → ChancePuctPick { action, index, visits, q }`, arena +
+scratch reused (0 allocs in a warm search). Tetris adapter:
+`examples/common/tetris_puct.rs` (`pick_puct`, bag-aware chance over the
+next preview).
+
+GOAT ([Bench 892](../../.benchmarks/892_chance_puct_goat.md)): G1 6/6 arms
+(expectation-not-max gamble, two-sided; terminal = 0; top_k pruning;
+most-visited tie-break; seeded determinism — a Q-sign-flip perturbation reds
+5/6); G2 478–668 ns/sim search overhead; G4 0 allocs; G3 vs the Bench 891
+depth-2 exhaustive champion at garbage 19 rows @ 75%, n=60: survival
+21/60 → 26 (b100) · 27 (b400) · 30 (b1600), per-seed W/T/L 9/50/1 at b1600
+(sign p≈0.02); every easier regime saturates both players; 5–150× the
+per-decision latency.
+
+🔧 Feature flag: `chance_puct` (katgpt-core, root forward). **OPT-IN** — the
+sole consumer is the tetris example (`tetris_08_puct_goat`); promotion is
+Issue 892 T6's call.
+
+## 133. act_channel_moments + act_aware_fit — activation-diagonal weight-quant fitting (Issue 886 P0/P1 / Research 588)
+
+AWQ (arXiv:2306.00978) / llama.cpp imatrix class, the closed-form
+modelless counterpart of riir-train's `ZeroQatCalibrator` (GD-family
+finite-difference search at the same insertion point). **P0**
+`katgpt_core::act_channel_moments`: `ActChannelMoments` streams per-input-
+channel `{Σ|x|, Σx²}` (f64) + count per linear layer (per-layer widths),
+`observe`/`observe_batch` alloc-free; `freeze()` → `ActChannelDiagonal`
+{`mean|x|` (AWQ s_X), `E[x²]` (imatrix weight)} BLAKE3-committed over a
+canonical little-endian image (`to_bytes`/`from_bytes` verify; every
+single-byte flip refused). **P1** katgpt-types
+`TernaryGroupWeights::quantize_from_f32_act_aware(w, rows, cols, diag,
+fit)` — the diagonal is a plain `&[f32]` (no reverse dep):
+`WeightedMeanAbs` (closed form; uniform diagonal ⇒ payload bit-identical to
+`quantize_from_f32`, pinned by bytes) or `WeightedSearch` (21-point grid +
+weighted LS refit through the real carry loop). Kernel-identical payload —
+only the group-scale value moves.
+
+GOAT ([Bench 896](../../.benchmarks/896_act_diagonal_quant_fit_goat.md)):
+G1 synthetic held-out output error (recorded either sign): the blind
+search alone −20…−27%; the diagonal adds −54% over it on planted 1%×20
+heavy channels and −14% on a log-normal spread at ternary (INT4 bench-local
+reference −60% / −26.5%) — mechanism-verified on PTQ-of-dense fixtures,
+NOT gain-verified on the born-ternary Bonsai lane (riir-infer Issue 014).
+G2 observe 0.28–0.32 ns/element, WMA +12.5% fit cost, Search ≈22×,
+refactored baseline within ±0.5% of the pre-refactor loop; G3 PASS; G4 0
+observe allocs, fit allocs = baseline.
+
+🔧 Feature flags: `act_channel_moments` (katgpt-core) · `act_aware_fit`
+(katgpt-types, implies `ternary_group_scale`; forwarded by katgpt-core).
+**OPT-IN** — no production weight-quant authoring consumer.
+
+## 134. differential_kv_eviction — common-mode-rejecting KV eviction score (Issue 882 P3 / Research 586)
+
+The subtract arm of the attention-noise-control family on the KV EVICTION
+score: `specificity_j = max over recent queries of (a_j − λ·μ_j(t−1))`, with
+`μ_j` the EMA of key `j`'s caller-supplied attention mass. It uses 3 `f32`
+per key, is O(1) per key per step, keeps a two-bucket recency window and
+needs no kernel change. The argmin is evicted through the shipped
+`kv_eviction::select_evict_into`, and sinks are exempt via
+`kv_sink_window::sink_pin_mask_into`.
+
+- `kv_eviction::differential::DifferentialEvictTable` is SoA (`observe_query`,
+  `specificity_into`, `select_evict_into`, `select_evict_sink_exempt`).
+- `DiffEvictConfig::max_recent(W)` is the λ = 0 baseline. It is the plain
+  max-recent-attention (TOVA/H2O-class) score, **bit-identically**.
+- `evictions_for_budget` returns 0 at budget ≥ live, which is the no-op.
+
+Gates ([Bench 894](../../.benchmarks/894_differential_kv_eviction_goat.md),
+M3 Max, loaded box, 4 runs):
+
+- **G1a:** synthetic planted-needle retrieval **0.945 / 0.977 at 25% / 50%
+  cache** against full 1.000. The max-recent baseline scores 0.680 / 0.758,
+  the shipped usage-rate score **0.000**, and random 0.289 / 0.531. This is
+  regime-conditional (see the S sweep).
+- **G1b:** the trap-4 negative is pinned. Distractor spikes with a generic
+  future cost **1.35–1.47×** the baseline's output error.
+- **G1c:** the sink exemption is load-bearing at λ > 1, where sinks are lost
+  32/32 unpinned. The pre-registered λ = 1 bar failed at 0/32.
+- **G1d:** λ = 0 ≡ max-recent in 28/28 cells.
+- **G2:** **~1 ns/key/step**, ~16% faster than the shipped usage-rate
+  `observe` loop.
+- **G3:** no eviction is bit-identical.
+- **G4:** 0 allocations. Getting there fixed the shipped selector's stable
+  sort, which allocated 1× per call at n = 4096.
+
+🔧 Feature flag: `differential_kv_eviction` (katgpt-core, implies
+`kv_sink_window`). **OPT-IN**. The model-bound needle@64K gate is riir-infer
+Issue 012 (the consumer), and promotion waits on it.
+## 135. fitted_value_tables / fitted_v_reconstruct — fitted token-value tables (Issue 883 P1–P4 / Research 587)
+
+These are the V-side consumers of the shared `fitted_anchor_tables` substrate. `FittedTokenTable::from_calibration` freezes the P0 per-(layer, token) means, James–Stein-shrunk. An untracked token has no row, and every consumer then falls back to its plain path.
+
+- **P1:** `MeanRemovedValueCache<C: QuantizedKVCache>` decorates any in-tree KV backend. It stores `q(V − E^V_l[s])` and reads `dequant + E^V_l[s]`. The fused read is `accumulate_value` / `axpy_mean_restored`.
+- **P2:** `v_from_k_plus` = `K + λ·E_l[s]`, with λ = 0 or a missing row falling back to the `V := K` copy.
+- **P3** (`fitted_v_reconstruct`): `reconstruct_v_from_rope_k` = `G(−θp)·K̂ + λE`, with one `apply_inverse_at` per head and never a round-trip. The `VReadPath::FullCache` kill switch reads the stored V instead.
+- **P4 laws:** `v_projection_flops`, `storage_bytes`, `v_cache_fraction`.
+
+Gates ([Bench 895](../../.benchmarks/895_fitted_value_table_primitives_goat.md), M3 Max, AC, loaded box, 3 runs):
+
+- **P1 G1a:** KVarN quant-MSE ratio vs the dashboard's `1 − ρ_V` agrees within ±5% on all 9 cells (2/4/8 bits × ρ 0.25/0.5/0.75).
+- **P1 G1c:** the absmax caveat is recorded. At 2 bits, off-mean rows show 3.8× more quant error.
+- **P1 G1d:** sinks are absorbed (0.05–0.09×).
+- **P1 G2 FAILED:** the fused restore costs +4.8–5.2% against a ≤ +1% bar.
+- **P2 G1:** the refund law `1 − (2λ − λ²)·ρ(V−K)` holds within 0.11%.
+- **P2 G2:** K+λE costs 0.001× the W_V GEMV it deletes.
+- **P3 G1:** exact to within 1.8ε (bound 8ε) up to position 131071.
+- **P3 G2 FAILED:** 14–15× slower, because `RopeAction` computes sin/cos per read.
+- **G3:** every kill switch is bitwise.
+- **G4:** 0 allocs.
+
+🔧 Feature flags:
+
+- `fitted_value_tables` (katgpt-core; implies `fitted_anchor_tables`; forwarded by katgpt-kv)
+- `fitted_v_reconstruct` (katgpt-core; implies `fitted_value_tables` + `position_group_action`)
+
+Both are **OPT-IN**. The model-bound G1 (gemma-2-2b PPL, retention walk, NIAH, tg128) is riir-infer Issue 013.
+## 136. canonical_context + affinity_deflation — the P4 eval/rerank riders (Issue 882 P4 / Research 586)
+
+These are the two modelless riders of Issue 882 P4. The m_Y instrument itself
+lives in riir-infer (`dc0e5a9`).
+
+**(a) `canonical_context`** (katgpt-core) gives a deterministic order over
+retrieved or context items, so an order-sensitive eval's permutation spread is
+**0 by construction**.
+
+- `canonical_order_into(keys, order)` sorts ascending by an `Ord` key, such as
+  the BLAKE3 digest from `content_key` or a caller key. Ties break by input
+  index.
+- `canonical_order_by_score_into(scores, keys, order)` keeps relevance order:
+  score descending (`float_order::desc`, NaN last), with ties broken by content
+  key.
+- `assemble_into` / `assembled_len` build the context into a caller-owned
+  buffer.
+
+Both orders are total, so the in-place `sort_unstable_by` gives a unique
+sequence with 0 allocations. They return the adjacent-tie count, and
+`ties == 0` means invariance holds with no content assumption. The riders make
+position bias **constant**. They do not remove it.
+
+**(b) `affinity_deflation`** (katgpt-spectral) applies
+`A′ = A − λ(A v₁)v₁ᵀ` to the rerank-stage M×M candidate affinity. It is
+**gated** on the stable rank `‖A‖_F²/σ₁² < θ`, so it only touches a collapsed
+matrix; deflating a healthy one is the anti-help trap. The gate quantity
+comes out of the σ₁ power iteration at O(M²), using the shared
+`spectral_retract::power_iter_step` on AᵀA formed implicitly. Because `‖Av‖`
+lower-bounds σ₁, an unconverged iteration can only make the gate **refuse**.
+λ = 0 and a refusal are bit-identical, and NaN refuses.
+
+Gates ([Bench 897](../../.benchmarks/897_p4_riders_goat.md), M3 Max, AC, heavily
+loaded box, 3 runs):
+
+- **G1a:** the canonical spread is **0 bitwise** across 8 seeds × 256 orders.
+  Retrieval order gives a spread of min 16.3 / mean 20.8. A tied-relevance stable-sort
+  pipeline gives ≥ 0.35, and its key-tie-broken form gives 0. Both orders are
+  idempotent, and a caller-key collision is flagged (28 ties).
+- **G1b:** on the held-out set, gated deflation at θ* = 1.1 (picked by a direct
+  grid) matches or beats both the no-deflation and ungated policies on every
+  collapse strength α.
+  - At α = 8, top-1 goes from 0.586 to **1.000**.
+  - The **pre-registered α = 3 lift bar FAILED**: +0.072 against a +0.25 bar,
+    even though recovery was complete. It was re-specified at α = 8.
+  - The healthy-matrix negative is pinned: the gate refuses bit-identically,
+    and ungated deflation costs top-1 **1.000 → 0.812**.
+  - The safe θ band is [1.1, 1.5]. At θ ≥ 1.75 the gate starts deflating
+    healthy matrices.
+- **G2:** (a) N = 256 order costs **3.8–4.4 µs** best-of (bar ≤ 20). (b) The
+  paired ratio against the affinity build at M = 128 is **1.15–1.16**
+  collapsed (bar ≤ 1.25) and **1.22–1.25** healthy (bar ≤ 1.60).
+- **G3:** bit-identical when off.
+- **G4:** 0 allocations for both riders.
+
+🔧 Feature flags: `canonical_context` (katgpt-core) and `affinity_deflation`
+(katgpt-spectral). Both are **OPT-IN**. There is no production consumer yet.
+The rerank wiring and an oracle-anchored eval consumer are the promotion
+evidence still owed.
+## 137. guided_width_rollouts + guided_width_hodge — GRAM guided width on the belief host (Issue 895 / Research 590)
+
+N parallel hypotheses of K steps each, run over a caller-supplied deterministic
+refinement step. For the belief host that step is `evolve_belief`, used as-is
+through `guided_width::belief_host`. Selection is decode-free, and every piece
+consumes shipped substrate:
+
+- **T1(a)** `Transversal`: `ε = σ_t·P_⊥ v`, drawn from the BLAKE3 ε source
+  (`diversity::temp::blake3_noise_fill`).
+- **T1(b)** `hodge_arm::MassConserving`: `ε = δ₂ψ + Σ c_h z_h`, built inside
+  coexact ⊕ harmonic on a power-of-two grid. That makes
+  `belief_mass_divergence(ε) == 0.0` exactly in f32, by construction. It owns
+  its init and kick, and it refuses the table term.
+- **T2** `StagnationGate`: `σ_t = σ_max·sigmoid(α(w_stuck − w₀))`.
+- **T3** `latent_value_into`: self-consistency + convergence residual + a
+  frozen direction. It is sigmoid-only and ranking-only, never a calibrated
+  probability.
+- **T4** `sobol_init_into` (cached `SobolQmc`, zero-alloc `reseed`) and
+  `diverse_set_into` (the TEMP farthest-point core).
+- **T5** `DirectionTable`: a success-SVD via `thin_svd_into`, with BLAKE3
+  freeze/thaw and a `DirectionPosterior` ranked by `best_belief_score`.
+- **T6** trap-kill-reallocate: `saddle_escape::FlipDetector` over a pre-decode
+  belief key plus `apply_kick`. A spent branch is re-spawned as a new
+  hypothesis. `DivergenceProbe` supplies the codifferential circulation signal.
+
+The kill switch (N ≤ 1 or σ_max = 0) runs the incumbent loop verbatim. A
+missing table takes the isotropic+transversal path, bit-identically.
+
+Gates ([Bench 898](../../.benchmarks/898_guided_width_rollouts_goat.md), M3
+Max, AC, heavily loaded box, 5 runs, deterministic G1). The fixture is graph
+3-colouring, equal compute 8×16 vs 1×128:
+
+- **G1 FAILED (pre-stated):** width beats depth on MULTI (≥ 4 completions),
+  selected **+0.117 ± 0.049** with coverage 0.59 → 3.32. It LOSES on SINGLE
+  (unique completion), **−0.188 ± 0.036**.
+- **Demote condition TRIGGERED:** the T5 table ties on MULTI and loses on
+  SINGLE (branch-valid), so guided stays off-by-default forever
+  (closed-negative). Its MULTI coverage lift of +1.50 ± 0.11 is recorded,
+  not decision-bearing.
+- **E9:** a measured delta on both families. The feature is not inert.
+- **Mass arm:** 0 of 2500 draws had non-zero divergence. Branch divergence
+  drift is 1.34e-7, against 0.86 for the transversal arm.
+- **G2:** 14.9 µs per belief decision at N = 8, K = 16 (bar ≤ 50), and
+  t(2K)/t(K) = 2.00.
+- **G3:** kill switch bitwise.
+- **G4:** 0 allocs.
+- **Plan 095:** G1 PASS (+14.1 pp); G3 not proven (SINGLE ties).
+
+🔧 Feature flags: `guided_width_rollouts` and `guided_width_hodge` (implies
+`dec_operators`), both katgpt-core. Both are **OPT-IN**, and the T9 verdict
+is no promotion. The belief-host adapter compiles with `sense_composition`.
+The consumer is riir-ai Issue 1008.
+
+## N. Perturbation Ensemble — Input-Perturbation UQ + DRM Decision Rules (reflex Plan 008 / Issue 055)
+
+The third provenance member of the UQ family, beside VFD (inter-member,
+`velocity_field_disagreement`) and the DRM paper's own head (intra-model
+sampling, external): **input perturbation**. A seeded Bernoulli bucket-dropout
+over a feature bag (BLAKE3 uniform stream — the module's own
+`blake3_uniform_fill`, the `[0,1)` 24-bit sibling of the guided-width ε
+source's hash-stream shape, kept in-module so the feature is `[]`-clean;
+survivors re-L2-normalized so cosine consumers see unchanged scale
+semantics; `p_drop == 0` a bit-identical copy, never a re-normalization)
+plus the per-question sample accumulator (`EnsembleHistogram`: pick counts +
+per-option `WelfordVariance` moments) and the three DRM decision-layer rules
+as pure modelless math — `u_pair = 1 − |2·p_maj − 1|` (uncertainty-aware
+rejection key), `u_bon` = runner-up share (Best-of-N flip probability), and
+LCB-λ `μ − λσ` risk-sensitive ranking (`lcb_into` / `top_by_lcb`), with
+`instability_gate` the sigmoid projection for a fused gate's third signal
+(never softmax). Distilled from arXiv:2609.33803 ("Diffusion Reward Models",
+thunlp) — the decision-layer findings only.
+
+The `WelfordVariance` accumulator moved to the ungated `welford` module in
+the same change (one definition; `karc::regime_gate` re-exports it, so
+`katgpt_core::WelfordVariance` now resolves in every configuration instead
+of only under `karc_regime_gate`).
+
+🔧 Feature flag: `perturbation_ensemble` (katgpt-core), **OPT-IN** — the
+consumer PoC (riir-reflex `mc_ensemble`, the MC wrapper over its decision
+engine) is pre-registered with a null path: marginal lift ≈ 0 over the
+two-signal fused gate at matched coverage ⇒ record the negative and stay
+opt-in (the `set_rerank` / `differential_anchor` precedent).
+
+## 138. Dirichlet-Distribution Primitives — Exact Explore Dial + Thinning + Belief Memory (Issue 912 T2+T3 / Research 596)
+
+Three exact-law operators over the simplex, distilled from arXiv:2609.35553
+("Simplex Diffusion Models" — the propositions are classical; the paper
+disclaims originality on the thinning math). **Log-space throughout**: every
+Gamma variate is sampled by its logarithm (the small-α boost is `ln(U)/α`,
+exact where the linear-space `U^{1/α}` in `data_probe/markov.rs` underflows
+for α ≲ 0.02) and normalization is log-sum-exp — grid case C pins the
+α_min = 0.01 regime the linear sampler cannot reach.
+
+- **`sample_conc_into(p, c, seed, out)`** — the exact explore dial
+  `Y ~ Dir(c·p)`: `E[Y] = p` **exactly by construction**,
+  `Var[Y_i] = p_i(1−p_i)/(c+1)`, `Cov = −p_i·p_j/(c+1)`. G1 mean/var/cov
+  closed-form pins at three grid cases (α_min = 4 / 0.1 / **0.01**);
+  G2 **183 ns/call** at N=8 (bar 1 µs, release best-of-5); G4 alloc-free.
+- **`thinning_into(x, alpha, rho, seed, out)`** — the Prop A.2 transition:
+  `B_i ~ Beta(ρα_i, (1−ρ)α_i)` multiplicative reweighting ⇒ `Y ~ Dir(ρα)`
+  under Dirichlet input (variance ratio `(c+1)/(ρc+1)` pinned; ρ=1 bitwise
+  identity, no rng consumed). NOT mean-preserving on fixed vectors — the
+  Jensen bias is PINNED (`p=(0.9,0.07,0.03)`, `c=2`, `ρ=0.5` ⇒
+  `E[Y_0] ≈ 0.847 ≠ 0.9`, the paper's simulated value). The `alpha`
+  parameter is load-bearing (the B shapes depend on it) — the issue's
+  one-line signature omitted it.
+- **`DirichletEma<const M, const K>`** — belief memory over the last M
+  one-hots: recursive mean path `h ← β·h + (1−β)·onehot` at a FROZEN op
+  order (bit-identical to a plain EMA — the ε=∞ routing), and a drawn path
+  `L ~ Dir(ε·shares)` (M Gammas on decision events, aggregated class-wise —
+  exact `Dir(ε·s)` by the Dirichlet aggregation identity). `E[L] = shares`
+  ε-independent; `Var[L_j] = share_j(1−share_j)/(C+1)` with
+  `C = ε(1−β^M)` the truncated raw mass. The ring truncation is NAMED:
+  the drawn expectation is the ring closed form, deliberately NOT `h`
+  (which retains the infinite tail) — pinned as a divergence.
+
+En-route finding: the first thinning draft computed the two-term LSE with
+the MAX's own shift inside `ln_1p` — `lse = lg_a + ln 2` whenever
+`lg_a > lg_b`, forcing `B = 1/2` for half the draws (bimodal, Beta-
+incorrect). The closed-form pins caught it in the first red run (variance
+ratio 1.445 vs 1.8; Jensen bias 0.889 vs 0.847). Fix: `ln_1p` takes the
+MIN's shift; the OTHER term after a max shift is exactly 1.
+
+🔧 Feature flag: `dirichlet_dist` (katgpt-core), **OPT-IN** — no default-on
+claim; consumers unscheduled (T4 notes in the module docs:
+`perturbation_ensemble` interface-swap arm, `katgpt-sense`
+`evolve_belief_additive` sibling, riir-neuron-db consolidation merge,
+`bom_arena` hypothesis sampler). No coverage/prediction-interval claim →
+the conformal-naive floor does not bind these primitives.
+
+## 139. Grouped-Evidence Noise-Weighting — Variance Floor + Filter-Bias Bound + Weighted Beta LCB + Noise-Scaled K (Issue 913 / riir-train Research 463)
+
+The modelless half of EasyPPO (arXiv:2609.36802): weight each group of noisy
+evidence by `1/max(σ̂, ε)`. For EXOGENOUS weights (a function of the group,
+not of the outcome) the reweighting preserves the estimation optimum — that
+invariance law is the whole license, and its scope is enforced by the
+`ExogenousSigma` type (`prior_epoch` / `leave_one_out` / `design`
+constructors, no plug-in constructor; provenance rides every readout).
+
+- **`variance_floor(delta, n)`** — `Δ/(2√n)`, Popoviciu over an n-draw mean;
+  the ε floor and the design-level σ of a bounded-outcome group.
+- **`filter_bias_bound(gamma, p_not_c)`** — `2Γ·P(¬C)`, the bias budget a
+  filtered readout prints beside its number.
+- **`best_belief_score_weighted(groups, sigma, floor, eps)`** — fractional-
+  count Beta LCB through the shared `best_belief` solver; mean-one weights
+  per observation; Kish `n_eff`, `Estimand` and `SigmaProvenance` on every
+  `WeightedBelief`. Bit-identical to `best_belief_score` under uniform
+  weights. Best-arm identification **0.685 vs 0.617** unweighted (paired
+  LB95 +0.057); plug-in σ̂ negative control biases the pooled rate by
+  −0.042 toward the extreme (prior-epoch σ̂ +0.001). ~375 ns/call at G=16.
+  **A ranking score, not a calibrated interval** — measured parameter
+  coverage 0.883 at nominal 0.95 under overdispersion, so no UQ claim.
+- **`noise_scaled_k` + `update_scored_noise_scaled` / `update_f32_noise_scaled`**
+  — `K_eff = K·ε/max(σ̂, ε)`, bit-identical to fixed K at the floor. MSE
+  161 vs 2998 (K=32) and vs 1668 (fixed K at adaptive's own mean step);
+  plug-in σ̂ inflates the asymptote 200 → 332.
+
+Record: [Bench 905](../../.benchmarks/905_grouped_evidence_weighting_goat.md).
+
+🔧 Feature flag: `grouped_evidence_weighting` (katgpt-core, implies
+`best_belief` + `rating`), **OPT-IN** — consumers unscheduled (riir-clippy
+Issue 139, riir-dao, riir-reflex, riir-instinct, riir-ai rows in the issue).
+Kill clock: no consumer within 30 days of merge ⇒ goat-audit stall class.

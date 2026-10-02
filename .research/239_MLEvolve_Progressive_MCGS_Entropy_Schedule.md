@@ -6,6 +6,7 @@
 > **Related Research:** 134 (BES entropy shell), 172 (MUSE skill lifecycle), 190 (regime-transition MDL gate), 075 (Survive-or-Collapse), 093 (committee search), 088/170 (proof/DAG search), 216 (MRAgent memory graph), 052 (SimpleTES eval-driven scaling)
 > **Related Plans:** katgpt-rs Plan 272 (`progressive_mcgs` module, Phase 3 ✅ COMPLETE — GOAT gates G1–G5 PASS, see `.docs/progressive_mcgs.md` and [.benchmarks/272_progressive_mcgs_goat.md](../.benchmarks/272_progressive_mcgs_goat.md))
 > **Cross-ref (riir-ai):** Research 122 (Crowd-Scale Progressive MCGS for NPC Emergent Behavior), Plan 298 (riir-ai game-runtime instantiation)
+> **Cross-ref (2026-09-26):** riir-ai Research 390 — "Interference Search" (BTL, non-arXiv): level-synchronous merged-frontier *scheduler* delta over this module's UCT shape + RRF parent-vote pooling + duplicate-work census gate; filed as riir-ai Issue 1010.
 > **Classification:** Public
 
 ---
@@ -229,3 +230,5 @@ This is where the *aggregate-behavior* payoff lands:
 ## TL;DR
 
 MLEvolve's value to us is **not** the LLM coding agent — it's the **Progressive MCGS** formalism: a directed graph where reference edges compose information across branches without polluting backprop, plus an entropy-gated soft switch from UCT exploration to Elite-Guided exploitation, plus stagnation-triggered expansion operators. These three primitives are modelless, inference-time, allocation-free, and directly unblock (a) clean composition-without-credit-pollution in katgpt-rs's bandit/DDTree stack and (b) emergent crowd-scale NPC exploration→exploitation transitions in riir-ai. **Verdict: GAIN.** Plan 272 candidate: implement `progressive_mcgs` module behind `--features progressive_mcgs`, benchmark entropy decay + backprop correctness + stagnation-gate improvement over vanilla UCT.
+
+> **PASS-Redirects (synthesis):** EverMind AI [arXiv:2609.33439 "Raven: The Harness of Harnesses for Composable Agentic Intelligence"] — EverOS episodic→semantic consolidation + BM25⊕dense RRF with sigmoid calibration re-confirms this note's Primitive D shipped coverage (riir-rag `rrf_fuse` K=60 BM25⊕latent-KNN, `crowd_mcgs/retrieval.rs` 64-D RRF profiled in riir-ai Bench 261 T4.6, `SigmoidGateCalibrator`, katgpt-rs Bench 845's fuse-on-one-scale lesson). Host DAG orchestration over model+harness pairs has no consumer in the stack, and Raven's MAOB planning benchmark is preceded by OrchBench (arXiv:2607.25656, deterministic simulation over fixed DAGs, r=0.816 vs executed outcomes). PASS.

@@ -119,7 +119,7 @@ katgpt-web                      0               0               0  # observed 20
 riir-ai                          4               3               0
 riir-auth                        0               0               0
 riir-chain                       1               0               0
-riir-clippy                      3               3               0
+riir-refine                      3               3               0
 riir-dao                         0               0               0  # observed 2026-09-18: no scripts/*.py
 riir-dapps                       0               0               0
 riir-deployer                    0               0               0  # observed 2026-09-18: no scripts/*.py
@@ -145,4 +145,7 @@ mmorpg-remake                      3               2               4
 # orphaned_attr_drift_floors, wasm32_surface_drift_floors and
 # len_derived_drift_floors.
 riir-reflex                       0               0               0  # observed 2026-09-21: joined the workspace 2026-09-21 (Plan 603 T1.1 registration, owner-delegated repo birth)
+riir-reflexer 0 0 0  # observed 2026-09-25: born public today (Research 457 P1 registration); md-only, no code yet; no scripts/*.py
+reflex-site 6 5 0  # observed 2026-09-26: joined the contract set today (BOUNDARY.md at reflex-site 89fa39c; findings repaired at 5eb0ae9/466e331/afdacd6 before pinning); 6 scripts/*.py, 5 print non-ASCII, all 5 defended
+riir-instinct 0 0 0  # observed 2026-09-26: born private today (riir-ai Proposal 047 P1 registration); md-only, no code yet; no scripts/*.py
 riir-infer                        0               0               0 # observed 2026-09-22: joined the workspace 2026-09-22 (riir-ai Issue 998 / reflex Issue 008 carve — Proposal 041 T-B fired)

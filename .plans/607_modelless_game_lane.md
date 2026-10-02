@@ -454,6 +454,95 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   modelless-legal (search is not learning) but low value-per-effort. File
   a `.research/` note only if T4's oracle replay shows the argmax scorer
   losing decisions to laya on multi-step lookahead.
+  **Condition EVALUATED 2026-09-24 — deferral HOLDS, trigger not fired:**
+  the letter of the condition is met (the scorer does lose decisions to
+  the laya oracle on Tetris, 13/120 raw → 44/120 fitted, and Tetris is
+  the multi-step game), but its CAUSE reading is refuted by the recorded
+  evidence — Bench 881 attributes the tetris gap to RENDER/feature
+  coverage (bumpiness, wells, transitions, eroded never rendered; the
+  decoded arm BEATS structured and G1 HOLDS at 44/120 vs constant-pick
+  13), i.e. a representation gap that PUCT search over the same prior
+  cannot fix, and Bench 876 shows play quality is already owned by
+  arithmetic (Dellacherie 195.6 lines vs sentence-scorer 3.4) while the
+  lane thesis is "match the model's read, never out-fly arithmetic".
+  Recorded remedy for the real gap is render-side re-widening (Issue
+  876, flappy + tetris render), not search. Re-open the question only if
+  a render-fixed scorer still loses to laya specifically on decisions
+  where the oracle's choice pays off several pieces later.
+- [x] **T8 — the LIVE arena on reflex.gist.rs (owner addendum, 2026-09-23,
+  "still see no tetris running side by side at reflex.gist.rs like
+  original, what block?")**: the plan's arenas were OFFLINE benches
+  (numbers only — the T6 law) and the site had no games; the owner asked
+  for the original laya page's live-Tetris experience. Two-sided landing:
+  **riir-reflex** (`ea197d8` + `536d65f`) — the laya comparison lane over
+  HTTP behind `RIIR_REFLEX_LAYA=1`: `X-Reflex-Lane: laya` on `/decide`,
+  served by the SAME G5-parity RiirAgent through a one-thread actor (the
+  backend is !Send; forwards serialize), fail-closed in every non-ready
+  state (never a silent modelless fallback — the per-lane-claims law),
+  `/healthz` lane map JSON, PNA preflight consented for allow-listed
+  origins, mapping unit-tested weights-free (12 lane tests; clippy clean
+  at default/all-features/no-default; the pre-existing
+  `harness_families_gates` G2 red at HEAD is box-load, reproduced on a
+  clean tree at load 18-34 — CONFIRMED by quiet-box re-run 2026-09-24:
+  detached worktree at `2f85388`, isolated `CARGO_TARGET_DIR`, build
+  settled, 7/7 gates green incl. the G2 floor at load 4.3-4.4, the
+  quietest this box carries with standing agent sessions).
+  **reflex-site** (`60bd192` + `4eba4aa` + `c7aa731` + `20388c9`, deployed
+  live) — `/arena/`: Tetris + Flappy + three-lanes, TWO boards side by
+  side (laya | modelless) from the same seeded stream; the games are the
+  exact JS ports of the T4a/T5 sims + pinned grammars, golden-checked
+  node-side against the committed fixtures (tetris 2660/2660 options +
+  120/120 state sentences; flappy/lanes 100/100 each — byte-identical),
+  plus a bit-exact fastrand port (`rng.js`). Verification: a fixture
+  replay through the LIVE HTTP lane agrees with the committed oracle
+  p_cleans spot-level and argmax-level (`arena_protocol_check.mjs`); the
+  production page smoke passes in headless Chromium (chips ready,
+  modelless decision p50 3-6 ms, laya board reading spots). Boundary
+  note: the engine stays game-free — the game lives in the site JS, the
+  engine answers English noul sentences (the T0b `laya_oracle_batch`
+  precedent: game vocabulary in the INPUT data).
+
+## T9 addendum — the owner ask round 2: "still not see tetris on reflex.gist.rs" (2026-09-23)
+
+- **The block, measured:** the arena WAS live at `/arena/` (200, both
+  boards, engine detection + PNA hint) — but (a) the homepage carried it
+  only as a small nav item on a long page, and (b) without a locally
+  running engine the boards idled on "checking for a local engine…".
+  The user opened the root URL twice and saw no games either time. Not a
+  build gap this round — a discoverability + cold-start gap.
+- **Fix 1 — recorded demo (reflex-site `b098ade`, deployed live, version
+  `433a1293`):** with no engine, `/arena/` now auto-plays a labelled
+  recorded demo. Data: `arena/demo_oracle.json` (102 KB) generated from
+  the SAME committed fixtures the golden tests bind. Tetris replays the
+  fixture's recorded play walk — chain-verified at generation time
+  (every recorded placement reproduces the next recorded board under the
+  site's own enumeration; 36 turns; mixed capture policy disclosed in
+  the banner — the walk was state collection, not argmax play, 16/35
+  picks are argmax). Flappy/lanes ship as recorded decision reels (the
+  fixture states come from `enumerateStates`, a DIFFERENT rng stream
+  than the live boards' `play_game` shape — a self-driving demo would
+  miss the oracle, so the reels replay the recorded states directly).
+  The modelless board plays its real out-of-the-box behavior: abstain →
+  labelled random fallback. Board heads relabelled "laya lane ·
+  model-based" / "modelless lane · reflex core" (the owner's own
+  vocabulary); homepage gained an arena teaser section (`d210399`) with
+  the live/recorded split spelled out.
+- **Verification:** `scripts/arena_demo_check.mjs` (node, PASS — walk
+  chain + 100+100 reel sentence/option/argmax parity vs fixtures),
+  `scripts/arena_demo_smoke.mjs` (headless Chromium with
+  `127.0.0.1:7331` ROUTE-BLOCKED — deterministic even on a box where a
+  sibling's engine is up; PASS local + re-proven against the live prod
+  URL post-deploy), golden tests 8/8 still green, prod curl markers on
+  all four surfaces.
+- **Honesty law kept:** the demo is labelled everywhere (banner, status
+  text, SOURCE readout "· demo", "recorded play" answers, footnote
+  rewritten to scope "nothing is scripted" to the live path). Recorded
+  probabilities are 6-dp — 4 orders finer than the ±0.02 protocol-check
+  tolerance; argmax parity verified 100/100 on both reels.
+- **Live-path note:** the v0.1.1 release archives predate the laya lane,
+  so a visitor following the run command with a stock install sees the
+  laya board fail closed with the enable hint (modelless goes live
+  fine); the v0.1.2 cut in flight carries the lane.
 
 ## Substrate check (substrate-first skill, T0a — 2026-09-22)
 
@@ -528,3 +617,443 @@ per-decision laya outputs are generatable LOCALLY (riir-reflex's G5-parity
   faster, kernel maturity), riir CPU 188.7 ms at candle-CPU parity; our
   wins are deployment (one SHA-pinned binary, no Python, no torch,
   offline).
+
+## T10 addendum — the serving consumer (riir-reflex v0.2.2, 2026-09-23)
+
+The decoded heads now SERVE: riir-reflex v0.2.2 (`367766c` + `932a2a3`,
+Plan 001 in that repo's `.plans/001_game_head_serving.md`) boots the
+decoded Tetris head (this plan's Bench 881 anchors — λ=1, 44/120 in+LOO —
+reproduced bit-identically by that repo's tests, serving digest
+`00aa6221…c6e`) from a verbatim BLAKE3-pinned copy of this repo's
+`tests/fixtures/tetris_oracle_laya_en_v2.jsonl`, and answers the pinned
+spot question on `/decide` before its cosine engine's abstain. The arena's
+modelless Tetris board plays out of the box (reflex.gist.rs/arena, site
+`b09bffb`). Lanes + flappy remain honest abstains in that repo — the
+cross-lane feature dependency (this plan's lanes grammar reads the other
+lanes) and the site's frozen v2 flappy render are the two recorded
+unblock paths (riir-reflex `.issues/011`). The fixture copies are
+digest-pinned both sides; this repo stays the source of truth for the
+oracle data and the fit recipe.
+
+## T11 addendum — owner round-3 Q&A on the arena (2026-09-23, site `91af68d` + sibling `b09bffb`)
+
+The owner watched the recorded demo (laya 580/13 lines vs modelless 40/1)
+and asked five questions. Verdicts, all measured:
+
+1. **Why does modelless score lower?** Not the text input — both lanes read
+   the same sentences. In the recorded demo the modelless board's
+   probabilities are null by construction (`scoreOptions` returns recorded
+   ps to the laya lane only), so every turn is the honest abstain →
+   labelled random fallback; a full-random tetris game scores ~40. The gap
+   is exactly the missing game corpus, and the fitted head closes it —
+   **v0.2.2 now serves it** (T10 above): the modelless board plays at the
+   44/120-class instead of random (10.8%-class).
+2. **Is laya python or our rust?** Our Rust port, always, on this site —
+   G5-parity-verified against the reference checkpoints (top-1 1.000,
+   drift ≤ 3.1e-6); the python/candle lane was deleted 2026-09-22 by owner
+   directive ("no candle at all cost", "No Python anywhere"). The site
+   footnote now states the provenance (site `91af68d`).
+3. **Three recorded lanes incl. "laya python"?** Python board REFUSED: a
+   G5-parity-verified port replays identical decisions (drift ≤ 3e-6) at
+   1.3–1.5× slower — an information-free duplicate that would also violate
+   the no-python directive. The meaningful three-tier arena is
+   **laya-rust (teacher) / latent-first fitted head (µs, plays) / raw
+   modelless (honest abstain baseline)** — the baseline needs an engine
+   lane-override knob (`X-Reflex-Lane: raw`) before it can be shown live
+   beside the head, since the serve path tries the head first.
+4. **Why does a recording have a seed input?** The seed's only demo effect
+   is shuffling the modelless board's random abstain fallback (the recorded
+   walk itself is fixed bytes); live, it seeds the shared piece stream (same
+   seed = same game on both lanes). Fixed site-side: the control relabels
+   to "fallback seed" in demo mode with a title explaining exactly that
+   (site `91af68d`), so a recording never looks seed-driven.
+5. **Can it run in the browser?** Matrix: the recorded demo already runs
+   fully in-browser (that is the no-engine mode); the live laya lane stays
+   native-only (~650 MB weights + Metal/gemm — never a browser target);
+   and the fitted head — grammar tables + decoded features + a linear
+   score, zero allocations — is exactly the artifact that CAN run
+   client-side, so the latent-first lane can ultimately play live in the
+   tab with no engine at all. That is the owner's "latent first" endgame,
+   and it is the same distillation shape as bonsai/gemma freeze/thaw:
+   deterministic construction over recorded teacher outputs, never
+   gradient descent on the teacher.
+
+Roadmap tasks (unchecked):
+
+- [x] 3-board arena layout (latent-first head vs laya vs explicit raw
+  baseline) — DONE 2026-09-24: the engine knob LANDED (riir-reflex
+  `4c657f8`, T17; issue 014 closed) and the site layout LANDED (site
+  `d092fb8`, prod CF version `5981518b`, T18 below): a third boardcard per
+  game (raw baseline · heads skipped), `/healthz` lane discovery with the
+  honest "needs engine v0.2.3+" state on older engines, and a
+  labelled-empty demo posture (no recorded substitute — never invented
+  data). The raw lane reaches VISITORS at the next engine release
+  (v0.2.3) — the knob is on develop, not yet tagged.
+- [x] Fresh full-argmax laya recording + a recorded fitted-head game — DONE
+  2026-09-23 (site `6269565`, T12 record below): `record_demo_walks.mjs`
+  plays tetris against a live v0.2.2 engine and records both walks with
+  per-decision ms; the mixed-play capture is retired.
+- [x] Browser-live head: compile the fitted head to wasm so the
+  latent-first lane plays in-tab with zero engine — DONE 2026-09-23 (T13
+  addendum below).
+- [x] Flappy v3 render + lanes cross-lane context — the two recorded
+  unblock paths (riir-reflex `.issues/011`) so all three games play on the
+  latent-first lane — flappy half DONE 2026-09-24 (T14 addendum below: the
+  site renders v3 + the flappy head plays live in-tab); LANES half DONE
+  2026-09-24 (T15 addendum below: the lanes head plays live in-tab through
+  the joined-state protocol, the published 84/100 anchor reproduced, zero
+  engine). The ENGINE-side serving of both remains that repo's recorded
+  TODO.
+
+## T12 addendum — the demo boards now play recorded GAMES (2026-09-23, site `6269565`)
+
+The owner's round-4: the recorded demo still showed the modelless board at
+its abstain walk (score 40, 36 abstains, random-class mess, no timing) and
+"both lanes look the same speed". Fixed at the root — the demo now replays
+genuine engine-played games recorded through the LIVE `/decide` wire:
+
+- `scripts/record_demo_walks.mjs` (site): plays tetris with the site's own
+  enumeration against a running v0.2.2+ engine (same seed 607 for both
+  games), sequential per-option decisions, argmax picks, chain-verified
+  before writing. `tetris_head_walk` = the modelless fitted-head game (ps +
+  picks + per-decision ms); `tetris_walk` = the laya game at TRUE argmax —
+  the old mixed-play state-capture is retired.
+- Recorded on this box (engine `00aa6221…c6e` serving digest, CPU laya):
+  head **140 pts / 3 lines / 46 pieces @ p50 0.4 ms**; laya **660 pts / 11
+  lines / 70 pieces @ p50 394.6 ms** — the ~1000× latency gap and the
+  play-quality gap are both now ON the page instead of described in prose.
+- arena.js: per-board walk selection (head walk present → modelless shows
+  real ps + recorded ms; absent → old honest abstain), recorded-p50 timing
+  readout in demo, auto-start demo LOOPS (a frozen dead board is not a
+  demo), flappy/lanes modelless keep the abstain via an explicit
+  `allowDemoPs` opt-in — the first cut dropped the lane gate and the smoke
+  caught flappy/lanes modelless replaying laya's ps; the opt-in shape is
+  the fix.
+- `arena_demo_check.mjs`: verifies BOTH walks (chain/arity/ms arity) + a
+  head-quality floor (head walk must clear ≥ 2 lines — random class ~1 must
+  never come back) + head ms presence. `arena_demo_smoke.mjs`: asserts the
+  head answer + `recorded · p50 N ms` timing line + `tetris_head_walk`
+  presence in the served oracle.
+- Validated: demo check PASS (70 + 46 turns chain-verified), demo smoke
+  PASS, deployed (CF version `a576f7c7`), prod oracle verified (46/70
+  turns, 0.4/394.6 ms).
+
+## T13 addendum — the browser-live head: the latent-first lane plays in-tab, zero engine (2026-09-23, site `87ad03a`)
+
+T11 Q5's endgame landed: the fitted Tetris head now ships compiled to
+WebAssembly on the arena page, and the modelless board PLAYS LIVE in the
+tab with no engine at all. Not a snapshot of weights — the page boots the
+PUBLISHED RECIPE (standardize → ridge at the LOO-selected λ → linear
+score) over the same BLAKE3-pinned oracle fixture the engine fits from,
+as a 35 KB corpus blob inside a 72 KB artifact (`wasm-head/` in the site
+repo, zero deps, no wasm-bindgen).
+
+- **Bit-parity is proven, never assumed.** Every op is a correctly-rounded
+  IEEE-754 f64 primitive with a pinned accumulation order (`fmadd` on
+  arm64; libm `fma`/`sqrt` on wasm32 — no wasm fma opcode exists). Gates:
+  (1) build time — `wasm-head/tests/recipe.rs`: blob regenerates
+  byte-identically, the FULL recipe incl. LOO hits λ=1 + 44/120 + 44/120,
+  all 2660 corpus sentences decode+re-render byte-identically, the u8
+  standardizer is bit-equal to the f64 one; (2) boot — the wasm re-validates
+  the blob, RE-RUNS the fit in-tab, and refuses (`head_init != 0`) unless
+  the 44/120 anchor reproduces; (3) behavior — before any play, the page
+  probes ALL 836 recorded (sentence → f32 P(clean)) pairs of the demo's
+  head game and requires `Math.fround` bit-exactness on every one; any
+  failure keeps the recorded demo (the head never half-plays).
+- **Measured**: boot ~2 ms, ~1.2 µs/decision through the full JS ABI (node
+  probe: `scripts/arena_head_parity.mjs` PASS 836/836); headless-Chromium
+  demo smoke shows the live board at ~22 µs/spot including enumeration
+  overhead — the µs story is now live on the page next to laya's recorded
+  394.6 ms.
+- The wasm lane answers ONLY the pinned spot question (grammar-gated —
+  flappy/lanes sentences refuse → the honest abstain, mirroring the
+  engine's fall-through; the T12 `allowDemoPs` leak class cannot recur by
+  construction). Live board plays its own seeded game (the seed control is
+  real again for the modelless lane); the demo loops; labels say
+  `modelless · wasm head (in-tab)`.
+- Engine-connected behavior is UNCHANGED (the engine is the canonical
+  server of the same fit); the wasm is the zero-engine posture. flappy +
+  lanes modelless keep the recorded honest-abstain reels (`.issues/011`
+  unblock paths unchanged).
+- Site: `assets/arena_head.js` (loader + probe + score), `arena.js` wiring,
+  `arena/index.html` copy (demo banner + explain + footnote), smoke updated
+  to assert the live posture (LIVE wasm or recorded fallback, SOURCE label
+  check). `scripts/arena_demo_check.mjs` PASS; `arena_demo_smoke.mjs` PASS
+  (LIVE wasm in headless Chromium). The `arena_smoke.mjs` live-engine smoke
+  was NOT re-run (no engine up on the box this session); its engine-path
+  assertions are untouched by the change (the wasm branch is demo-only).
+- Remaining roadmap: the 3-board layout (gated on the engine `X-Reflex-Lane:
+  raw` knob) + lanes cross-lane context + the engine-side flappy serving.
+
+## T14 addendum — the flappy head joins the browser-live lane (2026-09-24, site `9230b6e`)
+
+The flappy half of issue 011's site-side unblock path is landed: the site's
+`flappy.js` renders the **v3 grammar** (band + quantized offset + neutral
+post-motion — v2's band-alone arm is the measured-degenerate 77/100
+constant-pick, Bench 881), the demo reel regenerates from
+`flappy_oracle_laya_en_v3.jsonl` (merge semantics: the recorded tetris walks
+are owned by the recorder and preserved), and a SECOND wasm head — Bench
+882's decoded arm — plays flappy live in-tab with zero engine.
+
+- The flappy head answers the **(state, option) sentence pair** — the
+  joined-state protocol issue 011 records (the head row needs the state's
+  pre-rel/v/h), trivially natural in-tab where the call takes both
+  sentences. The reconstruction law (structured units from the decoded
+  fills, crash tails at ±(h+1), pre_rel clamped ±2) is ported verbatim and
+  tested exact against the fixture's own feature arrays wherever the render
+  is exact.
+- Published anchors reproduced BIT-FOR-BIT in the browser artifact: λ=1,
+  in-corpus 96/100, LOO 96/100, and the **full head digest**
+  `c93d36dc…e3c5` (`decode_01_losslessness`'s
+  `FLAPPY_V3_DECODED_HEAD_ANCHOR`) from the committed blob through the
+  boot path.
+- Measured caught-by-the-gate defect: the first flappy blob stored the
+  raws as `as u8` — Rust's saturating cast turned every NEGATIVE structured
+  unit (post_v, pre_rel, edge_margin) into 0, corrupting 846/1600 cells.
+  The anchors still passed (96/100 — the head is that robust) but the
+  digest gate red'd; raws travel as i8 now, and the i8-vs-f64
+  standardizer-equality test pins the cast in both directions.
+- Gates all green: wasm-head tests 17/17; parity — tetris 836/836
+  bit-exact + flappy agreement 96/100 = the published anchor over the
+  corpus reel; demo check 100/100 sentence+option parity on the v3 reel;
+  golden tests 7/7 rebinding v3; headless demo smoke + a PROD no-engine
+  smoke (live page, engine route-blocked): both boards live in-tab
+  (tetris ~33 µs/spot, flappy live decisions beside the laya reel).
+- The wasm ABI grew a ready MASK (bit0 tetris / bit1 flappy) and
+  `head_score_state(state, option)` — a per-head failure degrades that
+  head alone; the other keeps playing.
+- Still open: the LANES half (its head reads the other lanes' sentences —
+  needs the joined-state protocol end to end), the 3-board layout (gated
+  on the engine `X-Reflex-Lane: raw` knob), and the ENGINE-side serving of
+  the flappy head (riir-reflex's recorded TODO — engine-connected flappy
+  modelless still abstains there; the wasm head is the zero-engine
+  posture).
+
+## T15 addendum — the LANES head joins the browser-live lane: the joined-state protocol end to end (2026-09-24, site `aff4bcc`, prod CF `a677747e`)
+
+Issue 011's lanes half is CLOSED on the site side: the published lanes
+head (Bench 880: λ=0.01, 84/100 in-corpus + LOO, head digest prefix
+`7d3f1d8e`) now plays three-lanes live in-tab with zero engine — the
+third and last wasm head. The blocker (this plan's lanes grammar reads
+the OTHER lanes: feature columns 6–7 count the other lanes' obstacles, so
+a single-sentence path cannot reproduce the head) dissolves in-tab: the
+page holds the whole turn, so `head_score_lanes(p0,l0,p1,l1,p2,l2,lane)`
+takes ALL THREE option sentences in pinned lane order plus the lane to
+score — the joined-state protocol issue 011 records, implemented exactly
+(end to end) in the wasm, no engine involved.
+
+- **The decode arm is EXACTLY lossless here** (Bench 882: Δ0, 0/100
+  flips, decoded rows bit-identical to structured → the same head digest),
+  and the wasm port proves it per-cell: `gen::parse_lanes` asserts decoded
+  == the fixture's own feature arrays on ALL 300 rows — a single drifted
+  cell is a loud panic, never "close enough". The fit then reproduces λ
+  0.01 (LOO-selected, travels as generated data), 84/84, and the digest
+  prefix `7d3f1d8e` — the same head the published record names.
+- Grammar port: `laya-lanes-v1`'s TWO templates (clear / blocked) decode
+  through the counting walker with the derivation count summed ACROSS
+  templates — zero or ≥2 derivations refuse (the engine's multi-template
+  decode twin). A sentence naming the wrong lane for its position, a lane
+  index ≥ 3, or any off-grammar sentence refuses (NaN → the honest
+  abstain).
+- Gates all green: wasm-head 23/23 (blob regen; recipe anchors incl. the
+  digest prefix; the 300/300 lossless cells; grammar round-trips over all
+  300 sentences; boot determinism; i8 standardizer; score paths incl.
+  cross-grammar + wrong-lane + lane≥3 refusals); parity — tetris 836/836
+  bit-exact + flappy 96/100 + **lanes 84/100 = the published anchor** over
+  the corpus reel (~2.2 µs/decision incl. the 3-sentence decode); demo
+  check (lanes reel 100/100 sentence+option+argmax parity); headless demo
+  smoke + a PROD no-engine smoke (live page, engine route-blocked): all
+  three modelless boards LIVE in-tab (tetris ~33 µs/spot, flappy live
+  P(clean), lanes live lane ps beside the laya recorded reel). Golden
+  tests 8/8 (renderers untouched).
+- lanes ready-mask bit2 (`head_lanes_lambda`/`head_lanes_anchor` exports);
+  a per-head failure degrades that head alone. Artifact 92 KB (wasm-opt
+  -Oz; three incompressible corpus blobs). Boot ~2.8 ms (three heads).
+- Engine-connected behavior is UNCHANGED: the arena's engine lane still
+  forwards each lane sentence ALONE as the state (the measured laya
+  protocol), and the engine's serving-side lanes/flappy abstains stay
+  riir-reflex's recorded TODO (issue 011) — sibling-active repo, not
+  touched this session. The wasm head is the zero-engine posture and the
+  engine path never reads it.
+- Remaining roadmap: the 3-board layout (gated on the engine `X-Reflex-Lane:
+  raw` knob) + the ENGINE-side serving of the flappy/lanes heads
+  (riir-reflex issue 011). Site-side, every unblock path this plan names
+  is now LANDED.
+
+## T16 addendum — the engine knob issue filed (2026-09-24, riir-reflex `35b5400`)
+
+The one remaining gating artifact is now TRACKED: riir-reflex
+`.issues/014_engine_lane_override_raw_knob.md` records the
+`X-Reflex-Lane: raw` lane-override knob end to end — the why (T11's
+ratified three-tier arena cannot show its raw baseline beside the
+head-first serve path), the design constraints (T8's lane pattern
+verbatim: explicit override, default posture byte-identical, fail-closed
+with the per-lane-claims law, `/healthz` advertises `raw`, unknown lanes
+still refuse), what `raw` shows today (modelless abstain on
+flappy/lanes — the honest baseline — while issue 011's engine-side
+serving TODO is independent) and the paired-smoke acceptance that pins
+BOTH directions.
+
+The 3-board layout itself stays unchecked: it is implemented site-side
+the day `/healthz` advertises the lane. Engine edits were deliberately
+NOT attempted this session — riir-reflex carries two active sibling
+agents (the game-heads G1 bench refresh + the Metal attention lane)
+whose working surface (`src/game_heads.rs`, `src/laya/riir/*`) is the
+exact seam the knob touches; the `.issues/`-only write avoided the
+conflict entirely.
+
+## T17 addendum — the knob LANDED (2026-09-24, riir-reflex `4c657f8`)
+
+The `X-Reflex-Lane: raw` lane-override knob is IMPLEMENTED and pushed
+(riir-reflex develop `4c657f8`, issue 014 closed into that repo's
+HISTORY.md): the serve edge accepts `raw` alongside `laya`/`modelless`,
+skips the game-head try, and answers from the raw modelless engine —
+the abstain IS the answer, never a head fallback; `/healthz` advertises
+`"raw":"ready"`; unknown lanes still 400; default posture byte-identical
+(no header = head-first). Per-lane claims hold by construction — the
+engine's response discloses itself (lane `modelless`, the engine's own
+routing reason), never the head's. Paired smoke pins BOTH directions on
+the fixture spot question (head-first by default, raw abstain under the
+override); flappy/lanes raw pins the abstain baseline with the
+WITHOUT-header side deliberately unpinned (it moves when `.issues/011`'s
+engine-side serving lands). Gating suite green: clippy -D at default
+features, serve_lanes 9, game_heads_serve 6, serve_cors 7,
+engine_gates 8 (its `/healthz` exact-body pin re-pinned for the
+additive key). The Metal sibling's WIP (`src/laya/riir/*`,
+`tests/metal_ops_smoke.rs`, `.issues/008`) was left unstaged throughout.
+
+The 3-board layout is now UNGATED site-side work (the site's lane
+discovery reads `/healthz`, so it lights up for engines ≥ `4c657f8`).
+
+## T18 addendum — the 3-board arena LANDED (2026-09-24, site `d092fb8`, prod CF `5981518b`)
+
+The ratified three-tier arena is the page's real layout: a third
+boardcard per game ("raw baseline · heads skipped") beside laya and the
+modelless head board, same seeded stream. Every raw-board decision
+carries `X-Reflex-Lane: raw`; the engine answers from the corpus engine
+without its heads and the abstain plays as a labelled random pick — the
+honest floor the head's 44/120 and laya's argmax play are measured
+against.
+
+- **Lane discovery:** the raw chip reads `/healthz`'s lane map; an older
+  engine (v0.2.2) shows "needs engine v0.2.3+" — the absence of the key
+  is stated, never guessed at. The status line composes what is armed
+  ("modelless + laya + raw armed").
+- **Demo posture honest:** the raw lane has no recorded substitute, so
+  its board stays labelled-empty in the no-engine demo ("raw baseline is
+  a live-engine lane — start the engine to play it") — never invented
+  data.
+- **DRY:** the five `lane === "laya" ? "laya" : null` call sites
+  collapsed into one `LANE_HEADER` map; the boards grid renamed
+  `.duo` → `.boards` with track min 320 → 300px so three cards sit side
+  by side at the 980px wrap (measured 3×303px on one row).
+- **A live-path defect caught by the live smoke:** `TetrisBoard.step`
+  dereferenced `demo.tetrisWalk` unconditionally — a TypeError on EVERY
+  live tetris turn since the T12 demo-walk refactor, invisible because
+  the live browser smoke had not run since (the demo path masked it;
+  the recorder never goes through the page). Fixed by computing the
+  walk locals only when a demo is loaded.
+- **Verified:** `arena_demo_check` PASS (katgpt-rs fixtures); demo smoke
+  PASS with the new raw labelled-empty pin; live smoke PASS against the
+  knob engine (raw chip ready, raw board `abstain ×9`, head-first
+  default unchanged at `P(clean) 0.542`); prod deployed (CF version
+  `5981518b`) and prod-checked — the live page against a local
+  raw-capable engine shows "modelless + raw armed", the raw board
+  abstaining, the default head-first.
+- **Remaining distribution step:** visitors get the raw lane at the
+  next engine release (v0.2.3 must tag the `4c657f8` develop head);
+  until then the site states the requirement honestly on every v0.2.2
+  install. Engine-side flappy/lanes serving stays riir-reflex
+  `.issues/011`.
+
+## T19 addendum — the ENGINE-side flappy + lanes serving LANDED (2026-09-24, riir-reflex `d1eda08` + site `edeb133`, prod CF `a5f86875`)
+
+Issue 011 CLOSED in riir-reflex (record in its HISTORY.md): both
+remaining boards serve from the engine at their PUBLISHED anchors, and
+the site's live path speaks the two new request shapes. The three-tier
+arena (laya teacher / fitted head / raw baseline) now runs on all three
+games over HTTP.
+
+- **Lanes** — Bench 880's lossless decoded arm: λ 0.01, in-corpus
+  84/100, head digest `7d3f1d8e…09d34` FULL (matches the published
+  pin). Joined-state protocol (011's option 1, refined): ONE `/decide`
+  per turn, `state` = the three lane sentences one per line, exactly
+  three noul questions, answer i = lane i; the lane-name fill must
+  equal the line's position (a swapped turn refuses).
+- **Flappy** — Bench 882's v3 decoded arm: λ 1, in-corpus 96/100, FULL
+  digest `c93d36dc…e3c5` exact. (state, option) protocol: `state` =
+  the state sentence + the option sentence (two lines), one noul
+  question, per-option requests — the head row needs the state's
+  pre-rel/v/h beside the option's post band.
+- **The protocol discovery**: `noul` questions legally carry no options
+  (`WireError::NoulCarriesOptions`), so the sentence sequence rides in
+  the `state` field ONE PER LINE (closed-grammar sentences never
+  contain newlines) — 011's "joined with ; " sketch refined for exactly
+  this reason: no case normalization, no punctuation surgery, one
+  split rule for both games.
+- **A substrate fact measured en route**: the fixtures' `features`
+  column carries the STRUCTURED TRUE geometry, while the reconstruction
+  lawfully collapses the documented tails — which is exactly why Bench
+  882 pins TWO digests (`dc6bcf73…` structured, `c93d36dc…` decoded) at
+  ONE 96/100 agreement ("Δ0" is the agreement delta, not digest
+  equality). The lanes decoded == structured per-row cross-check
+  (881's losslessness) is kept in the engine's parse; a flappy equality
+  check would be wrong by design and is replaced by the full-digest pin.
+- **Engine hygiene riding the lane**: `game_heads.rs` genericized (the
+  fit core — Standardizer/HeadCorpus/loo_select/head_digest — is one
+  const-generic implementation over all three widths, DRY vs the
+  per-game copies); `/healthz` advertises the heads map;
+  `engine_gates`' body pin re-pinned. Drive-by gate repair
+  (`c08419d`): `tests/harness_units.rs` carries its modelless gate now
+  — the flag-OFF posture was red at import resolution since 67470be.
+- **Site half** (`edeb133`, deployed CF `a5f86875`): the live path
+  speaks both shapes, modelless lane ONLY (the laya lane's measured
+  per-option shape never moves; raw keeps skipping the heads). With an
+  OLDER engine the new shapes fall through and abstain — the labelled
+  fallback already rendered, no version gate.
+- **Verified live**: arena_smoke PASS against the new engine (flappy
+  `flap 0.140 · coast 0.119`, lanes `left 0.124 · middle 0.138 · right
+  0.138` — real head scores over HTTP); demo smoke + demo check + goldens
+  7/7 PASS; prod-page + local-engine smoke PASS on all three boards.
+- **Remaining**: the v0.2.3 engine release tag (still deferred — the
+  Metal lane's landing cuts it; the site states the requirement
+  honestly on v0.2.2 installs). Roadmap: ALL items landed.
+  → DISCHARGED by T20 (tagged `a386119`, dist live).
+
+## T20 addendum — the v0.2.3 ENGINE RELEASE SHIPPED (2026-09-24, riir-reflex tag `a386119`, docs record `2977b6d`+`10fbf3b`) — the last roadmap item DISCHARGED
+
+T19's Remaining row is discharged: the Metal lane landed (`4ef290c`
+two-instance sgemm pick + `a51ea42` narrow-BK64/xwide), the three-board
+serving was on develop (`d1eda08`), and v0.2.3 tagged the develop head
+at `a386119`.
+
+- **The release surface**: GitHub release v0.2.3 on `gist-rs/reflex`
+  (the DIST repo — NOT the private source checkout; the wrong-repo
+  trap recorded in reflex HISTORY) — 6 assets, leak-scan PASS ×5,
+  SHA256SUMS v0.2.3-only. Homebrew tap `3054310` + scoop bucket
+  `5900c33`, both hash-verified; the installers are
+  version-discovering (`releases/latest`), so nothing hardcoded needed
+  a bump.
+- **Gates on the tagged tree**: G5 parity green BOTH postures (cpu
+  27.8 s / metal 9.9 s), metal smoke 7/7 ×3 SERIALIZED (issue 015's
+  posture; its observation 4 — the first serialized run red minutes
+  after sibling GPU work ceased, then stable greens — recorded in the
+  issue) + full laya-riir-metal suite 154/0; packaged-binary live
+  smoke — all three heads at their published digests (Tetris FULL
+  `00aa6221…c6e`, lanes PREFIX `7d3f1d8e` — Bench 880 published only
+  the prefix, flappy FULL `c93d36dc…e3c5`), lanes turn answered from
+  the head.
+- **Site**: reflex-site `6db0cce` deployed (CF `ab5d8524`) — version
+  floor bumped; v0.2.2 installs show the honest "needs engine v0.2.3+"
+  state the T18 row described, v0.2.3 installs serve all three boards.
+- **Release-process traps** (reflex HISTORY, both paid for this
+  release): the wrong-repo trap (`gh release create` from the source
+  checkout creates on the PRIVATE repo — the dist surface is
+  `gist-rs/reflex`; the mistaken release deleted, tag kept) and the
+  `--clobber` renamed-asset trap (a renamed upload file creates a NEW
+  asset instead of replacing; the CDN serves pre-replacement bytes for
+  minutes — verify via the API route, not the page).
+- **Roadmap: fully discharged — no Remaining items.** Optional
+  follow-up, not owed: the on-4090 windows smoke was not repeated this
+  release (archives hash-pinned; linux musl cross-smokes
+  build-verified).

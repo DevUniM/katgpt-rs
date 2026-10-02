@@ -1,5 +1,6 @@
 //! Flappy micro-arena — katgpt-rs Plan 607 T5. Replays the committed
-//! oracle fixture (`flappy_oracle_laya_en_v1.jsonl`) through BOTH scoring
+//! oracle fixture (`flappy_oracle_laya_en_v2.jsonl` — the Bench 880/881
+//! published record, grammar v2 FROZEN) through BOTH scoring
 //! arms and reads the same G1 gate shape the Tetris arenas established:
 //!
 //! * T1 — the untuned sentence-cosine scorer (`CentroidTable::pick` over
@@ -63,7 +64,10 @@ fn drift(st: &MicroStateFixture) -> Result<FlappyState, String> {
         if o.features.as_slice() != flappy_sim::feature_row(&s, ACTIONS[ai]).as_slice() {
             return Err(format!("{}: features drifted at {ai}", st.state_id));
         }
-        let sentence = flappy_sim::render_option_sentence(&s, ACTIONS[ai]);
+        // The v2 fixture's sentences are FROZEN v2 renders — the live
+        // grammar moved to v3 (Issue 876), so the drift check pins the
+        // frozen renderer, never the current one.
+        let sentence = flappy_sim::render_option_sentence_v2(&s, ACTIONS[ai]);
         if sentence != o.sentence {
             return Err(format!(
                 "{}: option sentence drifted at {ai}\n  fixture:    {:?}\n  recomputed: {:?}",
@@ -251,11 +255,13 @@ fn main() {
             .collect()
     };
     let to_action = |pick: usize| ACTIONS[pick];
+    // The flight policies replay the fixture's FROZEN v2 grammar (the
+    // fixture replay above is v2; the live renders must match it).
     let t1_live = |s: &FlappyState| -> Action {
         let st = flappy_sim::render_state_sentence(s);
         let sents: Vec<String> = ACTIONS
             .iter()
-            .map(|&a| flappy_sim::render_option_sentence(s, a))
+            .map(|&a| flappy_sim::render_option_sentence_v2(s, a))
             .collect();
         to_action(t1_pick(&st, &sents))
     };
