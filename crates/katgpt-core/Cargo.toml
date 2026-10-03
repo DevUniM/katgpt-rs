@@ -523,6 +523,20 @@ metabolic_gate = []
 # Promotion needs the GOAT gates AND a default consumer — not this change.
 regime_probe = []
 
+# entropy_bounded_commit (Issue 917 T1, 2026-10-03): EB-Sampler-class
+# entropy-bounded commitment (Ben-Hamu et al., arXiv:2505.24857, NeurIPS
+# 2025, Algorithm 1 / Eq. 8 — zero novelty claimed; the class source). Sort
+# still-masked candidates by an error proxy (entropy / confidence / margin)
+# and commit the largest prefix with Σ H − max H ≤ γ. Incremental exact
+# residual (one linear scan — the residual is monotone), strict total
+# order (NaN-last, key, index) so the unstable sort is deterministic,
+# partial selection under a per-pass cap, non-finite entropy never commits,
+# singleton floor ⇒ no-stall for any γ ≥ 0 (the incumbent τ threshold can
+# commit nothing). Per-position stats via the shared logsumexp_parts
+# kernel. Zero alloc, zero deps. OPT-IN pending T2/T3 (D2F τ_conf / DDTree
+# width-k / DFlash block commit A/B — G2 NFE at matched quality).
+entropy_bounded_commit = []
+
 # incidence_algebra (riir-ai Issue 874 T1 / Research 364 — ThoughtComm,
 # arXiv:2510.20733): generic thought × agent incidence-mask algebra over
 # masks the stack already builds by construction — per-thought agreement
@@ -3678,6 +3692,21 @@ required-features = ["regime_probe", "hebbian_kernel_memory"]
 [[test]]
 name = "regime_probe_alloc_check"
 required-features = ["regime_probe"]
+
+# Issue 917 G4 — zero-alloc steady state for the EB commit policy (stats
+# batch + full-sort and capped commit paths on caller scratch). Separate
+# single-fn binary (shared counting allocator convention).
+[[test]]
+name = "entropy_bounded_commit_alloc_check"
+required-features = ["entropy_bounded_commit"]
+
+# Issue 917 modelless oracle A/B — EB(γ) vs fixed-k vs the incumbent τ
+# threshold against an exact oracle denoiser (uniform over a finite valid
+# set; validity = joint-dependence error made decidable). Deterministic,
+# seeded, no timing. Record: .benchmarks/917_entropy_bounded_commit_goat.md.
+[[test]]
+name = "bench_917_entropy_bounded_commit_goat"
+required-features = ["entropy_bounded_commit"]
 
 # ── katgpt-rs Issue 742: arm the auto-discovered gated targets ───────────────
 # Each target below opens a whole-file `#![cfg(feature = ...)]` and had NO

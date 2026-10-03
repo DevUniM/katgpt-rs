@@ -1,3 +1,34 @@
+## Issue 916 (2026-10-03 → closed 2026-10-03) — two_fidelity_bai G2 cost debt: CLOSED — δ-correct baseline (a) + lazy-discharge resolver (b) (file removed per noise-reduction)
+
+Filed from Issue 915's re-arm: G2(a) vs BAI-MCTS failed on cost. Two causes,
+both resolved:
+
+- **(a) the in-bench BAI baseline was not δ-correct** (LUCB root stop over
+  point-extreme backups stopped while erring 4/8): rebuilt as the
+  LUCB-MCTS/UGapE-MCTS bound-propagation class sharing the module's
+  `NodeInterval` machinery (`3aa27c149`; `NodeInterval::slow_only()`), cap
+  sized 4M (`321a4a7c6`). Full-protocol re-arm: GOAT PASS (Bench 615).
+- **(b) the primitive's own ~10–50× cost vs the paper's 2FFS**: the
+  per-node trace (`a3b3d435c`, `SearchConfig::trace_nodes`) attributed it to
+  ladder rungs past the ε-necessary width (~2×), stitched-stage δ-halving
+  (~2×) and a-priori dilution (~1.5–2×) — STRUCTURAL, not the uniform cap
+  dilution the first draft blamed. The lever landed as the opt-in
+  `SearchConfig::lazy_discharge` (`ca9fb1617`), ported from the authors'
+  reference implementation (`github.com/PeterLauLukChen/2FFS`, `twoffs.py`)
+  rather than the paper prose: parent-capped scales (Prop. B.10's
+  `Δ_v^eff ≤ 2ρ_k` in code), comparison-case lazy discharge with the
+  blocker's opposite side refined first, per-(node, scale) race budgets.
+  Intervals / δ_v / ε-stop untouched; knob off = v1 bit-identically.
+  Measured (Bench 615 addendum, `B615_2FFS_AB=1`, n = 300 per regime): lazy
+  0/300 errors (CP95 0.00994), 300/300 certified, 0 invalid intervals in
+  both the protocol regime (236–1117× below v1) and a hard regime ε = 0,
+  σ = 0.005, c = 2 (196–601× below v1, where v1 itself degrades to 3/300
+  errors + 12 uncertified). v1 also had a mechanical leak: a node latched at
+  all 64 scales fell through to `sample_local`, sampling already-exact
+  nodes. Caveat carried in the record: on this fixture the fast route
+  dominates (0 slow samples at protocol settings), so a slow-dominant
+  regime is not exercised.
+
 ## Issue 915 (2026-10-02 → closed 2026-10-03) — two_fidelity_bai certified-interval invalidity: CLOSED — root cause was the BENCH FIXTURE, not the module (file removed per noise-reduction)
 
 Plan 615 Phase 2's GOAT gate reported certified root intervals excluding V*

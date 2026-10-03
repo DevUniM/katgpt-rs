@@ -5268,3 +5268,91 @@ Record: [Bench 905](../../.benchmarks/905_grouped_evidence_weighting_goat.md).
 `best_belief` + `rating`), **OPT-IN** — consumers unscheduled (riir-clippy
 Issue 139, riir-dao, riir-reflex, riir-instinct, riir-ai rows in the issue).
 Kill clock: no consumer within 30 days of merge ⇒ goat-audit stall class.
+
+## 140. two_fidelity_bai — Certified Two-Fidelity Best-Action Identification (2FFS) (Plan 615 / Research 601)
+
+Certified best-action identification for stochastic minimax trees where
+every node answers to a **fast oracle** (deterministic, biased within a
+known envelope `B(h)`, B(0) = 0 leaf-exact) or a **slow oracle** (stochastic,
+unbiased, σ-sub-Gaussian). Interval minimax backup (`local = fast ∩
+time-uniform slow CI`; `effective = local ∩ child` via the Eq. 6 fold —
+width never increases, Lemma 2.3 debug-asserted at every backup),
+leader/challenger ε-stop at the root, a budgeted local-vs-recursive race
+(Eq. 7 `γ = c·m_v(ρ_k)` scaled `α_h = (h+1)²`), dyadic scale latches
+(`Done_s(v,k)` — zero rework), and the empty-intersection guard
+detectable-E_δ exit (paper B.3). The certificate is first-class output:
+`TwoFidelityResult { best_action, cost, certified, root_intervals }`.
+Time-uniform slow CIs by geometric-stage stitching (Howard et al. class);
+δ_v = δ/node_cap uniform allocation (T1.4's documented tradeoff).
+
+```rust
+use katgpt_core::two_fidelity_bai::{two_fidelity_search, MinimaxSpace, SearchConfig};
+let r = two_fidelity_search(&space, root, &config, &mut rng);
+if r.certified {
+    // r.best_action is ε-optimal with confidence 1−δ; r.root_intervals
+    // is the certificate body (every interval provably contains V* on E_δ).
+}
+```
+
+GOAT (Bench 615, rewritten 2026-10-03 after the fixture root cause): the
+definitive full-protocol run (n = 300, 100 trees × 3 settings, ε = 0.02,
+δ = 0.05) reads **ALL GATES PASS** — G1: 0/300 pick errors (CP95 =
+0.00994 ≤ δ), 300/300 certified, 0 invalid certificate intervals, 0
+guard-fires; G2 strict wins vs the δ-correct LUCB-MCTS baseline (LB95 ≈
++15M/setting, the baseline capping at the 4M-sample cap — conservative-
+instance caveat in the record) and vs negamax-UCT at matched accuracy (B*
+= 33.5M vs 2FFS ≤ 1.08M); G4 alloc-linearity ✓. Cost caveat: the 916(b)
+trace attributes a ~10–50× cost debt vs the paper's own 2FFS instance
+(ladder overshoot, stage-δ halving, a-priori dilution — lever recorded,
+opt-in knob discipline). Deterministic per seed (byte-identical rows
+across independent builds).
+
+Record: [`.benchmarks/615_two_fidelity_bai_goat.md`](../../.benchmarks/615_two_fidelity_bai_goat.md)
+(the arc: the 906 negative → the fixture root cause → the 916a baseline
+rebuild → the wall-viable instrument).
+
+🔧 Feature flag: `two_fidelity_bai` (katgpt-core), **OPT-IN** — the
+certified-search slot (the default search slot keeps `mcts_search`;
+promotion to default was never the claim — strategic-tier primitive, the
+op-count evidence forbids per-tick wiring). Consumer map (Phase 3):
+riir-ai `MultiHypothesisBoMMinimaxPlanner` certified stopping (the seam
+issue cites Research 601 + this bench); watch: riir-instinct
+critic-guided search, riir-infer kernel-trial early-stop (Research 601
+§2.2).
+
+## 141. entropy_bounded_commit — EB-Sampler-Class Entropy-Bounded Commitment (Issue 917 T1)
+
+Feature-gated behind `entropy_bounded_commit` (opt-in). Zero novelty claimed:
+the rule is the EB-Sampler's (Ben-Hamu et al.,
+[arXiv:2505.24857](https://arxiv.org/abs/2505.24857), NeurIPS 2025,
+Algorithm 1 / Eq. 8; same family as PC-Sampler, APD and the DiffusionGemma
+report's `entropy budget b`). Sort the still-masked candidates by an error
+proxy (`ErrorProxy::{Entropy, Confidence, Margin}`) and commit the largest
+prefix with `Σ H − max H ≤ γ`, a bound on the joint-dependence error of a
+parallel commit under a factorized proposal.
+
+- `entropy_bounded_commit(candidates, entropy, key, gamma, max_commit)`:
+  sorts the caller's candidate buffer in place under a strict total order
+  `(NaN-last, key, index)`, then one linear scan. The residual is monotone
+  (appending `h` adds `min(h, running max)`) and carried in that exact
+  incremental form, not as `sum − max`. A cap below the candidate count
+  uses `select_nth_unstable` + a head sort.
+- No-stall by construction: for any `γ ≥ 0` a singleton's residual is 0, so
+  every pass with a finite-entropy candidate commits ≥ 1. The incumbent
+  per-position τ threshold (`confidence_threshold_eligible`) can commit
+  nothing on a flat canvas. Non-finite entropy and NaN/negative `γ` never
+  commit.
+- `position_stats` / `position_stats_into`: entropy, top-1 and margin per
+  logits row via the shared `simd::logsumexp_parts` kernel plus a top-2 scan.
+- Measured (M3 Max on AC, single run, box shared with sibling agent sessions, `--release`, `entropy_bounded_commit_alloc_check`):
+  0 bytes allocated in steady state; 64-candidate commit 0.76–0.96 µs full
+  sort, ~250 ns capped at 8; stats 1.05–1.25 ms per 64 × 4096 block (two
+  runs, a mean-of-1000 and a best-of-2000 — read as a range; exp-bound, so
+  the D2F integration should reuse its existing softmax buffer instead).
+- Oracle A/B (Bench 917, exact oracle denoiser, deterministic): no-stall on
+  every family; at equal validity 5–19% fewer NFE than the τ = 0.9 incumbent
+  given a singleton floor (shipped D2F τ has none and stalls on a flat
+  canvas); the bound costs 16× NFE on genuinely independent positions.
+- Promotion pending Issue 917 T2/T3: the A/B against the incumbent commit
+  policy on the D2F τ_conf, DDTree width-k and DFlash block-commit lanes
+  (G2 NFE at matched quality, G3 no quality regression).

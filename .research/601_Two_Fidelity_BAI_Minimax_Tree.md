@@ -1,6 +1,6 @@
 # Research 601: Two-Fidelity Best-Action Identification for Stochastic Minimax Trees
 
-**Status:** Active — verdict round 1 REVISE addressed; Plan 615 baselines corrected (BAI-MCTS + negamax-UCT, not `mcts_search`)
+**Status:** DONE — Plan 615 shipped: Phase 1 core + Phase 2 GOAT **PASS** (2026-10-03, `.benchmarks/615_two_fidelity_bai_goat.md`: G1 0/300 errors CP95 0.00994, 300/300 certified, 0 invalid intervals; G2 wins vs the δ-correct LUCB-MCTS baseline and negamax-UCT at matched accuracy; caveats: conservative-baseline-instance + the 916(b) cost-debt vs the paper's instance — CLOSED 2026-10-03 by the opt-in `SearchConfig::lazy_discharge` resolver ported from the authors' code, `ca9fb1617`: G1 0/300 in two regimes at 196–1117× below v1, Bench 615 addendum). The 906-era G1 negative was a bench-fixture contract violation, not a primitive defect (Issue 915, closed). Phase 3 seam: the riir-ai issue cites this research + the bench.
 
 > **Source:** *Two-Fidelity Best-Action Identification for Stochastic Minimax Tree* — Peter Chen (UC Berkeley), Xi Chen (NYU), [arXiv:2606.01708](https://arxiv.org/abs/2606.01708) v2, NeurIPS 2026. Numerical implementation: `github.com/PeterLauLukChen/2FFS`.
 > **Date:** 2026-10-01

@@ -1391,6 +1391,15 @@ pub use certified_frontier::{CertifiedManifoldGraph, certified_manifold_graph};
 
 #[cfg(feature = "ac_prefix")]
 pub use ac_prefix::{AcPrefix, AcPrefixMask};
+// The keyed-Gumbel verify-sampling pair (position-keyed noise — the
+// order-invariant shared stream drafter proposals and target verify
+// samples consume; Plan-614 substrate row) plus the truncated-sampling
+// triple the Phase-2 target side composes (mask → scale → keyed argmax).
+#[cfg(feature = "ac_prefix")]
+pub use ac_prefix::{
+    keyed_gumbel_max_sample, keyed_gumbel_max_sample_masked, keyed_gumbel_max_sample_truncated,
+    keyed_gumbel_noise, truncation_keep_mask,
+};
 
 #[cfg(feature = "flow_field_nav")]
 pub mod flow;
@@ -2973,6 +2982,12 @@ pub mod dllm_solver; // Discrete Critical Interval Solver Switching (Plan 222)
 // forwards this same feature.
 #[cfg(feature = "decode_order_metrics")]
 pub mod dllm;
+// Issue 917 T1 (2026-10-03): EB-Sampler-class entropy-bounded commitment
+// (arXiv:2505.24857) — the largest error-proxy-ordered prefix with
+// Σ H − max H ≤ γ; zero-alloc, deterministic, no-stall by construction.
+// Opt-in pending the T2/T3 lane A/B (G2 NFE at matched quality).
+#[cfg(feature = "entropy_bounded_commit")]
+pub mod entropy_bounded_commit;
 // Plan 602 T2.1: the offline anchor scorer (decode-log ranking toward the
 // paper's sparse anchor set A — same feature, root-level per the plan target).
 #[cfg(feature = "decode_order_metrics")]
