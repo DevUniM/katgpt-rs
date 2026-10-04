@@ -772,13 +772,29 @@ fn slow_only(tree: &BenchTree, rng: &mut Xs) -> (u32, u64) {
 
 // ─── 2FFS runner ─────────────────────────────────────────────────────────────────
 
+/// Knob reads are hoisted out of the per-run path: `env::var` allocates on
+/// EVERY lookup — measured 1 alloc even for an ABSENT variable (the key
+/// conversion; probe on the Windows/gnu certifying box, 2026-10-04) — so a
+/// per-`run_2ffs` read put the lookup inside the G4 measured window and red
+/// the gate (setup allocs 5 > 4, knob OFF) after the Issue-916(b) wrapper
+/// added the LAZY read beside the pre-existing TRACE read. The gate caught
+/// the harness, not the search; `OnceLock` reads once per process.
+fn knob_is_set(var: &'static str) -> bool {
+    static SET: std::sync::OnceLock<std::collections::HashMap<&'static str, bool>> =
+        std::sync::OnceLock::new();
+    SET.get_or_init(|| {
+        let mut m = std::collections::HashMap::new();
+        m.insert("B615_2FFS_LAZY", std::env::var("B615_2FFS_LAZY").is_ok());
+        m.insert("B615_2FFS_TRACE", std::env::var("B615_2FFS_TRACE").is_ok());
+        m
+    })
+    .get(var)
+    .copied()
+    .unwrap_or(false)
+}
+
 fn run_2ffs(tree: &BenchTree, seed: u64) -> TwoFidelityResult {
-    run_2ffs_with(
-        tree,
-        seed,
-        std::env::var("B615_2FFS_LAZY").is_ok(),
-        &AbCfg::protocol(),
-    )
+    run_2ffs_with(tree, seed, knob_is_set("B615_2FFS_LAZY"), &AbCfg::protocol())
 }
 
 /// The (ε, σ, c) triple a 2FFS run uses. The gated suite always runs
@@ -824,7 +840,7 @@ fn run_2ffs_with(
         slow_cost: ab.cost,
         node_cap: NODE_CAP,
         sigma: ab.sigma,
-        trace_nodes: std::env::var("B615_2FFS_TRACE").is_ok(),
+        trace_nodes: knob_is_set("B615_2FFS_TRACE"),
         lazy_discharge,
     };
     let mut rng = Xs(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(0xB10C));
