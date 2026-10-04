@@ -305,8 +305,9 @@ fn run(support: &Support, policy: Policy, seed: u64) -> Outcome {
 }
 
 fn policies() -> Vec<Policy> {
-    let mut v = vec![];
-    for g in [0.0f32, 0.1, 0.3, 1.0] {
+    let cap_iter = [0.0f32, 0.1, 0.3, 1.0];
+    let mut v = Vec::with_capacity(cap_iter.len());
+    for g in cap_iter {
         v.push(Policy::Eb(g));
     }
     for k in [1usize, 2, 4, 8] {

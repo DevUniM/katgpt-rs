@@ -5356,3 +5356,49 @@ parallel commit under a factorized proposal.
 - Promotion pending Issue 917 T2/T3: the A/B against the incumbent commit
   policy on the D2F τ_conf, DDTree width-k and DFlash block-commit lanes
   (G2 NFE at matched quality, G3 no quality regression).
+
+## 142. gmm_support — Density-Ratio Support Gate (Plan 618 / Research 604, arXiv:2610.02126)
+
+The continuous-latent two-density member of the gate family, distilled from
+"Local Support Learning": a diagonal-GMM pair (positive fit on the
+suite/adapter's own training distribution, negative on a generic reference
+corpus capturing distribution WIDTH, not identity) whose log-ratio
+`ℓ(x) = log Φ_pos(x) − log Φ_neg(x)` gates admission to the training
+support. Modelless throughout — EM statistics, a seeded JL projection,
+closed-form O(K·E) eval, an EMA scalar, an offline-certifiable excess bound.
+
+- **`DiagGmm`** — the mixture-density extension of the `RegionSubspaceField`
+  class: per-component diagonal variances (not shared), a true logsumexp
+  mixture density (not per-region sigmoids), BLAKE3 commitment reusing the
+  `compute_field_commitment` convention (verdict round 1: no parallel GMM
+  type with an invented format)
+- **`fit_diag_gmm`** — EM refinement seeded from the shipped deterministic
+  `fit_codebook_kmeans_into` (implies `factorized_action`); Jeffreys-smoothed
+  weights; same-inputs → identical artifact (BLAKE3 determinism pin)
+- **`JlProjector`** — the JL projection revived at E ≥ 32 with packed
+  sign-bit storage (one bit per entry, add/sub-only apply, `1/√E` once per
+  row); the Issue-139 m=8 history carried in the module docs and a
+  compile-time shape guard so the mistake cannot recur
+- **`SupportGate` + `GateSmoother`** — `sigmoid(ℓ/τ)` confidence bridge
+  (never softmax), unfitted = closed-always (the `CorpusDistanceGate`
+  empty-corpus precedent), per-stream EMA state
+- **Certification instruments (T6/T7)** — Φ_neg-weighted excess mass +
+  deficit rates; the App-E bound in its implementable form
+  (`excess ≤ bound_multiplier·L1 + slack`, the multiplier measured at
+  0.67–1.4 across the fixture family, defaulted to 2.0 with headroom); the
+  leak-by-construction linear-discriminator canary that REDS the instrument
+  itself when the control fails to fire (§3.6 discipline)
+- **Fit-space law (measured at the first consumer, riir-reflex Issue 066
+  PRE-CHECK)**: fit/eval in the JL-PROJECTED space (E ≈ 32–64), never raw
+  hashed-bag D-space — raw space rejects Gaussianity universally (0/154
+  label pools); whole-corpus multimodality is what the per-label components
+  exist to model
+
+**GOAT G1/G2a/G2b/G4/G5 ALL PASS**
+([Bench 908](.benchmarks/908_gmm_support_goat.md)) — G2a request posture
+8529 ns = 0.67× the decision-pass proxy; G2b layer posture ≤ 12% bar with
+the FLOP arithmetic ≈ 6.0% of a Qwen2.5-1.5B-shaped layer; G4 zero allocs;
+G5 the two-sided leak canary + the fixture-scoped bound. Stays opt-in per
+the no-default-consumer rule — first consumer: riir-reflex Issue 066 (the
+fused-abstain density half); UQ Report-the-Floor rides that consumer's A/B
+(the primitive itself has no outcome space).

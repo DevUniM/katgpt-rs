@@ -956,6 +956,34 @@ sigmoid_calibration = []
 # is the Proposal 014 Phase-1 engine's abstain arm (owner-gated).
 distance_abstain = []
 
+# gmm_support (Plan 618 / Research 604, 2026-10-05): the density-ratio
+# support gate — the continuous-latent two-density member of the gate
+# family (arXiv:2610.02126 "Local Support Learning" extraction).
+# DiagGmm (the mixture-density extension of the RegionSubspaceField class:
+# per-component diagonal variances + a true logsumexp mixture density +
+# BLAKE3 commitment reusing the compute_field_commitment convention) ·
+# fit_diag_gmm (EM refinement seeded from the shipped deterministic
+# fit_codebook_kmeans_into — implies factorized_action) · JlProjector (the
+# JL projection REVIVED at E ≥ 32 with packed sign-bit storage — the
+# Issue-139 m=8 history carried, compile-time shape guard) · SupportGate
+# (pos/neg log-ratio, sigmoid-never-softmax confidence bridge,
+# unfitted = closed-always) · GateSmoother (per-stream EMA) · the T6/T7
+# certification instruments (Φ_neg-weighted excess mass + deficit + the
+# leak-by-construction linear-discriminator canary, exit-2 class) ·
+# deterministic fixtures (CLT-12 libm-free sampler — bit-identical
+# cross-platform). FIT-SPACE LAW (measured at the first consumer,
+# riir-reflex Issue 066 PRE-CHECK): fit/eval in the JL-PROJECTED space
+# (E ≈ 32–64), NEVER raw D-space — raw hashed-bag space rejects
+# Gaussianity universally (0/154 label pools). Zero-alloc eval path;
+# offline fit/certify paths allocate (documented). GOAT gate:
+# bench_gmm_support_gate (G1 correctness/determinism, G2 per-request +
+# layer-scope latency bars with the projection COUNTED, G4 alloc canary,
+# G5 the two-sided leak canary + the fixture-scoped bound). OPT-IN per
+# the no-default-consumer rule — first consumer riir-reflex Issue 066
+# (the fused-abstain density half); promotion rides that consumer's
+# GOAT.
+gmm_support = ["factorized_action"]
+
 # exact_mass_admit (Issue 879 / Research 584, 2026-09-24): the MAttr
 # (arXiv:2609.25518 "Matryoshka attribution") budget-primitive family — two
 # modules, one feature. (1) `exact_mass_admit`: the calibrated-mass
@@ -1096,7 +1124,21 @@ fitted_value_tables = ["fitted_anchor_tables"]
 # λ·E_l[s] from the cached post-RoPE K via ONE
 # `PositionGroupAction::apply_inverse_at` per head (never a round-trip,
 # trap 2) + the `VReadPath::FullCache` kill switch (bit-identical copy).
-# Bench 895. OPT-IN. Implies fitted_value_tables + position_group_action.
+# Bench 895. Implies fitted_value_tables + position_group_action.
+# PROMOTION HELD 2026-10-05 by the pre-registered rule (riir-infer Issue
+# 013 T4 / Bench 016): the model-bound naive read-path cost EXPLODES with
+# context — 1.079/1.088× @129 (Bench 013) → 1.789/1.751× @1025 →
+# 3.821/3.957× @4097 (the gemma-2-2b sliding-window edge) vs the ≤ 1.20
+# window-edge promotion bar. Quality is untouched (0 flips at every λ,
+# rotation-rounding class only) and the 50.0% bytes/token law stands —
+# the HOLD is a COST verdict on the naive read path, worst exactly where
+# the memory win matters. Promotion re-fires when the named lever
+# (deferred restore by linearity, Bench 895 Addenda I/II +1.5–3.6%
+# primitive-level; block angle-addition second) lands in a consumer and
+# re-measures ≤ 1.20 at the window edge. P1 (`MeanRemovedValueCache`,
+# Bench 011 negative) and P2 (K=V+ serve, Bench 012: G-A passes only
+# against the catastrophic V:=K baseline, 92.6× off f16) are the demoted
+# losers — recorded negatives, both stay opt-in.
 fitted_v_reconstruct = ["fitted_value_tables", "position_group_action"]
 
 # habituation_filter (riir-ai Issue 1006 T1 / Research 586, 2026-09-25): the
@@ -3947,6 +3989,16 @@ name = "bench_845_distance_abstain_goat"
 harness = false
 required-features = ["distance_abstain"]
 
+# Plan 618 — gmm_support GOAT gate (G1 determinism, G2 request+layer
+# latency with the projection counted, G4 alloc canary, G5 the two-sided
+# leak canary + the fixture-scoped bound).
+# cargo bench -p katgpt-core --features gmm_support
+# --no-default-features --bench bench_gmm_support_gate -- --nocapture
+[[bench]]
+name = "bench_gmm_support_gate"
+harness = false
+required-features = ["gmm_support"]
+
 # Issue 800 Arm A — SIMD bf16⇄f32 batch conversion GOAT gate (G1 known-answer
 # vs `half` RNE + NaN/Inf/subnormal survival, G2 ≥4× scalar at 8 lanes,
 # G4 zero-alloc into_buf).
@@ -4147,6 +4199,14 @@ required-features = ["state_option_scoring"]
 name = "bench_616_minmax_partition_goat"
 harness = false
 required-features = ["minmax_partition"]
+
+# Plan 615 Phase 3+4 — user-facing example for the opt-in module. The
+# required-features row is load-bearing: without it `--all-targets` at
+# default features builds the example against a module compiled to
+# nothing (E0432, the repo's documented green-zero class).
+[[example]]
+name = "two_fidelity_bai_basic"
+required-features = ["two_fidelity_bai"]
 
 # Plan 615 Phase 2 — Two-Fidelity Certified BAI GOAT gate (T2.1–T2.5).
 # CANARY-first (impossible floors fire), SANITY T2.2b (negamax-UCT adapter

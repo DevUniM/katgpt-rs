@@ -542,6 +542,7 @@ fn stage_radii(delta_v: f64, sigma: f64) -> Vec<f64> {
         }
         radii.push(beta(n_k, delta_v, sigma));
     }
+    radii.shrink_to_fit();
     radii
 }
 

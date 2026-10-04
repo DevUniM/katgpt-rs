@@ -3529,6 +3529,21 @@ pub mod sigmoid_calibration;
 #[cfg(feature = "distance_abstain")]
 pub mod distance_abstain;
 
+/// Density-ratio support gate (Plan 618 / Research 604, arXiv:2610.02126
+/// "Local Support Learning") — the continuous-latent two-density member
+/// of the gate family: a diagonal-GMM pair (positive fit on the
+/// suite/adapter's own training distribution, negative on a generic
+/// reference corpus) whose log-ratio gates admission to the training
+/// support, with the revived JL projector at E ≥ 32 (packed sign-bit
+/// storage), EM refinement seeded from the shipped k-means, an EMA
+/// smoother, and the offline excess/deficit certification instruments
+/// (the leak-by-construction canary included). Fit in the PROJECTED
+/// space, never raw (the measured fit-space law). Opt-in
+/// (`gmm_support`) per the no-default-consumer rule — promotion rides a
+/// consumer's GOAT (riir-reflex Issue 066 is the first).
+#[cfg(feature = "gmm_support")]
+pub mod gmm_support;
+
 /// Dirichlet-distribution primitives (Issue 912 T2+T3 / Research 596) — the
 /// exact explore dial `Dir(c·p)` (mean exact by construction, log-space
 /// sampling so α ≲ 0.02 stays exact), the thinning transition (exact ONLY
@@ -3680,8 +3695,8 @@ pub mod calibration_staleness;
 
 /// Legal-token-set enumeration + the restricted-projection decision (Issue
 /// 841) — `CsrLegalSet` inverts "is this token valid?" into "which tokens
-/// are", and `ProjectionPlan` says how much of the vocabulary projection that
-/// justifies skipping. Opt-in (`legal_token_set`).
+///      are", and `ProjectionPlan` says how much of the vocabulary projection that
+///      justifies skipping. Opt-in (`legal_token_set`).
 #[cfg(feature = "legal_token_set")]
 pub mod legal_token_set;
 
