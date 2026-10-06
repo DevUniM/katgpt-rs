@@ -322,9 +322,20 @@ pub trait TvpProbeSource: Send + Sync {
 
 /// Canonicalize a token-id sequence into a format hash.
 ///
-/// The canonical form is: lowercase, strip non-alphanumeric, take first 16 chars.
-/// This catches "42" vs "The answer is 42" vs "42.0" as same-answer-different-format
-/// (per paper Section 8 decomposition). The hash is BLAKE3 of the canonical form.
+/// The canonical form is: lowercase, strip non-alphanumerics (Thai marks below
+/// excepted), stop at the first ≥16-byte char. A multi-byte char crossing the
+/// 16-byte bound is kept whole — the cap is 16 bytes plus at most one char's
+/// overhang, never a split char. This catches "42" vs "The answer is 42" vs
+/// "42.0" as same-answer-different-format (per paper Section 8 decomposition).
+/// The hash is BLAKE3 of the canonical form.
+///
+/// Thai marks: `is_alphanumeric()` is Unicode Alphabetic, which drops ไม้ไต่คู้
+/// (U+0E47), the four tone marks (U+0E48–U+0E4B), การันต์ (U+0E4C) and
+/// ยามักการ (U+0E4E) — so canon(ป่า) == canon(ป้า) == "ปา", silently filing a
+/// substantive (different-word) disagreement as cosmetic. U+0E47..=U+0E4E is
+/// therefore kept alongside alphanumerics (measured 2026-10-06; full
+/// U+0E31..U+0E4E census pinned in the tests). Non-Thai combining marks are
+/// still dropped — a stated limitation, not a claim.
 ///
 /// For routing, we don't need full NLP canonicalization — just enough to separate
 /// cosmetic from substantive disagreement. Token-id-to-text mapping is the caller's
@@ -334,10 +345,13 @@ pub fn canonical_format_hash(form: &str) -> u64 {
     // the first 8 bytes of BLAKE3 output over the canonicalized form.
     let mut canonical = String::with_capacity(16);
     for c in form.chars() {
-        if c.is_alphanumeric() {
+        if c.is_alphanumeric() || is_thai_mark(c) {
             canonical.extend(c.to_lowercase());
             if canonical.len() >= 16 {
-                canonical.truncate(16);
+                // Never split a char: `String::truncate(16)` panicked when the
+                // cap landed mid-char (14 ASCII bytes + a 3-byte Thai vowel →
+                // len 17), killing the whole probe on any long non-ASCII input.
+                // Bounded overhang instead: len ≤ 16 + one char (≤ 4 bytes).
                 break;
             }
         }
@@ -347,6 +361,14 @@ pub fn canonical_format_hash(form: &str) -> u64 {
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&hash.as_bytes()[..8]);
     u64::from_le_bytes(bytes)
+}
+
+/// Thai marks that `char::is_alphanumeric()` drops (Unicode Alphabetic = No)
+/// but that change meaning: ไม้ไต่คู้ U+0E47, tone marks U+0E48–U+0E4B,
+/// การันต์ U+0E4C, ยามักการ U+0E4E. U+0E4D ํ measures `true` and is reached by
+/// the alphanumeric arm anyway. Measured 2026-10-06 — the census test pins it.
+fn is_thai_mark(c: char) -> bool {
+    matches!(c, '\u{0E47}'..='\u{0E4E}')
 }
 
 // ── Aggregator ──────────────────────────────────────────────────
@@ -1145,6 +1167,65 @@ mod tests {
         let h2 = canonical_format_hash("42?");
         // Both canonicalize to "42".
         assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_canonical_format_hash_ascii_pins_unchanged() {
+        // Pins measured 2026-10-06 from the PRE-fix implementation (scratch
+        // probe running a verbatim copy of the old body): the fix must be
+        // byte-identical on every ASCII input. "abcdefghijklmnop" pins the
+        // 16-byte cap, "...qrst" that the tail is dropped, "ABCdefGHIjklMNOP"
+        // that lowercasing happens before hashing.
+        assert_eq!(canonical_format_hash("42"), 0x325c_57d7_7464_13da);
+        assert_eq!(canonical_format_hash("42!"), 0x325c_57d7_7464_13da);
+        assert_eq!(canonical_format_hash("The answer is 42"), 0x282a_95e9_c670_efdb);
+        assert_eq!(canonical_format_hash("abcdefghijklmnop"), 0x8bf4_526d_8343_9e00);
+        assert_eq!(canonical_format_hash("abcdefghijklmnopqrst"), 0x8bf4_526d_8343_9e00);
+        assert_eq!(canonical_format_hash("ABCdefGHIjklMNOP"), 0x8bf4_526d_8343_9e00);
+    }
+
+    #[test]
+    fn test_canonical_format_hash_no_panic_multibyte_boundary() {
+        // 14 ASCII + a 3-byte Thai vowel: canonical reaches len 17 ≥ 16 with the
+        // 16-byte cap landing mid-char. The old `String::truncate(16)` panicked
+        // here (assertion failed: self.is_char_boundary, exit 101) — the whole
+        // probe died on any long non-ASCII input. The fix breaks without
+        // truncating: bounded overhang, never a split char.
+        let h = canonical_format_hash("aaaaaaaaaaaaaaั");
+        assert_ne!(h, 0);
+        // Deterministic across calls.
+        assert_eq!(h, canonical_format_hash("aaaaaaaaaaaaaaั"));
+    }
+
+    #[test]
+    fn test_canonical_format_hash_thai_tone_marks_distinct() {
+        // U+0E31..U+0E4E census (measured 2026-10-06): is_alphanumeric() is TRUE
+        // for ั า ำ ิ ี ึ ื ุ ู ฺ เ แ โ ใ ไ ๅ ๆ ํ and FALSE for ็ ่ ้ ๊ ๋ ์ ๎ —
+        // so tone marks were silently stripped and canon(ป่า) == canon(ป้า) ==
+        // "ปา": a substantive (different-word) disagreement filed as cosmetic.
+        // Keeping U+0E47..=U+0E4E makes the pair hash differently.
+        assert_ne!(canonical_format_hash("ป่า"), canonical_format_hash("ป้า"));
+        assert_ne!(canonical_format_hash("ปา"), canonical_format_hash("ป่า"));
+        // Pure cosmetic spacing/case still conflates as designed.
+        assert_eq!(canonical_format_hash("42"), canonical_format_hash("4 2"));
+        // And the kept-mark census, pinned: each of ็ ่ ้ ๊ ๋ ์ ๎ is retained
+        // (distinct hash vs the bare consonant), while U+0E3B..U+0E3F (unassigned
+        // + ฿) stay stripped exactly as before.
+        for mark in ['็', '่', '้', '๊', '๋', '์', '๎'] {
+            assert_ne!(
+                canonical_format_hash(&format!("ปา{mark}")),
+                canonical_format_hash("ปา"),
+                "mark {mark} must be retained"
+            );
+        }
+        for dropped in ['\u{0E3B}', '\u{0E3C}', '\u{0E3D}', '\u{0E3E}', '\u{0E3F}'] {
+            assert_eq!(
+                canonical_format_hash(&format!("ปา{dropped}")),
+                canonical_format_hash("ปา"),
+                "U+{:04X} must stay stripped",
+                dropped as u32
+            );
+        }
     }
 
     // --- Threshold adapter ---
